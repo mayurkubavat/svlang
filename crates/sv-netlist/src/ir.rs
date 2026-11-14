@@ -527,15 +527,20 @@ pub enum FreeKind {
     AnySeq,
     /// `(* anyconst *)`: an unconstrained value that never changes.
     AnyConst,
+    /// A cut point ([`LowerConfig::cut_points`]): the signal's drivers are ignored and
+    /// it is an unconstrained value on every step.
+    Cut,
 }
 
 impl FreeKind {
-    /// The attribute name (`"anyseq"`, `"anyconst"`), or `""` for a plain undriven slice.
+    /// The attribute name (`"anyseq"`, `"anyconst"`), `"cut"` for a cut point, or `""` for a
+    /// plain undriven slice.
     pub const fn as_str(self) -> &'static str {
         match self {
             FreeKind::Undriven => "",
             FreeKind::AnySeq => "anyseq",
             FreeKind::AnyConst => "anyconst",
+            FreeKind::Cut => "cut",
         }
     }
 }
@@ -623,11 +628,28 @@ pub struct LowerConfig {
     pub blast_memories_up_to: Option<usize>,
     /// When `false` (default, matching 2-state model checkers), rejects `$isunknown` and 4-state non-constant `casez`/`casex` items with [`LowerOutcome::Unsupported`].
     pub allow_four_state_ops: bool,
+    /// Cut points, by full hierarchical path (`"top.u0.cnt"`): each named signal is
+    /// disconnected from its drivers and becomes a free value on every step
+    /// ([`FreeKind::Cut`] in [`Netlist::undriven`]). Everything that reads the signal sees
+    /// the free value; its drivers (a register, an assign, an instance output) are still
+    /// lowered but no longer reach it. This is an over-approximation: a property proved
+    /// with cut points holds on the design, a counterexample may use values the design
+    /// cannot produce. A path that names an aggregate cuts every packed part of it; a path
+    /// that names no packed signal is an error.
+    /// A cut register keeps its [`State`] in the netlist, with nothing reading it: a back end
+    /// can drop the states named by a `Cut` slice.
+    pub cut_points: Vec<String>,
 }
 
 impl Default for LowerConfig {
     fn default() -> Self {
-        Self { top: None, max_loop_iters: 65_536, blast_memories_up_to: None, allow_four_state_ops: false }
+        Self {
+            top: None,
+            max_loop_iters: 65_536,
+            blast_memories_up_to: None,
+            allow_four_state_ops: false,
+            cut_points: Vec::new(),
+        }
     }
 }
 

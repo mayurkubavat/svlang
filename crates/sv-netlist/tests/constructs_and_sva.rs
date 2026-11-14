@@ -1191,6 +1191,61 @@ fn formal_free_attribute_on_driven_signal_is_an_error() {
     assert!(matches!(out, LowerOutcome::Error(_)), "{out:?}");
 }
 
+// ============================================================================
+// Cut points (`LowerConfig::cut_points`)
+// ============================================================================
+
+/// A cut point disconnects a signal from its drivers: its readers get a free
+/// value (`FreeKind::Cut`), and the signals that drive it or share its driver
+/// are untouched.
+#[test]
+fn cut_points_free_a_signal_for_its_readers_only() {
+    let src = "module child(input wire [3:0] i, output wire [3:0] o);\n\
+                 assign o = i + 4'd1;\n\
+               endmodule\n\
+               module t(input wire clk, input wire [3:0] d,\n\
+                        output wire [3:0] y_q, y_w, y_alias, y_o);\n\
+                 reg [3:0] q;\n\
+                 always @(posedge clk) q <= d;\n\
+                 wire [3:0] w = d ^ 4'h5;\n\
+                 wire [3:0] alias_of_w = w;\n\
+                 wire [3:0] o;\n\
+                 child u(.i(d), .o(o));\n\
+                 assign y_q = q;\n\
+                 assign y_w = w;\n\
+                 assign y_alias = alias_of_w;\n\
+                 assign y_o = o;\n\
+               endmodule\n";
+    let cfg =
+        LowerConfig { cut_points: vec!["t.q".into(), "t.alias_of_w".into(), "t.u.o".into()], ..LowerConfig::default() };
+    let nl = expect_lowered(lower_src_cfg(src, &[], &cfg));
+    let cut = |name: &str| {
+        nl.undriven.iter().find(|u| u.signal == name && u.free == sv_netlist::FreeKind::Cut).map(|u| u.value)
+    };
+    let out = |name: &str| nl.outputs.iter().find(|o| o.name == name).map(|o| o.value).unwrap();
+    // The register and the alias are cut: their readers see the free values.
+    assert_eq!(Some(out("y_q")), cut("t.q"));
+    assert_eq!(Some(out("y_alias")), cut("t.alias_of_w"));
+    // `w`, which the alias merely copied, still has its own driver.
+    assert_eq!(cut("t.w"), None);
+    assert_ne!(Some(out("y_w")), cut("t.alias_of_w"));
+    // A child's output port: the parent net it drives no longer follows the child.
+    assert!(cut("t.u.o").is_some());
+    let plain = expect_lowered(lower_src(src));
+    assert!(plain.undriven.is_empty());
+}
+
+/// A cut point that names nothing is an error, not a silent no-op.
+#[test]
+fn cut_point_that_names_no_signal_is_an_error() {
+    let cfg = LowerConfig { cut_points: vec!["t.typo".into()], ..LowerConfig::default() };
+    let out = lower_src_cfg("module t(input wire a, output wire b);\n assign b = a;\nendmodule\n", &[], &cfg);
+    match out {
+        LowerOutcome::Error(ds) => assert!(ds[0].message.contains("cut point 't.typo'"), "{ds:?}"),
+        other => panic!("expected an error, got {other:?}"),
+    }
+}
+
 /// A module-level `integer k` used as the loop index of two clocked `always`
 /// blocks: nothing reads `k` outside the loops, so which block wrote it last is
 /// unobservable and the design lowers. Reading it elsewhere keeps the error.

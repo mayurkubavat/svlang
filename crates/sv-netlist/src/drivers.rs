@@ -162,6 +162,29 @@ fn read_values(builder: &NetBuilder, prop_values: &[Option<ValueId>]) -> FxSet<u
 }
 
 fn resolve_one_signal(slot: &SignalSlot, builder: &mut NetBuilder, read: &FxSet<u32>) {
+    // A cut point: whatever drives the signal, its readers get a free value.
+    if slot.free == FreeKind::Cut {
+        let uid = builder.undriven.len();
+        let uval = builder.alloc_raw(
+            slot.width,
+            slot.signed,
+            slot.four_state,
+            BuildKind::Undriven(uid),
+            Some(slot.name.clone()),
+            slot.loc,
+        );
+        builder.undriven.push(UndrivenSlice {
+            signal: slot.name.clone(),
+            hi: slot.width - 1,
+            lo: 0,
+            value: uval,
+            loc: slot.loc,
+            free: FreeKind::Cut,
+        });
+        builder.bind_placeholder(slot.placeholder, uval);
+        return;
+    }
+
     // Net legality: procedural blocks cannot drive a `wire` net.
     if slot.is_net {
         for d in &slot.drivers {

@@ -45,6 +45,8 @@ pub(crate) struct DesignLowerer<'a> {
     pub call_stack: Vec<(usize, NodeId)>,
     /// Declarators under `(* anyseq *)` / `(* anyconst *)`, by (tree, node); built on first use.
     pub free_attrs: Option<FxMap<(usize, NodeId), FreeKind>>,
+    /// Indexes of the [`LowerConfig::cut_points`] that matched a signal.
+    pub cut_seen: FxSet<usize>,
 }
 
 /// Lowers an [`ElaboratedDesign`] and its parsed CST [`Tree`]s into a word-level [`Netlist`].
@@ -73,10 +75,16 @@ pub fn lower_design(trees: &[Tree], design: &ElaboratedDesign, config: &LowerCon
         next_local_id: 0,
         call_stack: Vec::new(),
         free_attrs: None,
+        cut_seen: Default::default(),
     };
 
     // Pass 1: allocate flattened signal slots, top-level ports, memories, and trace entries.
     lowerer.alloc_instance_recursive(top_id, true);
+    for (i, c) in config.cut_points.iter().enumerate() {
+        if !lowerer.cut_seen.contains(&i) {
+            lowerer.builder.err(Loc::default(), format!("cut point '{c}' is not a packed signal of the design"));
+        }
+    }
     if !lowerer.builder.diags.is_empty() {
         return classify_diags(lowerer.builder.diags);
     }
@@ -188,6 +196,13 @@ impl<'a> DesignLowerer<'a> {
     ) -> usize {
         let placeholder = self.builder.alloc_placeholder(width, signed, four_state, Some(name.clone()), loc);
         let idx = self.slots.len();
+        // A cut point names the signal, or an aggregate this slot is a part of.
+        let cut = self.config.cut_points.iter().position(|c| {
+            name.strip_prefix(c.as_str()).is_some_and(|rest| rest.is_empty() || rest.starts_with(['.', '[']))
+        });
+        if let Some(i) = cut {
+            self.cut_seen.insert(i);
+        }
         self.slots.push(SignalSlot {
             name: name.clone(),
             width,
@@ -198,7 +213,7 @@ impl<'a> DesignLowerer<'a> {
             init: None,
             loc,
             drivers: Vec::new(),
-            free: FreeKind::Undriven,
+            free: if cut.is_some() { FreeKind::Cut } else { FreeKind::Undriven },
         });
         std::rc::Rc::make_mut(&mut self.slot_placeholders).push(placeholder);
         self.builder.traces.push(TraceSignal { name, width, signed, four_state, value: placeholder, loc });
@@ -216,7 +231,8 @@ impl<'a> DesignLowerer<'a> {
             let free = self.free_attr(sym.decl_node);
             self.alloc_symbol(sid, is_top);
             if free != FreeKind::Undriven {
-                for slot in &mut self.slots[first_slot..] {
+                // (A cut point wins over the attribute: both make the signal free.)
+                for slot in self.slots[first_slot..].iter_mut().filter(|s| s.free != FreeKind::Cut) {
                     slot.free = free;
                 }
             }
