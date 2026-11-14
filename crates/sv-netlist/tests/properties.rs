@@ -838,3 +838,24 @@ fn random_bounded_properties_agree_with_the_definitions() {
     assert!(checked >= 250 && illegal >= 5, "{checked} checked, {illegal} illegal");
     assert!(failed >= 1000 && passed >= 1000 && hit >= 1000, "{failed} failed, {passed} passed, {hit} hit");
 }
+
+#[test]
+fn a_skip_can_be_given_per_clock_and_edge() {
+    let src = "module m(input logic clk, clk2, a, b);\n\
+               p: assert property (@(posedge clk) a |-> b);\n\
+               n: assert property (@(negedge clk) a |-> b);\n\
+               q: assert property (@(posedge clk2) a |-> b);\n\
+               endmodule\n";
+    let mut nl = lower_src(src).unwrap_netlist();
+    let mut opts = PropertyOptions::default();
+    opts.skip_cycles = 1;
+    opts.skip_by_clock = vec![
+        sv_netlist::ClockSkip { input: "clk".into(), posedge: true, ticks: 3 },
+        sv_netlist::ClockSkip { input: "clk2".into(), posedge: true, ticks: 0 },
+    ];
+    nl.compile_properties(&opts);
+    // The tick counter of each clock and edge counts to the skip of that clock and edge:
+    // 3 for posedge clk (2 bits), the default 1 for negedge clk, and none for clk2.
+    let widths: Vec<u32> = nl.states.iter().filter(|s| s.name.starts_with("m._sva_tick")).map(|s| s.width).collect();
+    assert_eq!(widths, [2, 1], "{:?}", nl.states);
+}

@@ -89,6 +89,21 @@ pub struct PropertyOptions {
     /// Attempts that start in the first `skip_cycles` clock ticks are not checked. A tool that
     /// holds the design in reset for the first ticks of every trace sets this to that length.
     pub skip_cycles: u32,
+    /// `skip_cycles` for the properties on one clock and edge, where a design has several
+    /// clocks and the first ticks of each cover a different stretch of time. A property on
+    /// a clock and edge with no entry here uses [`Self::skip_cycles`].
+    pub skip_by_clock: Vec<ClockSkip>,
+}
+
+/// [`PropertyOptions::skip_cycles`] for the properties on one clock and edge.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ClockSkip {
+    /// The clock, a top-level input, by its name in [`Netlist::inputs`].
+    pub input: String,
+    /// The edge: `true` for properties on the rising edge, `false` for the falling edge.
+    pub posedge: bool,
+    /// Attempts that start in this many first ticks of that clock edge are not checked.
+    pub ticks: u32,
 }
 
 /// What [`Netlist::compile_properties`] did with one property of [`Netlist::properties`].
@@ -696,7 +711,16 @@ impl Netlist {
         if let Some(d) = disable {
             history = history.max(span.saturating_add(self.lookback(d, memo)));
         }
-        let warm = opts.skip_cycles.saturating_add(span).max(history);
+        let skip = match self.value(signal).kind {
+            ValueKind::Input(i) => opts
+                .skip_by_clock
+                .iter()
+                .find(|k| k.input == self.inputs[i].name && k.posedge == (edge == Edge::Posedge))
+                .map(|k| k.ticks),
+            _ => None,
+        }
+        .unwrap_or(opts.skip_cycles);
+        let warm = skip.saturating_add(span).max(history);
         Ok(Plan {
             index,
             clock: ClockSpec { signal, edge },
