@@ -340,7 +340,7 @@ def measure(design, module, path, plan, tools, opts):
     rec = {"design": design.name, "module": module, "file": design.rel(path), "files": len(files)}
 
     code, out, err, secs = run_tool(
-        [tools["dv_build"], "--netlist", "--hier", *args, "--top", module, *files], opts.timeout, opts.mem
+        [tools["dv_build"], "--netlist", "--hier", *opts.flag, *args, "--top", module, *files], opts.timeout, opts.mem
     )
     rec["seconds"] = round(secs, 2)
     diags, instantiated = [], set()
@@ -442,6 +442,8 @@ def run(base, only, opts):
         meta["timeout"], meta["mem"] = opts.timeout, opts.mem
         if opts.define:
             meta["defines"] = opts.define
+        if opts.flag:
+            meta["flags"] = opts.flag
         if tools["slang"]:
             v = subprocess.run([tools["slang"], "--version"], capture_output=True, text=True).stdout.strip()
             meta["reference"] = v + " " + " ".join(REFERENCE_FLAGS[2:])
@@ -554,6 +556,7 @@ def report(base, opts):
         f"svlang `{meta.get('svlang', '?')[:12]}`, {meta.get('date', '')}"
         + (f", reference front end {meta['reference']}" if meta.get("reference") else "")
         + (f", with `{' '.join(meta['defines'])}` defined" if meta.get("defines") else "")
+        + (f", with `{' '.join(meta['flags'])}`" if meta.get("flags") else "")
         + ". Regenerate after a fix; the designs are kept outside the repository.\n\n"
     )
     measured = sum(total[o] for o in used if o != "invalid")
@@ -565,6 +568,23 @@ def report(base, opts):
         f"{total['timeout']} timeouts, "
         f"{total['accepted']} lowered although the reference rejects the input.\n\n"
     )
+
+    for path2 in opts.variant:
+        vmeta, vtotal = {}, collections.Counter()
+        with open(path2) as f:
+            for line in f:
+                r = json.loads(line)
+                if "meta" in r:
+                    vmeta = r["meta"]
+                else:
+                    vtotal[r["outcome"]] += 1
+        how = " ".join([f"`{x}`" for x in vmeta.get("flags", [])] + [f"`+define+{x}`" for x in vmeta.get("defines", [])])
+        vmeasured = sum(vtotal.values()) - vtotal["invalid"]
+        w(
+            f"With {how or 'the same settings'}: {vtotal['lowered']} of {vmeasured} lowered "
+            f"({100 * vtotal['lowered'] / max(vmeasured, 1):.1f}%), {vtotal['unsupported']} unsupported, "
+            f"{vtotal['rejected']} wrongly rejected.\n\n"
+        )
 
     w("## Designs\n\n")
     w("| design | commit | license | modules | " + " | ".join(used) + " | lowered of measured |\n")
@@ -736,6 +756,8 @@ def main():
     ap.add_argument("--timeout", type=int, default=120, help="seconds per module")
     ap.add_argument("--mem", type=float, default=4.0, help="GB of address space per process")
     ap.add_argument("--define", action="append", default=[], help="a define for every compilation (repeatable)")
+    ap.add_argument("--flag", action="append", default=[], help="a dv-build flag for every compilation (repeatable)")
+    ap.add_argument("--variant", action="append", default=[], help="report: another results file to summarize beside this one")
     ap.add_argument("--rows", type=int, default=40, help="rows per ranked table")
     ap.add_argument("-o", "--output", help="results file (default <dir>/results.jsonl)")
     opts = ap.parse_args()

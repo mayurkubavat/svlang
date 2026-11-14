@@ -4,7 +4,8 @@
 Verifies:
 1. Every valid RTL testcase lowers cleanly (`exit 0`, `errors 0`, non-empty `netlist <top>`),
    and emits byte-for-byte deterministic output across repeated invocations.
-2. CLI flags (`-G name=value`, `--blast-memories <N>`, `--allow-four-state-ops`) work end-to-end.
+2. CLI flags (`-G name=value`, `--blast-memories <N>`, `--allow-four-state-ops`,
+   `--skip-initial-checks`) work end-to-end.
 3. Every fail-closed testcase (`overlap_drivers.sv`, `clock_typo.sv`, `reset_typo.sv`,
    `comb_loop.sv`, and default `isunknown.sv`) exits non-zero (`exit 1`) with the expected
    diagnostic message and never silently emits a broken netlist.
@@ -38,6 +39,7 @@ EXPECTED_FAIL = {
     "comb_loop.sv": "combinational loop",
     "comb_loop_bits.sv": "combinational loop",
     "initial_assert_false.sv": "immediate assertion in initial block is false",
+    "initial_signal_check.sv": "immediate assertion on a non-constant value inside initial block",
     "isunknown.sv": "$isunknown",
     "overlap_drivers.sv": "overlapping drivers",
     "reset_typo.sv": "undeclared",
@@ -115,6 +117,13 @@ def main() -> int:
     ri = run_dv(dv_build, ["--allow-four-state-ops", os.path.join(NETLIST_DIR, "isunknown.sv")])
     if ri.returncode != 0 or "isunknown(" not in ri.stdout:
         failures.append(f"isunknown.sv (--allow-four-state-ops): expected isunknown op, got rc={ri.returncode}:\n{ri.stdout}")
+    else:
+        passed += 1
+
+    # 4. `--skip-initial-checks` on `initial_signal_check.sv`
+    rs = run_dv(dv_build, ["--skip-initial-checks", os.path.join(NETLIST_DIR, "initial_signal_check.sv")])
+    if rs.returncode != 0 or "state s0 initial_signal_check.q" not in rs.stdout:
+        failures.append(f"initial_signal_check.sv (--skip-initial-checks): expected a netlist, got rc={rs.returncode}:\n{rs.stdout}")
     else:
         passed += 1
 

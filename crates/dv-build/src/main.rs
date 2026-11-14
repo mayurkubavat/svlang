@@ -5,7 +5,7 @@
 //! (names, types, constant evaluation, elaboration from `-top`, class,
 //! assertion and UDP rules); see `svlang::semantic::semantic_diags`.
 //!
-//!     dv-build [--dialect any|vcs|xcelium] [--dump] [--cst] [--symbols] [--types] [--values] [--hier] [--netlist] [--blast-memories N] [--allow-four-state-ops] [--quiet] <options, e.g. -f top.f FILE...>
+//!     dv-build [--dialect any|vcs|xcelium] [--dump] [--cst] [--symbols] [--types] [--values] [--hier] [--netlist] [--blast-memories N] [--allow-four-state-ops] [--skip-initial-checks] [--quiet] <options, e.g. -f top.f FILE...>
 //!
 //! Diagnostics go to stdout as `file:line:col: error: message`, then a
 //! summary line `errors N`. --dump also prints the design: one line per
@@ -20,7 +20,8 @@
 //! --netlist lowers the elaborated RTL design into `sv-netlist` and prints its
 //! canonical netlist dump (`--blast-memories N` expands memories up to depth
 //! `N`; `--allow-four-state-ops` preserves 4-state `===`, `!==`, and
-//! `$isunknown` operators).
+//! `$isunknown` operators; `--skip-initial-checks` leaves out `initial`-block
+//! assertions over signals instead of reporting them as unsupported).
 //! Exit status: 0 no errors, 1 errors, 2 bad usage or unreadable input.
 
 use std::process::ExitCode;
@@ -44,6 +45,7 @@ fn main() -> ExitCode {
     let mut emit_netlist = false;
     let mut blast_memories: Option<usize> = None;
     let mut allow_four_state_ops = false;
+    let mut skip_initial_checks = false;
     let mut args = Vec::new();
     let mut it = std::env::args().skip(1);
     while let Some(a) = it.next() {
@@ -55,6 +57,7 @@ fn main() -> ExitCode {
             "--hier" => hier = true,
             "--netlist" => emit_netlist = true,
             "--allow-four-state-ops" => allow_four_state_ops = true,
+            "--skip-initial-checks" => skip_initial_checks = true,
             "--blast-memories" => {
                 let Some(val_s) = it.next() else {
                     eprintln!("error: --blast-memories expects a maximum depth integer");
@@ -89,7 +92,7 @@ fn main() -> ExitCode {
             }
             "-h" | "--help" => {
                 println!(
-                    "usage: dv-build [--dialect any|vcs|xcelium] [--dump] [--cst] [--symbols] [--types] [--values] [--hier] [--netlist] [--blast-memories N] [--allow-four-state-ops] [--quiet] <options> FILE..."
+                    "usage: dv-build [--dialect any|vcs|xcelium] [--dump] [--cst] [--symbols] [--types] [--values] [--hier] [--netlist] [--blast-memories N] [--allow-four-state-ops] [--skip-initial-checks] [--quiet] <options> FILE..."
                 );
                 return ExitCode::SUCCESS;
             }
@@ -176,6 +179,7 @@ fn main() -> ExitCode {
             top: None,
             blast_memories_up_to: blast_memories,
             allow_four_state_ops,
+            skip_initial_checks,
             ..svlang::LowerConfig::default()
         };
         match comp.lower_netlist(&cfg) {

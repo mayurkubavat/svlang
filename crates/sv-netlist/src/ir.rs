@@ -662,6 +662,13 @@ pub struct LowerConfig {
     /// Black boxes by instance path (`"top.u_core.u_mem"`): as [`Self::black_box_modules`],
     /// for the named instances only.
     pub black_box_instances: Vec<String>,
+    /// What to do with an immediate assertion in an `initial` block that is not a
+    /// constant (a time-zero check of a signal, such as OpenTitan's `ASSERT_INIT_NET`).
+    /// `false` (default) reports it as [`LowerOutcome::Unsupported`]; `true` leaves it
+    /// out of the netlist, as formal tools that ignore `initial` blocks do. The design's
+    /// behavior is the same either way: only that one check is not made. Constant
+    /// assertions are decided at lowering in both settings.
+    pub skip_initial_checks: bool,
 }
 
 impl Default for LowerConfig {
@@ -674,6 +681,7 @@ impl Default for LowerConfig {
             cut_points: Vec::new(),
             black_box_modules: Vec::new(),
             black_box_instances: Vec::new(),
+            skip_initial_checks: false,
         }
     }
 }

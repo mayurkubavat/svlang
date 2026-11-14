@@ -449,6 +449,9 @@ impl Binder<'_> {
             | Instantiation | ExportDecl | DpiExport | Extends | ImportDecl | ModportDecl | ClockingDecl | NetAlias => {
                 return
             }
+            // An elaboration task only reports. Its arguments are bound where its generate
+            // branch is taken, and OpenTitan's static assertions pass a bare label there.
+            ElabTask => return,
             ParamDecl if ident_tokens(t, n).next().is_none() && toks_have(t, n, "defparam") => return,
             CallExpr => {
                 // A call with `with`: its iterator names and object members.

@@ -1542,7 +1542,14 @@ impl<'a> DesignLowerer<'a> {
         else {
             return;
         };
-        let Some(cond) = self.eval_proc_cond(tree_idx, cond_node, ctx) else { return };
+        let diags_before = self.builder.diags.len();
+        let cond = self.eval_proc_cond(tree_idx, cond_node, ctx);
+        if self.config.skip_initial_checks && cond.is_none_or(|c| self.builder.const_cval(c).is_none()) {
+            // Left out on request, along with anything its condition could not lower.
+            self.builder.diags.truncate(diags_before);
+            return;
+        }
+        let Some(cond) = cond else { return };
         match self.builder.const_cval(cond) {
             Some(c) if c.known() && c.is_true() => {}
             Some(c) if c.known() => {
