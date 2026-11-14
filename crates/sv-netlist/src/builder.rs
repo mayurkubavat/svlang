@@ -510,6 +510,8 @@ impl NetBuilder {
             }
         }
 
+        self.forward_slices();
+
         // Combinational cycle check (iterative Tarjan SCC).
         self.check_combinational_loops()?;
         if !self.diags.is_empty() {
@@ -676,6 +678,111 @@ impl NetBuilder {
                 if sn.kind != SampledKind::Past || sn.depth == 0 {
                     out.push(sn.expr.0 as usize);
                 }
+            }
+        }
+    }
+
+    /// Points every read of some bits of a value at what drives those bits.
+    ///
+    /// A signal assembled from several drivers is a concatenation, and a read of `c[i-1]`
+    /// is a slice of it. Left like that, a carry chain (`assign c[i] = c[i-1] & a[i]`) or
+    /// a tree stored in one vector looks like the signal feeding itself. Following the
+    /// slice through aliases, constant right shifts, other slices and the concatenation
+    /// part that holds all its bits leaves only the real dependencies.
+    fn forward_slices(&mut self) {
+        // Nodes added below are visited too.
+        let mut i = 0;
+        while i < self.nodes.len() {
+            self.forward_slice(i);
+            i += 1;
+        }
+    }
+
+    fn forward_slice(&mut self, i: usize) {
+        {
+            let BuildKind::Op { op: NetOp::Slice { hi, lo }, args } = &self.nodes[i].kind else { return };
+            let (mut hi, mut lo, mut src) = (*hi, *lo, args[0]);
+            let mut moved = false;
+            for _ in 0..64 {
+                let node = &self.nodes[src.0 as usize];
+                let next = match &node.kind {
+                    BuildKind::Alias(target) if self.nodes[target.0 as usize].width == node.width => {
+                        Some((hi, lo, *target))
+                    }
+                    BuildKind::Op { op: NetOp::Slice { lo: inner_lo, .. }, args } => {
+                        Some((hi + inner_lo, lo + inner_lo, args[0]))
+                    }
+                    BuildKind::Op { op: NetOp::LShr, args } => self
+                        .const_cval(args[1])
+                        .filter(|k| k.known() && k.i() >= 0 && k.i() < i128::from(u32::MAX))
+                        .map(|k| k.i() as u32)
+                        .filter(|k| {
+                            hi.checked_add(*k).is_some_and(|top| top < self.nodes[args[0].0 as usize].width)
+                                && self.nodes[args[0].0 as usize].width == node.width
+                        })
+                        .map(|k| (hi + k, lo + k, args[0])),
+                    BuildKind::Op { op: NetOp::Concat, args } => {
+                        // Parts are listed from the most significant; walk up from bit 0.
+                        let total: u64 = args.iter().map(|a| u64::from(self.nodes[a.0 as usize].width)).sum();
+                        let mut found = None;
+                        if total == u64::from(node.width) {
+                            let mut base = 0u32;
+                            for part in args.iter().rev() {
+                                let w = self.nodes[part.0 as usize].width;
+                                if base <= lo && hi < base + w {
+                                    found = Some((hi - base, lo - base, *part));
+                                    break;
+                                }
+                                base += w;
+                            }
+                        }
+                        found
+                    }
+                    _ => None,
+                };
+                let Some((h, l, s)) = next else { break };
+                if s.0 as usize == i {
+                    break;
+                }
+                (hi, lo, src) = (h, l, s);
+                moved = true;
+            }
+            // Bits from several parts of a concatenation: one slice per part, joined again.
+            let mut pieces: Vec<(ValueId, u32, u32)> = Vec::new();
+            let node = &self.nodes[src.0 as usize];
+            if let BuildKind::Op { op: NetOp::Concat, args } = &node.kind {
+                let total: u64 = args.iter().map(|a| u64::from(self.nodes[a.0 as usize].width)).sum();
+                if total == u64::from(node.width) && hi < node.width {
+                    let mut base = 0u32;
+                    for part in args.iter().rev() {
+                        let w = self.nodes[part.0 as usize].width;
+                        let (from, to) = (lo.max(base), hi.min(base + w - 1));
+                        if from <= to {
+                            pieces.push((*part, to - base, from - base));
+                        }
+                        base += w;
+                    }
+                }
+            }
+            if pieces.len() > 1 && pieces.iter().all(|(part, _, _)| part.0 as usize != i) {
+                let (four, loc) = (self.nodes[i].four_state, self.nodes[i].loc);
+                let mut parts: Vec<ValueId> = pieces
+                    .into_iter()
+                    .map(|(part, h, l)| {
+                        self.alloc_raw(
+                            h - l + 1,
+                            false,
+                            four,
+                            BuildKind::Op { op: NetOp::Slice { hi: h, lo: l }, args: vec![part] },
+                            None,
+                            loc,
+                        )
+                    })
+                    .collect();
+                parts.reverse();
+                self.nodes[i].kind = BuildKind::Op { op: NetOp::Concat, args: parts };
+            } else if moved {
+                self.nodes[i].kind = BuildKind::Op { op: NetOp::Slice { hi, lo }, args: vec![src] };
             }
         }
     }

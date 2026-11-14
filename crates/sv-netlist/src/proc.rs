@@ -796,7 +796,10 @@ impl<'a> DesignLowerer<'a> {
                 SyntaxKind::TypedefDecl => self.exec_local_typedef(tree_idx, stmt, ctx),
                 SyntaxKind::SeqBlock => {
                     for ch in t.children(stmt) {
-                        if !matches!(t.kind(ch), SyntaxKind::Attribute | SyntaxKind::StmtLabel | SyntaxKind::Name) {
+                        if !matches!(
+                            t.kind(ch),
+                            SyntaxKind::Attribute | SyntaxKind::StmtLabel | SyntaxKind::Name | SyntaxKind::EndLabel
+                        ) {
                             self.exec_stmt(tree_idx, ch, ctx);
                         }
                     }
@@ -835,7 +838,10 @@ impl<'a> DesignLowerer<'a> {
                 let saved_decls = ctx.local_decls.clone();
                 let saved_tdefs = ctx.local_typedefs.clone();
                 for ch in t.children(stmt) {
-                    if !matches!(t.kind(ch), SyntaxKind::Attribute | SyntaxKind::StmtLabel | SyntaxKind::Name) {
+                    if !matches!(
+                        t.kind(ch),
+                        SyntaxKind::Attribute | SyntaxKind::StmtLabel | SyntaxKind::Name | SyntaxKind::EndLabel
+                    ) {
                         self.exec_stmt(tree_idx, ch, ctx);
                     }
                 }
@@ -2949,7 +2955,12 @@ fn unwrap_single_if_stmt(t: &Tree, mut stmt: NodeId) -> Option<NodeId> {
     while t.kind(stmt) == SyntaxKind::SeqBlock {
         let stmts: Vec<NodeId> = t
             .children(stmt)
-            .filter(|&c| !matches!(t.kind(c), SyntaxKind::Attribute | SyntaxKind::StmtLabel | SyntaxKind::Name))
+            .filter(|&c| {
+                !matches!(
+                    t.kind(c),
+                    SyntaxKind::Attribute | SyntaxKind::StmtLabel | SyntaxKind::Name | SyntaxKind::EndLabel
+                )
+            })
             .collect();
         if stmts.len() == 1 {
             stmt = stmts[0];

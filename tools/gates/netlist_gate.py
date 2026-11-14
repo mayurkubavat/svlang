@@ -36,6 +36,7 @@ def find_dv_build() -> str:
 EXPECTED_FAIL = {
     "clock_typo.sv": "undeclared",
     "comb_loop.sv": "combinational loop",
+    "comb_loop_bits.sv": "combinational loop",
     "initial_assert_false.sv": "immediate assertion in initial block is false",
     "isunknown.sv": "$isunknown",
     "overlap_drivers.sv": "overlapping drivers",
