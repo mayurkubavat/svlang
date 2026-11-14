@@ -1,0 +1,18 @@
+[package]
+name = "sv-aiger"
+description = "AIGER writer for the svlang RTL netlist: SystemVerilog designs bit-blasted to and-inverter graphs for model checkers and logic tools"
+readme = "README.md"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+keywords = ["systemverilog", "aiger", "formal", "model-checking", "eda"]
+categories.workspace = true
+
+[dependencies]
+sv-netlist = { version = "0.1.1", path = "../sv-netlist" }
+sv-btor2 = { version = "0.1.1", path = "../sv-btor2" }
+
+[dev-dependencies]
+sv-syntax = { version = "0.1.1", path = "../sv-syntax" }

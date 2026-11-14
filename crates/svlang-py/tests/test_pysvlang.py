@@ -173,3 +173,15 @@ def test_to_btor2_rejects_two_clocks():
     nl = pysvlang.Compilation.from_source(src, "two.sv").lower_netlist()
     with pytest.raises(pysvlang.SvlangError, match="more than one clock"):
         nl.to_btor2()
+
+
+def test_to_aiger():
+    nl = pysvlang.Compilation.from_source(SAT_COUNTER, "cnt.sv").lower_netlist()
+    data, notes = nl.to_aiger()
+    assert isinstance(data, bytes) and data.startswith(b"aig ")
+    assert b"b0 in_range" in data and b"l0 cnt.q[0]" in data
+    text, _ = nl.to_aiger(binary=False)
+    header = text.splitlines()[0].split()
+    # aag M I L O A B C: clk and rst, four register bits, one bad state.
+    assert header[0] == "aag" and header[2:4] == ["2", "4"] and header[6] == "1"
+    assert isinstance(notes, list)

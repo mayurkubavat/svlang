@@ -114,6 +114,9 @@ class Netlist:
         trace_marker: Optional[str] = None,
         name_prefix: Optional[str] = None,
     ) -> tuple[str, list[str]]: ...
+    def to_aiger(
+        self, *, binary: bool = True, name_prefix: Optional[str] = None
+    ) -> tuple[Union[bytes, str], list[str]]: ...
 
 class Compilation:
     def __init__(

@@ -64,6 +64,15 @@ text, notes = comp.lower_netlist().to_btor2()
 open("top.btor2", "w").write(text)      # then: ric3 check top.btor2 ic3
 ```
 
+`nl.to_aiger()` gives the same model bit-blasted to AIGER, as `bytes`
+(binary `.aig`) or, with `binary=False`, as text (`.aag`):
+
+```python
+nl = comp.lower_netlist(blast_memories_up_to=1024)   # AIGER has no memories
+data, notes = nl.to_aiger()
+open("top.aig", "wb").write(data)       # then: ric3 check top.aig ic3
+```
+
 Immediate assertions become `bad` lines. Concurrent assertions
 (`assert property`) are not written yet, and a design with a concurrent
 assumption (`assume property`) raises `SvlangError`.

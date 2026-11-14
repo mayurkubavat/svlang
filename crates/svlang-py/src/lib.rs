@@ -11,7 +11,7 @@ use std::sync::Arc;
 use pyo3::create_exception;
 use pyo3::exceptions::{PyException, PyValueError};
 use pyo3::prelude::*;
-use pyo3::types::{PyDict, PyList};
+use pyo3::types::{PyBytes, PyDict, PyList, PyString};
 
 use svlang::syntax::Child;
 use svlang::{DiagnosticStage, Driver, Locator, NodeId, Severity, Tree};
@@ -739,6 +739,39 @@ impl Netlist {
         let model =
             py.detach(move || svlang::btor2::write(&nl, &opts)).map_err(|e| SvlangError::new_err(e.to_string()))?;
         Ok((model.btor2, model.notes))
+    }
+
+    /// The netlist bit-blasted to an and-inverter graph in AIGER 1.9, for
+    /// bit-level model checkers and logic tools such as rIC3, ABC and nuXmv.
+    /// Returns ``(data, notes)``: ``data`` is ``bytes`` in the binary form
+    /// (``.aig``) or, with ``binary=False``, ``str`` in the ASCII form
+    /// (``.aag``). Inputs, latches and bad states carry their names in the
+    /// symbol table.
+    ///
+    /// The model is the one ``to_btor2`` writes: a single clock, immediate
+    /// assertions as bad states, immediate assumptions as constraints.
+    /// Memories must be expanded first (``lower_netlist(blast_memories_up_to=N)``).
+    /// Raises ``SvlangError`` when the netlist cannot be modelled exactly.
+    #[pyo3(signature = (*, binary = true, name_prefix = None))]
+    fn to_aiger(
+        &self,
+        py: Python<'_>,
+        binary: bool,
+        name_prefix: Option<String>,
+    ) -> PyResult<(Py<PyAny>, Vec<String>)> {
+        let mut opts = svlang::aiger::Options::default();
+        if let Some(p) = name_prefix {
+            opts.name_prefix = p;
+        }
+        let nl = self.inner.clone();
+        let model =
+            py.detach(move || svlang::aiger::lower(&nl, &opts)).map_err(|e| SvlangError::new_err(e.to_string()))?;
+        let data = if binary {
+            PyBytes::new(py, &model.aig.to_binary()).into_any().unbind()
+        } else {
+            PyString::new(py, &model.aig.to_ascii()).into_any().unbind()
+        };
+        Ok((data, model.notes))
     }
 
     fn __repr__(&self) -> String {
