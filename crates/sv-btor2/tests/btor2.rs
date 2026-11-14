@@ -146,3 +146,14 @@ fn trace_section_names_combinational_nets() {
     assert!(lines(model, "output").is_empty());
     assert!(section.lines().any(|x| x.ends_with(" tr.n")), "{section}");
 }
+
+#[test]
+fn concurrent_assumption_is_an_error() {
+    let nl = netlist(
+        "module cs(input logic clk, a, b);\n\
+           assume property (@(posedge clk) a |-> b);\n\
+         endmodule\n",
+    );
+    let e = write(&nl, &Options::default()).unwrap_err();
+    assert!(matches!(e, Fail::Unsupported(_)) && e.to_string().contains("assumptions"), "{e}");
+}

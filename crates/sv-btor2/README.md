@@ -33,6 +33,9 @@ Then, for example, `ric3 check counter.btor2 ic3`.
 - Concurrent assertions (`assert property`) and covers are **not** written.
   They stay in `Netlist::properties` for a tool that builds its own monitor,
   and `Model::notes` says how many were left out.
+- A concurrent assumption (`assume property`, `restrict property`) cannot
+  be left out without changing what the assertions mean, so a design that
+  has one is an error for now.
 
 Anything the model cannot express exactly is an error (`Fail`), never an
 approximation.

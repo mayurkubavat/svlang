@@ -34,7 +34,9 @@
 //!   assumption a `constraint`. Immediate covers and concurrent assertions
 //!   (`assert property`) are **not** written: a tool that checks those builds
 //!   its own monitor from [`Netlist::properties`], and [`Model::notes`] says
-//!   how many were left out;
+//!   how many were left out. A concurrent *assumption* (`assume property`,
+//!   `restrict property`) cannot be left out without changing what the
+//!   assertions mean, so a design that has one is [`Fail::Unsupported`];
 //! - `$past` and friends are history registers with no initial value, so a
 //!   property that reads them is only meaningful once the history is real.
 //!
@@ -699,7 +701,7 @@ impl<'n> Writer<'n> {
             });
             if assumes {
                 return unsupported(
-                    "concurrent assumptions in the RTL (assume property): write them with the `assume` command",
+                    "concurrent assumptions in the RTL (assume or restrict property): leaving them out would make the model weaker than the design says",
                 );
             }
             self.notes.push(format!(

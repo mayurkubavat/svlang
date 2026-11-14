@@ -64,8 +64,9 @@ text, notes = comp.lower_netlist().to_btor2()
 open("top.btor2", "w").write(text)      # then: ric3 check top.btor2 ic3
 ```
 
-Immediate assertions become `bad` lines; concurrent assertions
-(`assert property`) are not written yet.
+Immediate assertions become `bad` lines. Concurrent assertions
+(`assert property`) are not written yet, and a design with a concurrent
+assumption (`assume property`) raises `SvlangError`.
 
 Parsing, checking and lowering release the GIL, so several compilations
 can run in threads at once.
