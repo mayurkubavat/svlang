@@ -13,7 +13,8 @@
 //! 7. Sequential states: `state s<id> <name> : <shape> out=v<id> next=v<id> [clk=<clk>] [async_rst=(v<id>, high|low, val=v<id>)] [latch_en=v<id>] [init=<lit>]`
 //! 8. Sampled nodes: `sampled smp<id> <Kind>(v<id>, depth=<N>, clk=<clk>, gate=<vN|none>) = v<id>`
 //! 9. Immediate checks: `check <assert|assume|cover> <label|-> : en=v<id> expr=v<id> clk=<clk>`
-//! 10. Concurrent SVA properties: `property <kind> <label|-> clk=<sva_clk> disable=<vN|none> : <prop_expr>`
+//! 10. Concurrent SVA properties: `property <kind> <label|-> clk=<sva_clk> disable=<vN|none> : <prop_expr> [when=v<id>]`
+//!     (`when` is the path condition of a property under a condition in procedural code)
 //! 11. Trace signals: `trace <name> : <shape> = v<id>`
 //!
 //! Shape tags have the form `<u|s><width>.<2|4>`, where `u` denotes unsigned, `s`
@@ -149,8 +150,16 @@ impl Netlist {
                 writeln!(out, "check {} {lbl} : en=v{} expr=v{} clk={clk_s}", c.kind.as_str(), c.enable.0, c.expr.0);
         }
 
-        for p in &self.properties {
-            let _ = writeln!(out, "{}", fmt_bound_property(p, &self.sva_arena, &self.prop_expr_values));
+        for (i, p) in self.properties.iter().enumerate() {
+            let line = fmt_bound_property(p, &self.sva_arena, &self.prop_expr_values);
+            match self.property_enables.get(i).copied().flatten() {
+                Some(en) => {
+                    let _ = writeln!(out, "{line} when=v{}", en.0);
+                }
+                None => {
+                    let _ = writeln!(out, "{line}");
+                }
+            }
         }
 
         for tr in &self.traces {

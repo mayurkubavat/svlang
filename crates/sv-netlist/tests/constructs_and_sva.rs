@@ -897,7 +897,10 @@ endmodule
     assert_eq!(sim.out_i("y"), 10);
 
     let cond_ca = "module m (input logic clk, en, a); always_ff @(posedge clk) if (en) assert property (a); endmodule";
-    assert!(matches!(lower_src(cond_ca), LowerOutcome::Unsupported(_)));
+    // Under a condition: lowered, with the path condition kept for the property.
+    let cond_nl = lower_src(cond_ca).unwrap_netlist();
+    assert!(cond_nl.property_enables[0].is_some());
+    assert!(cond_nl.dump().contains(" when=v"), "{}", cond_nl.dump());
     let loop_ca =
         "module m (input logic clk, a); always_ff @(posedge clk) for (int i=0;i<2;i++) assert property (a); endmodule";
     assert!(matches!(lower_src(loop_ca), LowerOutcome::Unsupported(_)));

@@ -23,6 +23,9 @@
 //!   of an implication is not a cover).
 //! - **`disable iff (d)`**: the attempt is dropped when `d` was true at any tick from its
 //!   start to its end.
+//! - **In procedural code**: a property under a condition (`if (en) assert property (...)`
+//!   in a clocked block) starts an attempt only at a tick where the condition holds, as if
+//!   the condition led its antecedent ([`Netlist::property_enables`]).
 //! - **The first ticks**: an attempt is checked only once everything it reads is a sampled
 //!   value, that is from tick `max(skip_cycles + span, history)`, where `history` also counts
 //!   `$past`, `$rose`, `$fell`, `$stable` and `$changed` inside the booleans. One saturating
@@ -275,7 +278,11 @@ impl Netlist {
         let leaves = |terms: &[(u32, ExprId)]| -> Result<Vec<(u32, ValueId)>, String> {
             terms.iter().map(|&(at, e)| Ok((at, self.prop_expr_value(e).ok_or_else(not_lowered)?))).collect()
         };
-        let antecedent = leaves(&flat.antecedent)?;
+        let mut antecedent = leaves(&flat.antecedent)?;
+        // In procedural code under a condition: the attempt starts only when it is reached.
+        if let Some(reached) = self.property_enables.get(index).copied().flatten() {
+            antecedent.insert(0, (0, reached));
+        }
         let consequent = leaves(&flat.consequent)?;
         let disable = match prop.disable_iff {
             Some(d) => Some(self.prop_expr_value(d).ok_or_else(not_lowered)?),

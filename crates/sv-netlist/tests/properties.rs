@@ -122,6 +122,45 @@ fn the_tick_counter_stops_and_checks_stay_on() {
 }
 
 #[test]
+fn a_property_under_a_condition_starts_only_when_reached() {
+    // As `a |-> (b |=> c)`: reached at a tick where a holds.
+    let p = "always @(posedge clk) begin if (a) p: assert property (b |=> c); end";
+    assert_eq!(fails(p, &["0110", "0000"]), [1]);
+    assert_eq!(fails(p, &["0010", "0000"]), [] as [usize; 0]);
+    assert_eq!(fails(p, &["0110", "0001"]), [] as [usize; 0]);
+    // The else branch and a case arm carry their own conditions.
+    let e = "always @(posedge clk) if (a) begin end else p: assert property (b);";
+    assert_eq!(fails(e, &["0100", "0000", "0010"]), [1]);
+    let c = "always @(posedge clk) case ({a, b}) 2'b10: p: assert property (c); default: ; endcase";
+    assert_eq!(fails(c, &["0100", "0110", "0101", "0000"]), [0]);
+    // Not under a condition: no path condition is kept.
+    let nl = compiled("always @(posedge clk) begin p: assert property (a |-> b); end", 0);
+    assert_eq!(nl.property_enables, [None]);
+    assert_eq!(failures(&nl, &["0100"]), [0]);
+}
+
+#[test]
+fn a_property_under_a_condition_in_a_cover_and_an_async_reset_block() {
+    let src = format!(
+        "module m({PORTS}, output logic q);\n\
+           always_ff @(posedge clk or posedge rst)\n\
+             if (rst) q <= 1'b0;\n\
+             else begin\n\
+               q <= a;\n\
+               p: assert property (a |=> q);\n\
+               if (b) w: assert property (c);\n\
+             end\n\
+         endmodule\n"
+    );
+    let mut nl = lower_src(&src).unwrap_netlist();
+    for o in nl.compile_properties(&PropertyOptions::default()) {
+        assert!(matches!(o, PropertyOutcome::Compiled { .. }), "{o:?}");
+    }
+    // p holds by construction outside reset; w fails when b holds without c.
+    assert_eq!(failures(&nl, &["1000", "0100", "0010", "0011", "1010"]), [2]);
+}
+
+#[test]
 fn kinds_names_and_unsupported_operators() {
     let src = format!(
         "module m({PORTS});\n default clocking @(posedge clk); endclocking\n\

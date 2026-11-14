@@ -50,6 +50,9 @@ pub(crate) struct DesignLowerer<'a> {
     /// Black-boxed instances ([`LowerConfig::black_box_modules`] and
     /// [`LowerConfig::black_box_instances`]): only their ports are allocated.
     pub boxed: FxSet<InstanceId>,
+    /// Path condition of each concurrent assertion in procedural code, by instance,
+    /// generate scope and location (constant 1 when it is always reached).
+    pub proc_assert_enables: Vec<(InstanceId, String, Loc, ValueId)>,
 }
 
 /// Lowers an [`ElaboratedDesign`] and its parsed CST [`Tree`]s into a word-level [`Netlist`].
@@ -80,6 +83,7 @@ pub fn lower_design(trees: &[Tree], design: &ElaboratedDesign, config: &LowerCon
         free_attrs: None,
         cut_seen: Default::default(),
         boxed: Default::default(),
+        proc_assert_enables: Vec::new(),
     };
     if let Err(diag) = lowerer.mark_black_boxes(top_id) {
         return LowerOutcome::Error(vec![diag]);
@@ -122,7 +126,22 @@ pub fn lower_design(trees: &[Tree], design: &ElaboratedDesign, config: &LowerCon
     }
 
     // Pass 5: bit-level driver interval resolution (multi-driver slice merging, overlap errors, undriven bits).
-    resolve_all_signals(&lowerer.slots, &mut lowerer.builder, &prop_expr_values);
+    // The path condition of a property in procedural code, matched by where it stands.
+    let property_enables: Vec<Option<ValueId>> = properties
+        .iter()
+        .map(|p| {
+            lowerer
+                .proc_assert_enables
+                .iter()
+                .find(|(inst, scope, loc, _)| *inst == p.instance && *scope == p.scope_prefix && *loc == p.loc)
+                .map(|e| e.3)
+                // Always reached: no condition to keep.
+                .filter(|&en| !lowerer.builder.const_cval(en).is_some_and(|c| c.known() && c.is_true()))
+        })
+        .collect();
+    let mut read_by_properties = prop_expr_values.clone();
+    read_by_properties.extend(property_enables.iter().copied());
+    resolve_all_signals(&lowerer.slots, &mut lowerer.builder, &read_by_properties);
     if !lowerer.builder.diags.is_empty() {
         return classify_diags(lowerer.builder.diags);
     }
@@ -140,7 +159,7 @@ pub fn lower_design(trees: &[Tree], design: &ElaboratedDesign, config: &LowerCon
     let property_names = property_names(lowerer.design, &properties);
 
     // Pass 6: Tarjan SCC combinational loop check, alias resolution, and topological compaction.
-    match lowerer.builder.finalize(sva_arena, properties, prop_expr_values, symbol_values) {
+    match lowerer.builder.finalize(sva_arena, properties, prop_expr_values, property_enables, symbol_values) {
         Ok(mut netlist) => {
             netlist.property_names = property_names;
             if let Some(max_depth) = config.blast_memories_up_to {

@@ -613,6 +613,11 @@ pub struct Netlist {
     pub properties: Vec<BoundProperty>,
     /// Lowered [`ValueId`] for each boolean, clock, or reset [`ExprId`] in [`Self::sva_arena`] referenced by [`Self::properties`].
     pub prop_expr_values: Vec<Option<ValueId>>,
+    /// For each property of [`Self::properties`] that stands in procedural code under a
+    /// condition (`always @(posedge clk) if (en) assert property (...)`), the 1-bit path
+    /// condition that reaches it: an attempt starts only at a clock tick where it is true
+    /// (IEEE 1800-2023 §16.14.6). `None` for a property that is always reached.
+    pub property_enables: Vec<Option<ValueId>>,
     /// Full hierarchical name of each property of [`Self::properties`] (`"top.u0.a_no_overflow"`,
     /// `"top.g[1].a_x"`). A property with no label is named `_assert_<n>`, `_assume_<n>`,
     /// `_cover_<n>` or `_restrict_<n>` in its instance, counted from 1 over the design.
@@ -1321,6 +1326,9 @@ impl Netlist {
         for &(_, v) in &self.symbol_values {
             visit_root(v.0 as usize, &self.values, &self.memories, &self.sampled, &mut state, &mut stack, &mut order);
         }
+        for v in self.property_enables.iter().flatten() {
+            visit_root(v.0 as usize, &self.values, &self.memories, &self.sampled, &mut state, &mut stack, &mut order);
+        }
         for tr in &self.traces {
             visit_root(
                 tr.value.0 as usize,
@@ -1406,6 +1414,9 @@ impl Netlist {
             map_v(&mut tr.value);
         }
         for pv in self.prop_expr_values.iter_mut().flatten() {
+            map_v(pv);
+        }
+        for pv in self.property_enables.iter_mut().flatten() {
             map_v(pv);
         }
         for (_, sv) in &mut self.symbol_values {

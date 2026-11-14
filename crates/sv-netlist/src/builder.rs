@@ -484,6 +484,7 @@ impl NetBuilder {
         sva_arena: ExprArena,
         properties: Vec<BoundProperty>,
         mut prop_expr_values: Vec<Option<ValueId>>,
+        mut property_enables: Vec<Option<ValueId>>,
         mut symbol_values: Vec<(sv_semantic::SymbolId, ValueId)>,
     ) -> Result<Netlist, Vec<NetlistDiag>> {
         if !self.diags.is_empty() {
@@ -614,6 +615,9 @@ impl NetBuilder {
         for pv in prop_expr_values.iter_mut().flatten() {
             map_r(pv);
         }
+        for pv in property_enables.iter_mut().flatten() {
+            map_r(pv);
+        }
         for (_, sv) in &mut symbol_values {
             map_r(sv);
         }
@@ -631,6 +635,7 @@ impl NetBuilder {
             undriven: self.undriven,
             traces: self.traces,
             sva_arena,
+            property_enables,
             property_names: Vec::new(),
             property_checks: vec![None; properties.len()],
             properties,

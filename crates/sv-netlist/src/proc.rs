@@ -566,7 +566,12 @@ impl<'a> DesignLowerer<'a> {
         );
         let rst_mem_marks: Vec<usize> = self.builder.memories.iter().map(|m| m.writes.len()).collect();
         let rst_check_mark = self.builder.checks.len();
+        let rst_assert_mark = self.proc_assert_enables.len();
         self.exec_stmt(item.tree, rst_stmt, &mut rst_ctx);
+        for ai in rst_assert_mark..self.proc_assert_enables.len() {
+            let (old_en, aloc) = (self.proc_assert_enables[ai].3, self.proc_assert_enables[ai].2);
+            self.proc_assert_enables[ai].3 = self.builder.alloc_and1(rst_asserted, old_en, aloc);
+        }
         for (mi, &old_len) in rst_mem_marks.iter().enumerate() {
             if self.builder.memories[mi].writes.len() > old_len {
                 let wloc = self.builder.memories[mi].writes[old_len].loc;
@@ -592,8 +597,13 @@ impl<'a> DesignLowerer<'a> {
         );
         let mem_write_marks: Vec<usize> = self.builder.memories.iter().map(|m| m.writes.len()).collect();
         let check_mark = self.builder.checks.len();
+        let assert_mark = self.proc_assert_enables.len();
         if let Some(clk_stmt) = clk_stmt_opt {
             self.exec_stmt(item.tree, clk_stmt, &mut sync_ctx);
+        }
+        for ai in assert_mark..self.proc_assert_enables.len() {
+            let (old_en, aloc) = (self.proc_assert_enables[ai].3, self.proc_assert_enables[ai].2);
+            self.proc_assert_enables[ai].3 = self.builder.alloc_and1(rst_deasserted, old_en, aloc);
         }
         for (mi, &old_len) in mem_write_marks.iter().enumerate() {
             let writes_len = self.builder.memories[mi].writes.len();
@@ -797,11 +807,12 @@ impl<'a> DesignLowerer<'a> {
             SyntaxKind::ConcurrentAssert => {
                 let loc = self.stmt_loc(tree_idx, stmt, ctx);
                 let reach = ctx.effective_reach(&mut self.builder, loc);
-                if !self.call_stack.is_empty() || ctx.loop_depth > 0 || !self.is_const_one(reach) {
-                    self.builder.unsup(
-                        loc,
-                        "procedural concurrent assertion inside subroutine, loop, or conditional branch is not supported",
-                    );
+                if !self.call_stack.is_empty() || ctx.loop_depth > 0 {
+                    self.builder
+                        .unsup(loc, "procedural concurrent assertion inside subroutine or loop is not supported");
+                } else {
+                    // An attempt starts only when the flow reaches the assertion (§16.14.6).
+                    self.proc_assert_enables.push((ctx.inst_id, ctx.scope_prefix.clone(), loc, reach));
                 }
             }
             SyntaxKind::SeqBlock => {
