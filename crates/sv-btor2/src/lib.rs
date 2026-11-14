@@ -25,6 +25,13 @@
 //! - one model step is one clock edge: every register, memory write port,
 //!   sampled-value history and clocked check must use the same clock signal
 //!   and edge, or the design is rejected;
+//! - with [`Options::both_edges`], a design that uses both edges of one clock is written
+//!   with two model steps per clock cycle. The clock, which must be a top-level input, is
+//!   held to a level that starts low and toggles on every step. A register keeps its value
+//!   except in the step that ends in its edge, where it takes its next value from that
+//!   step; history, memory writes and clocked checks follow their own edge the same way.
+//!   Other inputs are free on every step, so they may change on either edge. A design on
+//!   one edge is written as above either way ([`Model::steps_per_cycle`] says which);
 //! - an asynchronous reset acts synchronously (`next = reset ? value : next`);
 //! - `(* anyconst *)` holds one free value for the whole trace, `(* anyseq *)`,
 //!   cut points, black-box outputs and undriven bits are free on every step;
@@ -68,6 +75,9 @@ pub struct Model {
     pub btor2: String,
     /// What was left out or is worth telling the user (unchecked concurrent assertions, no assertions at all).
     pub notes: Vec<String>,
+    /// Model steps in one clock cycle: 1, or 2 for a design on both edges of its clock
+    /// written with [`Options::both_edges`]. A depth an engine reports is in model steps.
+    pub steps_per_cycle: u32,
 }
 
 /// How to write the model.
@@ -89,6 +99,10 @@ pub struct Options {
     /// assertions by name (see [`Netlist::checks`]). Off by default: covers are left out and
     /// [`Model::notes`] says how many.
     pub covers: bool,
+    /// Accept a design that uses both edges of its one clock, with two model steps per clock
+    /// cycle (see the crate documentation). Off by default: such a design is rejected. A
+    /// design that uses one edge is written the same either way.
+    pub both_edges: bool,
 }
 
 impl Default for Options {
@@ -98,6 +112,7 @@ impl Default for Options {
             trace_marker: "; trace-outputs".into(),
             name_prefix: "svlang".into(),
             covers: false,
+            both_edges: false,
         }
     }
 }
@@ -121,9 +136,10 @@ impl std::error::Error for Fail {}
 /// two clocks or a latch.
 pub fn write(nl: &Netlist, options: &Options) -> Result<Model, Fail> {
     let mut w = Writer::new(nl, options);
-    w.check_clocks()?;
+    w.half_cycle = w.check_clocks()?;
     w.run(options.trace_outputs)?;
-    Ok(Model { btor2: w.text, notes: w.notes })
+    let steps_per_cycle = if w.half_cycle.is_some() { 2 } else { 1 };
+    Ok(Model { btor2: w.text, notes: w.notes, steps_per_cycle })
 }
 
 struct Writer<'n> {
@@ -144,6 +160,10 @@ struct Writer<'n> {
     /// Btor2 array state of each non-blasted memory, with its sort.
     mems: HashMap<u32, (u32, u32)>,
     notes: Vec<String>,
+    /// The clock of a design on both edges: one model step is half a cycle of it.
+    half_cycle: Option<ValueId>,
+    /// With `half_cycle`: the clock level in this step (a state, 0 first, toggling).
+    phase: Option<u32>,
     names: HashMap<String, u32>,
     /// Free inputs made for X and Z constant bits so far.
     unknowns: u32,
@@ -194,6 +214,8 @@ impl<'n> Writer<'n> {
             pending: Vec::new(),
             mems: HashMap::new(),
             notes: Vec::new(),
+            half_cycle: None,
+            phase: None,
             names: HashMap::new(),
             unknowns: 0,
         }
@@ -202,8 +224,10 @@ impl<'n> Writer<'n> {
     // ---- clocks
 
     /// Every clocked element on one clock and edge: one model step is one
-    /// edge of that clock.
-    fn check_clocks(&self) -> Result<(), Fail> {
+    /// edge of that clock. With [`Options::both_edges`], one clock on both
+    /// edges is accepted too: the clock is returned, and one model step is
+    /// then half a cycle of it.
+    fn check_clocks(&self) -> Result<Option<ValueId>, Fail> {
         let nl = self.nl;
         let mut uses: Vec<(ClockSpec, String)> = Vec::new();
         for s in &nl.states {
@@ -234,19 +258,53 @@ impl<'n> Writer<'n> {
             }
         }
         let Some((c0, n0)) = uses.first() else {
-            return Ok(());
+            return Ok(None);
         };
+        let mut both = false;
         for (c, n) in &uses {
-            if c.edge != c0.edge {
-                return rejected(format!(
-                    "blocks clocked on different edges ({n0}, {n}); every register steps on each model step"
-                ));
-            }
             if c.signal != c0.signal {
                 return rejected(format!("more than one clock ({n0}, {n}); every register steps on each model step"));
             }
+            if c.edge != c0.edge {
+                if !self.opts.both_edges {
+                    return rejected(format!(
+                        "blocks clocked on different edges ({n0}, {n}); every register steps on each model step"
+                    ));
+                }
+                both = true;
+            }
         }
-        Ok(())
+        if !both {
+            return Ok(None);
+        }
+        // The clock is driven by the model, so it has to be a signal nothing else drives.
+        if !matches!(nl.value(c0.signal).kind, ValueKind::Input(_)) {
+            return rejected(format!(
+                "blocks clocked on different edges of a clock that is not a top-level input ({n0})"
+            ));
+        }
+        if nl.sampled.iter().any(|s| s.clock.is_none() && s.kind != SampledKind::Sampled) {
+            return unsupported("a sampled-value function with no clock in a design on both clock edges");
+        }
+        Ok(Some(c0.signal))
+    }
+
+    /// True in the model steps that end in the active edge of `clock`; `None` when every
+    /// step does (a design on one edge).
+    fn fire(&mut self, clock: Option<ClockSpec>) -> Option<u32> {
+        let phase = self.phase?;
+        Some(match clock?.edge {
+            sv_netlist::Edge::Posedge => self.un("not", phase),
+            sv_netlist::Edge::Negedge => phase,
+        })
+    }
+
+    /// `v` only in the steps `clock` fires.
+    fn on_edge(&mut self, clock: Option<ClockSpec>, v: u32) -> u32 {
+        match self.fire(clock) {
+            Some(f) => self.bin("and", f, v),
+            None => v,
+        }
     }
 
     // ---- Btor2 lines
@@ -405,7 +463,14 @@ impl<'n> Writer<'n> {
         Ok(match &v.kind {
             ValueKind::Input(i) => {
                 let name = format!("{}.{}", nl.top, nl.inputs[*i].name);
-                self.input(w, &name)
+                let input = self.input(w, &name);
+                // The clock of a design on both edges: low in the first step, then toggling.
+                if let (Some(phase), true) = (self.phase, self.half_cycle == Some(id)) {
+                    let level = if w == 1 { phase } else { self.op("uext", w, &[phase], &(w - 1).to_string()) };
+                    let same = self.cmp("eq", input, level);
+                    self.line(format!("constraint {same}"));
+                }
+                input
             }
             ValueKind::Undriven(i) => {
                 let u = &nl.undriven[*i];
@@ -642,7 +707,7 @@ impl<'n> Writer<'n> {
 
     fn sampled(&mut self, i: usize) -> Result<u32, Fail> {
         let s = &self.nl.sampled[i];
-        let (kind, depth, gate_id, expr) = (s.kind, s.depth, s.gate, s.expr);
+        let (kind, depth, gate_id, expr, clock) = (s.kind, s.depth, s.gate, s.expr, s.clock);
         let v = self.value(expr)?;
         let gate = match gate_id {
             Some(g) => {
@@ -650,6 +715,12 @@ impl<'n> Writer<'n> {
                 Some(self.bool(g))
             }
             None => None,
+        };
+        // On both edges, history moves only at this function's own clock edge.
+        let gate = match (self.fire(clock), gate) {
+            (Some(f), Some(g)) => Some(self.bin("and", f, g)),
+            (Some(f), None) => Some(f),
+            (None, g) => g,
         };
         Ok(match kind {
             SampledKind::Sampled => v,
@@ -713,6 +784,19 @@ impl<'n> Writer<'n> {
 
     fn run(&mut self, trace_outputs: bool) -> Result<(), Fail> {
         let nl = self.nl;
+        if self.half_cycle.is_some() {
+            let phase = self.state(1, &format!("{}_clock_phase", self.opts.name_prefix));
+            let zero = self.konst("0".into());
+            let srt = self.sort(1);
+            self.line(format!("init {srt} {phase} {zero}"));
+            let high = self.un("not", phase);
+            self.pending.push((srt, phase, high));
+            self.phase = Some(phase);
+            self.notes.push(
+                "the design uses both edges of its clock: one model step is half a clock cycle, the clock starts low"
+                    .into(),
+            );
+        }
         // Values in netlist order (topological), so names come out in
         // declaration order.
         for i in 0..nl.values.len() {
@@ -761,6 +845,9 @@ impl<'n> Writer<'n> {
                 let val = self.value(r.value)?;
                 n = self.ite(on, val, n);
             }
+            if let Some(f) = self.fire(st.clock) {
+                n = self.ite(f, n, s);
+            }
             let srt = self.sort(st.width);
             self.pending.push((srt, s, n));
         }
@@ -776,6 +863,7 @@ impl<'n> Writer<'n> {
                 let d = self.value(p.data)?;
                 let e = self.value(p.enable)?;
                 let e = self.bool(e);
+                let e = self.on_edge(p.clock, e);
                 let wr = self.line(format!("write {srt} {cur} {a} {d}"));
                 let pick = self.line(format!("ite {srt} {e} {wr} {cur}"));
                 cur = pick;
@@ -788,6 +876,8 @@ impl<'n> Writer<'n> {
         for c in &nl.checks {
             let en = self.value(c.enable)?;
             let en = self.bool(en);
+            // On both edges, a clocked check is looked at only at its own clock edge.
+            let en = self.on_edge(c.clock, en);
             let ex = self.value(c.expr)?;
             let ex = self.bool(ex);
             match c.kind {

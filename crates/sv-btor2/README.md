@@ -24,6 +24,11 @@ Then, for example, `ric3 check counter.btor2 ic3`.
 - One step is one clock edge. Every register, memory write port and clocked
   check must use the same clock signal and edge; a design with two clocks,
   or with a latch, is rejected.
+- With `Options::both_edges`, a design on both edges of one clock is
+  written with two steps per clock cycle: the clock (a top-level input)
+  starts low and toggles on every step, and each register, memory write,
+  history and clocked check follows its own edge. Other inputs may change
+  on every step. `Model::steps_per_cycle` says which model was written.
 - An asynchronous reset acts synchronously.
 - `(* anyconst *)` signals hold one free value for the whole trace.
   `(* anyseq *)` signals, cut points, black-box outputs, undriven bits and

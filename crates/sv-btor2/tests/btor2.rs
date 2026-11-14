@@ -214,3 +214,55 @@ fn a_property_outside_the_subset_is_left_out_and_named() {
     assert_eq!(lines(&m.btor2, "bad").len(), 1);
     assert!(m.notes.iter().any(|n| n.starts_with("1 concurrent")), "{:?}", m.notes);
 }
+
+const BOTH: &str = "module be(input logic clk, rst, d, output logic p, n);\n\
+       always_ff @(posedge clk) if (rst) p <= 1'b0; else p <= d;\n\
+       always_ff @(negedge clk) n <= p;\n\
+       always @(posedge clk) a_pos: assert (rst || p == $past(d));\n\
+     endmodule\n";
+
+#[test]
+fn both_edges_are_rejected_unless_asked_for() {
+    let nl = netlist(BOTH);
+    let e = write(&nl, &Options::default()).unwrap_err();
+    assert!(e.to_string().contains("different edges"), "{e}");
+
+    let mut opts = Options::default();
+    opts.both_edges = true;
+    let m = write(&nl, &opts).unwrap();
+    well_formed(&m.btor2);
+    assert_eq!(m.steps_per_cycle, 2);
+    assert!(m.notes.iter().any(|n| n.contains("half a clock cycle")), "{:?}", m.notes);
+    // The clock level is a state that starts at 0, and the clock input is held to it.
+    let phase = lines(&m.btor2, "state").into_iter().find(|l| l.ends_with(" svlang_clock_phase")).expect("phase state");
+    let id = phase.split_whitespace().next().unwrap();
+    assert!(lines(&m.btor2, "init").iter().any(|l| l.split_whitespace().nth(3) == Some(id)), "{}", m.btor2);
+    assert_eq!(lines(&m.btor2, "constraint").len(), 1, "{}", m.btor2);
+}
+
+#[test]
+fn one_edge_is_written_the_same_with_both_edges_on() {
+    let nl = netlist("module oe(input logic clk, d, output logic q);\n always_ff @(negedge clk) q <= d;\nendmodule\n");
+    let mut opts = Options::default();
+    let plain = write(&nl, &opts).unwrap();
+    opts.both_edges = true;
+    let m = write(&nl, &opts).unwrap();
+    assert_eq!(m.btor2, plain.btor2);
+    assert_eq!(m.steps_per_cycle, 1);
+}
+
+#[test]
+fn both_edges_need_the_clock_to_be_an_input() {
+    let nl = netlist(
+        "module gc(input logic clk, en, d, output logic p, n);\n\
+           logic g;\n\
+           assign g = clk & en;\n\
+           always_ff @(posedge g) p <= d;\n\
+           always_ff @(negedge g) n <= p;\n\
+         endmodule\n",
+    );
+    let mut opts = Options::default();
+    opts.both_edges = true;
+    let e = write(&nl, &opts).unwrap_err();
+    assert!(e.to_string().contains("not a top-level input"), "{e}");
+}

@@ -758,8 +758,9 @@ impl Netlist {
     /// one ``output`` line per named combinational net. ``name_prefix``
     /// prefixes the names of invented inputs and history registers. With
     /// ``covers``, each cover is a ``bad`` line that is reached when the
-    /// cover is hit.
-    #[pyo3(signature = (*, trace_outputs = false, trace_marker = None, name_prefix = None, covers = false))]
+    /// cover is hit. With ``both_edges``, a design on both edges of its one
+    /// clock is written with two model steps per clock cycle, not rejected.
+    #[pyo3(signature = (*, trace_outputs = false, trace_marker = None, name_prefix = None, covers = false, both_edges = false))]
     fn to_btor2(
         &self,
         py: Python<'_>,
@@ -767,10 +768,12 @@ impl Netlist {
         trace_marker: Option<String>,
         name_prefix: Option<String>,
         covers: bool,
+        both_edges: bool,
     ) -> PyResult<(String, Vec<String>)> {
         let mut opts = svlang::btor2::Options::default();
         opts.trace_outputs = trace_outputs;
         opts.covers = covers;
+        opts.both_edges = both_edges;
         if let Some(m) = trace_marker {
             opts.trace_marker = m;
         }

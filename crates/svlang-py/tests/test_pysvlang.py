@@ -190,6 +190,16 @@ def test_compile_properties():
     assert any(n.startswith("1 concurrent") for n in notes)
 
 
+def test_to_btor2_both_edges():
+    src = "module be(input logic clk, d, output logic p, n);\n always_ff @(posedge clk) p <= d;\n always_ff @(negedge clk) n <= p;\nendmodule\n"
+    nl = pysvlang.Compilation.from_source(src, "be.sv").lower_netlist()
+    with pytest.raises(pysvlang.SvlangError, match="different edges"):
+        nl.to_btor2()
+    text, notes = nl.to_btor2(both_edges=True)
+    assert "svlang_clock_phase" in text
+    assert any("half a clock cycle" in n for n in notes)
+
+
 def test_to_btor2_rejects_two_clocks():
     src = "module two(input logic a, b, d, output logic p, q);\n always_ff @(posedge a) p <= d;\n always_ff @(posedge b) q <= d;\nendmodule\n"
     nl = pysvlang.Compilation.from_source(src, "two.sv").lower_netlist()

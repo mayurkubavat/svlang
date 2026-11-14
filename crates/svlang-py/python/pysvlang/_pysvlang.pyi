@@ -114,6 +114,7 @@ class Netlist:
         trace_marker: Optional[str] = None,
         name_prefix: Optional[str] = None,
         covers: bool = False,
+        both_edges: bool = False,
     ) -> tuple[str, list[str]]: ...
     def to_aiger(
         self, *, binary: bool = True, name_prefix: Optional[str] = None
