@@ -760,7 +760,10 @@ impl Netlist {
     /// ``covers``, each cover is a ``bad`` line that is reached when the
     /// cover is hit. With ``both_edges``, a design on both edges of its one
     /// clock is written with two model steps per clock cycle, not rejected.
-    #[pyo3(signature = (*, trace_outputs = false, trace_marker = None, name_prefix = None, covers = false, both_edges = false))]
+    /// ``clocks`` declares the clocks of a design with several, each as
+    /// ``(input, half_period, phase)``: a top-level input, the model steps it
+    /// stays at one level, and the steps its wave is moved later.
+    #[pyo3(signature = (*, trace_outputs = false, trace_marker = None, name_prefix = None, covers = false, both_edges = false, clocks = Vec::new()))]
     fn to_btor2(
         &self,
         py: Python<'_>,
@@ -769,11 +772,16 @@ impl Netlist {
         name_prefix: Option<String>,
         covers: bool,
         both_edges: bool,
+        clocks: Vec<(String, u32, u32)>,
     ) -> PyResult<(String, Vec<String>)> {
         let mut opts = svlang::btor2::Options::default();
         opts.trace_outputs = trace_outputs;
         opts.covers = covers;
         opts.both_edges = both_edges;
+        opts.clocks = clocks
+            .into_iter()
+            .map(|(input, half_period, phase)| svlang::btor2::Clock { input, half_period, phase })
+            .collect();
         if let Some(m) = trace_marker {
             opts.trace_marker = m;
         }

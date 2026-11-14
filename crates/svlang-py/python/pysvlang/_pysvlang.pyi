@@ -115,6 +115,7 @@ class Netlist:
         name_prefix: Optional[str] = None,
         covers: bool = False,
         both_edges: bool = False,
+        clocks: Sequence[tuple[str, int, int]] = ...,
     ) -> tuple[str, list[str]]: ...
     def to_aiger(
         self, *, binary: bool = True, name_prefix: Optional[str] = None

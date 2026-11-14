@@ -200,6 +200,16 @@ def test_to_btor2_both_edges():
     assert any("half a clock cycle" in n for n in notes)
 
 
+def test_to_btor2_several_clocks():
+    src = "module two(input logic a, b, d, output logic p, q);\n always_ff @(posedge a) p <= d;\n always_ff @(posedge b) q <= p;\nendmodule\n"
+    nl = pysvlang.Compilation.from_source(src, "two.sv").lower_netlist()
+    with pytest.raises(pysvlang.SvlangError, match="not a declared clock"):
+        nl.to_btor2(clocks=[("a", 1, 0)])
+    text, notes = nl.to_btor2(clocks=[("a", 1, 0), ("b", 2, 0)])
+    assert text.count(" constraint ") == 2
+    assert any("2 clocks" in n for n in notes)
+
+
 def test_to_btor2_rejects_two_clocks():
     src = "module two(input logic a, b, d, output logic p, q);\n always_ff @(posedge a) p <= d;\n always_ff @(posedge b) q <= d;\nendmodule\n"
     nl = pysvlang.Compilation.from_source(src, "two.sv").lower_netlist()

@@ -32,6 +32,9 @@
 //!   step; history, memory writes and clocked checks follow their own edge the same way.
 //!   Other inputs are free on every step, so they may change on either edge. A design on
 //!   one edge is written as above either way ([`Model::steps_per_cycle`] says which);
+//! - with [`Options::clocks`], a design on several clocks is written the same way: each
+//!   clock in use must be a top-level input declared there with its wave in model steps
+//!   ([`Clock`]), and a clock that is computed in the design (divided or gated) is rejected;
 //! - a latch is transparent within a step: its value is its data where the data assigns
 //!   it and, where the data leaves it alone, what it held at the end of the step before (a
 //!   state named `<prefix>_latch_<n>`). A latch whose value depends on itself within a
@@ -79,8 +82,10 @@ pub struct Model {
     pub btor2: String,
     /// What was left out or is worth telling the user (unchecked concurrent assertions, no assertions at all).
     pub notes: Vec<String>,
-    /// Model steps in one clock cycle: 1, or 2 for a design on both edges of its clock
-    /// written with [`Options::both_edges`]. A depth an engine reports is in model steps.
+    /// Model steps in one cycle of the fastest clock the design uses: 1 for a design on one
+    /// edge of one clock, and twice that clock's [`Clock::half_period`] (2 with
+    /// [`Options::both_edges`] alone) for a design on both edges or on several clocks. A
+    /// depth an engine reports is in model steps.
     pub steps_per_cycle: u32,
 }
 
@@ -107,6 +112,29 @@ pub struct Options {
     /// cycle (see the crate documentation). Off by default: such a design is rejected. A
     /// design that uses one edge is written the same either way.
     pub both_edges: bool,
+    /// The clocks of a design with more than one, each a top-level input with a waveform in
+    /// model steps (see [`Clock`] and the crate documentation). Empty by default: a design
+    /// with two clocks is rejected. A design whose registers, memory writes, histories and
+    /// clocked checks all use one edge of one clock is written with one step per edge of
+    /// that clock whatever is declared here.
+    pub clocks: Vec<Clock>,
+}
+
+/// A clock that the model drives: a top-level input held to a square wave.
+///
+/// One model step is one tick. The clock is low for `half_period` ticks, then high for
+/// `half_period` ticks, and so on, with the whole wave moved `phase` ticks later (it runs as
+/// if it had always been running, so with a phase the first ticks are the end of a period).
+/// A clock with `half_period` 1 and `phase` 0 is low in the first step and toggles on every
+/// step; one with `half_period` 2 is low for two steps, then high for two.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Clock {
+    /// The input's name, as in [`Netlist::inputs`] (`"clk"`).
+    pub input: String,
+    /// Ticks the clock stays at one level (at least 1).
+    pub half_period: u32,
+    /// Ticks the wave is moved later.
+    pub phase: u32,
 }
 
 impl Default for Options {
@@ -117,6 +145,7 @@ impl Default for Options {
             name_prefix: "svlang".into(),
             covers: false,
             both_edges: false,
+            clocks: Vec::new(),
         }
     }
 }
@@ -140,10 +169,25 @@ impl std::error::Error for Fail {}
 /// two clocks.
 pub fn write(nl: &Netlist, options: &Options) -> Result<Model, Fail> {
     let mut w = Writer::new(nl, options);
-    w.half_cycle = w.check_clocks()?;
+    w.waves = w.check_clocks()?;
     w.run(options.trace_outputs)?;
-    let steps_per_cycle = if w.half_cycle.is_some() { 2 } else { 1 };
+    let steps_per_cycle = w.waves.iter().map(|c| 2 * c.half_period).min().unwrap_or(1);
     Ok(Model { btor2: w.text, notes: w.notes, steps_per_cycle })
+}
+
+/// Longest run of model steps after which the declared clocks' waves may repeat.
+pub const MAX_CLOCK_CYCLE: u64 = 1 << 16;
+
+/// A clock the model drives.
+struct Wave {
+    signal: ValueId,
+    half_period: u32,
+    phase: u32,
+    /// Btor2 nodes: the clock's level in this step, and whether the step ends in its
+    /// rising or its falling edge.
+    level: u32,
+    rise: u32,
+    fall: u32,
 }
 
 struct Writer<'n> {
@@ -164,10 +208,9 @@ struct Writer<'n> {
     /// Btor2 array state of each non-blasted memory, with its sort.
     mems: HashMap<u32, (u32, u32)>,
     notes: Vec<String>,
-    /// The clock of a design on both edges: one model step is half a cycle of it.
-    half_cycle: Option<ValueId>,
-    /// With `half_cycle`: the clock level in this step (a state, 0 first, toggling).
-    phase: Option<u32>,
+    /// The clocks the model drives, for a design on both edges or on several clocks: one
+    /// model step is then one tick. Empty for a design on one edge of one clock.
+    waves: Vec<Wave>,
     /// Latches whose value is being written (indices into the netlist's states).
     latch_open: std::collections::HashSet<usize>,
     /// Latches written so far.
@@ -222,8 +265,7 @@ impl<'n> Writer<'n> {
             pending: Vec::new(),
             mems: HashMap::new(),
             notes: Vec::new(),
-            half_cycle: None,
-            phase: None,
+            waves: Vec::new(),
             latch_open: Default::default(),
             latches: 0,
             names: HashMap::new(),
@@ -233,11 +275,11 @@ impl<'n> Writer<'n> {
 
     // ---- clocks
 
-    /// Every clocked element on one clock and edge: one model step is one
-    /// edge of that clock. With [`Options::both_edges`], one clock on both
-    /// edges is accepted too: the clock is returned, and one model step is
-    /// then half a cycle of it.
-    fn check_clocks(&self) -> Result<Option<ValueId>, Fail> {
+    /// The clocks the model has to drive. None when every clocked element is on one edge of
+    /// one clock (one model step is then one edge of it). Otherwise each clock in use must
+    /// be a top-level input with a wave: declared in [`Options::clocks`], or the design's
+    /// only clock with [`Options::both_edges`].
+    fn check_clocks(&self) -> Result<Vec<Wave>, Fail> {
         let nl = self.nl;
         let mut uses: Vec<(ClockSpec, String)> = Vec::new();
         for s in &nl.states {
@@ -267,44 +309,147 @@ impl<'n> Writer<'n> {
             }
         }
         let Some((c0, n0)) = uses.first() else {
-            return Ok(None);
+            return Ok(Vec::new());
         };
-        let mut both = false;
+        let one_clock = uses.iter().all(|(c, _)| c.signal == c0.signal);
+        if one_clock && uses.iter().all(|(c, _)| c.edge == c0.edge) {
+            return Ok(Vec::new());
+        }
+        let mut waves: Vec<Wave> = Vec::new();
         for (c, n) in &uses {
-            if c.signal != c0.signal {
-                return rejected(format!("more than one clock ({n0}, {n}); every register steps on each model step"));
+            if waves.iter().any(|w| w.signal == c.signal) {
+                continue;
             }
-            if c.edge != c0.edge {
-                if !self.opts.both_edges {
+            // The model drives the clock, so it has to be a signal nothing else drives.
+            let ValueKind::Input(i) = nl.value(c.signal).kind else {
+                return rejected(if one_clock {
+                    format!("blocks clocked on different edges of a clock that is not a top-level input ({n0})")
+                } else {
+                    format!(
+                        "more than one clock ({n0}, {n}), and the clock of {n} is not a top-level input (a derived clock is not modelled)"
+                    )
+                });
+            };
+            let name = &nl.inputs[i].name;
+            let (half_period, phase) = match self.opts.clocks.iter().find(|k| &k.input == name) {
+                Some(k) if k.half_period == 0 => {
+                    return rejected(format!("clock {name} is declared with a half period of 0"));
+                }
+                Some(k) => (k.half_period, k.phase),
+                None if one_clock && self.opts.both_edges => (1, 0),
+                None if one_clock => {
+                    let other = uses.iter().find(|(k, _)| k.edge != c0.edge).map_or("", |(_, n)| n.as_str());
                     return rejected(format!(
-                        "blocks clocked on different edges ({n0}, {n}); every register steps on each model step"
+                        "blocks clocked on different edges ({n0}, {other}); every register steps on each model step"
                     ));
                 }
-                both = true;
-            }
-        }
-        if !both {
-            return Ok(None);
-        }
-        // The clock is driven by the model, so it has to be a signal nothing else drives.
-        if !matches!(nl.value(c0.signal).kind, ValueKind::Input(_)) {
-            return rejected(format!(
-                "blocks clocked on different edges of a clock that is not a top-level input ({n0})"
-            ));
+                None if self.opts.clocks.is_empty() => {
+                    let other = uses.iter().find(|(k, _)| k.signal != c0.signal).map_or("", |(_, n)| n.as_str());
+                    return rejected(format!(
+                        "more than one clock ({n0}, {other}); every register steps on each model step"
+                    ));
+                }
+                None => {
+                    return rejected(format!(
+                        "more than one clock, and {name} (the clock of {n}) is not a declared clock"
+                    ));
+                }
+            };
+            waves.push(Wave { signal: c.signal, half_period, phase, level: 0, rise: 0, fall: 0 });
         }
         if nl.sampled.iter().any(|s| s.clock.is_none() && s.kind != SampledKind::Sampled) {
-            return unsupported("a sampled-value function with no clock in a design on both clock edges");
+            return unsupported(
+                "a sampled-value function with no clock in a design on both clock edges or several clocks",
+            );
         }
-        Ok(Some(c0.signal))
+        // The waves repeat after the least common multiple of their periods.
+        let mut cycle: u64 = 1;
+        for w in &waves {
+            let p = 2 * u64::from(w.half_period);
+            let (mut a, mut b) = (cycle, p);
+            while b != 0 {
+                (a, b) = (b, a % b);
+            }
+            cycle = cycle / a * p;
+            if cycle > MAX_CLOCK_CYCLE {
+                return unsupported(format!(
+                    "clocks whose waves repeat only after more than {MAX_CLOCK_CYCLE} model steps"
+                ));
+            }
+        }
+        Ok(waves)
+    }
+
+    /// Writes the tick counter and each clock's level and edges from it.
+    fn clock_waves(&mut self) {
+        if self.waves.is_empty() {
+            return;
+        }
+        let mut cycle: u64 = 1;
+        for w in &self.waves {
+            let p = 2 * u64::from(w.half_period);
+            let (mut a, mut b) = (cycle, p);
+            while b != 0 {
+                (a, b) = (b, a % b);
+            }
+            cycle = cycle / a * p;
+        }
+        // Wide enough for the counter plus one period, so the sums below do not wrap.
+        let bits_for = |n: u64| (64 - n.leading_zeros()).max(1);
+        let tw = bits_for(cycle - 1);
+        let tick = self.state(tw, &format!("{}_clock_phase", self.opts.name_prefix));
+        let zero = self.num(tw, 0);
+        let srt = self.sort(tw);
+        self.line(format!("init {srt} {tick} {zero}"));
+        let last = self.num(tw, cycle - 1);
+        let at_last = self.cmp("eq", tick, last);
+        let one = self.num(tw, 1);
+        let up = self.bin("add", tick, one);
+        let next = self.ite(at_last, zero, up);
+        self.pending.push((srt, tick, next));
+        for i in 0..self.waves.len() {
+            let (half, phase) = (u64::from(self.waves[i].half_period), u64::from(self.waves[i].phase));
+            let period = 2 * half;
+            let shift = (period - phase % period) % period;
+            // Where this clock is in its period: (tick + shift) mod period.
+            let w = bits_for(cycle + period);
+            let wide = if w == tw { tick } else { self.op("uext", w, &[tick], &(w - tw).to_string()) };
+            let at = if shift == 0 && period == cycle {
+                wide
+            } else {
+                let k = self.num(w, shift);
+                let sum = self.bin("add", wide, k);
+                let p = self.num(w, period);
+                self.bin("urem", sum, p)
+            };
+            let h = self.num(w, half);
+            let level = self.cmp("ugte", at, h);
+            let before_rise = self.num(w, half - 1);
+            let rise = self.cmp("eq", at, before_rise);
+            let before_fall = self.num(w, period - 1);
+            let fall = self.cmp("eq", at, before_fall);
+            (self.waves[i].level, self.waves[i].rise, self.waves[i].fall) = (level, rise, fall);
+        }
+        let fastest = self.waves.iter().map(|w| w.half_period).min().unwrap_or(1);
+        self.notes.push(if self.waves.len() == 1 {
+            "the design uses both edges of its clock: one model step is half a clock cycle, the clock starts low".into()
+        } else {
+            format!(
+                "the design has {} clocks: one model step is 1/{} of the fastest clock's cycle",
+                self.waves.len(),
+                2 * fastest
+            )
+        });
     }
 
     /// True in the model steps that end in the active edge of `clock`; `None` when every
-    /// step does (a design on one edge).
+    /// step does (a design on one edge of one clock).
     fn fire(&mut self, clock: Option<ClockSpec>) -> Option<u32> {
-        let phase = self.phase?;
-        Some(match clock?.edge {
-            sv_netlist::Edge::Posedge => self.un("not", phase),
-            sv_netlist::Edge::Negedge => phase,
+        let c = clock?;
+        let w = self.waves.iter().find(|w| w.signal == c.signal)?;
+        Some(match c.edge {
+            sv_netlist::Edge::Posedge => w.rise,
+            sv_netlist::Edge::Negedge => w.fall,
         })
     }
 
@@ -473,9 +618,9 @@ impl<'n> Writer<'n> {
             ValueKind::Input(i) => {
                 let name = format!("{}.{}", nl.top, nl.inputs[*i].name);
                 let input = self.input(w, &name);
-                // The clock of a design on both edges: low in the first step, then toggling.
-                if let (Some(phase), true) = (self.phase, self.half_cycle == Some(id)) {
-                    let level = if w == 1 { phase } else { self.op("uext", w, &[phase], &(w - 1).to_string()) };
+                // A clock the model drives is held to its wave.
+                if let Some(level) = self.waves.iter().find(|k| k.signal == id).map(|k| k.level) {
+                    let level = if w == 1 { level } else { self.op("uext", w, &[level], &(w - 1).to_string()) };
                     let same = self.cmp("eq", input, level);
                     self.line(format!("constraint {same}"));
                 }
@@ -904,19 +1049,7 @@ impl<'n> Writer<'n> {
 
     fn run(&mut self, trace_outputs: bool) -> Result<(), Fail> {
         let nl = self.nl;
-        if self.half_cycle.is_some() {
-            let phase = self.state(1, &format!("{}_clock_phase", self.opts.name_prefix));
-            let zero = self.konst("0".into());
-            let srt = self.sort(1);
-            self.line(format!("init {srt} {phase} {zero}"));
-            let high = self.un("not", phase);
-            self.pending.push((srt, phase, high));
-            self.phase = Some(phase);
-            self.notes.push(
-                "the design uses both edges of its clock: one model step is half a clock cycle, the clock starts low"
-                    .into(),
-            );
-        }
+        self.clock_waves();
         // Values in netlist order (topological), so names come out in
         // declaration order.
         for i in 0..nl.values.len() {

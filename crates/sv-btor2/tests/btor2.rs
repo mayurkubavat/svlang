@@ -3,7 +3,7 @@
 
 use std::collections::HashSet;
 
-use sv_btor2::{write, Fail, Options};
+use sv_btor2::{write, Clock, Fail, Options};
 use sv_netlist::{lower_trees, LowerConfig, Netlist};
 
 fn netlist(src: &str) -> Netlist {
@@ -301,4 +301,56 @@ fn latch_loops_are_rejected() {
          endmodule\n",
     );
     well_formed(&write(&chain, &Options::default()).unwrap().btor2);
+}
+
+const TWO: &str = "module two(input logic a, b, d, output logic p, q);\n\
+       always_ff @(posedge a) p <= d;\n\
+       always_ff @(posedge b) q <= p;\n\
+     endmodule\n";
+
+#[test]
+fn several_clocks_need_a_wave_each() {
+    let nl = netlist(TWO);
+    let mut opts = Options::default();
+    opts.clocks = vec![Clock { input: "a".into(), half_period: 1, phase: 0 }];
+    let e = write(&nl, &opts).unwrap_err();
+    assert!(e.to_string().contains("b (the clock of two.q) is not a declared clock"), "{e}");
+
+    opts.clocks.push(Clock { input: "b".into(), half_period: 2, phase: 1 });
+    let m = write(&nl, &opts).unwrap();
+    well_formed(&m.btor2);
+    assert_eq!(m.steps_per_cycle, 2);
+    assert!(m.notes.iter().any(|n| n.contains("2 clocks")), "{:?}", m.notes);
+    // One tick counter, and each clock input held to its wave.
+    assert_eq!(lines(&m.btor2, "state").iter().filter(|l| l.ends_with(" svlang_clock_phase")).count(), 1);
+    assert_eq!(lines(&m.btor2, "constraint").len(), 2, "{}", m.btor2);
+
+    opts.clocks[1].half_period = 0;
+    assert!(write(&nl, &opts).unwrap_err().to_string().contains("half period of 0"));
+}
+
+#[test]
+fn a_derived_second_clock_is_rejected() {
+    let nl = netlist(
+        "module dv(input logic clk, d, output logic q);\n\
+           logic half;\n\
+           always_ff @(posedge clk) half <= ~half;\n\
+           always_ff @(posedge half) q <= d;\n\
+         endmodule\n",
+    );
+    let mut opts = Options::default();
+    opts.clocks = vec![Clock { input: "clk".into(), half_period: 1, phase: 0 }];
+    let e = write(&nl, &opts).unwrap_err();
+    assert!(e.to_string().contains("not a top-level input"), "{e}");
+}
+
+#[test]
+fn declared_clocks_do_not_change_a_one_edge_design() {
+    let nl = netlist("module oc(input logic clk, d, output logic q);\n always_ff @(posedge clk) q <= d;\nendmodule\n");
+    let mut opts = Options::default();
+    let plain = write(&nl, &opts).unwrap();
+    opts.clocks = vec![Clock { input: "clk".into(), half_period: 3, phase: 2 }];
+    let m = write(&nl, &opts).unwrap();
+    assert_eq!(m.btor2, plain.btor2);
+    assert_eq!(m.steps_per_cycle, 1);
 }
