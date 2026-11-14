@@ -75,6 +75,7 @@ DIAG = re.compile(r"^(.*?):(\d+):(\d+): (unsupported|error): (.*)$")
 # The reference runs the way a simulator would be run on these designs: its VCS
 # compatibility mode, and a default time scale for files that set none.
 REFERENCE_FLAGS = ["--quiet", "--error-limit=5", "--compat=vcs", "--timescale=1ns/1ps"]
+SELF_CHECK = re.compile(r"^immediate (assertion|assumption) in initial block is false")
 HIER_INSTANCE = re.compile(r"^\S+ instance .* : ([A-Za-z_][A-Za-z0-9_$]*)$")
 
 
@@ -116,7 +117,7 @@ def fetch(out, only):
 class SourceFile:
     __slots__ = ("path", "defs", "modules", "idents", "includes")
 
-    def __init__(self, path):
+    def __init__(self, path, names=()):
         self.path = path
         try:
             with open(path, errors="replace") as f:
@@ -146,6 +147,9 @@ class SourceFile:
                 end = code.count("\n", 0, end_m.start()) + 1 if end_m else code.count("\n") + 1
                 self.modules.append((name, start, end))
         self.idents = set(IDENT.findall(code))
+        # A module name spelled through a macro (`PRIM(flop) for prim_generic_flop).
+        for pattern, template in names:
+            self.idents.update(m.expand(template) for m in re.finditer(pattern, code))
 
 
 def expand(base, patterns):
@@ -193,7 +197,8 @@ class Design:
         self.root_files = collect(entry["roots"], self.dir)
         # deps: searched for definitions, not measured. "../other/src" reaches another design.
         dep_files = [p for p in collect(entry.get("deps", []), self.dir) if p not in set(self.root_files)]
-        self.files = {p: SourceFile(p) for p in self.root_files + dep_files}
+        self.names = [(re.compile(a), b) for a, b in entry.get("names", [])]
+        self.files = {p: SourceFile(p, self.names) for p in self.root_files + dep_files}
 
         # Headers anywhere in the design (and in the designs deps reach), by basename.
         self.headers = collections.defaultdict(list)
@@ -251,7 +256,7 @@ class Design:
         if path in self.header_cache:
             return self.header_cache[path]
         self.header_cache[path] = (set(), set())  # include cycles end here
-        sf = self.files.get(path) or SourceFile(path)
+        sf = self.files.get(path) or SourceFile(path, self.names)
         idents, incdirs = set(sf.idents), set()
         for inc in sf.includes:
             target = self.resolve_include(inc, path)
@@ -327,8 +332,8 @@ def run_tool(cmd, timeout, mem_gb):
         return None, "", "", time.time() - t0
 
 
-def measure(design, module, path, tools, opts):
-    files, incdirs = design.closure(path)
+def measure(design, module, path, plan, tools, opts):
+    files, incdirs = plan
     args = [f"+incdir+{d}" for d in incdirs + [os.path.join(design.dir, x) for x in design.entry.get("incdirs", [])]]
     defines = design.entry.get("defines", []) + opts.define
     args += [f"+define+{x}" for x in defines]
@@ -403,6 +408,10 @@ def measure(design, module, path, tools, opts):
                 }
         if rec["outcome"] == "error":
             rec["outcome"] = {"accepts": "rejected", "rejects": "invalid"}.get(rec["reference"], "error")
+            # The module's own elaboration check refuses its default parameters; the
+            # reference does not evaluate those checks.
+            if rec["outcome"] == "rejected" and all(SELF_CHECK.search(d["message"]) for d in diags):
+                rec["outcome"] = "invalid"
         elif rec["reference"] == "rejects":
             rec["outcome"] = "accepted"
     return rec
@@ -446,10 +455,11 @@ def run(base, only, opts):
                 continue
             t0 = time.time()
             design = Design(entry, base)
-            units = list(design.units())
+            # The scan keeps caches and is done here, on one thread; only the tools run in parallel.
+            units = [(name, path, design.closure(path)) for name, path in design.units()]
             tally = collections.Counter()
             with concurrent.futures.ThreadPoolExecutor(opts.jobs) as pool:
-                for rec in pool.map(lambda u: measure(design, u[0], u[1], tools, opts), units):
+                for rec in pool.map(lambda u: measure(design, u[0], u[1], u[2], tools, opts), units):
                     tally[rec["outcome"]] += 1
                     out.write(json.dumps(rec, sort_keys=True) + "\n")
             out.flush()
