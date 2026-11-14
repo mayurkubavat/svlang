@@ -714,6 +714,11 @@ impl Preprocessor {
             params = Some(list);
         }
         let body = self.rest_of_line();
+        // Macro text shall not split a string literal (IEEE 1800-2023 22.5.1): a string that
+        // opens in the body must close in it.
+        if let Some(t) = body.iter().find(|t| t.kind == Kind::Unknown && t.text.starts_with('"')) {
+            self.diag(t.origin, format!("unterminated string literal in the text of macro `{}", name.text));
+        }
         self.macros.insert(name.text.to_string(), Rc::new(Macro { params, body }));
     }
 
@@ -876,11 +881,19 @@ impl Preprocessor {
                 let depth = self.frames.len();
                 self.expand(&first, &name, &m);
                 let mut text = None;
+                // Take the expansion's tokens only: `raw_next` would go on to the token after
+                // the directive once the expansion is used up (and past the end of the file,
+                // dropping the frame the include is resolved against).
                 while self.frames.len() > depth {
-                    if let Some(t) = self.raw_next() {
-                        if t.kind == Kind::StringLiteral && text.is_none() {
-                            text = Some(t.text[1..t.text.len() - 1].to_string());
-                        }
+                    let f = self.frames.last_mut().expect("deeper than depth");
+                    if f.idx == f.toks.len() {
+                        self.frames.pop();
+                        continue;
+                    }
+                    f.idx += 1;
+                    let t = &f.toks[f.idx - 1];
+                    if t.kind == Kind::StringLiteral && text.is_none() {
+                        text = Some(t.text[1..t.text.len() - 1].to_string());
                     }
                 }
                 match text {
@@ -1290,6 +1303,42 @@ mod tests {
         let out = p.run_source(src, "t.sv");
         assert!(out.diagnostics.is_empty(), "{:?}", out.diagnostics);
         out.tokens.iter().map(|t| t.text.to_string()).collect()
+    }
+
+    #[test]
+    fn include_named_by_a_macro_keeps_what_follows() {
+        // The file name comes from a macro, with and without arguments, and the include is
+        // found beside the including file; the token after the directive is not lost, and
+        // neither is an include on the last line.
+        let dir = std::env::temp_dir().join(format!("sv-pp-include-macro-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("inc.svh"), "x").unwrap();
+        let run = |name: &str, src: &str| {
+            let top = dir.join(name);
+            std::fs::write(&top, src).unwrap();
+            let out = Preprocessor::new(Options::default()).run_file(&top);
+            assert!(out.diagnostics.is_empty(), "{:?}", out.diagnostics);
+            out.tokens.iter().map(|t| t.text.to_string()).collect::<Vec<_>>()
+        };
+        assert_eq!(run("a.sv", "`define F \"inc.svh\"\n`include `F\ny z"), ["x", "y", "z"]);
+        assert_eq!(run("b.sv", "`define F(f) `\"f`\"\n`include `F(inc.svh)\ny"), ["x", "y"]);
+        assert_eq!(run("c.sv", "`define F(f) `\"f`\"\ny\n`include `F(inc.svh)\n"), ["y", "x"]);
+    }
+
+    #[test]
+    fn macro_text_cannot_split_a_string() {
+        let mut p = Preprocessor::new(Options::default());
+        let out =
+            p.run_source("`define HALF \"start of\nmodule m; initial $display(`HALF string\"); endmodule", "t.sv");
+        assert!(
+            out.diagnostics
+                .iter()
+                .any(|d| d.message.contains("unterminated string literal in the text of macro `HALF")),
+            "{:?}",
+            out.diagnostics
+        );
+        // A whole string, and the macro quotes that build one, are fine.
+        pp("`define WHOLE \"a string\"\n`define Q(x) `\"x`\"\n`WHOLE `Q(y)");
     }
 
     #[test]
