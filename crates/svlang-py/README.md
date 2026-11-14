@@ -69,6 +69,14 @@ pytest tests
 
 `maturin build --release` writes a wheel to `target/wheels/`.
 
+## Releasing
+
+The Python workflow builds and tests the wheels on every change. Pushing a
+tag `pysvlang-vX.Y.Z`, where `X.Y.Z` is the workspace version in the root
+`Cargo.toml`, also publishes the wheels and sdist to PyPI through trusted
+publishing (repository `mayurkubavat/svlang`, workflow `python.yml`,
+environment `pypi`).
+
 ## License
 
 Apache-2.0, like svlang.
