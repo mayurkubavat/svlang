@@ -34,6 +34,7 @@ pip install pysvlang    # Python 3.9+, wheels for Linux, macOS and Windows
 | Btor2 | [`sv-btor2`](crates/sv-btor2/) | the netlist as a Btor2 transition system for model checkers (rIC3, Pono, AVR, BtorMC) |
 | AIGER | [`sv-aiger`](crates/sv-aiger/) | the netlist bit-blasted to an and-inverter graph in AIGER, for bit-level model checkers and ABC |
 | All of it | [`svlang`](crates/svlang/) | one crate that re-exports the stages behind `Driver` and `Compilation` |
+| Command line | [`svlang-cli`](crates/svlang-cli/) | the `svlang` binary: check, hierarchy, syntax tree, netlist, Btor2 and AIGER from the shell |
 | Python | [`pysvlang`](crates/svlang-py/) | the same pipeline from Python |
 
 ## Quick start
@@ -77,6 +78,14 @@ More: the [svlang crate README](crates/svlang/README.md) and its
 netlist lowering with an external SVA property), the
 [pysvlang README](crates/svlang-py/README.md), and the API reference on
 [docs.rs](https://docs.rs/svlang).
+
+From the shell, with no code at all ([`svlang-cli`](crates/svlang-cli/)):
+
+```sh
+svlang check -f sim/top.f -top top                  # errors and warnings
+svlang hier  -f sim/top.f -top top                  # the elaborated hierarchy
+svlang btor2 -f sim/top.f -top top -o top.btor2     # for a model checker
+```
 
 ## Status
 

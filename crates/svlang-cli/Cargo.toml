@@ -1,0 +1,18 @@
+[package]
+name = "svlang-cli"
+description = "The svlang command line: check SystemVerilog, print the hierarchy and syntax tree, and write the design as a netlist, Btor2 or AIGER"
+readme = "README.md"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+keywords.workspace = true
+categories = ["command-line-utilities", "compilers", "development-tools"]
+
+[[bin]]
+name = "svlang"
+path = "src/main.rs"
+
+[dependencies]
+svlang = { version = "0.1.1", path = "../svlang" }
