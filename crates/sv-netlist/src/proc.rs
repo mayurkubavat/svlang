@@ -2458,6 +2458,8 @@ impl<'a> DesignLowerer<'a> {
             let hi_bound = (const_lo + const_w).min(total_w) as usize;
             let (bw, _, _) = self.builder.node_shape(total_bit_lo);
             let mut new_wconds: Vec<(usize, ValueId)> = Vec::new();
+            // The index is also the value id / bit number, and the body borrows the container again.
+            #[allow(clippy::needless_range_loop)]
             for b in (const_lo as usize)..hi_bound {
                 let bc = self.builder.alloc_const(CVal::new(bw, false, b as i128), false, loc);
                 let hit_b = if slice_w == 1 {
@@ -2500,6 +2502,8 @@ impl<'a> DesignLowerer<'a> {
 
         let hi_bound = (const_lo + const_w).min(total_w) as usize;
         let mut new_wconds = Vec::with_capacity(hi_bound.saturating_sub(const_lo as usize));
+        // The index is also the value id / bit number, and the body borrows the container again.
+        #[allow(clippy::needless_range_loop)]
         for b in (const_lo as usize)..hi_bound {
             let prev_wc = ctx.slot_writes[&sidx].write_cond[b];
             new_wconds.push((b, self.builder.alloc_or1(prev_wc, reach, loc)));

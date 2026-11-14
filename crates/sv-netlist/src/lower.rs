@@ -1858,6 +1858,8 @@ pub(crate) fn lower_external_property_on_netlist(
             }
             v
         };
+        // The index is also the value id / bit number, and the body borrows the container again.
+        #[allow(clippy::needless_range_loop)]
         for i in old_val_len..builder.nodes.len() {
             let bn = &builder.nodes[i];
             let kind = match &bn.kind {
