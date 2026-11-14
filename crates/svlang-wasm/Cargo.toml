@@ -1,0 +1,16 @@
+[package]
+name = "svlang-wasm"
+description = "svlang for the browser: the SystemVerilog front end as a WebAssembly module, with a playground page"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+# Shipped as a .wasm file and a web page, not as a Rust crate.
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+svlang = { version = "0.1.1", path = "../svlang" }

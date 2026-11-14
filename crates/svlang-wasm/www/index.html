@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>svlang playground</title>
+<style>
+  :root {
+    --bg: #f6f7f8; --panel: #ffffff; --text: #1c2127; --muted: #5f6b7a; --line: #d3d8de;
+    --accent: #2d72d2; --error: #cd4246; --ok: #238551; --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #1c2127; --panel: #252a31; --text: #e5e8eb; --muted: #abb3bf; --line: #404854; --accent: #8abbff; --error: #fa999c; --ok: #72ca9b; }
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body { display: flex; flex-direction: column; background: var(--bg); color: var(--text); font: 14px/1.4 system-ui, sans-serif; }
+  header { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 8px 16px; border-bottom: 1px solid var(--line); background: var(--panel); }
+  header h1 { margin: 0; font-size: 15px; font-weight: 600; }
+  header .spacer { flex: 1; }
+  header a { color: var(--accent); text-decoration: none; }
+  label { color: var(--muted); }
+  select, input, button { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 3px; padding: 3px 8px; }
+  input { width: 9em; }
+  main { flex: 1; display: grid; grid-template-columns: 1fr 1fr; min-height: 0; }
+  @media (max-width: 760px) { main { grid-template-columns: 1fr; grid-template-rows: 1fr 1fr; } }
+  section { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+  section + section { border-left: 1px solid var(--line); }
+  @media (max-width: 760px) { section + section { border-left: 0; border-top: 1px solid var(--line); } }
+  textarea, pre { flex: 1; margin: 0; padding: 12px 16px; border: 0; outline: 0; resize: none; overflow: auto; background: var(--panel); color: var(--text); font: 13px/1.45 var(--mono); tab-size: 2; white-space: pre; }
+  #problems { max-height: 35%; overflow: auto; margin: 0; padding: 0; list-style: none; border-top: 1px solid var(--line); background: var(--panel); font: 13px/1.45 var(--mono); }
+  #problems li { padding: 3px 16px; cursor: pointer; }
+  #problems li:hover { background: var(--bg); }
+  #problems .error::before { content: "error  "; color: var(--error); }
+  #problems .warning::before { content: "warning  "; color: var(--muted); }
+  #problems .note::before { content: "note  "; color: var(--muted); }
+  #status { color: var(--muted); }
+  #status.ok { color: var(--ok); }
+  #status.bad { color: var(--error); }
+</style>
+</head>
+<body>
+<header>
+  <h1>svlang playground</h1>
+  <label>Show <select id="command">
+    <option value="check">diagnostics only</option>
+    <option value="preprocess">preprocessed source</option>
+    <option value="cst">syntax tree</option>
+    <option value="hier">elaborated hierarchy</option>
+    <option value="netlist" selected>netlist</option>
+    <option value="btor2">Btor2</option>
+    <option value="aiger">AIGER (text)</option>
+    <option value="yosys">Yosys JSON</option>
+  </select></label>
+  <label>Top module <input id="top" placeholder="automatic" spellcheck="false"></label>
+  <span id="status" role="status">loading…</span>
+  <span class="spacer"></span>
+  <a href="https://github.com/mayurkubavat/svlang">svlang on GitHub</a>
+</header>
+<main>
+  <section>
+    <textarea id="source" spellcheck="false" aria-label="SystemVerilog source"></textarea>
+    <ul id="problems" aria-label="Diagnostics"></ul>
+  </section>
+  <section>
+    <pre id="output" aria-label="Output"></pre>
+  </section>
+</main>
+<script type="module">
+import { load } from "./svlang.js";
+
+const example = `// Edit this design; the right-hand side follows as you type.
+// Everything runs in your browser: nothing is uploaded.
+module counter #(parameter int LIMIT = 9) (
+  input  logic       clk,
+  input  logic       rst,
+  output logic [3:0] count
+);
+  always_ff @(posedge clk)
+    if (rst) count <= '0;
+    else if (count != LIMIT) count <= count + 1'b1;
+
+  // An immediate assertion and a concurrent one.
+  always @(posedge clk) in_range: assert (count <= LIMIT);
+  stays_at_limit: assert property (@(posedge clk)
+    !rst && count == LIMIT |=> count == LIMIT || $past(rst));
+endmodule
+`;
+
+const $ = (id) => document.getElementById(id);
+const [source, output, problems, status, command, top] = ["source", "output", "problems", "status", "command", "top"].map($);
+source.value = example;
+
+let run;
+try {
+  run = await load("./svlang.wasm");
+} catch (e) {
+  status.textContent = "could not load svlang.wasm: " + e.message;
+  status.className = "bad";
+  throw e;
+}
+
+function update() {
+  const started = performance.now();
+  let reply;
+  try {
+    reply = run(command.value, source.value, top.value.trim());
+  } catch (e) {
+    // A trap inside the module: say so, and keep the page alive.
+    status.textContent = "svlang stopped on this input (" + e.message + ")";
+    status.className = "bad";
+    return;
+  }
+  const ms = Math.round(performance.now() - started);
+  output.textContent = reply.output;
+  problems.replaceChildren(
+    ...reply.diagnostics.map((d) => {
+      const li = document.createElement("li");
+      li.className = d.severity;
+      li.textContent = `${d.line}:${d.column}  ${d.message}`;
+      li.onclick = () => goTo(d.line, d.column);
+      return li;
+    }),
+    ...reply.notes.map((n) => {
+      const li = document.createElement("li");
+      li.className = "note";
+      li.textContent = n;
+      return li;
+    }),
+  );
+  const errors = reply.diagnostics.filter((d) => d.severity === "error").length;
+  status.textContent = reply.ok ? `ok, ${ms} ms` : errors ? `${errors} error${errors === 1 ? "" : "s"}, ${ms} ms` : `not written, ${ms} ms`;
+  status.className = reply.ok ? "ok" : "bad";
+}
+
+// Puts the caret at a 1-based line and byte column of the source.
+function goTo(line, column) {
+  const lines = source.value.split("\n");
+  let offset = 0;
+  for (let i = 0; i < line - 1 && i < lines.length; i++) offset += lines[i].length + 1;
+  offset += Math.max(0, column - 1);
+  source.focus();
+  source.setSelectionRange(offset, offset);
+}
+
+let timer;
+const later = () => { clearTimeout(timer); timer = setTimeout(update, 200); };
+source.addEventListener("input", later);
+top.addEventListener("input", later);
+command.addEventListener("change", update);
+// Tab types two spaces instead of leaving the editor.
+source.addEventListener("keydown", (e) => {
+  if (e.key !== "Tab" || e.shiftKey || e.ctrlKey || e.altKey || e.metaKey) return;
+  e.preventDefault();
+  source.setRangeText("  ", source.selectionStart, source.selectionEnd, "end");
+  later();
+});
+update();
+</script>
+</body>
+</html>

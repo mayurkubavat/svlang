@@ -362,7 +362,25 @@ impl SemaChecks {
     /// threads of their own.
     pub fn new(trees: &[Tree]) -> SemaChecks {
         let scopes = scopes::build(trees);
+        // WebAssembly has no threads: one after the other, on the caller's stack.
+        #[cfg(target_arch = "wasm32")]
+        {
+            let scopes = &scopes;
+            SemaChecks {
+                names: names::check(trees, scopes),
+                checks: checks::check(trees, scopes),
+                bind: bind::check(trees),
+                iclass: iclass::check(trees),
+                udp: udp::check(trees),
+                sva: sva::check(trees),
+                calls: calls::check(trees),
+                order: order::check(trees, scopes),
+                classes: classes::check(trees),
+                typed: typed::check(trees, scopes),
+            }
+        }
         // The checks are independent: the slowest run on threads of their own.
+        #[cfg(not(target_arch = "wasm32"))]
         std::thread::scope(|s| {
             let big = || std::thread::Builder::new().stack_size(256 << 20);
             let scopes = &scopes;

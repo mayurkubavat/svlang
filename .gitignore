@@ -95,3 +95,6 @@ credentials*.json
 .netrc
 .npmrc
 .pypirc
+
+# The playground module, built by crates/svlang-wasm/www/build.sh
+crates/svlang-wasm/www/svlang.wasm

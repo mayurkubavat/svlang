@@ -135,3 +135,36 @@ jobs:
         env:
           UVM_HOME: ${{ github.workspace }}/uvm-core
         run: python3 tools/quality/error_budget.py --binary target/release/uvmcheck
+
+  playground:
+    # The browser build (crates/svlang-wasm): svlang as WebAssembly, checked from Node.
+    name: playground (wasm)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Toolchain
+        run: |
+          rustup toolchain install stable --profile minimal --target wasm32-unknown-unknown
+          rustup default stable
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: cargo-${{ runner.os }}-wasm-${{ hashFiles('Cargo.lock') }}
+          restore-keys: cargo-${{ runner.os }}-wasm-
+
+      - name: Build and check
+        run: crates/svlang-wasm/www/build.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: playground
+          path: |
+            crates/svlang-wasm/www/index.html
+            crates/svlang-wasm/www/svlang.js
+            crates/svlang-wasm/www/svlang.wasm
+          retention-days: 14

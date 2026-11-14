@@ -296,6 +296,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "svlang-wasm"
+version = "0.1.1"
+dependencies = [
+ "svlang",
+]
+
+[[package]]
 name = "syn"
 version = "3.0.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"

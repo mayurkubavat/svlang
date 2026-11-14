@@ -36,6 +36,7 @@ pip install pysvlang    # Python 3.9+, wheels for Linux, macOS and Windows
 | Yosys | [`sv-yosys`](crates/sv-yosys/) | the netlist as a Yosys JSON netlist of word-level cells, for synthesis, equivalence and SymbiYosys |
 | All of it | [`svlang`](crates/svlang/) | one crate that re-exports the stages behind `Driver` and `Compilation` |
 | Command line | [`svlang-cli`](crates/svlang-cli/) | the `svlang` binary: check, hierarchy, syntax tree, netlist, Btor2 and AIGER from the shell |
+| Browser | [`svlang-wasm`](crates/svlang-wasm/) | svlang as a WebAssembly module, with a playground page |
 | Python | [`pysvlang`](crates/svlang-py/) | the same pipeline from Python |
 
 ## Quick start
