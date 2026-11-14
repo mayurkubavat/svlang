@@ -280,7 +280,16 @@ impl Compilation {
         allow_four_state_ops: bool,
         cut_points: Vec<String>,
     ) -> PyResult<Netlist> {
-        let cfg = svlang::LowerConfig { top, max_loop_iters, blast_memories_up_to, allow_four_state_ops, cut_points };
+        // `..Default::default()` keeps this building when svlang adds a LowerConfig option.
+        #[allow(clippy::needless_update)]
+        let cfg = svlang::LowerConfig {
+            top,
+            max_loop_iters,
+            blast_memories_up_to,
+            allow_four_state_ops,
+            cut_points,
+            ..Default::default()
+        };
         let comp = self.inner.clone();
         let outcome = py.detach(move || comp.lower_netlist(&cfg));
         let (diags, unsupported) = match outcome {
