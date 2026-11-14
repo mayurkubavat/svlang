@@ -72,3 +72,26 @@ Thumbs.db
 
 # Rust build output
 /target/
+
+# AI assistant and agent state (never part of the repo)
+.claude/
+CLAUDE.md
+CLAUDE.local.md
+.mcp.json
+.cursor/
+.aider*
+.codex/
+.gemini/
+.continue/
+
+# Keys and credentials
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa*
+id_ed25519*
+credentials*.json
+.netrc
+.npmrc
+.pypirc

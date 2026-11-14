@@ -55,6 +55,8 @@ skip() {
 }
 uvm_ok() { [ -n "${UVM_HOME:-}" ] && [ -f "$UVM_HOME/src/uvm_pkg.sv" ]; }
 
+step "hygiene: no assistant state, keys or attribution" tools/gates/hygiene.sh
+
 if [ "$rust" = 1 ]; then
     echo "Rust flow (rust.yml)"
     step "rust_gate: profiles, fmt, clippy" tools/gates/rust_gate.sh --native

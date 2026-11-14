@@ -35,6 +35,19 @@ cmake --build build -j 4
 
 ---
 
+### Repository hygiene
+
+Assistant and agent state (`.claude/`, `CLAUDE.md`, `.mcp.json` and the
+like), keys and credentials stay out of git; `.gitignore` covers them.
+`tools/gates/hygiene.sh` fails if any are tracked, or if a tracked file or
+an unpushed commit carries assistant attribution (co-author trailers and
+similar). CI and `tools/gates/prepush.sh` run it. To catch an attribution
+line at commit time, enable the hook once per clone:
+
+```sh
+git config core.hooksPath tools/hooks
+```
+
 ## Adding a New Verification Rule
 
 UVMCheck's architecture makes it straightforward to add new rules without modifying core engine logic.

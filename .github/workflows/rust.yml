@@ -36,6 +36,9 @@ jobs:
           key: cargo-${{ runner.os }}-stable-${{ hashFiles('Cargo.lock') }}
           restore-keys: cargo-${{ runner.os }}-stable-
 
+      - name: hygiene (no assistant state, keys or attribution)
+        run: tools/gates/hygiene.sh
+
       - name: rust_gate (profiles, fmt, Clippy -D warnings)
         run: tools/gates/rust_gate.sh --native
 

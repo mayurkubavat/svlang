@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# Enable once per clone: git config core.hooksPath tools/hooks
+if grep -qiE '^(co-authored-by|generated-by|signed-off-by: claude)|noreply@anthropic\.com|generated with \[?claude|claude\.ai/' "$1"; then
+    echo "commit-msg: remove the assistant attribution line(s) and commit again." >&2
+    exit 1
+fi
