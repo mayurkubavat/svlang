@@ -2,11 +2,11 @@
 
 What happens when every module of a set of open RTL designs is made a top and lowered to
 the word-level netlist (`tools/quality/census.py`, designs in `tools/quality/census_corpus.json`).
-svlang `19179d05798a`, 2026-11-14, reference front end slang version 12.1.0+d02b7cd --compat=vcs --timescale=1ns/1ps. Regenerate after a fix; the designs are kept outside the repository.
+svlang `203b5d29c5e6`, 2026-11-14, reference front end slang version 12.1.0+d02b7cd --compat=vcs --timescale=1ns/1ps. Regenerate after a fix; the designs are kept outside the repository.
 
 2184 modules. 610 cannot stand alone as a top (see *Invalid as a top*), which leaves 1574 measured: **987 lowered (62.7%)**, 374 unsupported, 184 wrongly rejected, 0 crashes, 9 out of memory, 0 timeouts, 20 lowered although the reference rejects the input.
 
-With `--skip-initial-checks`: 1016 of 1563 lowered (65.0%), 192 unsupported, 321 wrongly rejected.
+With `--skip-initial-checks` `--isunknown-is-false`: 1121 of 1562 lowered (71.8%), 79 unsupported, 327 wrongly rejected.
 
 ## Designs
 
