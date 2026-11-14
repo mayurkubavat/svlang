@@ -613,6 +613,14 @@ pub struct Netlist {
     pub properties: Vec<BoundProperty>,
     /// Lowered [`ValueId`] for each boolean, clock, or reset [`ExprId`] in [`Self::sva_arena`] referenced by [`Self::properties`].
     pub prop_expr_values: Vec<Option<ValueId>>,
+    /// Full hierarchical name of each property of [`Self::properties`] (`"top.u0.a_no_overflow"`,
+    /// `"top.g[1].a_x"`). A property with no label is named `_assert_<n>`, `_assume_<n>`,
+    /// `_cover_<n>` or `_restrict_<n>` in its instance, counted from 1 over the design.
+    pub property_names: Vec<String>,
+    /// For each property of [`Self::properties`], the [`Self::checks`] index that
+    /// [`Self::compile_properties`] made for it (`None` until then, or when it is not in the
+    /// compiled subset).
+    pub property_checks: Vec<Option<usize>>,
     /// Sorted `(SymbolId, ValueId)` map for every elaborated packed/scalar symbol in the design.
     pub symbol_values: Vec<(SymbolId, ValueId)>,
 }

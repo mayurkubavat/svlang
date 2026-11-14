@@ -168,6 +168,28 @@ def test_to_btor2():
     assert "; my-marker" in traced
 
 
+def test_compile_properties():
+    src = (
+        "module cp(input logic clk, a, b);\n"
+        " a_next: assert property (@(posedge clk) a |=> b);\n"
+        " a_rng: assert property (@(posedge clk) a |-> ##[1:2] b);\n"
+        " c_ab: cover property (@(posedge clk) a ##1 b);\n"
+        "endmodule\n"
+    )
+    comp = pysvlang.Compilation.from_source(src, "cp.sv")
+    assert comp.lower_netlist().properties == [
+        ("cp.a_next", "assert", False),
+        ("cp.a_rng", "assert", False),
+        ("cp.c_ab", "cover", False),
+    ]
+    nl = comp.lower_netlist(compile_properties=True)
+    assert [done for _, _, done in nl.properties] == [True, False, True]
+    text, notes = nl.to_btor2(covers=True)
+    bad = [line.split()[-1] for line in text.splitlines() if " bad " in line]
+    assert bad == ["cp.a_next", "cp.c_ab"]
+    assert any(n.startswith("1 concurrent") for n in notes)
+
+
 def test_to_btor2_rejects_two_clocks():
     src = "module two(input logic a, b, d, output logic p, q);\n always_ff @(posedge a) p <= d;\n always_ff @(posedge b) q <= d;\nendmodule\n"
     nl = pysvlang.Compilation.from_source(src, "two.sv").lower_netlist()

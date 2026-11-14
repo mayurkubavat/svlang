@@ -157,3 +157,60 @@ fn concurrent_assumption_is_an_error() {
     let e = write(&nl, &Options::default()).unwrap_err();
     assert!(matches!(e, Fail::Unsupported(_)) && e.to_string().contains("assumptions"), "{e}");
 }
+
+fn compiled(src: &str, skip_cycles: u32) -> Netlist {
+    let mut nl = netlist(src);
+    let mut opts = sv_netlist::PropertyOptions::default();
+    opts.skip_cycles = skip_cycles;
+    for (i, o) in nl.compile_properties(&opts).iter().enumerate() {
+        assert!(matches!(o, sv_netlist::PropertyOutcome::Compiled { .. }), "property {i}: {o:?}");
+    }
+    nl
+}
+
+#[test]
+fn compiled_properties_are_bad_lines_and_constraints() {
+    let nl = compiled(
+        "module cp(input logic clk, rst, a, b, c);\n\
+           default clocking @(posedge clk); endclocking\n\
+           a_next: assert property (disable iff (rst) a |=> b);\n\
+           assert property (a ##2 b |-> c);\n\
+           m_in: assume property (c |-> a);\n\
+           c_seq: cover property (a ##1 b);\n\
+         endmodule\n",
+        1,
+    );
+    let m = write(&nl, &Options::default()).unwrap();
+    well_formed(&m.btor2);
+    let bads = lines(&m.btor2, "bad");
+    assert_eq!(bads.len(), 2, "{bads:?}");
+    assert!(bads[0].ends_with(" cp.a_next"), "{bads:?}");
+    assert!(bads[1].ends_with(" cp._assert_1"), "{bads:?}");
+    assert_eq!(lines(&m.btor2, "constraint").len(), 1);
+    assert!(m.notes.iter().any(|n| n.contains("1 cover(s)")), "{:?}", m.notes);
+    assert!(!m.notes.iter().any(|n| n.contains("concurrent")), "{:?}", m.notes);
+
+    let mut with_covers = Options::default();
+    with_covers.covers = true;
+    let m = write(&nl, &with_covers).unwrap();
+    well_formed(&m.btor2);
+    let bads = lines(&m.btor2, "bad");
+    assert_eq!(bads.len(), 3, "{bads:?}");
+    assert!(bads[2].ends_with(" cp.c_seq"), "{bads:?}");
+}
+
+#[test]
+fn a_property_outside_the_subset_is_left_out_and_named() {
+    let mut nl = netlist(
+        "module un(input logic clk, a, b);\n\
+           a_rng: assert property (@(posedge clk) a |-> ##[1:3] b);\n\
+           a_ok: assert property (@(posedge clk) a |-> b);\n\
+         endmodule\n",
+    );
+    let out = nl.compile_properties(&Default::default());
+    assert!(matches!(&out[0], sv_netlist::PropertyOutcome::Unsupported(w) if w.contains("[1:3]")), "{out:?}");
+    assert!(matches!(out[1], sv_netlist::PropertyOutcome::Compiled { .. }), "{out:?}");
+    let m = write(&nl, &Options::default()).unwrap();
+    assert_eq!(lines(&m.btor2, "bad").len(), 1);
+    assert!(m.notes.iter().any(|n| n.starts_with("1 concurrent")), "{:?}", m.notes);
+}

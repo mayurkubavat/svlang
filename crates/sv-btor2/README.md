@@ -30,12 +30,17 @@ Then, for example, `ric3 check counter.btor2 ic3`.
   X or Z constant bits are free on every step.
 - An immediate `assert` is a `bad` line named by its label; an immediate
   `assume` is a `constraint`.
-- Concurrent assertions (`assert property`) and covers are **not** written.
-  They stay in `Netlist::properties` for a tool that builds its own monitor,
-  and `Model::notes` says how many were left out.
+- A concurrent property (`assert property`, `assume property`) is written
+  through the check `Netlist::compile_properties` made for it: a `bad` line
+  under its full hierarchical name (`top.u0.a_no_overflow`), or a
+  `constraint`. That pass compiles properties of a fixed length (booleans,
+  `##N`, `[*N]`, `|->`, `|=>`, `disable iff`); a property without a check is
+  **not** written, and `Model::notes` says how many were left out.
+- A cover is a `bad` line that is reached when the cover is hit, with
+  `Options::covers`; without it covers are left out and noted.
 - A concurrent assumption (`assume property`, `restrict property`) cannot
   be left out without changing what the assertions mean, so a design that
-  has one is an error for now.
+  has one without a check is an error.
 
 Anything the model cannot express exactly is an error (`Fail`), never an
 approximation.

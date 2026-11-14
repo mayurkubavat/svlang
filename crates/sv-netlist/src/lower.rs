@@ -137,9 +137,12 @@ pub fn lower_design(trees: &[Tree], design: &ElaboratedDesign, config: &LowerCon
         .collect();
     symbol_values.sort_by_key(|(sid, _)| sid.0);
 
+    let property_names = property_names(lowerer.design, &properties);
+
     // Pass 6: Tarjan SCC combinational loop check, alias resolution, and topological compaction.
     match lowerer.builder.finalize(sva_arena, properties, prop_expr_values, symbol_values) {
         Ok(mut netlist) => {
+            netlist.property_names = property_names;
             if let Some(max_depth) = config.blast_memories_up_to {
                 netlist.blast_memories(max_depth);
             }
@@ -1737,6 +1740,38 @@ impl FuncInliner for ExternalPropInliner {
         builder.unsup(loc, "non-constant user function call in external SVA property is not supported");
         None
     }
+}
+
+/// The full hierarchical name of each property: instance path, generate scope, then its label
+/// or, without one, `_<kind>_<n>` counted from 1 over the design. Made unique with a `_<k>` suffix.
+fn property_names(design: &ElaboratedDesign, properties: &[BoundProperty]) -> Vec<String> {
+    let mut unnamed = [0u32; 4];
+    let mut seen: FxMap<String, u32> = FxMap::default();
+    properties
+        .iter()
+        .map(|p| {
+            let leaf = p.label.clone().unwrap_or_else(|| {
+                let (slot, kind) = match p.kind {
+                    sv_semantic::PropKind::Assert => (0, "assert"),
+                    sv_semantic::PropKind::Assume => (1, "assume"),
+                    sv_semantic::PropKind::Cover => (2, "cover"),
+                    sv_semantic::PropKind::Restrict => (3, "restrict"),
+                };
+                unnamed[slot] += 1;
+                format!("_{kind}_{}", unnamed[slot])
+            });
+            let scope = p.scope_prefix.trim_matches('.');
+            let path = &design.instance(p.instance).path;
+            let name = if scope.is_empty() { format!("{path}.{leaf}") } else { format!("{path}.{scope}.{leaf}") };
+            let n = seen.entry(name.clone()).or_insert(0);
+            *n += 1;
+            if *n == 1 {
+                name
+            } else {
+                format!("{name}_{n}")
+            }
+        })
+        .collect()
 }
 
 pub(crate) fn lower_external_property_on_netlist(

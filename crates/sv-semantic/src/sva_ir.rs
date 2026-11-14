@@ -7,8 +7,10 @@
 //! [`BoundProperty`] / [`PropExpr`] / [`SeqExpr`] trees whose leaf boolean and clock
 //! expressions live in an [`ExprArena`].
 //!
-//! Automaton construction (NFA/DFA compilation, Büchi liveness, `$past` history
-//! expansion) intentionally stays in downstream formal consumers.
+//! Turning these trees into checker logic is not done here: `sv-netlist` compiles
+//! the fixed-length properties into checks (`Netlist::compile_properties`), and
+//! automaton construction for the rest (ranges, unbounded repetition, liveness)
+//! stays with downstream formal consumers.
 
 use sv_syntax::{Child, NodeId, SyntaxKind, Tree};
 

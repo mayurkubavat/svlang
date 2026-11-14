@@ -59,9 +59,11 @@ pub mod ir;
 mod loops_sub;
 mod lower;
 mod proc;
+pub mod sva;
 
 pub use ir::*;
 pub use lower::lower_design;
+pub use sva::{PropertyOptions, PropertyOutcome, MAX_PROPERTY_SPAN};
 
 /// Runs syntax, semantic, and elaboration checks on `trees` and lowers the elaborated design
 /// into a [`Netlist`] fail-closed.

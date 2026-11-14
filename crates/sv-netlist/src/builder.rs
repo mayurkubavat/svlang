@@ -631,6 +631,8 @@ impl NetBuilder {
             undriven: self.undriven,
             traces: self.traces,
             sva_arena,
+            property_names: Vec::new(),
+            property_checks: vec![None; properties.len()],
             properties,
             prop_expr_values,
             symbol_values,

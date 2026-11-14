@@ -272,10 +272,16 @@ impl Compilation {
     /// instance paths whose bodies are not lowered: their ports stay and their
     /// outputs become free values.
     ///
+    /// With ``compile_properties``, each concurrent property in the design
+    /// (``assert property``, ``assume property``, ``cover property``) that
+    /// has a fixed length becomes a check, which ``to_btor2`` then writes;
+    /// ``skip_cycles`` leaves out attempts that start in the first clock
+    /// ticks. ``Netlist.properties`` says what happened to each.
+    ///
     /// Raises ``LowerError`` when the design has errors or uses constructs
     /// outside the synthesizable/formal subset.
     #[allow(clippy::too_many_arguments)]
-    #[pyo3(signature = (*, top = None, max_loop_iters = 65_536, blast_memories_up_to = None, allow_four_state_ops = false, cut_points = Vec::new(), black_box_modules = Vec::new(), black_box_instances = Vec::new()))]
+    #[pyo3(signature = (*, top = None, max_loop_iters = 65_536, blast_memories_up_to = None, allow_four_state_ops = false, cut_points = Vec::new(), black_box_modules = Vec::new(), black_box_instances = Vec::new(), compile_properties = false, skip_cycles = 0))]
     fn lower_netlist(
         &self,
         py: Python<'_>,
@@ -286,6 +292,8 @@ impl Compilation {
         cut_points: Vec<String>,
         black_box_modules: Vec<String>,
         black_box_instances: Vec<String>,
+        compile_properties: bool,
+        skip_cycles: u32,
     ) -> PyResult<Netlist> {
         // `..Default::default()` keeps this building when svlang adds a LowerConfig option.
         #[allow(clippy::needless_update)]
@@ -300,7 +308,15 @@ impl Compilation {
             ..Default::default()
         };
         let comp = self.inner.clone();
-        let outcome = py.detach(move || comp.lower_netlist(&cfg));
+        let outcome = py.detach(move || {
+            let mut outcome = comp.lower_netlist(&cfg);
+            if let (svlang::LowerOutcome::Lowered(nl), true) = (&mut outcome, compile_properties) {
+                let mut opts = svlang::netlist::PropertyOptions::default();
+                opts.skip_cycles = skip_cycles;
+                nl.compile_properties(&opts);
+            }
+            outcome
+        });
         let (diags, unsupported) = match outcome {
             svlang::LowerOutcome::Lowered(nl) => return Ok(Netlist { inner: Arc::new(nl) }),
             svlang::LowerOutcome::Unsupported(d) => (d, true),
@@ -702,6 +718,28 @@ impl Netlist {
         self.inner.values.len()
     }
 
+    /// The concurrent properties of the design as ``(name, kind, compiled)``:
+    /// the full hierarchical name, ``"assert"``, ``"assume"``, ``"cover"`` or
+    /// ``"restrict"``, and whether ``compile_properties`` made a check for it.
+    #[getter]
+    fn properties(&self) -> Vec<(String, &'static str, bool)> {
+        let nl = &self.inner;
+        nl.properties
+            .iter()
+            .enumerate()
+            .map(|(i, p)| {
+                let kind = match p.kind {
+                    svlang::PropKind::Assert => "assert",
+                    svlang::PropKind::Assume => "assume",
+                    svlang::PropKind::Cover => "cover",
+                    svlang::PropKind::Restrict => "restrict",
+                };
+                let name = nl.property_names.get(i).cloned().unwrap_or_default();
+                (name, kind, nl.property_checks.get(i).copied().flatten().is_some())
+            })
+            .collect()
+    }
+
     /// The netlist in svlang's readable text form.
     fn dump(&self) -> String {
         self.inner.dump()
@@ -718,17 +756,21 @@ impl Netlist {
     ///
     /// With ``trace_outputs``, the model is followed by ``trace_marker`` and
     /// one ``output`` line per named combinational net. ``name_prefix``
-    /// prefixes the names of invented inputs and history registers.
-    #[pyo3(signature = (*, trace_outputs = false, trace_marker = None, name_prefix = None))]
+    /// prefixes the names of invented inputs and history registers. With
+    /// ``covers``, each cover is a ``bad`` line that is reached when the
+    /// cover is hit.
+    #[pyo3(signature = (*, trace_outputs = false, trace_marker = None, name_prefix = None, covers = false))]
     fn to_btor2(
         &self,
         py: Python<'_>,
         trace_outputs: bool,
         trace_marker: Option<String>,
         name_prefix: Option<String>,
+        covers: bool,
     ) -> PyResult<(String, Vec<String>)> {
         let mut opts = svlang::btor2::Options::default();
         opts.trace_outputs = trace_outputs;
+        opts.covers = covers;
         if let Some(m) = trace_marker {
             opts.trace_marker = m;
         }

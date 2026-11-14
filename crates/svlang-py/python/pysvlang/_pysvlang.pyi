@@ -113,10 +113,13 @@ class Netlist:
         trace_outputs: bool = False,
         trace_marker: Optional[str] = None,
         name_prefix: Optional[str] = None,
+        covers: bool = False,
     ) -> tuple[str, list[str]]: ...
     def to_aiger(
         self, *, binary: bool = True, name_prefix: Optional[str] = None
     ) -> tuple[Union[bytes, str], list[str]]: ...
+    @property
+    def properties(self) -> list[tuple[str, str, bool]]: ...
 
 class Compilation:
     def __init__(
@@ -152,4 +155,6 @@ class Compilation:
         cut_points: Sequence[str] = ...,
         black_box_modules: Sequence[str] = ...,
         black_box_instances: Sequence[str] = ...,
+        compile_properties: bool = False,
+        skip_cycles: int = 0,
     ) -> Netlist: ...

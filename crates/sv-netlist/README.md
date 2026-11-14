@@ -14,6 +14,8 @@ Pure-Rust IEEE 1800-2023 RTL netlist lowering, symbolic procedural execution, an
 4. **Bit-level driver validation and resolution**: checks IEEE 1800 multiple-driver, `always_comb` latch, and procedural-vs-continuous rules per bit, then stitches disjoint partial-slice drivers and resolves `wire` multi-driver nets.
 5. **SVA property lowering and topological sorting**: lowers clocked SVA expressions into [`Netlist::values`], checks combinational loops via Tarjan strongly connected components (treating `$past` and sequential elements as state boundaries), and orders nodes topologically.
 
+After lowering, [`Netlist::compile_properties`] turns each concurrent property of a fixed length (booleans, `##N`, `[*N]`, `|->`, `|=>`, `disable iff`) into a [`Check`] over sampled history, so a back end that handles immediate checks and `$past` checks those properties too. A property outside that subset is reported with the operator it uses and left in [`Netlist::properties`].
+
 ## Quickstart
 
 ```rust

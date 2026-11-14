@@ -31,12 +31,15 @@
 //! - an X or Z bit of a constant (`'x`, an out-of-range read) is any value:
 //!   a free input bit on every step, like an undriven bit;
 //! - an immediate assertion is a `bad` line named by its label, an immediate
-//!   assumption a `constraint`. Immediate covers and concurrent assertions
-//!   (`assert property`) are **not** written: a tool that checks those builds
-//!   its own monitor from [`Netlist::properties`], and [`Model::notes`] says
-//!   how many were left out. A concurrent *assumption* (`assume property`,
-//!   `restrict property`) cannot be left out without changing what the
-//!   assertions mean, so a design that has one is [`Fail::Unsupported`];
+//!   assumption a `constraint`;
+//! - a concurrent property (`assert property`, `assume property`, `cover property`) is
+//!   written through the check [`Netlist::compile_properties`] made for it, under its full
+//!   hierarchical name (`top.u0.a_no_overflow`). One that has no check is **not** written,
+//!   and [`Model::notes`] says how many were left out. A concurrent *assumption* (`assume
+//!   property`, `restrict property`) cannot be left out without changing what the assertions
+//!   mean, so a design with one that has no check is [`Fail::Unsupported`];
+//! - a cover is a `bad` line that is reached when the cover is hit, with
+//!   [`Options::covers`]; without it covers are left out and noted;
 //! - `$past` and friends are history registers with no initial value, so a
 //!   property that reads them is only meaningful once the history is real.
 //!
@@ -81,11 +84,21 @@ pub struct Options {
     /// Prefix of the names this crate invents: `<prefix>_x_<n>` for the free input behind an
     /// X or Z constant bit and `<prefix>_past_<n>` for a history register (`"svlang"` by default).
     pub name_prefix: String,
+    /// Write each cover as a `bad` line that is reached when the cover is hit, named like an
+    /// assertion. Btor2 has no cover line, so a tool that sets this tells covers from
+    /// assertions by name (see [`Netlist::checks`]). Off by default: covers are left out and
+    /// [`Model::notes`] says how many.
+    pub covers: bool,
 }
 
 impl Default for Options {
     fn default() -> Self {
-        Self { trace_outputs: false, trace_marker: "; trace-outputs".into(), name_prefix: "svlang".into() }
+        Self {
+            trace_outputs: false,
+            trace_marker: "; trace-outputs".into(),
+            name_prefix: "svlang".into(),
+            covers: false,
+        }
     }
 }
 
@@ -685,6 +698,17 @@ impl<'n> Writer<'n> {
         Ok(m)
     }
 
+    /// A `bad` line for check `c`. An immediate check is named by its label, a compiled
+    /// concurrent property by its full hierarchical name.
+    fn bad(&mut self, cond: u32, c: &sv_netlist::Check) {
+        let label = c.label.as_deref().map(|l| if c.immediate { l.rsplit('.').next().unwrap_or(l) } else { l });
+        let mut body = format!("bad {cond}");
+        if let Some(l) = label {
+            write!(body, " {}", symbol(l)).unwrap();
+        }
+        self.line(body);
+    }
+
     // ---- driver
 
     fn run(&mut self, trace_outputs: bool) -> Result<(), Fail> {
@@ -694,19 +718,27 @@ impl<'n> Writer<'n> {
         for i in 0..nl.values.len() {
             self.value(ValueId(i as u32))?;
         }
-        if !nl.properties.is_empty() {
-            let assumes = nl.properties.iter().any(|p| {
-                let k = format!("{:?}", p.kind).to_ascii_lowercase();
-                k.contains("assume") || k.contains("restrict")
-            });
+        // Concurrent properties are written through the checks Netlist::compile_properties
+        // made for them; the rest are left out, which is only safe for assertions and covers.
+        let left_out: Vec<&sv_semantic::BoundProperty> = nl
+            .properties
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| nl.property_checks.get(*i).copied().flatten().is_none())
+            .map(|(_, p)| p)
+            .collect();
+        if !left_out.is_empty() {
+            let assumes = left_out
+                .iter()
+                .any(|p| matches!(p.kind, sv_semantic::PropKind::Assume | sv_semantic::PropKind::Restrict));
             if assumes {
                 return unsupported(
-                    "concurrent assumptions in the RTL (assume or restrict property): leaving them out would make the model weaker than the design says",
+                    "concurrent assumptions in the RTL (assume or restrict property) that are not compiled to checks: leaving them out would make the model weaker than the design says",
                 );
             }
             self.notes.push(format!(
-                "{} concurrent assertion(s) or cover(s) in the RTL are not written (see Netlist::properties)",
-                nl.properties.len()
+                "{} concurrent assertion(s) or cover(s) in the RTL are not written (see Netlist::compile_properties)",
+                left_out.len()
             ));
         }
         // Registers.
@@ -752,6 +784,7 @@ impl<'n> Writer<'n> {
         }
         // Checks.
         let mut bads = 0;
+        let mut covers_left_out = 0;
         for c in &nl.checks {
             let en = self.value(c.enable)?;
             let en = self.bool(en);
@@ -761,12 +794,7 @@ impl<'n> Writer<'n> {
                 CheckKind::Assert => {
                     let nex = self.un("not", ex);
                     let bad = self.bin("and", en, nex);
-                    let label = c.label.as_deref().map(|l| l.rsplit('.').next().unwrap_or(l));
-                    let mut body = format!("bad {bad}");
-                    if let Some(l) = label {
-                        write!(body, " {}", symbol(l)).unwrap();
-                    }
-                    self.line(body);
+                    self.bad(bad, c);
                     bads += 1;
                 }
                 CheckKind::Assume => {
@@ -774,8 +802,15 @@ impl<'n> Writer<'n> {
                     let ok = self.bin("or", nen, ex);
                     self.line(format!("constraint {ok}"));
                 }
-                CheckKind::Cover => self.notes.push("an immediate cover in the RTL is not written".into()),
+                CheckKind::Cover if self.opts.covers => {
+                    let hit = self.bin("and", en, ex);
+                    self.bad(hit, c);
+                }
+                CheckKind::Cover => covers_left_out += 1,
             }
+        }
+        if covers_left_out > 0 {
+            self.notes.push(format!("{covers_left_out} cover(s) in the RTL are not written (see Options::covers)"));
         }
         // `next` lines last; history registers may still be added while
         // lowering them, so loop by index.
