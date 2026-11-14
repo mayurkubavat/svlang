@@ -276,7 +276,7 @@ fn driver_add_args_errors_warning_display_and_fail_closed_edges() {
 
 #[test]
 fn properties_bound_from_text_compile_to_named_checks() {
-    use svlang::netlist::{CheckKind, ExternalProperty, PropertyOptions};
+    use svlang::netlist::{CheckKind, Compiled, ExternalProperty, PropertyOptions};
 
     let comp = svlang::Compilation::from_source(
         "ext.sv",
@@ -292,6 +292,7 @@ fn properties_bound_from_text_compile_to_named_checks() {
         ("m_req", "assume property (@(posedge clk) !rst |-> ##1 !req [*1:2])"),
         ("c_gnt", "cover property (@(posedge clk) gnt ##1 !gnt)"),
         ("a_live", "@(posedge clk) req |-> s_eventually gnt"),
+        ("a_strong", "@(posedge clk) req |-> gnt s_until !req"),
     ];
     let mut arenas = Vec::new();
     let mut bound = Vec::new();
@@ -307,11 +308,16 @@ fn properties_bound_from_text_compile_to_named_checks() {
         .collect();
     let checks_before = nl.checks.len();
     let out = nl.compile_external_properties(&elab.design, &external, &PropertyOptions::default());
-    assert!(out[4].as_ref().is_err_and(|why| why.contains("eventually")), "{out:?}");
+    assert!(out[5].as_ref().is_err_and(|why| why.contains("s_until")), "{out:?}");
+    // The liveness property is an obligation of its own, not a check.
+    let Ok(Compiled::Liveness(live)) = out[4] else { panic!("{out:?}") };
+    assert_eq!(nl.liveness[live].label.as_deref(), Some("a_live"));
+    assert!(!nl.liveness[live].assume);
     let kinds: Vec<(Option<&str>, CheckKind)> = out[..4]
         .iter()
         .map(|r| {
-            let c = &nl.checks[*r.as_ref().expect("compiled")];
+            let Ok(Compiled::Check(i)) = r else { panic!("{r:?}") };
+            let c = &nl.checks[*i];
             (c.label.as_deref(), c.kind)
         })
         .collect();
@@ -334,4 +340,5 @@ fn properties_bound_from_text_compile_to_named_checks() {
         assert!(model.btor2.lines().any(|l| l.contains(" bad ") && l.ends_with(&format!(" {name}"))), "{name}");
     }
     assert_eq!(model.btor2.lines().filter(|l| l.contains(" constraint ")).count(), 1);
+    assert!(model.btor2.lines().any(|l| l.contains(" justice 1 ") && l.ends_with(" a_live")), "{}", model.btor2);
 }

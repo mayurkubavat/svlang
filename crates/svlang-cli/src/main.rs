@@ -203,7 +203,7 @@ fn compile_properties(nl: &mut Netlist, o: &Opts) {
     let mut compiled = 0;
     for (i, outcome) in outcomes.iter().enumerate() {
         match outcome {
-            PropertyOutcome::Compiled { .. } => compiled += 1,
+            PropertyOutcome::Compiled { .. } | PropertyOutcome::Liveness { .. } => compiled += 1,
             PropertyOutcome::Unsupported(why) => eprintln!("note: property {i} not compiled: {why}"),
         }
     }

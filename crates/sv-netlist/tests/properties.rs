@@ -205,7 +205,7 @@ fn kinds_names_and_unsupported_operators() {
            a2: assert property (a |-> c);\n\
          end\n\
          u1: assert property (a |-> ##[1:$] b);\n\
-         u2: assert property (a |-> s_eventually b);\n\
+         u2: assert property (a |-> eventually [1:3] b);\n\
          u3: assert property (a s_until b);\n\
          u4: assert property (@(clk) a);\n\
          u5: assert property (a [*1:$] |-> b);\n\
@@ -938,4 +938,42 @@ fn until_forms_that_are_not_compiled() {
     assert!(why[0].contains("s_until"), "{why:?}");
     assert!(why[1].contains("cover of `until`"), "{why:?}");
     assert!(why[2].contains("not single booleans"), "{why:?}");
+}
+
+#[test]
+fn s_eventually_is_a_liveness_obligation_with_a_waiting_monitor() {
+    let src = format!(
+        "module m({PORTS});\n default clocking @(posedge clk); endclocking\n\
+         live: assert property (disable iff (rst) a |-> s_eventually b);\n\
+         fair: assume property (s_eventually c);\n\
+         both: assert property (a |-> ##[1:2] b);\n\
+         endmodule\n"
+    );
+    let mut nl = lower_src(&src).unwrap_netlist();
+    let out = nl.compile_properties(&PropertyOptions::default());
+    assert_eq!(out[0], PropertyOutcome::Liveness { index: 0 });
+    assert_eq!(out[1], PropertyOutcome::Liveness { index: 1 });
+    assert!(matches!(out[2], PropertyOutcome::Compiled { .. }));
+    assert_eq!(nl.property_liveness, [Some(0), Some(1), None]);
+    assert_eq!(nl.liveness[0].label.as_deref(), Some("m.live"));
+    assert!(!nl.liveness[0].assume && nl.liveness[1].assume);
+    // No check is made for them: a liveness property has no finite failure.
+    assert_eq!(nl.checks.len(), 1);
+
+    // The monitor of `live` waits from the tick a holds without b to the tick b holds,
+    // and a reset drops it. Its state shows the wait from the tick after.
+    let waiting = nl.states.iter().position(|s| s.name == "m._sva_until").expect("the monitor");
+    let mut sim = NetlistSim::new(&nl);
+    let mut seen = Vec::new();
+    for row in ["0100", "0000", "0010", "0000", "0100", "1000", "0000"] {
+        for (port, bit) in ["rst", "a", "b", "c"].iter().zip(row.chars()) {
+            sim.set_u(port, i128::from(bit == '1'));
+        }
+        sim.tick_posedge("clk");
+        seen.push(sim.states[waiting].is_true());
+    }
+    assert_eq!(seen, [true, true, false, false, true, false, false]);
+    // The assertion's signal is a watch bit that only the free pick input can set.
+    assert!(nl.undriven.iter().any(|u| u.signal == "m._sva_pick"));
+    assert!(nl.states.iter().any(|s| s.name == "m._sva_watch"));
 }

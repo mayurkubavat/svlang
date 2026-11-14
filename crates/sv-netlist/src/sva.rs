@@ -11,6 +11,7 @@
 //! ```text
 //! property := seq | seq |-> seq | seq |=> seq        (weak(seq) and strong(seq) as seq)
 //!           | [seq |-> | seq |=>] b until c | [seq |-> | seq |=>] b until_with c
+//!           | [seq |-> | seq |=>] s_eventually b
 //! seq      := b
 //!           | seq ##N seq | seq ##[M:N] seq | ##N seq | ##[M:N] seq
 //!           | seq [*N] | seq [*M:N]
@@ -58,6 +59,11 @@
 //!   (`<top>._sva_until`) remembers that an `until` is under way; `disable iff` clears it.
 //!   The strong forms (`s_until`), which also require `c` to come, are liveness and are not
 //!   compiled.
+//! - **`s_eventually c`** (assert, assume): from the tick it starts, `c` has to hold at that
+//!   tick or a later one. No finite trace violates this, so it is not a [`Check`] but a
+//!   [`Liveness`] in [`Netlist::liveness`]: the same monitor bit, and a signal that is true
+//!   infinitely often on exactly the traces where an attempt waits for ever (for an
+//!   assumption: that has to be true infinitely often on every trace considered).
 //! - **`disable iff (d)`**: the attempt is dropped when `d` was true at any tick from `t` to
 //!   `t + span`.
 //! - **In procedural code**: a property under a condition (`if (en) assert property (...)`
@@ -78,7 +84,8 @@ use sv_semantic::{
 };
 
 use crate::ir::{
-    Check, CheckKind, ClockSpec, Edge, NetOp, Netlist, SampledNode, State, StateId, ValueId, ValueKind, ValueNode,
+    Check, CheckKind, ClockSpec, Edge, FreeKind, Liveness, NetOp, Netlist, SampledNode, State, StateId, UndrivenSlice,
+    ValueId, ValueKind, ValueNode,
 };
 
 /// Longest property, in clock ticks from its first boolean to its last, that is compiled.
@@ -132,6 +139,11 @@ pub enum PropertyOutcome {
     Compiled {
         /// Index into [`Netlist::checks`].
         check: usize,
+    },
+    /// Compiled to a liveness obligation: `Netlist::liveness[index]`.
+    Liveness {
+        /// Index into [`Netlist::liveness`].
+        index: usize,
     },
     /// Not in the compiled subset; the text names what is not.
     Unsupported(String),
@@ -512,6 +524,7 @@ fn prop_name(p: &PropExpr) -> &'static str {
         PropExpr::FollowedBy { .. } => "followed-by (#-#, #=#)",
         PropExpr::Nexttime { .. } => "`nexttime`",
         PropExpr::Always { .. } => "`always`",
+        PropExpr::Eventually { strong: true, .. } => "`s_eventually` with a range, or inside another operator",
         PropExpr::Eventually { .. } => "`eventually`",
         PropExpr::Until { .. } => "`until`",
         PropExpr::IfElse { .. } => "property `if`",
@@ -574,18 +587,41 @@ impl Matcher<'_> {
     }
 }
 
+/// What [`Netlist::sva_until`] made: a check's enable and expression, or the signal of a
+/// [`Liveness`].
+enum Monitor {
+    Check(ValueId, ValueId),
+    Liveness(ValueId),
+}
+
+/// What compiling one property made.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Compiled {
+    /// `Netlist::checks[i]` decides it.
+    Check(usize),
+    /// `Netlist::liveness[i]` does.
+    Liveness(usize),
+}
+
 /// The plan of `[seq |-> | seq |=>] b until c` (or `until_with`): a one-bit monitor that is
 /// set where the antecedent lets the `until` start and stays set up to the tick `c` holds.
 struct Until {
     /// Where the `until` can start, as a tick of the attempt, with the condition for it
     /// and the first tick counter value at which that condition reads only sampled values.
     starts: Vec<(u32, Cond, u32)>,
-    /// `b`: has to hold while the monitor is set.
-    hold: ValueId,
+    /// `b`: has to hold while the monitor is set. `None` for `s_eventually c`, where only
+    /// the end has to come: that is made into a [`Liveness`], not a check.
+    hold: Option<ValueId>,
     /// `c`: ends it.
     release: ValueId,
     /// `until_with`: `b` has to hold at the tick `c` holds too.
     with: bool,
+}
+
+/// True for `s_eventually` with no range (or the whole range `[0:$]`).
+fn is_eventually(p: &PropExpr) -> bool {
+    matches!(p, PropExpr::Eventually { strong: true, range, .. }
+        if range.min == 0 && range.max == CycleBound::Unbounded)
 }
 
 /// The `until` of a property that is one, alone or as the consequent of an implication:
@@ -595,10 +631,15 @@ type UntilParts<'a> = (Option<(&'a SeqExpr, bool)>, &'a PropExpr);
 fn until_parts(p: &PropExpr) -> Option<UntilParts<'_>> {
     match p {
         PropExpr::Until { .. } => Some((None, p)),
-        PropExpr::OverlappedImplication { lhs, rhs } if matches!(**rhs, PropExpr::Until { .. }) => {
+        _ if is_eventually(p) => Some((None, p)),
+        PropExpr::OverlappedImplication { lhs, rhs }
+            if matches!(**rhs, PropExpr::Until { .. }) || is_eventually(rhs) =>
+        {
             Some((Some((lhs, true)), rhs))
         }
-        PropExpr::NonOverlappedImplication { lhs, rhs } if matches!(**rhs, PropExpr::Until { .. }) => {
+        PropExpr::NonOverlappedImplication { lhs, rhs }
+            if matches!(**rhs, PropExpr::Until { .. }) || is_eventually(rhs) =>
+        {
             Some((Some((lhs, false)), rhs))
         }
         _ => None,
@@ -843,23 +884,35 @@ impl Netlist {
         opts: &PropertyOptions,
         memo: &mut Lookback,
     ) -> Result<Plan, String> {
-        let PropExpr::Until { strong, overlapping, lhs, rhs } = until else {
-            unreachable!("until_parts returns an until");
-        };
-        if *strong {
-            return Err("`s_until` / `s_until_with` (the end has to come: liveness)".into());
-        }
-        if prop.kind == PropKind::Cover {
-            return Err("a cover of `until`".into());
-        }
-        let boolean = |p: &PropExpr| match as_seq(p) {
-            Ok(SeqExpr::Bool(e)) => Ok(*e),
-            _ => Err("`until` between properties that are not single booleans".to_string()),
-        };
         let not_lowered = || "an expression that was not lowered".to_string();
         let leaf = |e: ExprId| m.leaves.get(e.0 as usize).copied().flatten();
-        let hold = leaf(boolean(lhs)?).ok_or_else(not_lowered)?;
-        let release = leaf(boolean(rhs)?).ok_or_else(not_lowered)?;
+        let (hold, release, with) = match until {
+            PropExpr::Until { strong, overlapping, lhs, rhs } => {
+                if *strong {
+                    return Err("`s_until` / `s_until_with`".into());
+                }
+                if prop.kind == PropKind::Cover {
+                    return Err("a cover of `until`".into());
+                }
+                let boolean = |p: &PropExpr| match as_seq(p) {
+                    Ok(SeqExpr::Bool(e)) => Ok(*e),
+                    _ => Err("`until` between properties that are not single booleans".to_string()),
+                };
+                let hold = leaf(boolean(lhs)?).ok_or_else(not_lowered)?;
+                let release = leaf(boolean(rhs)?).ok_or_else(not_lowered)?;
+                (Some(hold), release, *overlapping)
+            }
+            PropExpr::Eventually { prop: awaited, .. } => {
+                if prop.kind == PropKind::Cover {
+                    return Err("a cover of `s_eventually`".into());
+                }
+                let Ok(SeqExpr::Bool(e)) = as_seq(awaited) else {
+                    return Err("`s_eventually` of a property that is not a single boolean".into());
+                };
+                (None, leaf(*e).ok_or_else(not_lowered)?, false)
+            }
+            _ => unreachable!("until_parts returns an until or an eventually"),
+        };
         let disable = match prop.disable_iff {
             Some(d) => Some(leaf(d).ok_or_else(not_lowered)?),
             None => None,
@@ -887,7 +940,7 @@ impl Netlist {
         }
         let terms = m.terms;
         let skip = self.skip_for(clock, opts);
-        let now = self.lookback(hold, memo).max(self.lookback(release, memo));
+        let now = hold.map_or(0, |h| self.lookback(h, memo)).max(self.lookback(release, memo));
         let gone = disable.map_or(0, |d| self.lookback(d, memo));
         let mut live = vec![false; terms.nodes.len()];
         let mut planned = Vec::new();
@@ -923,7 +976,7 @@ impl Netlist {
             disable,
             span,
             warm,
-            until: Some(Until { starts: planned, hold, release, with: *overlapping }),
+            until: Some(Until { starts: planned, hold, release, with }),
         })
     }
 
@@ -1059,8 +1112,10 @@ impl Netlist {
 
     /// The check of an `until` plan: a monitor bit that is set where the `until` starts and
     /// stays set up to the tick its end holds; while it is set, the held boolean has to hold.
-    /// Returns the check's enable and expression.
-    fn sva_until(&mut self, p: &Plan, u: &Until, ticks: Option<(ValueId, u32)>, nth: usize) -> (ValueId, ValueId) {
+    /// Returns the check's enable and expression. For `s_eventually` there is no check: the
+    /// monitor is set until the awaited boolean holds, and the value returned is the
+    /// [`Liveness::signal`] (see [`Self::sva_liveness`]).
+    fn sva_until(&mut self, p: &Plan, u: &Until, ticks: Option<(ValueId, u32)>, nth: usize) -> Monitor {
         let loc = p.loc;
         let off_now = p.disable.map(|d| {
             let d = self.sva_bool(d, loc);
@@ -1097,7 +1152,6 @@ impl Netlist {
         if let Some((_, off)) = off_now {
             active = self.sva_op(NetOp::LogAnd, vec![active, off], 1, loc);
         }
-        let hold = self.sva_bool(u.hold, loc);
         let release = self.sva_bool(u.release, loc);
         let release = self.sva_two_state(release, loc);
         let ended = self.sva_op(NetOp::LogNot, vec![release], 1, loc);
@@ -1117,8 +1171,83 @@ impl Netlist {
             out: pending,
             loc,
         });
+        let Some(hold) = u.hold else {
+            let off = off_now.map(|(_, off)| off);
+            return Monitor::Liveness(self.sva_liveness(p, pending, active, ended, off, nth));
+        };
+        let hold = self.sva_bool(hold, loc);
         let expr = if u.with { hold } else { self.sva_op(NetOp::LogOr, vec![hold, release], 1, loc) };
-        (active, expr)
+        Monitor::Check(active, expr)
+    }
+
+    /// The [`Liveness::signal`] of `s_eventually c`, given its monitor: `pending` (an attempt
+    /// is waiting from an earlier tick), `active` (one is waiting or starts at this tick, and
+    /// the property is not disabled) and `ended` (`c` does not hold at this tick).
+    ///
+    /// For an assumption the signal is "nothing is waiting", which has to hold again and
+    /// again. For an assertion a counterexample needs one attempt that waits for ever, so the
+    /// signal is a watch bit that a free input may set once, at a tick an attempt waits, and
+    /// that `c` (or `disable iff`) clears for good: it is true infinitely often exactly when
+    /// it is never cleared.
+    fn sva_liveness(
+        &mut self,
+        p: &Plan,
+        pending: ValueId,
+        active: ValueId,
+        ended: ValueId,
+        off: Option<ValueId>,
+        nth: usize,
+    ) -> ValueId {
+        let loc = p.loc;
+        if p.kind != PropKind::Assert {
+            return self.sva_op(NetOp::LogNot, vec![pending], 1, loc);
+        }
+        let suffix = if nth == 0 { String::new() } else { format!("_{nth}") };
+        // The free input that picks the attempt to watch.
+        let pick = self.sva_value(1, false, ValueKind::Undriven(self.undriven.len()), loc);
+        self.undriven.push(UndrivenSlice {
+            signal: format!("{}._sva_pick{suffix}", self.top),
+            hi: 0,
+            lo: 0,
+            value: pick,
+            loc,
+            free: FreeKind::AnySeq,
+        });
+        let state = |nl: &mut Netlist, name: String| {
+            let id = StateId(nl.states.len() as u32);
+            let out = nl.sva_value(1, false, ValueKind::StateOut(id), loc);
+            nl.states.push(State {
+                id,
+                name,
+                width: 1,
+                signed: false,
+                four_state: false,
+                clock: Some(p.clock),
+                async_reset: None,
+                latch_enable: None,
+                init: Some(CVal::new(1, false, 0)),
+                next: out,
+                out,
+                loc,
+            });
+            (id, out)
+        };
+        let (used_id, used) = state(self, format!("{}._sva_picked{suffix}", self.top));
+        let (watch_id, watch) = state(self, format!("{}._sva_watch{suffix}", self.top));
+        // Taken now: picked, an attempt waits, it is not met at this tick, and none was taken.
+        let waiting = self.sva_op(NetOp::LogAnd, vec![active, ended], 1, loc);
+        let fresh = self.sva_op(NetOp::LogNot, vec![used], 1, loc);
+        let take = self.sva_op(NetOp::LogAnd, vec![pick, waiting], 1, loc);
+        let take = self.sva_op(NetOp::LogAnd, vec![take, fresh], 1, loc);
+        let used_next = self.sva_op(NetOp::LogOr, vec![used, take], 1, loc);
+        let on = self.sva_op(NetOp::LogOr, vec![watch, take], 1, loc);
+        let mut watch_next = self.sva_op(NetOp::LogAnd, vec![on, ended], 1, loc);
+        if let Some(off) = off {
+            watch_next = self.sva_op(NetOp::LogAnd, vec![watch_next, off], 1, loc);
+        }
+        self.states[used_id.0 as usize].next = used_next;
+        self.states[watch_id.0 as usize].next = watch_next;
+        watch
     }
 
     /// A tick counter on `clock` that starts at 0 and stops at `max`.
@@ -1159,6 +1288,9 @@ impl Netlist {
         if self.property_checks.len() != self.properties.len() {
             self.property_checks.resize(self.properties.len(), None);
         }
+        if self.property_liveness.len() != self.properties.len() {
+            self.property_liveness.resize(self.properties.len(), None);
+        }
         let mut outcomes: Vec<Option<PropertyOutcome>> = vec![None; self.properties.len()];
         let mut plans = Vec::new();
         let mut planned = Vec::new();
@@ -1166,6 +1298,10 @@ impl Netlist {
         for (i, prop) in self.properties.iter().enumerate() {
             if let Some(check) = self.property_checks[i] {
                 outcomes[i] = Some(PropertyOutcome::Compiled { check });
+                continue;
+            }
+            if let Some(index) = self.property_liveness[i] {
+                outcomes[i] = Some(PropertyOutcome::Liveness { index });
                 continue;
             }
             let reached = self.property_enables.get(i).copied().flatten();
@@ -1178,9 +1314,17 @@ impl Netlist {
                 Err(why) => outcomes[i] = Some(PropertyOutcome::Unsupported(why)),
             }
         }
-        for (i, check) in planned.into_iter().zip(self.emit(&plans)) {
-            self.property_checks[i] = Some(check);
-            outcomes[i] = Some(PropertyOutcome::Compiled { check });
+        for (i, made) in planned.into_iter().zip(self.emit(&plans)) {
+            outcomes[i] = Some(match made {
+                Compiled::Check(check) => {
+                    self.property_checks[i] = Some(check);
+                    PropertyOutcome::Compiled { check }
+                }
+                Compiled::Liveness(index) => {
+                    self.property_liveness[i] = Some(index);
+                    PropertyOutcome::Liveness { index }
+                }
+            });
         }
         outcomes.into_iter().map(|o| o.expect("every property has an outcome")).collect()
     }
@@ -1191,15 +1335,15 @@ impl Netlist {
     /// that of [`Self::compile_properties`], and each property's own kind decides whether
     /// its check is an assertion, an assumption or a cover.
     ///
-    /// Returns, in order, the [`Self::checks`] index made for each property, or why there
-    /// is none: an expression that does not lower, or an operator outside the bounded
+    /// Returns, in order, the check or liveness obligation made for each property, or why
+    /// there is none: an expression that does not lower, or an operator outside the bounded
     /// subset. Calling this may re-index [`Self::values`].
     pub fn compile_external_properties(
         &mut self,
         design: &ElaboratedDesign,
         properties: &[ExternalProperty<'_>],
         opts: &PropertyOptions,
-    ) -> Vec<Result<usize, String>> {
+    ) -> Vec<Result<Compiled, String>> {
         // Lowering one property's expressions may re-index the values, so the expressions
         // already lowered ride at the end of `prop_expr_values`, which is kept in step.
         let base = self.prop_expr_values.len();
@@ -1215,7 +1359,7 @@ impl Netlist {
             });
         }
         let mut memo = Lookback { memo: vec![None; self.values.len()], open: vec![false; self.values.len()] };
-        let mut results: Vec<Option<Result<usize, String>>> = vec![None; properties.len()];
+        let mut results: Vec<Option<Result<Compiled, String>>> = vec![None; properties.len()];
         let mut plans = Vec::new();
         let mut planned = Vec::new();
         for (i, (x, low)) in properties.iter().zip(&lowered).enumerate() {
@@ -1239,15 +1383,15 @@ impl Netlist {
             }
         }
         self.prop_expr_values.truncate(base);
-        for (i, check) in planned.into_iter().zip(self.emit(&plans)) {
-            results[i] = Some(Ok(check));
+        for (i, made) in planned.into_iter().zip(self.emit(&plans)) {
+            results[i] = Some(Ok(made));
         }
         results.into_iter().map(|r| r.expect("every property has a result")).collect()
     }
 
     /// Writes the check of each plan, under the name beside it, and returns their indices
     /// in [`Self::checks`].
-    fn emit(&mut self, plans: &[(Plan, Option<String>)]) -> Vec<usize> {
+    fn emit(&mut self, plans: &[(Plan, Option<String>)]) -> Vec<Compiled> {
         // One tick counter per clock, as wide as its latest first check needs.
         let mut counters: Vec<TickCounter> = Vec::new();
         for (p, _) in plans.iter().filter(|(p, _)| p.warm > 0) {
@@ -1273,9 +1417,23 @@ impl Netlist {
                         }
                     });
                 }
-                let (enable, expr) = self.sva_until(p, u, ticks, untils);
+                let monitor = self.sva_until(p, u, ticks, untils);
                 untils += 1;
-                made.push(self.checks.len());
+                let (enable, expr) = match monitor {
+                    Monitor::Check(enable, expr) => (enable, expr),
+                    Monitor::Liveness(signal) => {
+                        made.push(Compiled::Liveness(self.liveness.len()));
+                        self.liveness.push(Liveness {
+                            label: name.clone(),
+                            assume: kind != PropKind::Assert,
+                            signal,
+                            clock: p.clock,
+                            loc,
+                        });
+                        continue;
+                    }
+                };
+                made.push(Compiled::Check(self.checks.len()));
                 self.checks.push(Check {
                     kind: if kind == PropKind::Assert { CheckKind::Assert } else { CheckKind::Assume },
                     label: name.clone(),
@@ -1322,7 +1480,7 @@ impl Netlist {
             let one = |nl: &mut Netlist, v: Option<ValueId>| v.unwrap_or_else(|| nl.sva_const(1, 1, loc));
             let enable = one(self, enable);
             let expr = one(self, expr);
-            made.push(self.checks.len());
+            made.push(Compiled::Check(self.checks.len()));
             self.checks.push(Check {
                 kind,
                 label: name.clone(),

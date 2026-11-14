@@ -640,6 +640,8 @@ impl NetBuilder {
             property_enables,
             property_names: Vec::new(),
             property_checks: vec![None; properties.len()],
+            liveness: Vec::new(),
+            property_liveness: vec![None; properties.len()],
             properties,
             prop_expr_values,
             symbol_values,

@@ -735,7 +735,9 @@ impl Netlist {
                     svlang::PropKind::Restrict => "restrict",
                 };
                 let name = nl.property_names.get(i).cloned().unwrap_or_default();
-                (name, kind, nl.property_checks.get(i).copied().flatten().is_some())
+                let made = nl.property_checks.get(i).copied().flatten().is_some()
+                    || nl.property_liveness.get(i).copied().flatten().is_some();
+                (name, kind, made)
             })
             .collect()
     }

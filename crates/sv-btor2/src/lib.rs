@@ -52,6 +52,9 @@
 //!   and [`Model::notes`] says how many were left out. A concurrent *assumption* (`assume
 //!   property`, `restrict property`) cannot be left out without changing what the assertions
 //!   mean, so a design with one that has no check is [`Fail::Unsupported`];
+//! - a liveness property (`req |-> s_eventually gnt`, compiled to [`Netlist::liveness`]) is
+//!   a `justice` line under its name: an infinite trace that makes it true again and again
+//!   is a counterexample. A liveness assumption is a `fair` line;
 //! - a cover is a `bad` line that is reached when the cover is hit, with
 //!   [`Options::covers`]; without it covers are left out and noted;
 //! - `$past` and friends are history registers with no initial value, so a
@@ -1061,7 +1064,10 @@ impl<'n> Writer<'n> {
             .properties
             .iter()
             .enumerate()
-            .filter(|(i, _)| nl.property_checks.get(*i).copied().flatten().is_none())
+            .filter(|(i, _)| {
+                nl.property_checks.get(*i).copied().flatten().is_none()
+                    && nl.property_liveness.get(*i).copied().flatten().is_none()
+            })
             .map(|(_, p)| p)
             .collect();
         if !left_out.is_empty() {
@@ -1155,6 +1161,22 @@ impl<'n> Writer<'n> {
                     self.bad(hit, c);
                 }
                 CheckKind::Cover => covers_left_out += 1,
+            }
+        }
+        // Liveness: a `justice` line that a trace hitting it infinitely often witnesses, or
+        // a `fair` line that every such trace has to hit infinitely often.
+        for l in &nl.liveness {
+            let v = self.value(l.signal)?;
+            let v = self.bool(v);
+            if l.assume {
+                self.line(format!("fair {v}"));
+            } else {
+                let mut body = format!("justice 1 {v}");
+                if let Some(name) = &l.label {
+                    write!(body, " {}", symbol(name)).unwrap();
+                }
+                self.line(body);
+                bads += 1;
             }
         }
         if covers_left_out > 0 {

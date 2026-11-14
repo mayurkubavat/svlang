@@ -513,6 +513,29 @@ pub struct Check {
     pub loc: Loc,
 }
 
+/// A liveness obligation over infinite traces, made from a property such as
+/// `req |-> s_eventually gnt`.
+///
+/// `signal` is one bit. For an assertion (`assume == false`) a trace on which `signal` is true
+/// at infinitely many clock ticks is a counterexample: the pass builds `signal` so that it
+/// stays true from some tick on exactly when one attempt is never met. For an assumption
+/// (`assume == true`) only traces on which `signal` is true at infinitely many ticks count
+/// (a fairness constraint).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Liveness {
+    /// The property's name ([`Netlist::property_names`], or the name given for a property
+    /// bound from text).
+    pub label: Option<String>,
+    /// `true` for `assume` / `restrict`: a fairness constraint, not a target.
+    pub assume: bool,
+    /// The 1-bit value in [`Netlist::values`].
+    pub signal: ValueId,
+    /// The property's clock.
+    pub clock: ClockSpec,
+    /// Source location.
+    pub loc: Loc,
+}
+
 /// How a [`UndrivenSlice`] is free.
 ///
 /// The formal attributes `(* anyseq *)` and `(* anyconst *)` on a declaration
@@ -626,6 +649,11 @@ pub struct Netlist {
     /// [`Self::compile_properties`] made for it (`None` until then, or when it is not in the
     /// compiled subset).
     pub property_checks: Vec<Option<usize>>,
+    /// Liveness obligations that [`Self::compile_properties`] made from properties such as
+    /// `req |-> s_eventually gnt`.
+    pub liveness: Vec<Liveness>,
+    /// For each property of [`Self::properties`], the [`Self::liveness`] index made for it.
+    pub property_liveness: Vec<Option<usize>>,
     /// Sorted `(SymbolId, ValueId)` map for every elaborated packed/scalar symbol in the design.
     pub symbol_values: Vec<(SymbolId, ValueId)>,
 }
@@ -1344,6 +1372,19 @@ impl Netlist {
         for v in self.property_enables.iter().flatten() {
             visit_root(v.0 as usize, &self.values, &self.memories, &self.sampled, &mut state, &mut stack, &mut order);
         }
+        for l in &self.liveness {
+            for v in [l.signal, l.clock.signal] {
+                visit_root(
+                    v.0 as usize,
+                    &self.values,
+                    &self.memories,
+                    &self.sampled,
+                    &mut state,
+                    &mut stack,
+                    &mut order,
+                );
+            }
+        }
         for tr in &self.traces {
             visit_root(
                 tr.value.0 as usize,
@@ -1433,6 +1474,10 @@ impl Netlist {
         }
         for pv in self.property_enables.iter_mut().flatten() {
             map_v(pv);
+        }
+        for l in &mut self.liveness {
+            map_v(&mut l.signal);
+            map_v(&mut l.clock.signal);
         }
         for (_, sv) in &mut self.symbol_values {
             map_v(sv);
