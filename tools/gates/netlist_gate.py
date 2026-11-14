@@ -5,7 +5,7 @@ Verifies:
 1. Every valid RTL testcase lowers cleanly (`exit 0`, `errors 0`, non-empty `netlist <top>`),
    and emits byte-for-byte deterministic output across repeated invocations.
 2. CLI flags (`-G name=value`, `--blast-memories <N>`, `--allow-four-state-ops`,
-   `--skip-initial-checks`) work end-to-end.
+   `--skip-initial-checks`, `--isunknown-is-false`) work end-to-end.
 3. Every fail-closed testcase (`overlap_drivers.sv`, `clock_typo.sv`, `reset_typo.sv`,
    `comb_loop.sv`, and default `isunknown.sv`) exits non-zero (`exit 1`) with the expected
    diagnostic message and never silently emits a broken netlist.
@@ -124,6 +124,13 @@ def main() -> int:
     rs = run_dv(dv_build, ["--skip-initial-checks", os.path.join(NETLIST_DIR, "initial_signal_check.sv")])
     if rs.returncode != 0 or "state s0 initial_signal_check.q" not in rs.stdout:
         failures.append(f"initial_signal_check.sv (--skip-initial-checks): expected a netlist, got rc={rs.returncode}:\n{rs.stdout}")
+    else:
+        passed += 1
+
+    # 5. `--isunknown-is-false` on `isunknown.sv`
+    rf = run_dv(dv_build, ["--isunknown-is-false", os.path.join(NETLIST_DIR, "isunknown.sv")])
+    if rf.returncode != 0 or "isunknown(" in rf.stdout or not rf.stdout.startswith("netlist "):
+        failures.append(f"isunknown.sv (--isunknown-is-false): expected a netlist without isunknown, got rc={rf.returncode}:\n{rf.stdout}")
     else:
         passed += 1
 

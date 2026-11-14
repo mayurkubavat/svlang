@@ -85,7 +85,7 @@ impl<'a, F: FuncInliner> ExprLowerer<'a, F> {
         let expr = self.arena.get(id);
         let loc = expr.loc;
 
-        if !self.config.allow_four_state_ops {
+        if !self.config.allow_four_state_ops && !self.config.isunknown_is_false {
             if let Some(uloc) = expr_has_isunknown(self.arena, id) {
                 builder.unsup(uloc, "$isunknown requires allow_four_state_ops");
                 return None;
@@ -501,6 +501,9 @@ impl<'a, F: FuncInliner> ExprLowerer<'a, F> {
                         Some(ObjVal::Packed(builder.alloc_op(NetOp::OneHot0, vec![a0], 1, false, false, loc)))
                     }
                     SysFunc::IsUnknown => {
+                        if !self.config.allow_four_state_ops && self.config.isunknown_is_false {
+                            return Some(ObjVal::Packed(builder.alloc_const(CVal::new(1, false, 0), false, loc)));
+                        }
                         if !self.config.allow_four_state_ops {
                             builder.unsup(loc, "$isunknown requires allow_four_state_ops");
                             return None;

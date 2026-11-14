@@ -669,6 +669,12 @@ pub struct LowerConfig {
     /// behavior is the same either way: only that one check is not made. Constant
     /// assertions are decided at lowering in both settings.
     pub skip_initial_checks: bool,
+    /// What `$isunknown(x)` is while [`Self::allow_four_state_ops`] is `false`. `false`
+    /// (default) reports it as [`LowerOutcome::Unsupported`]; `true` lowers it as the
+    /// constant 0, since a two-state model has no unknown value, as formal tools do. A
+    /// check such as `assert (!$isunknown(x))` then always holds: it says nothing about
+    /// the design. Ignored when `allow_four_state_ops` is `true`.
+    pub isunknown_is_false: bool,
 }
 
 impl Default for LowerConfig {
@@ -682,6 +688,7 @@ impl Default for LowerConfig {
             black_box_modules: Vec::new(),
             black_box_instances: Vec::new(),
             skip_initial_checks: false,
+            isunknown_is_false: false,
         }
     }
 }
