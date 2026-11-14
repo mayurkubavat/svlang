@@ -777,7 +777,23 @@ impl<'a> DesignLowerer<'a> {
         let t = &self.trees[tree_idx];
         if ctx.in_initial {
             match t.kind(stmt) {
-                SyntaxKind::EmptyStmt | SyntaxKind::ImportDecl => {}
+                SyntaxKind::EmptyStmt | SyntaxKind::ImportDecl | SyntaxKind::EndLabel => {}
+                SyntaxKind::AssertStmt => self.exec_initial_assert(tree_idx, stmt, ctx),
+                // Reached only in a block that writes nothing (`exec_initial_block`), where
+                // the time a check runs at does not change the netlist.
+                SyntaxKind::TimedStmt => {
+                    for ch in t.children(stmt) {
+                        if !matches!(
+                            t.kind(ch),
+                            SyntaxKind::Attribute | SyntaxKind::StmtLabel | SyntaxKind::TimingControl
+                        ) {
+                            self.exec_stmt(tree_idx, ch, ctx);
+                        }
+                    }
+                }
+                SyntaxKind::LoopStmt | SyntaxKind::DoWhileStmt => self.exec_loop_stmt(tree_idx, stmt, ctx),
+                SyntaxKind::DataDecl | SyntaxKind::ParamDecl => self.exec_local_decl(tree_idx, stmt, ctx),
+                SyntaxKind::TypedefDecl => self.exec_local_typedef(tree_idx, stmt, ctx),
                 SyntaxKind::SeqBlock => {
                     for ch in t.children(stmt) {
                         if !matches!(t.kind(ch), SyntaxKind::Attribute | SyntaxKind::StmtLabel | SyntaxKind::Name) {
@@ -803,7 +819,7 @@ impl<'a> DesignLowerer<'a> {
             return;
         }
         match t.kind(stmt) {
-            SyntaxKind::EmptyStmt | SyntaxKind::ImportDecl => {}
+            SyntaxKind::EmptyStmt | SyntaxKind::ImportDecl | SyntaxKind::EndLabel => {}
             SyntaxKind::ConcurrentAssert => {
                 let loc = self.stmt_loc(tree_idx, stmt, ctx);
                 let reach = ctx.effective_reach(&mut self.builder, loc);
@@ -1507,6 +1523,63 @@ impl<'a> DesignLowerer<'a> {
         });
     }
 
+    /// An immediate assertion in an `initial` block is a check at time zero. One over
+    /// constants (the usual parameter check) is decided here: true adds nothing to the
+    /// netlist, false is an error unless its action only warns. One over signals is not
+    /// modeled.
+    fn exec_initial_assert(&mut self, tree_idx: usize, stmt: NodeId, ctx: &mut ProcCtx) {
+        let t = &self.trees[tree_idx];
+        let loc = self.stmt_loc(tree_idx, stmt, ctx);
+        let own = own_toks(t, stmt);
+        let Some(cond_node) =
+            t.children(stmt).find(|&c| !matches!(t.kind(c), SyntaxKind::Attribute | SyntaxKind::StmtLabel))
+        else {
+            return;
+        };
+        let Some(cond) = self.eval_proc_cond(tree_idx, cond_node, ctx) else { return };
+        match self.builder.const_cval(cond) {
+            Some(c) if c.known() && c.is_true() => {}
+            Some(c) if c.known() => {
+                if own.contains(&"cover") {
+                    return;
+                }
+                // `else $warning(...)` or `else $info(...)` reports and carries on.
+                let mut tasks = subtree_preorder(t, stmt)
+                    .into_iter()
+                    .filter(|&n| t.kind(n) == SyntaxKind::NameExpr)
+                    .map(|n| t.bare_text(n).trim().to_string())
+                    .filter(|name| name.starts_with('$'));
+                let only_warns = t.child(stmt, SyntaxKind::ElseClause).is_some()
+                    && tasks.all(|name| !matches!(name.as_str(), "$error" | "$fatal"));
+                if !only_warns {
+                    let what = if own.contains(&"assume") { "assumption" } else { "assertion" };
+                    self.builder.err(loc, format!("immediate {what} in initial block is false"));
+                }
+            }
+            _ => self
+                .builder
+                .unsup(loc, "immediate assertion on a non-constant value inside initial block is not supported"),
+        }
+    }
+
+    /// Whether the statement can only check and report: assertions, the display and
+    /// severity tasks, and the blocks, branches, loops and delays around them.
+    pub(crate) fn is_check_only(&self, tree_idx: usize, root: NodeId) -> bool {
+        let t = &self.trees[tree_idx];
+        subtree_preorder(t, root).into_iter().all(|n| match t.kind(n) {
+            SyntaxKind::ExprStmt => t
+                .children(n)
+                .find(|&c| !matches!(t.kind(c), SyntaxKind::Attribute | SyntaxKind::StmtLabel))
+                .is_none_or(|e| is_report_task_call(t, e)),
+            SyntaxKind::WaitStmt
+            | SyntaxKind::EventTrigger
+            | SyntaxKind::TimedExpr
+            | SyntaxKind::DataDecl
+            | SyntaxKind::CaseStmt => false,
+            _ => true,
+        })
+    }
+
     fn exec_return_stmt(&mut self, tree_idx: usize, stmt: NodeId, ctx: &mut ProcCtx) {
         let t = &self.trees[tree_idx];
         let loc = self.stmt_loc(tree_idx, stmt, ctx);
@@ -1544,6 +1617,9 @@ impl<'a> DesignLowerer<'a> {
                     self.exec_assignment(tree_idx, kids[0], op, Some(kids[1]), ctx, loc);
                     return;
                 }
+            }
+            if is_report_task_call(t, expr_node) {
+                return;
             }
             self.builder.unsup(loc, "unsupported expression statement or task call inside initial block");
             return;
@@ -2770,6 +2846,52 @@ impl<'a> DesignLowerer<'a> {
         }
         false
     }
+}
+
+/// A call of a system task that only reports or controls the simulator, so it leaves no
+/// trace in a netlist: `$display("...")`, `$error`, `$finish`.
+pub(crate) fn is_report_task_call(t: &Tree, expr: NodeId) -> bool {
+    let name_node = match t.kind(expr) {
+        SyntaxKind::CallExpr => t.child(expr, SyntaxKind::NameExpr),
+        SyntaxKind::NameExpr => Some(expr),
+        _ => None,
+    };
+    let Some(name_node) = name_node else { return false };
+    matches!(
+        t.bare_text(name_node).trim(),
+        "$display"
+            | "$displayb"
+            | "$displayh"
+            | "$displayo"
+            | "$write"
+            | "$writeb"
+            | "$writeh"
+            | "$writeo"
+            | "$strobe"
+            | "$monitor"
+            | "$monitoron"
+            | "$monitoroff"
+            | "$info"
+            | "$warning"
+            | "$error"
+            | "$fatal"
+            | "$finish"
+            | "$stop"
+            | "$fflush"
+            | "$timeformat"
+            | "$printtimescale"
+            | "$dumpfile"
+            | "$dumpvars"
+            | "$dumpon"
+            | "$dumpoff"
+            | "$dumpall"
+            | "$dumpflush"
+            | "$dumplimit"
+            | "$asserton"
+            | "$assertoff"
+            | "$assertkill"
+            | "$assertcontrol"
+    )
 }
 
 pub(crate) fn own_toks(t: &Tree, node: NodeId) -> Vec<&str> {

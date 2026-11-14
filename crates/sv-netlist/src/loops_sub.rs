@@ -911,7 +911,8 @@ impl<'a> DesignLowerer<'a> {
         else {
             return;
         };
-        if self.has_embedded_timing_control(item.tree, body) {
+        // A delay matters only where something is written after it.
+        if self.has_embedded_timing_control(item.tree, body) && !self.is_check_only(item.tree, body) {
             self.builder
                 .unsup(item.loc, "initial block with timing control ('#', '@', 'wait') is not synthesizable in RTL");
             return;

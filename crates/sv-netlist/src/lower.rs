@@ -366,6 +366,43 @@ impl<'a> DesignLowerer<'a> {
         self.free_attrs.as_ref().and_then(|m| m.get(&decl).copied()).unwrap_or_default()
     }
 
+    /// The value of a parameter of an unpacked type (a lookup table), from its
+    /// initializer: a tree of constants. `None` when any element does not fold.
+    fn const_aggregate_param(&mut self, sid: SymbolId) -> Option<ObjSlot> {
+        let sym = self.design.symbol(sid);
+        let (tree_idx, init_node) = sym.init_node?;
+        if sym.ty.is_packed() {
+            return None;
+        }
+        let gen_consts = self.collect_scope_gen_consts(sym.instance, &sym.init_scope_prefix);
+        let mut arena = ExprArena::new();
+        let mut binder =
+            ExprBinder::new(self.trees, self.design, sym.instance, &sym.init_scope_prefix, &gen_consts, &mut arena);
+        let eid = binder.bind_assigned(tree_idx, init_node, &sym.ty);
+        self.flush_expr_diags(binder.diags);
+        let val = self.eval_comb_expr(&arena, eid?)?;
+        self.const_slot_of(&val)
+    }
+
+    fn const_slot_of(&self, val: &ObjVal) -> Option<ObjSlot> {
+        Some(match val {
+            ObjVal::Packed(v) => {
+                let cv = self.builder.const_cval(*v)?.clone();
+                let four = !cv.known();
+                ObjSlot::Const(cv, four)
+            }
+            ObjVal::Struct(fields) => ObjSlot::Struct(
+                fields.iter().map(|(n, f)| Some((n.clone(), self.const_slot_of(f)?))).collect::<Option<_>>()?,
+            ),
+            ObjVal::Elems { left, right, elems } => ObjSlot::Elems {
+                left: *left,
+                right: *right,
+                elems: elems.iter().map(|e| self.const_slot_of(e)).collect::<Option<_>>()?,
+            },
+            ObjVal::Memory(_) => return None,
+        })
+    }
+
     fn alloc_symbol(&mut self, sid: SymbolId, is_top: bool) {
         {
             let sym = self.design.symbol(sid);
@@ -385,7 +422,14 @@ impl<'a> DesignLowerer<'a> {
             match &sym.kind {
                 SymbolKind::Param { .. } | SymbolKind::Genvar => {
                     let Some(cv) = sym.cval.clone() else {
-                        self.builder.err(sym.loc, format!("parameter '{}' has no constant value", sym.full_path));
+                        match self.const_aggregate_param(sid) {
+                            Some(slot) => {
+                                std::rc::Rc::make_mut(&mut self.sym_slots).insert(sid, slot);
+                            }
+                            None => self
+                                .builder
+                                .err(sym.loc, format!("parameter '{}' has no constant value", sym.full_path)),
+                        }
                         return;
                     };
                     std::rc::Rc::make_mut(&mut self.sym_slots).insert(sid, ObjSlot::Const(cv, sym.ty.is_four_state()));
