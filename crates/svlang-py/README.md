@@ -73,9 +73,16 @@ data, notes = nl.to_aiger()
 open("top.aig", "wb").write(data)       # then: ric3 check top.aig ic3
 ```
 
-Immediate assertions become `bad` lines. Concurrent assertions
-(`assert property`) are not written yet, and a design with a concurrent
-assumption (`assume property`) raises `SvlangError`.
+Immediate assertions become `bad` lines. For concurrent properties
+(`assert property`, `assume property`, `cover property`), lower with
+`compile_properties=True`: each one over bounded sequences becomes a check
+that both exporters write, and the notes say how many were left out. A
+concurrent assumption that could not be compiled raises `SvlangError`.
+
+```python
+nl = comp.lower_netlist(compile_properties=True, skip_cycles=1)
+text, notes = nl.to_btor2(covers=True)
+```
 
 Parsing, checking and lowering release the GIL, so several compilations
 can run in threads at once.

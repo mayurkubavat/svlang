@@ -131,3 +131,25 @@ fn usage_errors_exit_2() {
     let o = svlang(&["version"]);
     assert_eq!(stdout(&o), format!("svlang {}\n", env!("CARGO_PKG_VERSION")));
 }
+
+#[test]
+fn properties_option_writes_concurrent_assertions() {
+    let (_, f) = source(
+        "props",
+        "hs.sv",
+        "module hs(input logic clk, req, output logic ack);\n\
+           always_ff @(posedge clk) ack <= req;\n\
+           a_ack: assert property (@(posedge clk) req |=> ack);\n\
+         endmodule\n",
+    );
+    // Without --properties the assertion is left out and noted.
+    let o = svlang(&["btor2", f.to_str().unwrap()]);
+    assert_eq!(o.status.code(), Some(0), "{}", stderr(&o));
+    assert!(!stdout(&o).lines().any(|l| l.contains(" bad ")), "{}", stdout(&o));
+    assert!(stderr(&o).contains("note:"), "{}", stderr(&o));
+    // With it, it is a bad line under its hierarchical name.
+    let o = svlang(&["btor2", "--properties", f.to_str().unwrap()]);
+    assert_eq!(o.status.code(), Some(0), "{}", stderr(&o));
+    assert!(stdout(&o).lines().any(|l| l.contains(" bad ") && l.ends_with("hs.a_ack")), "{}", stdout(&o));
+    assert!(stderr(&o).contains("1 of 1 concurrent properties compiled"), "{}", stderr(&o));
+}

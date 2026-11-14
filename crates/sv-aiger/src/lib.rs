@@ -23,11 +23,12 @@
 //! ```
 //!
 //! The design is first written as the Btor2 transition system of `sv-btor2`,
-//! with that crate's modelling choices (one step per edge of a single clock,
+//! with that crate's modelling choices and [`Options`] (clocks and edges,
 //! asynchronous resets acting synchronously, free values for undriven and X
-//! bits, immediate assertions as bad states and immediate assumptions as
-//! constraints), and then bit-blasted: every register bit is a latch, every
-//! input bit an input. Memories must be expanded into registers first
+//! bits, assertions as bad states and assumptions as constraints, concurrent
+//! properties through the checks `Netlist::compile_properties` made), and then
+//! bit-blasted: every register bit is a latch, every input bit an input.
+//! Memories must be expanded into registers first
 //! ([`LowerConfig::blast_memories_up_to`](sv_netlist::LowerConfig)); anything
 //! that cannot be written exactly is an [`Error`].
 //!
@@ -46,19 +47,10 @@ pub use err::Error;
 
 use sv_netlist::Netlist;
 
-/// How to lower a netlist to an AIG.
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[non_exhaustive]
-pub struct Options {
-    /// Prefix of the names invented for free inputs and history registers (`"svlang"` by default).
-    pub name_prefix: String,
-}
-
-impl Default for Options {
-    fn default() -> Self {
-        Self { name_prefix: "svlang".into() }
-    }
-}
+/// How to model the design: the options of the Btor2 writer, which this crate goes
+/// through ([`Options::covers`], [`Options::both_edges`], [`Options::clocks`],
+/// [`Options::name_prefix`]). The trace section is not used.
+pub use sv_btor2::{Clock, Options};
 
 /// The bit-level model, and notes for the log.
 #[derive(Debug, Clone)]
@@ -77,8 +69,8 @@ pub struct Model {
 /// a concurrent assumption, a memory that was not expanded, or a register whose initial
 /// value is not a constant.
 pub fn lower(nl: &Netlist, options: &Options) -> Result<Model, Error> {
-    let mut o = sv_btor2::Options::default();
-    o.name_prefix.clone_from(&options.name_prefix);
+    let mut o = options.clone();
+    o.trace_outputs = false;
     let m = sv_btor2::write(nl, &o).map_err(|e| Error(e.to_string()))?;
     let aig = from_btor2(&m.btor2)?;
     Ok(Model { aig, notes: m.notes })

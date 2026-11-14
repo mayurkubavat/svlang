@@ -13,6 +13,7 @@ use std::fmt::Write as _;
 use std::io::Write as _;
 use std::process::ExitCode;
 
+use svlang::netlist::{PropertyOptions, PropertyOutcome};
 use svlang::{Compilation, Diagnostic, DiagnosticStage, Driver, LowerConfig, LowerOutcome, Netlist, Severity};
 
 const USAGE: &str = "\
@@ -39,6 +40,12 @@ options:
   -o, --output FILE       netlist, btor2, aiger: write to FILE, not stdout
   --ascii                 aiger: write the ASCII form (.aag), not binary
   --trace-outputs         btor2: add the section that names combinational nets
+  --properties            netlist, btor2, aiger: compile concurrent properties
+                          (assert/assume/cover property) into checks
+  --skip-cycles N         with --properties: do not check attempts that start in
+                          the first N clock ticks (the length of reset)
+  --covers                btor2, aiger: write covers as reachable bad states
+  --both-edges            btor2, aiger: accept both edges of the one clock
   --blast-memories N      netlist, btor2, aiger: expand memories of depth <= N
   --four-state            netlist, btor2, aiger: keep ===, !== and $isunknown
   --cut PATH              netlist, btor2, aiger: cut the signal at PATH (repeatable)
@@ -55,6 +62,10 @@ struct Opts {
     output: Option<String>,
     ascii: bool,
     trace_outputs: bool,
+    properties: bool,
+    skip_cycles: u32,
+    covers: bool,
+    both_edges: bool,
     lower: LowerConfig,
     compile_args: Vec<String>,
 }
@@ -73,6 +84,13 @@ fn parse(args: &[String]) -> Result<Opts, Usage> {
             "--json" => o.json = true,
             "--ascii" => o.ascii = true,
             "--trace-outputs" => o.trace_outputs = true,
+            "--properties" => o.properties = true,
+            "--covers" => o.covers = true,
+            "--both-edges" => o.both_edges = true,
+            "--skip-cycles" => {
+                let v = value(a, &mut it)?;
+                o.skip_cycles = v.parse().map_err(|_| Usage(format!("--skip-cycles needs a number, not '{v}'")))?;
+            }
             "--four-state" => o.lower.allow_four_state_ops = true,
             "-o" | "--output" => o.output = Some(value(a, &mut it)?),
             "--blast-memories" => {
@@ -159,7 +177,12 @@ fn emit(o: &Opts, data: &[u8]) -> Result<(), Usage> {
 /// The design's netlist, or its diagnostics on stderr and `None`.
 fn lower(comp: &Compilation, o: &Opts) -> Option<Netlist> {
     let (diags, what) = match comp.lower_netlist(&o.lower) {
-        LowerOutcome::Lowered(nl) => return Some(nl),
+        LowerOutcome::Lowered(mut nl) => {
+            if o.properties {
+                compile_properties(&mut nl, o);
+            }
+            return Some(nl);
+        }
         LowerOutcome::Unsupported(d) => (d, "unsupported"),
         LowerOutcome::Error(d) => (d, "error"),
     };
@@ -168,6 +191,29 @@ fn lower(comp: &Compilation, o: &Opts) -> Option<Netlist> {
     }
     eprintln!("svlang: the design was not lowered ({} {what}(s))", diags.len());
     None
+}
+
+/// Compiles the concurrent properties, and says on stderr which were left as they are.
+fn compile_properties(nl: &mut Netlist, o: &Opts) {
+    let mut opts = PropertyOptions::default();
+    opts.skip_cycles = o.skip_cycles;
+    let outcomes = nl.compile_properties(&opts);
+    let mut compiled = 0;
+    for (i, outcome) in outcomes.iter().enumerate() {
+        match outcome {
+            PropertyOutcome::Compiled { .. } => compiled += 1,
+            PropertyOutcome::Unsupported(why) => eprintln!("note: property {i} not compiled: {why}"),
+        }
+    }
+    eprintln!("note: {compiled} of {} concurrent properties compiled", outcomes.len());
+}
+
+fn btor2_options(o: &Opts) -> svlang::btor2::Options {
+    let mut opts = svlang::btor2::Options::default();
+    opts.trace_outputs = o.trace_outputs;
+    opts.covers = o.covers;
+    opts.both_edges = o.both_edges;
+    opts
 }
 
 fn notes(notes: &[String]) {
@@ -218,9 +264,7 @@ fn run(command: &str, o: &Opts) -> Result<ExitCode, Usage> {
         }
         "btor2" => {
             let Some(nl) = lower(&compile(o)?, o) else { return Ok(failed) };
-            let mut opts = svlang::btor2::Options::default();
-            opts.trace_outputs = o.trace_outputs;
-            match svlang::btor2::write(&nl, &opts) {
+            match svlang::btor2::write(&nl, &btor2_options(o)) {
                 Ok(m) => {
                     notes(&m.notes);
                     emit(o, m.btor2.as_bytes())?;
@@ -237,7 +281,7 @@ fn run(command: &str, o: &Opts) -> Result<ExitCode, Usage> {
                 return Err(Usage("binary AIGER needs -o FILE (or --ascii to print the text form)".into()));
             }
             let Some(nl) = lower(&compile(o)?, o) else { return Ok(failed) };
-            match svlang::aiger::lower(&nl, &svlang::aiger::Options::default()) {
+            match svlang::aiger::lower(&nl, &btor2_options(o)) {
                 Ok(m) => {
                     notes(&m.notes);
                     eprintln!("note: {}", m.aig.summary());

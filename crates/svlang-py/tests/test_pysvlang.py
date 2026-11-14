@@ -227,3 +227,17 @@ def test_to_aiger():
     # aag M I L O A B C: clk and rst, four register bits, one bad state.
     assert header[0] == "aag" and header[2:4] == ["2", "4"] and header[6] == "1"
     assert isinstance(notes, list)
+
+
+def test_to_aiger_with_compiled_property():
+    src = """module hs(input logic clk, req, output logic ack);
+  always_ff @(posedge clk) ack <= req;
+  a_ack: assert property (@(posedge clk) req |=> ack);
+endmodule
+"""
+    comp = pysvlang.Compilation.from_source(src, "hs.sv")
+    plain, notes = comp.lower_netlist().to_aiger(binary=False)
+    assert plain.splitlines()[0].split()[6] == "0" and notes
+    text, _ = comp.lower_netlist(compile_properties=True).to_aiger(binary=False)
+    assert text.splitlines()[0].split()[6] == "1"
+    assert "b0 hs.a_ack" in text

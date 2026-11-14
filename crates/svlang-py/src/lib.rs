@@ -763,6 +763,7 @@ impl Netlist {
     /// ``clocks`` declares the clocks of a design with several, each as
     /// ``(input, half_period, phase)``: a top-level input, the model steps it
     /// stays at one level, and the steps its wave is moved later.
+    #[allow(clippy::too_many_arguments)]
     #[pyo3(signature = (*, trace_outputs = false, trace_marker = None, name_prefix = None, covers = false, both_edges = false, clocks = Vec::new()))]
     fn to_btor2(
         &self,
@@ -801,18 +802,28 @@ impl Netlist {
     /// (``.aag``). Inputs, latches and bad states carry their names in the
     /// symbol table.
     ///
-    /// The model is the one ``to_btor2`` writes: a single clock, immediate
-    /// assertions as bad states, immediate assumptions as constraints.
+    /// The model is the one ``to_btor2`` writes, with the same ``covers``,
+    /// ``both_edges``, ``clocks`` and ``name_prefix`` options: assertions are
+    /// bad states and assumptions are constraints.
     /// Memories must be expanded first (``lower_netlist(blast_memories_up_to=N)``).
     /// Raises ``SvlangError`` when the netlist cannot be modelled exactly.
-    #[pyo3(signature = (*, binary = true, name_prefix = None))]
+    #[pyo3(signature = (*, binary = true, name_prefix = None, covers = false, both_edges = false, clocks = Vec::new()))]
     fn to_aiger(
         &self,
         py: Python<'_>,
         binary: bool,
         name_prefix: Option<String>,
+        covers: bool,
+        both_edges: bool,
+        clocks: Vec<(String, u32, u32)>,
     ) -> PyResult<(Py<PyAny>, Vec<String>)> {
         let mut opts = svlang::aiger::Options::default();
+        opts.covers = covers;
+        opts.both_edges = both_edges;
+        opts.clocks = clocks
+            .into_iter()
+            .map(|(input, half_period, phase)| svlang::aiger::Clock { input, half_period, phase })
+            .collect();
         if let Some(p) = name_prefix {
             opts.name_prefix = p;
         }

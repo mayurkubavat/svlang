@@ -29,6 +29,13 @@ checker (`ric3 check top.btor2 ic3`). `--cut PATH`, `--black-box MODULE` and
 `--black-box-instance PATH` free a signal or leave a module out, and
 `--blast-memories N` expands memories into registers.
 
+`--properties` compiles the design's concurrent properties
+(`assert property`, `assume property`, `cover property`) over bounded
+sequences into checks, so they are written too; `--skip-cycles N` leaves out
+attempts that start in the first N clock ticks, and `--covers` writes covers
+as reachable bad states. Properties that are not compiled are listed as
+notes.
+
 `svlang help` lists every option. Exit status: 0 success, 1 the design has
 errors or cannot be written in the requested form, 2 bad usage.
 
