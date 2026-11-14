@@ -15,7 +15,7 @@ name = "_pysvlang"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-svlang = { version = "0.1.0", path = "../svlang" }
+svlang = { version = "0.1.1", path = "../svlang" }
 pyo3 = { version = "0.30", features = ["abi3-py39"] }
 
 [features]
