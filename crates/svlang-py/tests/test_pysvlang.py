@@ -172,7 +172,7 @@ def test_compile_properties():
     src = (
         "module cp(input logic clk, a, b);\n"
         " a_next: assert property (@(posedge clk) a |=> b);\n"
-        " a_rng: assert property (@(posedge clk) a |-> ##[1:2] b);\n"
+        " a_rng: assert property (@(posedge clk) a |-> ##[1:$] b);\n"
         " c_ab: cover property (@(posedge clk) a ##1 b);\n"
         "endmodule\n"
     )

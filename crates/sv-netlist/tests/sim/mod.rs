@@ -40,6 +40,10 @@ pub struct NetlistSim<'a> {
     pub prev_vals: Vec<CVal>,
     pub sampled_hist: Vec<VecDeque<CVal>>,
     pub failed_asserts: Vec<String>,
+    /// Labels of assumptions that did not hold at a tick, in the order they were violated.
+    pub violated_assumes: Vec<String>,
+    /// Labels of covers that were hit at a tick, in the order they were hit.
+    pub hit_covers: Vec<String>,
 }
 
 impl<'a> NetlistSim<'a> {
@@ -84,8 +88,18 @@ impl<'a> NetlistSim<'a> {
         let vals: Vec<CVal> = nl.values.iter().map(|v| CVal::new(v.width, v.signed, 0)).collect();
         let sampled_hist = vec![VecDeque::new(); nl.sampled.len()];
 
-        let mut sim =
-            Self { nl, inputs, states, mems, prev_vals: vals.clone(), vals, sampled_hist, failed_asserts: Vec::new() };
+        let mut sim = Self {
+            nl,
+            inputs,
+            states,
+            mems,
+            prev_vals: vals.clone(),
+            vals,
+            sampled_hist,
+            failed_asserts: Vec::new(),
+            violated_assumes: Vec::new(),
+            hit_covers: Vec::new(),
+        };
         sim.eval_comb();
         sim
     }
@@ -213,12 +227,19 @@ impl<'a> NetlistSim<'a> {
                     Some(clk) => edge_fired(clk, &self.prev_vals, &self.vals),
                     None => true,
                 };
-                if fire && chk.kind == CheckKind::Assert {
-                    let en = &self.prev_vals[chk.enable.0 as usize];
-                    let ex = &self.prev_vals[chk.expr.0 as usize];
-                    if en.known() && en.is_true() && (!ex.known() || !ex.is_true()) {
-                        self.failed_asserts.push(chk.label.clone().unwrap_or_else(|| "<unnamed>".into()));
-                    }
+                if !fire {
+                    continue;
+                }
+                let en = &self.prev_vals[chk.enable.0 as usize];
+                let ex = &self.prev_vals[chk.expr.0 as usize];
+                let enabled = en.known() && en.is_true();
+                let holds = ex.known() && ex.is_true();
+                let label = || chk.label.clone().unwrap_or_else(|| "<unnamed>".into());
+                match chk.kind {
+                    CheckKind::Assert if enabled && !holds => self.failed_asserts.push(label()),
+                    CheckKind::Assume if enabled && !holds => self.violated_assumes.push(label()),
+                    CheckKind::Cover if enabled && holds => self.hit_covers.push(label()),
+                    _ => {}
                 }
             }
 

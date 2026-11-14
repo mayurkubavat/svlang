@@ -46,8 +46,10 @@ Then, for example, `ric3 check counter.btor2 ic3`.
 - A concurrent property (`assert property`, `assume property`) is written
   through the check `Netlist::compile_properties` made for it: a `bad` line
   under its full hierarchical name (`top.u0.a_no_overflow`), or a
-  `constraint`. That pass compiles properties of a fixed length (booleans,
-  `##N`, `[*N]`, `|->`, `|=>`, `disable iff`); a property without a check is
+  `constraint`. That pass compiles properties over bounded sequences
+  (booleans, `##N`, `##[M:N]`, `[*N]`, `[*M:N]`, sequence `or`, `and`,
+  `intersect`, `within`, `throughout`, `first_match`, under `|->`, `|=>` and
+  `disable iff`); a property without a check is
   **not** written, and `Model::notes` says how many were left out.
 - A cover is a `bad` line that is reached when the cover is hit, with
   `Options::covers`; without it covers are left out and noted.

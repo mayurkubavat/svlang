@@ -274,7 +274,7 @@ impl Compilation {
     ///
     /// With ``compile_properties``, each concurrent property in the design
     /// (``assert property``, ``assume property``, ``cover property``) that
-    /// has a fixed length becomes a check, which ``to_btor2`` then writes;
+    /// is over bounded sequences becomes a check, which ``to_btor2`` then writes;
     /// ``skip_cycles`` leaves out attempts that start in the first clock
     /// ticks. ``Netlist.properties`` says what happened to each.
     ///

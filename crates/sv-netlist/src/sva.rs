@@ -6,23 +6,52 @@
 //! concurrent assertions too. What it cannot express is left alone and reported as
 //! [`PropertyOutcome::Unsupported`], naming the operator: nothing is approximated.
 //!
-//! The subset is the fixed-length one:
+//! The subset is the bounded one: every sequence in it has a longest match.
 //!
 //! ```text
 //! property := seq | seq |-> seq | seq |=> seq        (weak(seq) and strong(seq) as seq)
-//! seq      := b | seq ##N seq | ##N seq | seq [*N]   (N a constant, [*N] with N >= 1)
+//! seq      := b
+//!           | seq ##N seq | seq ##[M:N] seq | ##N seq | ##[M:N] seq
+//!           | seq [*N] | seq [*M:N]
+//!           | seq or seq | seq and seq | seq intersect seq | seq within seq
+//!           | b throughout seq | first_match(seq)
 //! ```
 //!
-//! Such a sequence has one possible match, of a known length, so an attempt that starts at
-//! clock tick `t` is decided at tick `t + span`: the check is placed there and reads each
-//! boolean through `$past` with the distance back to its own tick.
+//! `M` and `N` are constants, and `M` may be 0. Not in the subset, and reported by name:
+//! a range that ends at `$` (with `[*]` and `[+]`), goto `[->]` and non-consecutive `[=]`
+//! repetition, a sequence with its own clock, and every property operator other than one
+//! implication at the top (`not`, property `and` and `or` over implications, `if`, `until`,
+//! `always`, `eventually`, `nexttime`, `#-#`, `accept_on`, ...).
 //!
-//! - **assert**: when every antecedent boolean held, every consequent boolean must hold.
+//! A bounded sequence has finitely many possible matches, each of a known length. The pass
+//! enumerates them as IEEE 1800-2023 annex F defines a match: for the attempt that starts at
+//! clock tick `t`, it builds for each sequence and each tick a match can end at the
+//! condition that such a match exists, over the booleans at their ticks. `or` joins the
+//! matches of its operands; `intersect` keeps those that end together; `and` those where
+//! both operands match, ending with the later one; `within` a match of the right operand
+//! with a match of the left one inside it; `throughout` those with the boolean true at each
+//! of their ticks; `first_match` those with no match ending earlier. A repetition from 0
+//! has the empty match, which joins as 16.9.2.1 says: `empty ##0 s` and `s ##0 empty` do
+//! not match, `empty ##n s` is `##(n-1) s`, and `s ##n empty` is `s ##(n-1) 1`.
+//!
+//! The attempt is decided at tick `t + span`, where `span` is the distance to the last tick
+//! any of its matches reads: the check is placed there and reads each boolean through
+//! `$past` with the distance back to its own tick. A boolean that is unknown is not true.
+//!
+//! - **assert**: for every match of the antecedent, the consequent has at least one match
+//!   that starts at the tick the antecedent's match ends (`|->`) or one tick later (`|=>`).
+//!   With no antecedent: the sequence has at least one match from tick `t`. A failure is
+//!   reported at tick `t + span`, also when an earlier tick already settled it.
 //! - **assume** / **restrict**: the same condition, as a [`CheckKind::Assume`].
-//! - **cover**: [`CheckKind::Cover`] of antecedent and consequent together (a vacuous match
-//!   of an implication is not a cover).
-//! - **`disable iff (d)`**: the attempt is dropped when `d` was true at any tick from its
-//!   start to its end.
+//! - **cover**: [`CheckKind::Cover`] of some match of the antecedent whose consequent has a
+//!   match (a vacuous match of an implication is not a cover).
+//! - **The empty match at the top**: an empty match of the antecedent starts no consequent
+//!   with `|->`, and one at tick `t` with `|=>` (`s |=> p` is `s ##1 1 |-> p`). A sequence
+//!   used as a property or a consequent that admits an empty match or has no match at all,
+//!   and an antecedent with no match that starts a consequent, are illegal by 16.12.22 and
+//!   are reported as unsupported.
+//! - **`disable iff (d)`**: the attempt is dropped when `d` was true at any tick from `t` to
+//!   `t + span`.
 //! - **In procedural code**: a property under a condition (`if (en) assert property (...)`
 //!   in a clocked block) starts an attempt only at a tick where the condition holds, as if
 //!   the condition led its antecedent ([`Netlist::property_enables`]).
@@ -30,6 +59,10 @@
 //!   value, that is from tick `max(skip_cycles + span, history)`, where `history` also counts
 //!   `$past`, `$rose`, `$fell`, `$stable` and `$changed` inside the booleans. One saturating
 //!   tick counter per clock, initially 0, provides this.
+//! - **Size**: a property that reads further than [`MAX_PROPERTY_SPAN`] ticks, or needs more
+//!   than [`MAX_PROPERTY_TERMS`] conditions, is reported as unsupported.
+
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use sv_semantic::{
     BoundProperty, CVal, CycleBound, CycleRange, ExprId, Loc, PropExpr, PropKind, RepeatKind, SampledKind, SeqExpr,
@@ -43,6 +76,11 @@ use crate::ir::{
 /// Longest property, in clock ticks from its first boolean to its last, that is compiled.
 /// Each tick costs history registers, so a longer one is reported as unsupported.
 pub const MAX_PROPERTY_SPAN: u32 = 1024;
+
+/// Most conditions (booleans at a tick and the `and`, `or` and `not` over them) one property
+/// may take. Ranges multiply the matches to tell apart, so a property that needs more is
+/// reported as unsupported.
+pub const MAX_PROPERTY_TERMS: u32 = 1 << 16;
 
 /// How [`Netlist::compile_properties`] compiles.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -65,18 +103,106 @@ pub enum PropertyOutcome {
     Unsupported(String),
 }
 
-/// A property on one time line: every boolean with its tick, counted from the first.
-struct Flat {
-    antecedent: Vec<(u32, ExprId)>,
-    consequent: Vec<(u32, ExprId)>,
-    /// Tick of the last boolean.
-    span: u32,
+/// A condition over the booleans of one attempt: a constant or a node of [`Terms`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+enum Cond {
+    False,
+    True,
+    Node(u32),
 }
 
-fn exact(range: &CycleRange, what: &str) -> Result<u32, String> {
+/// One node of [`Terms`]. Operands have smaller indices than the node.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+enum Term {
+    /// The value at clock tick `at`, counted from the start of the attempt.
+    Leaf {
+        at: u32,
+        value: ValueId,
+    },
+    Not(u32),
+    And(Cond, Cond),
+    Or(Cond, Cond),
+}
+
+/// The conditions of one property, each built once.
+#[derive(Default)]
+struct Terms {
+    nodes: Vec<Term>,
+    index: HashMap<Term, u32>,
+    /// Steps taken so far, to stop a property that is too large to enumerate.
+    work: u32,
+    /// Whether a negation was built: the booleans then have to be two-state.
+    negated: bool,
+}
+
+impl Terms {
+    /// Counts one step of the enumeration.
+    fn step(&mut self) -> Result<(), String> {
+        self.work += 1;
+        if self.work > MAX_PROPERTY_TERMS.saturating_mul(64) {
+            return Err(too_large());
+        }
+        Ok(())
+    }
+
+    fn node(&mut self, t: Term) -> Result<Cond, String> {
+        self.step()?;
+        if let Some(&i) = self.index.get(&t) {
+            return Ok(Cond::Node(i));
+        }
+        if self.nodes.len() >= MAX_PROPERTY_TERMS as usize {
+            return Err(too_large());
+        }
+        let i = self.nodes.len() as u32;
+        self.nodes.push(t);
+        self.index.insert(t, i);
+        Ok(Cond::Node(i))
+    }
+
+    fn leaf(&mut self, at: u32, value: ValueId) -> Result<Cond, String> {
+        self.node(Term::Leaf { at, value })
+    }
+
+    fn and(&mut self, a: Cond, b: Cond) -> Result<Cond, String> {
+        match (a, b) {
+            (Cond::False, _) | (_, Cond::False) => Ok(Cond::False),
+            (Cond::True, x) | (x, Cond::True) => Ok(x),
+            _ if a == b => Ok(a),
+            _ => self.node(Term::And(a, b)),
+        }
+    }
+
+    fn or(&mut self, a: Cond, b: Cond) -> Result<Cond, String> {
+        match (a, b) {
+            (Cond::True, _) | (_, Cond::True) => Ok(Cond::True),
+            (Cond::False, x) | (x, Cond::False) => Ok(x),
+            _ if a == b => Ok(a),
+            _ => self.node(Term::Or(a, b)),
+        }
+    }
+
+    fn not(&mut self, a: Cond) -> Result<Cond, String> {
+        match a {
+            Cond::True => Ok(Cond::False),
+            Cond::False => Ok(Cond::True),
+            Cond::Node(i) => {
+                self.negated = true;
+                self.node(Term::Not(i))
+            }
+        }
+    }
+}
+
+/// The matches of a sequence from one start tick: for each tick just after a match ends, when
+/// that match exists. A key equal to the start tick is the empty match. No condition is
+/// [`Cond::False`].
+type Ends = BTreeMap<u32, Cond>;
+
+/// A constant finite range, as `(min, max)`.
+fn bounds(range: &CycleRange, what: &str) -> Result<(u32, u32), String> {
     match range.max {
-        CycleBound::Const(n) if n == range.min => Ok(n),
-        CycleBound::Const(n) => Err(format!("{what} range [{}:{n}]", range.min)),
+        CycleBound::Const(n) if n >= range.min => Ok((range.min, n)),
+        CycleBound::Const(n) => Err(format!("{what} range [{}:{n}] with its bounds reversed", range.min)),
         CycleBound::Unbounded => Err(format!("{what} range [{}:$]", range.min)),
     }
 }
@@ -85,59 +211,252 @@ fn too_long() -> String {
     format!("a property longer than {MAX_PROPERTY_SPAN} clock ticks")
 }
 
-/// Places the booleans of `s`, which starts at tick `start`. Returns the tick of its last one.
-fn flatten_seq(s: &SeqExpr, start: u32, out: &mut Vec<(u32, ExprId)>) -> Result<u32, String> {
-    if start > MAX_PROPERTY_SPAN {
-        return Err(too_long());
+fn too_large() -> String {
+    format!("a property of more than {MAX_PROPERTY_TERMS} terms")
+}
+
+/// Enumerates the matches of bounded sequences, following the tight satisfaction relation of
+/// IEEE 1800-2023 annex F with a match as the ticks `start .. end` (`end` not included).
+struct Matcher<'a> {
+    nl: &'a Netlist,
+    terms: Terms,
+}
+
+impl Matcher<'_> {
+    fn add(&mut self, ends: &mut Ends, end: u32, cond: Cond) -> Result<(), String> {
+        if cond == Cond::False {
+            return Ok(());
+        }
+        let had = ends.get(&end).copied().unwrap_or(Cond::False);
+        let both = self.terms.or(had, cond)?;
+        ends.insert(end, both);
+        Ok(())
     }
-    match s {
-        SeqExpr::Bool(e) => {
-            out.push((start, *e));
-            Ok(start)
+
+    fn leaf(&mut self, at: u32, e: ExprId) -> Result<Cond, String> {
+        if at > MAX_PROPERTY_SPAN {
+            return Err(too_long());
         }
-        SeqExpr::Delay { range, lhs, rhs } => {
-            let n = exact(range, "the delay")?;
-            let at = match lhs {
-                Some(l) => flatten_seq(l, start, out)?.saturating_add(n),
-                None => start.saturating_add(n),
-            };
-            flatten_seq(rhs, at, out)
-        }
-        SeqExpr::Fusion(a, b) => {
-            let end = flatten_seq(a, start, out)?;
-            flatten_seq(b, end, out)
-        }
-        SeqExpr::Repeat { kind: RepeatKind::Consecutive, range, seq } => {
-            let n = exact(range, "the repetition")?;
-            if n == 0 {
-                return Err("the empty repetition [*0]".into());
+        let value = self.nl.prop_expr_value(e).ok_or("an expression that was not lowered")?;
+        self.terms.leaf(at, value)
+    }
+
+    /// `lhs ##[min:max] rhs` from tick `start`, given the matches of `lhs` (`None`: no left
+    /// operand).
+    fn delay(&mut self, lhs: Option<Ends>, start: u32, min: u32, max: u32, rhs: &SeqExpr) -> Result<Ends, String> {
+        // Where `rhs` starts, with the condition to get there: whatever `rhs` matches there,
+        // and only when its match is not empty (`##0` joins the two on one shared tick).
+        let mut starts: BTreeMap<u32, (Cond, Cond)> = BTreeMap::new();
+        let Some(lhs) = lhs else {
+            // `##n rhs` is `1[*n] ##1 rhs`.
+            for n in min..=max {
+                self.terms.step()?;
+                let at = start.saturating_add(n);
+                if at > MAX_PROPERTY_SPAN + 1 {
+                    return Err(too_long());
+                }
+                starts.insert(at, (Cond::True, Cond::False));
             }
-            let mut at = start;
-            let mut end = start;
-            for _ in 0..n {
-                end = flatten_seq(seq, at, out)?;
-                at = end.saturating_add(1);
+            return self.after(starts, rhs);
+        };
+        for (&end, &cond) in &lhs {
+            for n in min..=max {
+                self.terms.step()?;
+                let (at, fused) = match n {
+                    // An empty left match has no tick to share.
+                    0 if end == start => continue,
+                    0 => (end - 1, true),
+                    _ => (end.saturating_add(n - 1), false),
+                };
+                if at > MAX_PROPERTY_SPAN + 1 {
+                    return Err(too_long());
+                }
+                let slot = starts.entry(at).or_insert((Cond::False, Cond::False));
+                if fused {
+                    slot.1 = self.terms.or(slot.1, cond)?;
+                } else {
+                    slot.0 = self.terms.or(slot.0, cond)?;
+                }
             }
-            Ok(end)
         }
-        SeqExpr::Repeat { kind: RepeatKind::Goto, .. } => Err("the goto repetition [->]".into()),
-        SeqExpr::Repeat { kind: RepeatKind::NonConsecutive, .. } => Err("the non-consecutive repetition [=]".into()),
-        SeqExpr::And(..) => Err("sequence `and`".into()),
-        SeqExpr::Or(..) => Err("sequence `or`".into()),
-        SeqExpr::Intersect(..) => Err("`intersect`".into()),
-        SeqExpr::Within(..) => Err("`within`".into()),
-        SeqExpr::Throughout { .. } => Err("`throughout`".into()),
-        SeqExpr::FirstMatch(..) => Err("`first_match`".into()),
-        SeqExpr::Clocked { .. } => Err("a sequence with its own clock".into()),
-        #[allow(unreachable_patterns)]
-        _ => Err("a sequence operator".into()),
+        self.after(starts, rhs)
+    }
+
+    /// The matches of `rhs` from each tick of `starts`, under that tick's conditions.
+    fn after(&mut self, starts: BTreeMap<u32, (Cond, Cond)>, rhs: &SeqExpr) -> Result<Ends, String> {
+        let mut out = Ends::new();
+        for (at, (any, fused)) in starts {
+            let either = self.terms.or(any, fused)?;
+            for (end, cond) in self.matches(rhs, at)? {
+                let reach = if end > at { either } else { any };
+                let both = self.terms.and(reach, cond)?;
+                self.add(&mut out, end, both)?;
+            }
+        }
+        Ok(out)
+    }
+
+    /// The matches of `s` that start at tick `start`.
+    fn matches(&mut self, s: &SeqExpr, start: u32) -> Result<Ends, String> {
+        self.terms.step()?;
+        let mut out = Ends::new();
+        match s {
+            SeqExpr::Bool(e) => {
+                let cond = self.leaf(start, *e)?;
+                out.insert(start + 1, cond);
+            }
+            SeqExpr::Delay { range, lhs, rhs } => {
+                let (min, max) = bounds(range, "the delay")?;
+                return match lhs {
+                    Some(l) => {
+                        let l = self.matches(l, start)?;
+                        self.delay(Some(l), start, min, max, rhs)
+                    }
+                    None => self.delay(None, start, min, max, rhs),
+                };
+            }
+            SeqExpr::Fusion(a, b) => {
+                let a = self.matches(a, start)?;
+                return self.delay(Some(a), start, 0, 0, b);
+            }
+            SeqExpr::Repeat { kind: RepeatKind::Consecutive, range, seq } => {
+                let (min, max) = bounds(range, "the repetition")?;
+                // The matches of `count` repetitions, starting with none: the empty match.
+                let mut reps = Ends::from([(start, Cond::True)]);
+                for count in 0..=max {
+                    self.terms.step()?;
+                    if count >= min {
+                        for (&end, &cond) in &reps {
+                            self.add(&mut out, end, cond)?;
+                        }
+                    }
+                    if count == max {
+                        break;
+                    }
+                    let mut next = Ends::new();
+                    for (&at, &so_far) in &reps {
+                        for (end, cond) in self.matches(seq, at)? {
+                            let both = self.terms.and(so_far, cond)?;
+                            self.add(&mut next, end, both)?;
+                        }
+                    }
+                    // More repetitions add nothing once a count has no match, or the same
+                    // matches as the count before it (when the operand's match is empty).
+                    if next.is_empty() || (next == reps && count >= min) {
+                        break;
+                    }
+                    reps = next;
+                }
+            }
+            SeqExpr::Repeat { kind: RepeatKind::Goto, .. } => return Err("the goto repetition [->]".into()),
+            SeqExpr::Repeat { kind: RepeatKind::NonConsecutive, .. } => {
+                return Err("the non-consecutive repetition [=]".into())
+            }
+            SeqExpr::Or(a, b) => {
+                out = self.matches(a, start)?;
+                for (end, cond) in self.matches(b, start)? {
+                    self.add(&mut out, end, cond)?;
+                }
+            }
+            SeqExpr::Intersect(a, b) => {
+                let a = self.matches(a, start)?;
+                for (end, cond) in self.matches(b, start)? {
+                    if let Some(&other) = a.get(&end) {
+                        let both = self.terms.and(other, cond)?;
+                        self.add(&mut out, end, both)?;
+                    }
+                }
+            }
+            SeqExpr::And(a, b) => {
+                // Both match from `start`; the match ends where the later of the two ends.
+                let a = self.matches(a, start)?;
+                let b = self.matches(b, start)?;
+                let ends: BTreeSet<u32> = a.keys().chain(b.keys()).copied().collect();
+                let (mut a_by, mut b_by) = (Cond::False, Cond::False);
+                for end in ends {
+                    let a_here = a.get(&end).copied().unwrap_or(Cond::False);
+                    let b_here = b.get(&end).copied().unwrap_or(Cond::False);
+                    a_by = self.terms.or(a_by, a_here)?;
+                    b_by = self.terms.or(b_by, b_here)?;
+                    let a_last = self.terms.and(a_here, b_by)?;
+                    let b_last = self.terms.and(b_here, a_by)?;
+                    let cond = self.terms.or(a_last, b_last)?;
+                    self.add(&mut out, end, cond)?;
+                }
+            }
+            SeqExpr::Within(a, b) => {
+                // A match of `b` with a match of `a` somewhere inside it.
+                let b = self.matches(b, start)?;
+                let Some(&last) = b.keys().next_back() else { return Ok(out) };
+                let mut inner = Vec::new();
+                for at in start..=last {
+                    inner.push(self.matches(a, at)?);
+                }
+                for (end, cond) in b {
+                    let mut inside = Cond::False;
+                    for from in inner.iter().take((end - start) as usize + 1) {
+                        for (_, &c) in from.range(..=end) {
+                            inside = self.terms.or(inside, c)?;
+                        }
+                    }
+                    let both = self.terms.and(cond, inside)?;
+                    self.add(&mut out, end, both)?;
+                }
+            }
+            SeqExpr::Throughout { cond, seq } => {
+                // The condition holds at every tick of the match.
+                let (mut held, mut upto) = (Cond::True, start);
+                for (end, matched) in self.matches(seq, start)? {
+                    while upto < end {
+                        let here = self.leaf(upto, *cond)?;
+                        held = self.terms.and(held, here)?;
+                        upto += 1;
+                    }
+                    let both = self.terms.and(held, matched)?;
+                    self.add(&mut out, end, both)?;
+                }
+            }
+            SeqExpr::FirstMatch(s) => {
+                // A match with no match that ends before it.
+                let mut earlier = Cond::False;
+                for (end, cond) in self.matches(s, start)? {
+                    let none = self.terms.not(earlier)?;
+                    let first = self.terms.and(cond, none)?;
+                    self.add(&mut out, end, first)?;
+                    earlier = self.terms.or(earlier, cond)?;
+                }
+            }
+            SeqExpr::Clocked { .. } => return Err("a sequence with its own clock".into()),
+            #[allow(unreachable_patterns)]
+            _ => return Err("a sequence operator".into()),
+        }
+        Ok(out)
+    }
+
+    /// When the sequence property `s` holds from tick `start`: some match of it exists.
+    /// Also returns the tick of the last boolean any match reads.
+    fn holds(&mut self, s: &SeqExpr, start: u32) -> Result<(Cond, u32), String> {
+        let ends = self.matches(s, start)?;
+        // IEEE 1800-2023 16.12.22: a sequence used as a property admits no empty match and
+        // has to have a match.
+        if ends.contains_key(&start) {
+            return Err("a sequence that admits an empty match, used as a property".into());
+        }
+        let Some(&last) = ends.keys().next_back() else {
+            return Err("a sequence that has no match, used as a property".into());
+        };
+        let mut any = Cond::False;
+        for cond in ends.into_values() {
+            any = self.terms.or(any, cond)?;
+        }
+        Ok((any, last - 1))
     }
 }
 
 /// The sequence a property that is only a sequence stands for.
 fn as_seq(p: &PropExpr) -> Result<&SeqExpr, String> {
     match p {
-        // On an infinite trace a fixed-length sequence always ends, so weak and strong agree.
+        // On an infinite trace a bounded sequence always ends, so weak and strong agree.
         PropExpr::Seq(s) | PropExpr::Weak(s) | PropExpr::Strong(s) => Ok(s),
         other => Err(prop_name(other).into()),
     }
@@ -167,32 +486,70 @@ fn prop_name(p: &PropExpr) -> &'static str {
     }
 }
 
-fn flatten(p: &PropExpr) -> Result<Flat, String> {
-    let mut antecedent = Vec::new();
-    let mut consequent = Vec::new();
-    let span = match p {
-        PropExpr::OverlappedImplication { lhs, rhs } => {
-            let end = flatten_seq(lhs, 0, &mut antecedent)?;
-            flatten_seq(as_seq(rhs)?, end, &mut consequent)?
-        }
-        PropExpr::NonOverlappedImplication { lhs, rhs } => {
-            let end = flatten_seq(lhs, 0, &mut antecedent)?;
-            flatten_seq(as_seq(rhs)?, end.saturating_add(1), &mut consequent)?
-        }
-        other => flatten_seq(as_seq(other)?, 0, &mut consequent)?,
-    };
-    if span > MAX_PROPERTY_SPAN {
-        return Err(too_long());
-    }
-    Ok(Flat { antecedent, consequent, span })
+/// What a property requires of one attempt, as conditions of a [`Matcher`].
+struct Shape {
+    /// For each tick at which the consequent has to start: when the antecedent ends there,
+    /// and when the consequent then has a match.
+    obligations: Vec<(Cond, Cond)>,
+    /// Tick of the last boolean, counted from the start of the attempt.
+    span: u32,
 }
 
-/// A flattened property with its leaves as netlist values.
+impl Matcher<'_> {
+    /// `reached` is the condition under which an attempt starts at all.
+    fn shape(&mut self, p: &PropExpr, reached: Cond) -> Result<Shape, String> {
+        // Where the consequent starts, and when.
+        let mut starts: BTreeMap<u32, Cond> = BTreeMap::new();
+        let consequent = match p {
+            PropExpr::OverlappedImplication { lhs, rhs } | PropExpr::NonOverlappedImplication { lhs, rhs } => {
+                let overlapped = matches!(p, PropExpr::OverlappedImplication { .. });
+                for (end, cond) in self.matches(lhs, 0)? {
+                    // `|->` starts the consequent at the last tick of a match, so an empty
+                    // match starts none. `s |=> p` is `s ##1 1 |-> p`.
+                    let at = match (overlapped, end) {
+                        (true, 0) => continue,
+                        (true, _) => end - 1,
+                        (false, _) => end,
+                    };
+                    let cond = self.terms.and(reached, cond)?;
+                    self.add(&mut starts, at, cond)?;
+                }
+                if starts.is_empty() {
+                    return Err("an antecedent that has no match".into());
+                }
+                as_seq(rhs)?
+            }
+            other => {
+                starts.insert(0, reached);
+                as_seq(other)?
+            }
+        };
+        let mut obligations = Vec::new();
+        let mut span = 0;
+        for (at, when) in starts {
+            let (holds, last) = self.holds(consequent, at)?;
+            span = span.max(last);
+            obligations.push((when, holds));
+        }
+        if span > MAX_PROPERTY_SPAN {
+            return Err(too_long());
+        }
+        Ok(Shape { obligations, span })
+    }
+}
+
+/// A property as conditions over its leaves, ready to be made into a check.
 struct Plan {
     index: usize,
     clock: ClockSpec,
-    antecedent: Vec<(u32, ValueId)>,
-    consequent: Vec<(u32, ValueId)>,
+    terms: Vec<Term>,
+    /// The terms the check reads.
+    live: Vec<bool>,
+    /// Whether the booleans have to be made two-state (a condition is negated).
+    two_state: bool,
+    /// The check's enable (before the warm-up and `disable iff`) and its expression.
+    enable: Cond,
+    expr: Cond,
     disable: Option<ValueId>,
     span: u32,
     /// First tick at which the check may fire.
@@ -274,30 +631,84 @@ impl Netlist {
         };
         let not_lowered = || "an expression that was not lowered".to_string();
         let signal = self.prop_expr_value(clock.signal).ok_or_else(not_lowered)?;
-        let flat = flatten(&prop.expr)?;
-        let leaves = |terms: &[(u32, ExprId)]| -> Result<Vec<(u32, ValueId)>, String> {
-            terms.iter().map(|&(at, e)| Ok((at, self.prop_expr_value(e).ok_or_else(not_lowered)?))).collect()
-        };
-        let mut antecedent = leaves(&flat.antecedent)?;
+        let mut m = Matcher { nl: self, terms: Terms::default() };
         // In procedural code under a condition: the attempt starts only when it is reached.
-        if let Some(reached) = self.property_enables.get(index).copied().flatten() {
-            antecedent.insert(0, (0, reached));
+        let reached = match self.property_enables.get(index).copied().flatten() {
+            Some(v) => m.terms.leaf(0, v)?,
+            None => Cond::True,
+        };
+        let Shape { obligations, span } = m.shape(&prop.expr, reached)?;
+        let mut terms = m.terms;
+        let (enable, expr) = match (prop.kind, &obligations[..]) {
+            (PropKind::Cover, _) => {
+                let mut any = Cond::False;
+                for &(when, holds) in &obligations {
+                    let both = terms.and(when, holds)?;
+                    any = terms.or(any, both)?;
+                }
+                (Cond::True, any)
+            }
+            (_, &[(when, holds)]) => (when, holds),
+            _ => {
+                // Checked when any obligation is due; each one that is due has to hold.
+                let (mut any, mut all) = (Cond::False, Cond::True);
+                for &(when, holds) in &obligations {
+                    any = terms.or(any, when)?;
+                    let idle = terms.not(when)?;
+                    let met = terms.or(idle, holds)?;
+                    all = terms.and(all, met)?;
+                }
+                (any, all)
+            }
+        };
+        // The terms the check reads: operands come before the terms that use them.
+        let mut live = vec![false; terms.nodes.len()];
+        for root in [enable, expr] {
+            if let Cond::Node(i) = root {
+                live[i as usize] = true;
+            }
         }
-        let consequent = leaves(&flat.consequent)?;
+        for i in (0..terms.nodes.len()).rev() {
+            if !live[i] {
+                continue;
+            }
+            let (a, b) = match terms.nodes[i] {
+                Term::Leaf { .. } => continue,
+                Term::Not(a) => (Cond::Node(a), Cond::True),
+                Term::And(a, b) | Term::Or(a, b) => (a, b),
+            };
+            for operand in [a, b] {
+                if let Cond::Node(j) = operand {
+                    live[j as usize] = true;
+                }
+            }
+        }
         let disable = match prop.disable_iff {
             Some(d) => Some(self.prop_expr_value(d).ok_or_else(not_lowered)?),
             None => None,
         };
-        let span = flat.span;
         let mut history = 0u32;
-        for &(at, v) in antecedent.iter().chain(&consequent) {
-            history = history.max((span - at).saturating_add(self.lookback(v, memo)));
+        for (i, t) in terms.nodes.iter().enumerate() {
+            if let (true, &Term::Leaf { at, value }) = (live[i], t) {
+                history = history.max((span - at).saturating_add(self.lookback(value, memo)));
+            }
         }
         if let Some(d) = disable {
             history = history.max(span.saturating_add(self.lookback(d, memo)));
         }
         let warm = opts.skip_cycles.saturating_add(span).max(history);
-        Ok(Plan { index, clock: ClockSpec { signal, edge }, antecedent, consequent, disable, span, warm })
+        Ok(Plan {
+            index,
+            clock: ClockSpec { signal, edge },
+            terms: terms.nodes,
+            live,
+            two_state: terms.negated,
+            enable,
+            expr,
+            disable,
+            span,
+            warm,
+        })
     }
 
     fn sva_value(&mut self, width: u32, four_state: bool, kind: ValueKind, loc: Loc) -> ValueId {
@@ -351,21 +762,43 @@ impl Netlist {
         })
     }
 
-    /// Every boolean of `terms`, each read back from tick `span` to its own tick.
-    fn sva_terms(
-        &mut self,
-        terms: &[(u32, ValueId)],
-        span: u32,
-        clock: ClockSpec,
-        mut acc: Option<ValueId>,
-        loc: Loc,
-    ) -> Option<ValueId> {
-        for &(at, v) in terms {
-            let b = self.sva_bool(v, loc);
-            let p = self.sva_past(b, span - at, clock, loc);
-            acc = self.sva_and(acc, p, loc);
+    /// The conditions `p.enable` and `p.expr` as values at tick `p.span` of an attempt, each
+    /// boolean read back to its own tick (`None` is true).
+    fn sva_conds(&mut self, p: &Plan, loc: Loc) -> (Option<ValueId>, Option<ValueId>) {
+        let mut made: Vec<Option<ValueId>> = vec![None; p.terms.len()];
+        for (i, term) in p.terms.iter().enumerate() {
+            if !p.live[i] {
+                continue;
+            }
+            // Operands are never constants: `Terms` folds those away.
+            let of = |made: &[Option<ValueId>], c: Cond| match c {
+                Cond::Node(j) => made[j as usize].expect("an operand is made before its use"),
+                Cond::False | Cond::True => unreachable!("constant operand"),
+            };
+            made[i] = Some(match *term {
+                Term::Leaf { at, value } => {
+                    let mut b = self.sva_bool(value, loc);
+                    // Under a negation an unknown boolean has to count as false, as it does
+                    // everywhere else by not being true.
+                    if p.two_state && self.value(b).four_state {
+                        let cast = ValueKind::Op { op: NetOp::CastFourState { four_state: false }, args: vec![b] };
+                        b = self.sva_value(1, false, cast, loc);
+                    }
+                    self.sva_past(b, p.span - at, p.clock, loc)
+                }
+                Term::Not(a) => self.sva_op(NetOp::LogNot, vec![of(&made, Cond::Node(a))], 1, loc),
+                Term::And(a, b) => self.sva_op(NetOp::LogAnd, vec![of(&made, a), of(&made, b)], 1, loc),
+                Term::Or(a, b) => self.sva_op(NetOp::LogOr, vec![of(&made, a), of(&made, b)], 1, loc),
+            });
         }
-        acc
+        let mut root = |c: Cond| match c {
+            Cond::True => None,
+            Cond::Node(i) => made[i as usize],
+            Cond::False => Some(self.sva_const(1, 0, loc)),
+        };
+        let enable = root(p.enable);
+        let expr = root(p.expr);
+        (enable, expr)
     }
 
     /// A tick counter on `clock` that starts at 0 and stops at `max`.
@@ -395,7 +828,7 @@ impl Netlist {
         (out, width)
     }
 
-    /// Compiles every property of [`Self::properties`] that is in the fixed-length subset into
+    /// Compiles every property of [`Self::properties`] that is in the bounded subset into
     /// a [`Check`] (see the [module documentation](crate::sva) for the subset and the exact
     /// meaning), and returns what happened to each, in the order of [`Self::properties`].
     /// [`Self::property_checks`] records the same result.
@@ -454,18 +887,15 @@ impl Netlist {
                     guard = self.sva_and(guard, off, loc);
                 }
             }
-            let (kind, enable, expr) = match kind {
-                PropKind::Cover => {
-                    let all = self.sva_terms(&p.antecedent, p.span, p.clock, None, loc);
-                    let all = self.sva_terms(&p.consequent, p.span, p.clock, all, loc);
-                    (CheckKind::Cover, guard, all)
-                }
-                PropKind::Assert | PropKind::Assume | PropKind::Restrict => {
-                    let enable = self.sva_terms(&p.antecedent, p.span, p.clock, guard, loc);
-                    let body = self.sva_terms(&p.consequent, p.span, p.clock, None, loc);
-                    let kind = if kind == PropKind::Assert { CheckKind::Assert } else { CheckKind::Assume };
-                    (kind, enable, body)
-                }
+            let (enable, expr) = self.sva_conds(p, loc);
+            let enable = match (guard, enable) {
+                (Some(g), Some(e)) => self.sva_and(Some(g), e, loc),
+                (g, e) => g.or(e),
+            };
+            let kind = match kind {
+                PropKind::Cover => CheckKind::Cover,
+                PropKind::Assert => CheckKind::Assert,
+                PropKind::Assume | PropKind::Restrict => CheckKind::Assume,
             };
             let one = |nl: &mut Netlist, v: Option<ValueId>| v.unwrap_or_else(|| nl.sva_const(1, 1, loc));
             let enable = one(self, enable);

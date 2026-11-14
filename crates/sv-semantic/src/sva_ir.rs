@@ -8,8 +8,8 @@
 //! expressions live in an [`ExprArena`].
 //!
 //! Turning these trees into checker logic is not done here: `sv-netlist` compiles
-//! the fixed-length properties into checks (`Netlist::compile_properties`), and
-//! automaton construction for the rest (ranges, unbounded repetition, liveness)
+//! the properties over bounded sequences into checks (`Netlist::compile_properties`),
+//! and automaton construction for the rest (unbounded ranges and repetition, liveness)
 //! stays with downstream formal consumers.
 
 use sv_syntax::{Child, NodeId, SyntaxKind, Tree};
