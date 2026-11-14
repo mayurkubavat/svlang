@@ -119,6 +119,31 @@ fn a_design_that_cannot_be_lowered_exits_1() {
 }
 
 #[test]
+fn stages_says_how_far_a_design_gets() {
+    let (_, f) = source("stages", "cnt.sv", COUNTER);
+    let o = svlang(&["stages", f.to_str().unwrap()]);
+    assert_eq!(o.status.code(), Some(0), "{}", stderr(&o));
+    let out = stdout(&o);
+    assert!(out.contains("\"blocked_at\": null"), "{out}");
+    for key in ["\"parse\": ", "\"elaborate\": ", "\"lower\": ", "\"btor2\": {\"lines\": ", "\"states\": 1"] {
+        assert!(out.contains(key), "{key} in {out}");
+    }
+    assert!(out.contains("\"modules\": [\"cnt\"]"), "{out}");
+
+    let (_, f) = source("stages-inout", "pad.sv", "module pad (inout wire io, input logic a);\nendmodule\n");
+    let o = svlang(&["stages", f.to_str().unwrap()]);
+    assert_eq!(o.status.code(), Some(1));
+    let out = stdout(&o);
+    assert!(out.contains("\"blocked_at\": \"lower\""), "{out}");
+    assert!(out.contains("\"stage\": \"lower\", \"kind\": \"unsupported\""), "{out}");
+
+    let (_, f) = source("stages-bad", "bad.sv", "module bad;\n  assign x = ;\nendmodule\n");
+    let o = svlang(&["stages", f.to_str().unwrap()]);
+    assert_eq!(o.status.code(), Some(1));
+    assert!(stdout(&o).contains("\"blocked_at\": \"parse\""), "{}", stdout(&o));
+}
+
+#[test]
 fn usage_errors_exit_2() {
     for args in [&[][..], &["frob", "x.sv"], &["check"], &["check", "/no/such/file.sv"], &["check", "--wat", "x.sv"]] {
         let o = svlang(args);
