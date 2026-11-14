@@ -792,6 +792,12 @@ struct Builder<'t> {
     keying: std::cell::Cell<bool>,
     /// Each node's parent, per tree, built on first use.
     parent_of: std::cell::OnceCell<Vec<Vec<u32>>>,
+    /// The signals declared so far in each instance being elaborated (innermost
+    /// last), by path within the instance, with the generate prefix elaboration is in.
+    /// `$bits(signal)` in a parameter reads them.
+    sig_scopes: std::cell::RefCell<Vec<SigScope>>,
+    /// Above zero while an uninstantiated body is walked: no signal is in scope.
+    sig_off: std::cell::Cell<u32>,
     /// Values of parameters outside class specializations, by scope.
     const_cache: std::cell::RefCell<fx::FxMap<(usize, String), Option<types::CVal>>>,
     /// Literal values by node.
@@ -864,6 +870,8 @@ impl<'t> Builder<'t> {
             rep_env: HashMap::default(),
             keying: Default::default(),
             parent_of: Default::default(),
+            sig_scopes: Default::default(),
+            sig_off: Default::default(),
             const_cache: Default::default(),
             lit_cache: Default::default(),
             enum_cache: Default::default(),
@@ -2470,6 +2478,13 @@ impl<'t> Builder<'t> {
         }
         out
     }
+}
+
+/// One instance's declared signals, for [`Builder::sig_scopes`].
+#[derive(Default)]
+struct SigScope {
+    types: fx::FxMap<String, elab_ir::RtlType>,
+    prefix: String,
 }
 
 #[derive(Clone, Copy)]

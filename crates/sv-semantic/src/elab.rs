@@ -288,6 +288,13 @@ impl<'b, 't> Elab<'b, 't> {
         t.token_bounds(r.node).map_or_else(crate::Loc::default, |(tok, _)| self.locator.loc(r.tree, t, tok))
     }
 
+    /// Tells the constant evaluator which generate scope `$bits(signal)` is asked from.
+    fn set_sig_prefix(&self) {
+        if let Some(top) = self.b.sig_scopes.borrow_mut().last_mut() {
+            top.prefix = self.cur_gen_prefix();
+        }
+    }
+
     fn cur_gen_prefix(&self) -> String {
         self.gen_stack.last().cloned().unwrap_or_default()
     }
@@ -316,6 +323,9 @@ impl<'b, 't> Elab<'b, 't> {
         let inst_path = self.design.instances[inst_id.0 as usize].path.clone();
         let full_path = format!("{inst_path}.{rel_path}");
         let loc = self.loc_of(decl);
+        if let Some(top) = self.b.sig_scopes.borrow_mut().last_mut() {
+            top.types.insert(rel_path.clone(), ty.clone());
+        }
         let id = SymbolId(self.design.symbols.len() as u32);
         self.design.symbols.push(DesignSymbol {
             id,
@@ -1071,6 +1081,7 @@ impl<'b, 't> Elab<'b, 't> {
             }
             self.design_stack.push(inst_id);
             self.gen_stack.push(String::new());
+            self.b.sig_scopes.borrow_mut().push(Default::default());
             self.non_ansi_stack.push(NonAnsiPorts::default());
         }
         self.copy(decl);
@@ -1148,6 +1159,7 @@ impl<'b, 't> Elab<'b, 't> {
             self.non_ansi_stack.pop();
             self.gen_stack.pop();
             self.design_stack.pop();
+            self.b.sig_scopes.borrow_mut().pop();
         }
     }
 
@@ -1549,7 +1561,14 @@ impl<'b, 't> Elab<'b, 't> {
                 };
                 let pbounds = b.packed_1d_bounds(dt, scope, &empty, 0);
                 *b.inst.borrow_mut() = Vals::default();
-                let init = b.children(d).into_iter().find(|c| !matches!(b.kind(*c), Name | Dim));
+                // The declaration's initializer is the parameter's value only where no
+                // override replaced it; an override with no folded value leaves none.
+                let overridden = overridable && over.get(&name).is_some();
+                let init = b
+                    .children(d)
+                    .into_iter()
+                    .find(|c| !matches!(b.kind(*c), Name | Dim))
+                    .filter(|_| !overridden || val.is_some());
                 self.add_symbol(
                     &name,
                     &gen_prefix,
@@ -1686,12 +1705,14 @@ impl<'b, 't> Elab<'b, 't> {
                         self.branches(k, &mut rest);
                     }
                     self.uninst += 1;
+                    self.b.sig_off.set(self.b.sig_off.get() + 1);
                     for r in rest {
                         if Some(r) != item && !chain.contains(&r) {
                             self.block(r, None, None, path, scope, vals, depth, n);
                         }
                     }
                     self.uninst -= 1;
+                    self.b.sig_off.set(self.b.sig_off.get() - 1);
                 }
                 _ => {}
             }
@@ -1797,6 +1818,7 @@ impl<'b, 't> Elab<'b, 't> {
         let cur_gen = self.cur_gen_prefix();
         let next_gen = if cur_gen.is_empty() { name } else { format!("{cur_gen}.{name}") };
         self.gen_stack.push(next_gen.clone());
+        self.set_sig_prefix();
         if let Some((gv_name, gv_val, gv_node)) = genvar {
             self.add_symbol(
                 gv_name,
@@ -1812,6 +1834,7 @@ impl<'b, 't> Elab<'b, 't> {
         let mut v = vals.child();
         self.items(&items, &inner, scope, &Overrides::default(), false, &mut v, depth);
         self.gen_stack.pop();
+        self.set_sig_prefix();
     }
 
     fn label(&self, block: NodeRef) -> Option<String> {
@@ -1870,8 +1893,10 @@ impl<'b, 't> Elab<'b, 't> {
                     *self.b.inst.borrow_mut() = Vals::default();
                     v.remove(&var);
                     self.uninst += 1;
+                    self.b.sig_off.set(self.b.sig_off.get() + 1);
                     self.block(body, None, None, path, scope, &v, depth, construct);
                     self.uninst -= 1;
+                    self.b.sig_off.set(self.b.sig_off.get() - 1);
                     break;
                 }
                 _ => break,
@@ -1988,7 +2013,27 @@ impl<'b, 't> Elab<'b, 't> {
         let b = self.b;
         let Some(dt) = b.child(c, DataType) else { return };
         let Some(def) = b.toks_of(dt).first().map(|s| s.to_string()) else { return };
-        let Some(d) = self.defs.get(&def) else { return };
+        let Some(d) = self.defs.get(&def) else {
+            // Nothing is elaborated for the instance, so say so: a design that silently
+            // loses an instance is not the design that was read.
+            if self.checked.insert(c) {
+                let other = b.trees.iter().find_map(|t| {
+                    t.preorder().into_iter().find_map(|n| match t.kind(n) {
+                        UdpDecl | CheckerDecl if t.child(n, Name).is_some_and(|nm| t.bare_text(nm) == def) => {
+                            Some(t.kind(n))
+                        }
+                        _ => None,
+                    })
+                });
+                let message = match other {
+                    Some(UdpDecl) => format!("instance of user-defined primitive '{def}' is not supported"),
+                    Some(_) => format!("instance of checker '{def}' is not supported"),
+                    None => format!("unknown module '{def}'"),
+                };
+                self.diags.push(crate::names::Diag { tree: c.tree, node: dt.node, message });
+            }
+            return;
+        };
         let child = d.decl;
         let mut over = Overrides::default();
         let mut types: HashMap<String, Bound> = HashMap::default();

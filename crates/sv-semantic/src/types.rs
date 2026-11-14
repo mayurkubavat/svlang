@@ -988,14 +988,75 @@ impl<'t> Builder<'t> {
                             // A type name (typedef, type parameter) or a value.
                             NameExpr | ScopedExpr => match self.int_shape(a, scope, env, depth + 1) {
                                 Some((w, _)) => w,
-                                None => self.eval(a, scope, env, depth + 1)?.w,
+                                None => self.value_bits(a, scope, env, depth + 1)?,
                             },
-                            _ => self.eval(a, scope, env, depth + 1)?.w,
+                            _ => self.value_bits(a, scope, env, depth + 1)?,
                         };
                         Some(CVal::int(w as i128))
                     }
                     _ => self.call_const(&name, &args, scope, env, depth + 1),
                 }
+            }
+            _ => None,
+        }
+    }
+
+    /// `$bits` of a value: a constant's width, or the width of a signal, a member of
+    /// one, or a concatenation of them, from the signals elaboration has declared.
+    fn value_bits(&self, e: NodeRef, scope: usize, env: &Env, depth: usize) -> Option<u32> {
+        if depth > 64 {
+            return None;
+        }
+        if let Some(v) = self.eval(e, scope, env, depth + 1) {
+            return Some(v.w);
+        }
+        match self.kind(e) {
+            ParenExpr => self.value_bits(*self.children(e).first()?, scope, env, depth + 1),
+            // `{a, b}` only: a replication has a count in front of its inner braces.
+            ConcatExpr if self.own_tokens(e).iter().all(|t| matches!(*t, "{" | "}" | ",")) => {
+                let mut total = 0u32;
+                for k in self.children(e) {
+                    if self.kind(k) == ConcatExpr {
+                        return None;
+                    }
+                    total = total.checked_add(self.value_bits(k, scope, env, depth + 1)?)?;
+                }
+                Some(total)
+            }
+            NameExpr | MemberExpr => self.signal_type(e)?.bit_width(),
+            _ => None,
+        }
+    }
+
+    /// The type of a signal of the instance being elaborated, or of a member of one.
+    fn signal_type(&self, e: NodeRef) -> Option<RtlType> {
+        if self.sig_off.get() > 0 {
+            return None;
+        }
+        match self.kind(e) {
+            NameExpr => {
+                let toks = self.toks_of(e);
+                let [name] = toks.as_slice() else { return None };
+                let name = name.strip_prefix('\\').unwrap_or(name);
+                let scopes = self.sig_scopes.borrow();
+                let top = scopes.last()?;
+                // Innermost generate scope first, then outward to the instance.
+                let mut prefix = top.prefix.as_str();
+                loop {
+                    let key = if prefix.is_empty() { name.to_string() } else { format!("{prefix}.{name}") };
+                    if let Some(ty) = top.types.get(&key) {
+                        return Some(ty.clone());
+                    }
+                    if prefix.is_empty() {
+                        return None;
+                    }
+                    prefix = prefix.rsplit_once('.').map_or("", |(outer, _)| outer);
+                }
+            }
+            MemberExpr => {
+                let base = self.signal_type(*self.children(e).first()?)?;
+                let member = *self.own_tokens(e).last()?;
+                Some(base.packed_field(member)?.ty.clone())
             }
             _ => None,
         }

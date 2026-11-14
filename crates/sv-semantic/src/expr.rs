@@ -538,6 +538,10 @@ pub struct ExprBinder<'a> {
     pub diags: Vec<ExprDiag>,
     let_depth: usize,
     locator: Locator,
+    /// Self-determined shapes already worked out, by `(tree, node)`. An operator asks for
+    /// its operands' shapes before binding them, so without this a chain of `n` operators
+    /// binds its first operand `2^n` times.
+    self_shapes: FxMap<(usize, NodeId), (u32, bool, bool)>,
 }
 
 impl<'a> ExprBinder<'a> {
@@ -565,12 +569,14 @@ impl<'a> ExprBinder<'a> {
             diags: Vec::new(),
             let_depth: 0,
             locator,
+            self_shapes: FxMap::default(),
         }
     }
 
     /// Registers a procedural local variable (loop induction variable or subroutine local/arg).
     pub fn insert_local(&mut self, name: impl Into<String>, binding: LocalBinding) {
         self.locals.insert(name.into(), binding);
+        self.self_shapes.clear();
     }
 
     /// Borrows CST tree `idx`, falling back to `extra_tree` when `idx == trees.len()`.
@@ -754,6 +760,9 @@ impl<'a> ExprBinder<'a> {
 
     /// Lightweight self-determined `(width, signed, four_state)` computation before context pushdown.
     pub fn peek_self_shape(&mut self, tree_idx: usize, node: NodeId) -> Option<(u32, bool, bool)> {
+        if let Some(&shape) = self.self_shapes.get(&(tree_idx, node)) {
+            return Some(shape);
+        }
         let saved_len = self.arena.exprs.len();
         let saved_diags = self.diags.len();
         let bound_opt = self.bind_node(tree_idx, node, None);
@@ -761,6 +770,9 @@ impl<'a> ExprBinder<'a> {
         self.arena.exprs.truncate(saved_len);
         if bound_opt.is_some() {
             self.diags.truncate(saved_diags);
+        }
+        if let Some(shape) = res {
+            self.self_shapes.insert((tree_idx, node), shape);
         }
         res
     }
