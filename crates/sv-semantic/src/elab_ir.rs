@@ -565,6 +565,69 @@ impl ElaboratedDesign {
         self.sym_by_path.get(path).copied()
     }
 
+    fn package_scope(&self, pkg_name: &str) -> Option<&PackageScope> {
+        if pkg_name == "$unit" {
+            Some(&self.unit_scope)
+        } else {
+            self.packages.get(pkg_name)
+        }
+    }
+
+    /// A constant as code inside package `pkg_name` sees it: the package's own, one it
+    /// imports, or one in `$unit`. A subroutine of a package binds its names this way,
+    /// never in the scope of whoever calls it.
+    pub fn resolve_const_in_package(&self, pkg_name: &str, ident: &str) -> Option<(&CVal, &RtlType)> {
+        self.resolve_scoped_const(pkg_name, ident).or_else(|| self.resolve_scoped_const("$unit", ident))
+    }
+
+    /// A typedef as code inside package `pkg_name` sees it (see [`Self::resolve_const_in_package`]).
+    pub fn resolve_type_in_package(&self, pkg_name: &str, name: &str) -> Option<&RtlType> {
+        let own = |p: &'_ str| {
+            self.package_scope(p).and_then(|s| s.typedefs.iter().find(|(n, _)| n == name).map(|(_, ty)| ty))
+        };
+        if let Some(ty) = own(pkg_name) {
+            return Some(ty);
+        }
+        for (imp_pkg, item) in &self.package_scope(pkg_name)?.imports {
+            if item.as_deref().is_none_or(|x| x == name) && imp_pkg != pkg_name {
+                if let Some(ty) = own(imp_pkg) {
+                    return Some(ty);
+                }
+            }
+        }
+        own("$unit")
+    }
+
+    /// A function or task as code inside package `pkg_name` sees it
+    /// (see [`Self::resolve_const_in_package`]); the result is as [`Self::resolve_subroutine`]'s.
+    pub fn resolve_subroutine_in_package(
+        &self,
+        pkg_name: &str,
+        name: &str,
+    ) -> Option<(ElabItemKind, usize, NodeId, Option<InstanceId>, String)> {
+        let own = |p: &str| {
+            self.package_scope(p).and_then(|s| {
+                s.subroutines
+                    .iter()
+                    .find(|(nm, k, _, _, _)| {
+                        matches!(k, ElabItemKind::FunctionDecl | ElabItemKind::TaskDecl) && nm == name
+                    })
+                    .map(|(_, k, t, n, _)| (*k, *t, *n, None, String::new()))
+            })
+        };
+        if let Some(found) = own(pkg_name) {
+            return Some(found);
+        }
+        for (imp_pkg, item) in &self.package_scope(pkg_name)?.imports {
+            if item.as_deref().is_none_or(|x| x == name) && imp_pkg != pkg_name {
+                if let Some(found) = own(imp_pkg) {
+                    return Some(found);
+                }
+            }
+        }
+        own("$unit")
+    }
+
     /// Resolves `pkg::ident` (or `$unit::ident`) to a parameter or enum constant.
     pub fn resolve_scoped_const(&self, pkg_name: &str, ident: &str) -> Option<(&CVal, &RtlType)> {
         let p = if pkg_name == "$unit" { &self.unit_scope } else { self.packages.get(pkg_name)? };

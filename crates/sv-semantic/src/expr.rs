@@ -916,6 +916,19 @@ impl<'a> ExprBinder<'a> {
             return Some(self.apply_ctx(id, ctx, ctx.is_some(), loc));
         }
 
+        // A name written inside a package is looked up from that package, wherever the
+        // code is used: a package function inlined into a module must not pick up the
+        // module's signals or need the module's imports.
+        if let Some(pkg) = enclosing_package(self.tree(tree_idx), node) {
+            if let Some((cv, ty)) = self.design.resolve_const_in_package(&pkg, ident) {
+                let (cv, ty) = (cv.clone(), ty.clone());
+                let id = self.arena.alloc(ExprKind::Const(cv.clone()), ty, Some(cv), loc);
+                return Some(self.apply_ctx(id, ctx, ctx.is_some(), loc));
+            }
+            self.err(loc, format!("undeclared identifier '{ident}'"));
+            return None;
+        }
+
         // 2. Active `genvar` / generate-scope constant.
         if let Some((_, cv)) = self.gen_consts.iter().find(|(n, _)| n == ident) {
             let cv = cv.clone();
@@ -2073,6 +2086,9 @@ impl<'a> ExprBinder<'a> {
                 if let Some(ty) = self.local_typedefs.get(*tname) {
                     return Some(ty.clone());
                 }
+                if let Some(pkg) = enclosing_package(t, node) {
+                    return self.design.resolve_type_in_package(&pkg, tname).cloned();
+                }
                 self.design.resolve_named_type(self.inst_id, self.scope_prefix, None, tname).cloned()
             }
             _ => None,
@@ -2134,7 +2150,13 @@ impl<'a> ExprBinder<'a> {
         }
 
         // User-defined `function` call (in current instance/generate scope, package import, or `$unit`).
-        let resolved = self.resolve_function(pkg.as_deref(), &callee_name);
+        let resolved = match (&pkg, enclosing_package(self.tree(tree_idx), node)) {
+            (None, Some(home)) => match self.design.resolve_subroutine_in_package(&home, &callee_name) {
+                Some((ElabItemKind::FunctionDecl, tr, nd, inst_opt, sp)) => Some((tr, nd, inst_opt, sp)),
+                _ => None,
+            },
+            _ => self.resolve_function(pkg.as_deref(), &callee_name),
+        };
         let Some((fn_tree, fn_node, fn_inst, fn_scope_prefix)) = resolved else {
             self.err(loc, format!("undeclared function '{callee_name}'"));
             return None;
@@ -2661,11 +2683,10 @@ impl<'a> ExprBinder<'a> {
         let inst = owner_inst.unwrap_or(self.inst_id);
         let base_opt = match head.as_slice() {
             [pkg, "::", nm] => self.design.resolve_named_type(inst, owner_prefix, Some(pkg), nm).cloned(),
-            [nm] => self
-                .local_typedefs
-                .get(*nm)
-                .cloned()
-                .or_else(|| self.design.resolve_named_type(inst, owner_prefix, None, nm).cloned()),
+            [nm] => self.local_typedefs.get(*nm).cloned().or_else(|| match enclosing_package(t, dt) {
+                Some(pkg) => self.design.resolve_type_in_package(&pkg, nm).cloned(),
+                None => self.design.resolve_named_type(inst, owner_prefix, None, nm).cloned(),
+            }),
             _ => None,
         };
         let Some(base_ty) = base_opt else {
@@ -3237,6 +3258,15 @@ pub struct SubroutineFormal {
     pub decl: Option<NodeId>,
     /// Optional default value expression CST node.
     pub default_expr: Option<NodeId>,
+}
+
+/// The package whose declaration holds `node`, if it is inside one.
+pub fn enclosing_package(t: &Tree, node: NodeId) -> Option<String> {
+    let (first, _) = t.token_bounds(node)?;
+    t.children(t.root).filter(|&c| t.kind(c) == SyntaxKind::PackageDecl).find_map(|p| {
+        let (lo, hi) = t.token_bounds(p)?;
+        (lo <= first && first <= hi).then(|| t.child(p, SyntaxKind::Name).map(|n| t.bare_text(n).trim().to_string()))?
+    })
 }
 
 /// Returns the unqualified name of a `FunctionDecl` or `TaskDecl`.

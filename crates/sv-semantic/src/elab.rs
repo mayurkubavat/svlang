@@ -1171,10 +1171,13 @@ impl<'b, 't> Elab<'b, 't> {
         let b = self.b;
         let env = self.env();
         *b.inst.borrow_mut() = vals.clone();
-        for d in b.children(p) {
-            if b.kind(d) != Declarator {
-                continue;
-            }
+        // `parameter type T = logic` names its one type on the declaration itself;
+        // `parameter type T = logic, U = int` has a declarator for each.
+        let mut decls: Vec<NodeRef> = b.children(p).into_iter().filter(|d| b.kind(*d) == Declarator).collect();
+        if decls.is_empty() {
+            decls.push(p);
+        }
+        for d in decls {
             let Some((name, _)) = b.name_of(d) else { continue };
             let rty = if let Some(bd) = env.get(&name) {
                 b.rtl_data_type(bd.node, bd.scope, &bd.env, Some(name.clone()), 0)

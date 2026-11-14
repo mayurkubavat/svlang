@@ -2991,6 +2991,10 @@ pub(crate) fn resolve_call_target_in_scope(
         SyntaxKind::NameExpr => {
             let raw = t.bare_text(callee_node);
             let name = raw.trim().strip_prefix('\\').unwrap_or(raw.trim());
+            // A call written inside a package finds its callee from that package.
+            if let Some(home) = sv_semantic::expr::enclosing_package(t, callee_node) {
+                return design.resolve_subroutine_in_package(&home, name);
+            }
             lookup_local_or_pkg(inst_id, scope_prefix, None, name)
         }
         SyntaxKind::ScopedExpr => {
