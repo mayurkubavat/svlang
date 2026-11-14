@@ -22,8 +22,12 @@ Then, for example, `ric3 check counter.btor2 ic3`.
 ## What the model means
 
 - One step is one clock edge. Every register, memory write port and clocked
-  check must use the same clock signal and edge; a design with two clocks,
-  or with a latch, is rejected.
+  check must use the same clock signal and edge; a design with two clocks
+  is rejected.
+- A latch is transparent within a step: its value is its data where the
+  data assigns it, and what it held at the end of the step before where
+  the data leaves it alone. A latch whose value depends on itself within a
+  step, through its own data or another latch, is rejected.
 - With `Options::both_edges`, a design on both edges of one clock is
   written with two steps per clock cycle: the clock (a top-level input)
   starts low and toggles on every step, and each register, memory write,

@@ -32,6 +32,10 @@
 //!   step; history, memory writes and clocked checks follow their own edge the same way.
 //!   Other inputs are free on every step, so they may change on either edge. A design on
 //!   one edge is written as above either way ([`Model::steps_per_cycle`] says which);
+//! - a latch is transparent within a step: its value is its data where the data assigns
+//!   it and, where the data leaves it alone, what it held at the end of the step before (a
+//!   state named `<prefix>_latch_<n>`). A latch whose value depends on itself within a
+//!   step, through its own data or through another latch, is rejected;
 //! - an asynchronous reset acts synchronously (`next = reset ? value : next`);
 //! - `(* anyconst *)` holds one free value for the whole trace, `(* anyseq *)`,
 //!   cut points, black-box outputs and undriven bits are free on every step;
@@ -133,7 +137,7 @@ impl std::error::Error for Fail {}
 /// # Errors
 ///
 /// [`Fail`] when the netlist uses something the model cannot express exactly, such as
-/// two clocks or a latch.
+/// two clocks.
 pub fn write(nl: &Netlist, options: &Options) -> Result<Model, Fail> {
     let mut w = Writer::new(nl, options);
     w.half_cycle = w.check_clocks()?;
@@ -164,6 +168,10 @@ struct Writer<'n> {
     half_cycle: Option<ValueId>,
     /// With `half_cycle`: the clock level in this step (a state, 0 first, toggling).
     phase: Option<u32>,
+    /// Latches whose value is being written (indices into the netlist's states).
+    latch_open: std::collections::HashSet<usize>,
+    /// Latches written so far.
+    latches: u32,
     names: HashMap<String, u32>,
     /// Free inputs made for X and Z constant bits so far.
     unknowns: u32,
@@ -216,6 +224,8 @@ impl<'n> Writer<'n> {
             notes: Vec::new(),
             half_cycle: None,
             phase: None,
+            latch_open: Default::default(),
+            latches: 0,
             names: HashMap::new(),
             unknowns: 0,
         }
@@ -231,13 +241,12 @@ impl<'n> Writer<'n> {
         let nl = self.nl;
         let mut uses: Vec<(ClockSpec, String)> = Vec::new();
         for s in &nl.states {
-            if s.latch_enable.is_some() || s.clock.is_none() {
-                return rejected(format!(
-                    "latch {} (level-sensitive storage is not modelled; every register steps on a clock edge)",
-                    s.name
-                ));
+            match s.clock {
+                Some(c) => uses.push((c, s.name.clone())),
+                // A latch has no clock: it is open or closed within a step.
+                None if s.latch_enable.is_some() => {}
+                None => return rejected(format!("register {} with no clock (not modelled)", s.name)),
             }
-            uses.push((s.clock.unwrap(), s.name.clone()));
         }
         for m in &nl.memories {
             for p in &m.writes {
@@ -500,6 +509,9 @@ impl<'n> Writer<'n> {
                 if self.cut(&st.name) {
                     return Ok(self.konst("0".repeat(w as usize)));
                 }
+                if st.latch_enable.is_some() {
+                    return self.latch(s.0 as usize, id);
+                }
                 self.state(w, &st.name)
             }
             ValueKind::MemRead { mem, addr } => {
@@ -676,6 +688,114 @@ impl<'n> Writer<'n> {
         cnt
     }
 
+    // ---- latches
+
+    /// The value of latch `sidx`, whose output is `out`: its data with every path that
+    /// leaves the latch alone reading what it held at the end of the step before.
+    fn latch(&mut self, sidx: usize, out: ValueId) -> Result<u32, Fail> {
+        let st = &self.nl.states[sidx];
+        let (w, next, name) = (st.width, st.next, st.name.clone());
+        if !self.latch_open.insert(sidx) {
+            return rejected(format!(
+                "latch {name}: its value depends on itself within a step (a loop through the open latch, or latches that feed each other)"
+            ));
+        }
+        let held = self.state(w, &format!("{}_latch_{}", self.opts.name_prefix, self.latches));
+        self.latches += 1;
+        if let Some(init) = st.init.as_ref().filter(|c| c.known()) {
+            let c = self.konst(bits(init, w));
+            let srt = self.sort(w);
+            self.line(format!("init {srt} {held} {c}"));
+        }
+        let mut keeps = HashMap::new();
+        // The data's logic first, operands before users, so that writing it does not recurse
+        // as deep as the logic is (values are normally written in netlist order, but a
+        // latch is reached before the logic that feeds it).
+        for v in self.cone(next) {
+            if v != out && !self.keeps(v, out, &mut keeps) {
+                self.value(v)?;
+            }
+        }
+        let q = self.latch_data(next, out, held, &mut keeps)?;
+        let srt = self.sort(w);
+        self.pending.push((srt, held, q));
+        self.latch_open.remove(&sidx);
+        Ok(q)
+    }
+
+    /// The values `root` is computed from that are not written yet, operands before users.
+    /// Stops at registers and latches.
+    fn cone(&self, root: ValueId) -> Vec<ValueId> {
+        let nl = self.nl;
+        let mut order = Vec::new();
+        let mut seen = std::collections::HashSet::new();
+        let mut stack = vec![(root, false)];
+        while let Some((v, done)) = stack.pop() {
+            if done {
+                order.push(v);
+                continue;
+            }
+            if self.node[v.0 as usize].is_some() || !seen.insert(v.0) {
+                continue;
+            }
+            stack.push((v, true));
+            match &nl.value(v).kind {
+                ValueKind::Op { args, .. } => stack.extend(args.iter().map(|a| (*a, false))),
+                ValueKind::MemRead { addr, .. } => stack.push((*addr, false)),
+                ValueKind::Sampled(i) => {
+                    let s = &nl.sampled[*i];
+                    stack.push((s.expr, false));
+                    stack.extend(s.gate.map(|g| (g, false)));
+                }
+                ValueKind::Input(_) | ValueKind::Const(_) | ValueKind::StateOut(_) | ValueKind::Undriven(_) => {}
+            }
+        }
+        order
+    }
+
+    /// True when `v` passes the latch output `out` through unchanged on some path: `out`
+    /// itself, or a mux, slice or concatenation of data that does.
+    fn keeps(&self, v: ValueId, out: ValueId, memo: &mut HashMap<u32, bool>) -> bool {
+        if v == out {
+            return true;
+        }
+        if let Some(&k) = memo.get(&v.0) {
+            return k;
+        }
+        let k = match &self.nl.value(v).kind {
+            ValueKind::Op { op: NetOp::Mux, args } => args[1..].iter().any(|a| self.keeps(*a, out, memo)),
+            ValueKind::Op { op: NetOp::Slice { .. } | NetOp::Concat | NetOp::CastFourState { .. }, args } => {
+                args.iter().any(|a| self.keeps(*a, out, memo))
+            }
+            _ => false,
+        };
+        memo.insert(v.0, k);
+        k
+    }
+
+    /// `v` in the data of a latch, with the latch's own output `out` read as `held` where
+    /// the data only passes it through. Anything else that reads `out` reads the latch's
+    /// value in this step, which [`Self::latch`] rejects as a loop.
+    fn latch_data(&mut self, v: ValueId, out: ValueId, held: u32, memo: &mut HashMap<u32, bool>) -> Result<u32, Fail> {
+        if v == out {
+            return Ok(held);
+        }
+        if !self.keeps(v, out, memo) {
+            return self.value(v);
+        }
+        let node = self.nl.value(v);
+        let ValueKind::Op { op, args } = &node.kind else {
+            return self.value(v);
+        };
+        let mut a = Vec::with_capacity(args.len());
+        for (i, x) in args.iter().enumerate() {
+            // A mux select is read, not passed through.
+            let select = matches!(op, NetOp::Mux) && i == 0;
+            a.push(if select { self.value(*x)? } else { self.latch_data(*x, out, held, memo)? });
+        }
+        self.netop(op, &a, args, node.width)
+    }
+
     // ---- history
 
     /// `$past(v, depth)` gated by `gate`: a chain of `depth` registers that
@@ -830,6 +950,11 @@ impl<'n> Writer<'n> {
             if self.cut(&st.name) {
                 continue;
             }
+            // A latch: its value and held state are written where it is read.
+            if st.latch_enable.is_some() {
+                self.value(st.out)?;
+                continue;
+            }
             let s = self.value(st.out)?;
             // An initial value with X or Z bits: no init (any value).
             if let Some(init) = st.init.as_ref().filter(|c| c.known()) {
@@ -919,7 +1044,9 @@ impl<'n> Writer<'n> {
             let mut named: Vec<(String, ValueId)> = Vec::new();
             for t in &nl.traces {
                 match nl.value(t.value).kind {
-                    ValueKind::Input(_) | ValueKind::StateOut(_) => {}
+                    ValueKind::Input(_) => {}
+                    // A register is a named state already; a latch's value is not.
+                    ValueKind::StateOut(s) if nl.states[s.0 as usize].latch_enable.is_none() => {}
                     _ => named.push((t.name.clone(), t.value)),
                 }
             }

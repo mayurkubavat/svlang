@@ -96,7 +96,7 @@ fn name_prefix_is_used_for_invented_names() {
 }
 
 #[test]
-fn two_clocks_and_latches_are_rejected() {
+fn two_clocks_are_rejected() {
     let e = write(
         &netlist(
             "module two(input logic a, b, d, output logic p, q);\n\
@@ -108,12 +108,6 @@ fn two_clocks_and_latches_are_rejected() {
     )
     .unwrap_err();
     assert!(e.to_string().contains("more than one clock"), "{e}");
-    let e = write(
-        &netlist("module lat(input logic en, d, output logic q);\n always_latch if (en) q <= d;\nendmodule\n"),
-        &Options::default(),
-    )
-    .unwrap_err();
-    assert!(matches!(e, Fail::Unsupported(_) | Fail::Rejected(_)) && e.to_string().contains("latch"), "{e}");
 }
 
 #[test]
@@ -265,4 +259,46 @@ fn both_edges_need_the_clock_to_be_an_input() {
     opts.both_edges = true;
     let e = write(&nl, &opts).unwrap_err();
     assert!(e.to_string().contains("not a top-level input"), "{e}");
+}
+
+#[test]
+fn a_latch_is_its_data_over_a_held_state() {
+    let m = write(
+        &netlist("module lat(input logic en, d, output logic q);\n always_latch if (en) q <= d;\nendmodule\n"),
+        &Options::default(),
+    )
+    .unwrap();
+    well_formed(&m.btor2);
+    let held: Vec<&str> = lines(&m.btor2, "state");
+    assert_eq!(held.len(), 1, "{}", m.btor2);
+    assert!(held[0].ends_with(" svlang_latch_0"), "{}", m.btor2);
+    // The value is a mux of the data and the held state, and the held state follows it.
+    let id = held[0].split_whitespace().next().unwrap();
+    let ite = lines(&m.btor2, "ite");
+    assert!(ite.iter().any(|l| l.split_whitespace().last() == Some(id)), "{}", m.btor2);
+    assert_eq!(lines(&m.btor2, "next").len(), 1);
+}
+
+#[test]
+fn latch_loops_are_rejected() {
+    let own =
+        netlist("module l1(input logic en, output logic [3:0] q);\n always_latch if (en) q <= q + 4'd1;\nendmodule\n");
+    let e = write(&own, &Options::default()).unwrap_err();
+    assert!(e.to_string().contains("depends on itself"), "{e}");
+    let pair = netlist(
+        "module l2(input logic a, b, d, output logic p, q);\n\
+           always_latch if (a) p <= d ^ q;\n\
+           always_latch if (b) q <= p;\n\
+         endmodule\n",
+    );
+    let e = write(&pair, &Options::default()).unwrap_err();
+    assert!(e.to_string().contains("depends on itself"), "{e}");
+    // One latch feeding another is fine.
+    let chain = netlist(
+        "module l3(input logic a, b, d, output logic p, q);\n\
+           always_latch if (a) p <= d;\n\
+           always_latch if (b) q <= p;\n\
+         endmodule\n",
+    );
+    well_formed(&write(&chain, &Options::default()).unwrap().btor2);
 }

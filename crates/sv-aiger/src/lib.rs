@@ -73,7 +73,7 @@ pub struct Model {
 ///
 /// # Errors
 ///
-/// [`Error`] when the netlist cannot be modelled exactly: more than one clock, a latch,
+/// [`Error`] when the netlist cannot be modelled exactly: more than one clock, a latch that depends on itself,
 /// a concurrent assumption, a memory that was not expanded, or a register whose initial
 /// value is not a constant.
 pub fn lower(nl: &Netlist, options: &Options) -> Result<Model, Error> {

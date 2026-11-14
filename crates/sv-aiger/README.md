@@ -22,8 +22,9 @@ Then, for example, `ric3 check counter.aig ic3`.
 The graph is the Btor2 model of [`sv-btor2`](https://crates.io/crates/sv-btor2),
 bit by bit:
 
-- One step is one clock edge of a single clock; two clocks or a latch are an
-  error. An asynchronous reset acts synchronously.
+- One step is one clock edge of a single clock; two clocks are an error. A
+  SystemVerilog latch is transparent within a step, as in `sv-btor2`. An
+  asynchronous reset acts synchronously.
 - Every register bit is a latch, with its constant initial value or none.
   Every input bit, and every free bit (undriven, X, `anyseq`, cut point,
   black-box output), is an input.
