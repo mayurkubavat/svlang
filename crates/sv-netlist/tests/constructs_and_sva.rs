@@ -1246,6 +1246,73 @@ fn cut_point_that_names_no_signal_is_an_error() {
     }
 }
 
+// ============================================================================
+// Black boxes (`LowerConfig::black_box_modules`, `black_box_instances`)
+// ============================================================================
+
+const BLACK_BOX_SRC: &str = "module leaf(input wire clk, input wire [3:0] i, output reg [3:0] o);\n\
+                               reg [3:0] mem [0:7];\n\
+                               always @(posedge clk) begin mem[i[2:0]] <= i; o <= mem[i[2:0]] + 4'd1; end\n\
+                             endmodule\n\
+                             module mid(input wire clk, input wire [3:0] i, output wire [3:0] o);\n\
+                               wire [3:0] t;\n\
+                               leaf l(.clk(clk), .i(i), .o(t));\n\
+                               assign o = ~t;\n\
+                             endmodule\n\
+                             module t(input wire clk, input wire [3:0] d, output wire [3:0] y1, y2);\n\
+                               mid a(.clk(clk), .i(d), .o(y1));\n\
+                               mid b(.clk(clk), .i(d), .o(y2));\n\
+                             endmodule\n";
+
+/// A black-boxed module keeps its ports and loses its body: no registers or
+/// memories from inside it, and its outputs are free values.
+#[test]
+fn black_box_by_module_drops_the_body_and_frees_the_outputs() {
+    let plain = expect_lowered(lower_src(BLACK_BOX_SRC));
+    assert_eq!(plain.states.len() + plain.memories.len(), 4, "two leaves: a register and a memory each");
+
+    let cfg = LowerConfig { black_box_modules: vec!["leaf".into()], ..LowerConfig::default() };
+    let nl = expect_lowered(lower_src_cfg(BLACK_BOX_SRC, &[], &cfg));
+    assert!(nl.states.is_empty() && nl.memories.is_empty());
+    let cut: Vec<&str> =
+        nl.undriven.iter().filter(|u| u.free == sv_netlist::FreeKind::Cut).map(|u| u.signal.as_str()).collect();
+    assert_eq!(cut, ["t.a.l.o", "t.b.l.o"]);
+    // Nothing inside the box is a signal of the netlist; its ports are.
+    assert!(!nl.traces.iter().any(|s| s.name.starts_with("t.a.l.mem")));
+    assert!(nl.traces.iter().any(|s| s.name == "t.a.l.i"));
+}
+
+/// By instance path: only that instance, and everything below it.
+#[test]
+fn black_box_by_instance_path_takes_the_subtree() {
+    let cfg = LowerConfig { black_box_instances: vec!["t.a".into()], ..LowerConfig::default() };
+    let nl = expect_lowered(lower_src_cfg(BLACK_BOX_SRC, &[], &cfg));
+    // `t.b` and its leaf are intact; `t.a` is a box, its leaf is gone with it.
+    assert_eq!(nl.states.len() + nl.memories.len(), 2);
+    let cut: Vec<&str> =
+        nl.undriven.iter().filter(|u| u.free == sv_netlist::FreeKind::Cut).map(|u| u.signal.as_str()).collect();
+    assert_eq!(cut, ["t.a.o"]);
+    assert!(!nl.traces.iter().any(|s| s.name.starts_with("t.a.l.") || s.name == "t.a.t"));
+}
+
+/// A black box that names nothing, or the top module, is an error.
+#[test]
+fn black_box_names_are_checked() {
+    for (cfg, want) in [
+        (
+            LowerConfig { black_box_modules: vec!["typo".into()], ..LowerConfig::default() },
+            "no instance of that module",
+        ),
+        (LowerConfig { black_box_instances: vec!["t.c".into()], ..LowerConfig::default() }, "is not an instance"),
+        (LowerConfig { black_box_modules: vec!["t".into()], ..LowerConfig::default() }, "cannot be a black box"),
+    ] {
+        match lower_src_cfg(BLACK_BOX_SRC, &[], &cfg) {
+            LowerOutcome::Error(ds) => assert!(ds[0].message.contains(want), "{ds:?}"),
+            other => panic!("expected an error, got {other:?}"),
+        }
+    }
+}
+
 /// A module-level `integer k` used as the loop index of two clocked `always`
 /// blocks: nothing reads `k` outside the loops, so which block wrote it last is
 /// unobservable and the design lowers. Reading it elsewhere keeps the error.

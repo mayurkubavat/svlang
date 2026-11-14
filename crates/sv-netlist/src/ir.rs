@@ -639,6 +639,16 @@ pub struct LowerConfig {
     /// A cut register keeps its [`State`] in the netlist, with nothing reading it: a back end
     /// can drop the states named by a `Cut` slice.
     pub cut_points: Vec<String>,
+    /// Black boxes by module name: every instance of a named module keeps its ports, and
+    /// nothing inside it is lowered (its body, its child instances, its assertions). Its
+    /// output ports are free values on every step ([`FreeKind::Cut`]); its input ports are
+    /// still connected and read by nothing. Like a cut point this is an over-approximation.
+    /// The module must still elaborate. A name that matches no instance is an error, and so
+    /// is the top module.
+    pub black_box_modules: Vec<String>,
+    /// Black boxes by instance path (`"top.u_core.u_mem"`): as [`Self::black_box_modules`],
+    /// for the named instances only.
+    pub black_box_instances: Vec<String>,
 }
 
 impl Default for LowerConfig {
@@ -649,6 +659,8 @@ impl Default for LowerConfig {
             blast_memories_up_to: None,
             allow_four_state_ops: false,
             cut_points: Vec::new(),
+            black_box_modules: Vec::new(),
+            black_box_instances: Vec::new(),
         }
     }
 }

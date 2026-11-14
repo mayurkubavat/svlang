@@ -47,6 +47,9 @@ pub(crate) struct DesignLowerer<'a> {
     pub free_attrs: Option<FxMap<(usize, NodeId), FreeKind>>,
     /// Indexes of the [`LowerConfig::cut_points`] that matched a signal.
     pub cut_seen: FxSet<usize>,
+    /// Black-boxed instances ([`LowerConfig::black_box_modules`] and
+    /// [`LowerConfig::black_box_instances`]): only their ports are allocated.
+    pub boxed: FxSet<InstanceId>,
 }
 
 /// Lowers an [`ElaboratedDesign`] and its parsed CST [`Tree`]s into a word-level [`Netlist`].
@@ -76,7 +79,11 @@ pub fn lower_design(trees: &[Tree], design: &ElaboratedDesign, config: &LowerCon
         call_stack: Vec::new(),
         free_attrs: None,
         cut_seen: Default::default(),
+        boxed: Default::default(),
     };
+    if let Err(diag) = lowerer.mark_black_boxes(top_id) {
+        return LowerOutcome::Error(vec![diag]);
+    }
 
     // Pass 1: allocate flattened signal slots, top-level ports, memories, and trace entries.
     lowerer.alloc_instance_recursive(top_id, true);
@@ -220,7 +227,70 @@ impl<'a> DesignLowerer<'a> {
         idx
     }
 
+    /// Fill [`Self::boxed`] from the configuration. Instances inside a black box are not
+    /// visited, so only the outermost one is recorded.
+    fn mark_black_boxes(&mut self, top_id: InstanceId) -> Result<(), NetlistDiag> {
+        let cfg = self.config;
+        if cfg.black_box_modules.is_empty() && cfg.black_box_instances.is_empty() {
+            return Ok(());
+        }
+        let fail =
+            |message: String| NetlistDiag { loc: Loc::default(), file: String::new(), message, unsupported: false };
+        let (mut seen_m, mut seen_i) = (FxSet::default(), FxSet::default());
+        let mut stack = vec![top_id];
+        while let Some(id) = stack.pop() {
+            let inst = self.design.instance(id);
+            let by_module = cfg.black_box_modules.iter().position(|m| *m == inst.definition);
+            let by_path = cfg.black_box_instances.iter().position(|p| *p == inst.path);
+            if let Some(i) = by_module {
+                seen_m.insert(i);
+            }
+            if let Some(i) = by_path {
+                seen_i.insert(i);
+            }
+            if by_module.is_some() || by_path.is_some() {
+                if id == top_id {
+                    return Err(fail(format!("the top module '{}' cannot be a black box", inst.definition)));
+                }
+                self.boxed.insert(id);
+            } else {
+                stack.extend(inst.children.iter().copied());
+            }
+        }
+        if let Some((_, m)) = cfg.black_box_modules.iter().enumerate().find(|(i, _)| !seen_m.contains(i)) {
+            return Err(fail(format!("black box '{m}': the design has no instance of that module")));
+        }
+        if let Some((_, p)) = cfg.black_box_instances.iter().enumerate().find(|(i, _)| !seen_i.contains(i)) {
+            return Err(fail(format!("black box '{p}' is not an instance of the design")));
+        }
+        Ok(())
+    }
+
+    /// A black box: its ports only. Each output is a free value (a cut point).
+    fn alloc_black_box(&mut self, inst_id: InstanceId) {
+        let ports = self.design.instance(inst_id).ports.clone();
+        for sid in ports {
+            let sym = self.design.symbol(sid);
+            let first_slot = self.slots.len();
+            self.alloc_symbol(sid, false);
+            if !matches!(sym.kind, SymbolKind::Port { dir: PortDir::Output, .. }) {
+                continue;
+            }
+            if self.slots.len() == first_slot && self.builder.diags.is_empty() {
+                self.builder
+                    .unsup(sym.loc, format!("output port '{}' of a black box is not a packed value", sym.full_path));
+            }
+            for slot in &mut self.slots[first_slot..] {
+                slot.free = FreeKind::Cut;
+            }
+        }
+    }
+
     fn alloc_instance_recursive(&mut self, inst_id: InstanceId, is_top: bool) {
+        if self.boxed.contains(&inst_id) {
+            self.alloc_black_box(inst_id);
+            return;
+        }
         let inst = self.design.instance(inst_id);
         let syms = inst.symbols.clone();
         let children = inst.children.clone();
@@ -475,6 +545,9 @@ impl<'a> DesignLowerer<'a> {
     }
 
     fn collect_initializers_recursive(&mut self, inst_id: InstanceId) {
+        if self.boxed.contains(&inst_id) {
+            return;
+        }
         let inst = self.design.instance(inst_id);
         let syms = inst.symbols.clone();
         let items = inst.items.clone();
@@ -664,6 +737,10 @@ impl<'a> DesignLowerer<'a> {
     }
 
     fn lower_instance_recursive(&mut self, inst_id: InstanceId) {
+        // A black box: its parent has connected its ports; nothing inside is lowered.
+        if self.boxed.contains(&inst_id) {
+            return;
+        }
         let inst = self.design.instance(inst_id);
         let items = inst.items.clone();
         let children = inst.children.clone();
@@ -1459,6 +1536,9 @@ impl<'a> DesignLowerer<'a> {
         sva_arena: &mut ExprArena,
         properties: &mut Vec<BoundProperty>,
     ) {
+        if self.boxed.contains(&inst_id) {
+            return;
+        }
         let mut binder = SvaBinder::new(self.trees, self.design, sva_arena);
         let bound = binder.bind_instance_properties(inst_id);
         let diags = binder.diags;
