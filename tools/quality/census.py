@@ -13,7 +13,8 @@ the list and the report are checked in.
 How a module is measured. Each module defined under a design's `roots` is
 made the top of its own compilation: the file that defines it plus the files
 that define what it names (modules, interfaces, packages), found by a text
-scan, in dependency order. `dv-build --netlist --top <module>` then ends in
+scan, in dependency order. `svlang stages -top <module>` runs parse, elaborate,
+lower and the Btor2 writer in turn, and the module ends in
 one of:
 
     lowered        a netlist came out
@@ -30,7 +31,7 @@ ranked. `invalid` is the census's own limit and is counted separately; a module
 that is `invalid` as a top is still measured where another top instantiates it
 (the "in a design" columns).
 
-Environment: DV_BUILD picks the dv-build binary (default target/release),
+Environment: SVLANG picks the svlang binary (default target/release),
 SLANG the reference binary (default: `slang` on PATH; without it `rejected`
 and `invalid` cannot be told apart and are reported together as `error`).
 """
@@ -71,12 +72,10 @@ DEFINITION = re.compile(
 )
 END_MODULE = re.compile(r"\bendmodule\b")
 IDENT = re.compile(r"[A-Za-z_][A-Za-z0-9_$]*")
-DIAG = re.compile(r"^(.*?):(\d+):(\d+): (unsupported|error): (.*)$")
 # The reference runs the way a simulator would be run on these designs: its VCS
 # compatibility mode, and a default time scale for files that set none.
 REFERENCE_FLAGS = ["--quiet", "--error-limit=5", "--compat=vcs", "--timescale=1ns/1ps"]
 SELF_CHECK = re.compile(r"^immediate (assertion|assumption) in initial block is false")
-HIER_INSTANCE = re.compile(r"^\S+ instance .* : ([A-Za-z_][A-Za-z0-9_$]*)$")
 
 
 def load_corpus():
@@ -313,7 +312,7 @@ class Design:
 
 def limit_child(mem_gb):
     def apply():
-        os.nice(15)
+        os.nice(19)
         cap = int(mem_gb * (1 << 30))
         resource.setrlimit(resource.RLIMIT_AS, (cap, cap))
         resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
@@ -340,39 +339,43 @@ def measure(design, module, path, plan, tools, opts):
     rec = {"design": design.name, "module": module, "file": design.rel(path), "files": len(files)}
 
     code, out, err, secs = run_tool(
-        [tools["dv_build"], "--netlist", "--hier", *opts.flag, *args, "--top", module, *files], opts.timeout, opts.mem
+        [tools["svlang"], "stages", *opts.flag, *args, "-top", module, *files], opts.timeout, opts.mem
     )
     rec["seconds"] = round(secs, 2)
-    diags, instantiated = [], set()
-    # Diagnostics and the hierarchy come before the netlist dump, which can run to megabytes.
-    for line in out.splitlines():
-        if line.startswith("netlist "):
-            break
-        m = DIAG.match(line)
-        if m:
-            f, ln = os.path.abspath(m.group(1)), int(m.group(2))
-            diags.append(
-                {
-                    "kind": m.group(4),
-                    "message": m.group(5).replace(design.base + os.sep, ""),
-                    "file": design.rel(f),
-                    "line": ln,
-                    "owner": design.owner(f, ln),
-                }
-            )
-            continue
-        m = HIER_INSTANCE.match(line)
-        if m:
-            instantiated.add(m.group(1))
+    try:
+        got = json.loads(out)
+    except ValueError:
+        got = {}
+    diags = []
+    for d in got.get("diagnostics", []):
+        f = os.path.abspath(d["file"]) if d["file"] else path
+        diags.append(
+            {
+                "stage": d["stage"],
+                "kind": d["kind"],
+                "message": d["message"].replace(design.base + os.sep, ""),
+                "file": design.rel(f),
+                "line": d["line"],
+                "owner": design.owner(f, d["line"]) if d["file"] else module,
+            }
+        )
     rec["diags"] = diags[:50]
     rec["diag_count"] = len(diags)
-    rec["instantiates"] = sorted(instantiated - {module})
+    rec["instantiates"] = sorted(set(got.get("modules", [])) - {module})
+    rec["stage"] = got.get("blocked_at")
+    for key in ("peak_rss_kb", "netlist", "btor2"):
+        if key in got:
+            rec[key] = got[key]
+    if "seconds" in got:
+        rec["stage_seconds"] = got["seconds"]
+    # A netlist that the Btor2 writer refuses is still lowered; the report counts it apart.
+    lowered = bool(got) and got.get("blocked_at") in (None, "btor2")
 
     if code is None:
         rec["outcome"] = "timeout"
-    elif code == 0:
+    elif lowered:
         rec["outcome"] = "lowered"
-    elif code == 1 and diags:
+    elif got and diags:
         rec["outcome"] = "unsupported" if all(d["kind"] == "unsupported" for d in diags) else "error"
     elif "memory allocation of" in err:
         rec["outcome"] = "memout"
@@ -418,13 +421,13 @@ def measure(design, module, path, plan, tools, opts):
 
 
 def find_tools():
-    dv_build = os.environ.get("DV_BUILD") or os.path.join(REPO, "target", "release", "dv-build")
-    if not os.path.isfile(dv_build):
-        sys.exit(f"error: {dv_build} not found; cargo build --release -p dv-build, or set DV_BUILD")
+    svlang = os.environ.get("SVLANG") or os.path.join(REPO, "target", "release", "svlang")
+    if not os.path.isfile(svlang):
+        sys.exit(f"error: {svlang} not found; cargo build --release -p svlang-cli, or set SVLANG")
     slang = os.environ.get("SLANG") or shutil.which("slang")
     if not slang:
         print("note: no reference front end (set SLANG); rejected and invalid are reported as error", file=sys.stderr)
-    return {"dv_build": dv_build, "slang": slang}
+    return {"svlang": svlang, "slang": slang}
 
 
 def run(base, only, opts):
@@ -569,6 +572,21 @@ def report(base, opts):
         f"{total['accepted']} lowered although the reference rejects the input.\n\n"
     )
 
+    blamed = [r for r in recs if r["outcome"] in ("unsupported", "rejected")]
+    by_stage = collections.Counter(r.get("stage") or "?" for r in blamed)
+    if blamed and "?" not in by_stage:
+        w(
+            "Where the unsupported and wrongly rejected ones stop: "
+            + ", ".join(f"{by_stage[st]} at {st}" for st in ("parse", "elaborate", "lower") if by_stage[st])
+            + ". "
+        )
+        low = [r for r in recs if r["outcome"] in ("lowered", "accepted")]
+        refused = sum(1 for r in low if r.get("stage") == "btor2")
+        w(
+            f"Of the {len(low)} netlists, the Btor2 writer takes {len(low) - refused} and refuses {refused} "
+            "(see *Lowered, not written as Btor2*).\n\n"
+        )
+
     for path2 in opts.variant:
         vmeta, vtotal = {}, collections.Counter()
         with open(path2) as f:
@@ -633,14 +651,17 @@ def report(base, opts):
         if not blocked:
             return
         w(f"## {title}\n\n{intro}\n\n")
-        w("| tops blocked | only blocker | modules with it | designs | diagnostic | example |\n")
-        w("| ---: | ---: | ---: | ---: | --- | --- |\n")
+        w("| tops blocked | only blocker | modules with it | designs | stage | diagnostic | example |\n")
+        w("| ---: | ---: | ---: | ---: | --- | --- | --- |\n")
         rows = sorted(blocked, key=lambda k: (-len(blocked[k]), -sole[k], k))
         for k in rows[: opts.rows]:
             d = example[k][1]
             src = source_line(base, d["file"], d["line"])
             ex = f"`{d['file']}:{d['line']}`" + (f" {code(src)}" if src else "")
-            w(f"| {len(blocked[k])} | {sole[k]} | {len(owners[k])} | {len(designs[k])} | {md(k)} | {ex} |\n")
+            w(
+                f"| {len(blocked[k])} | {sole[k]} | {len(owners[k])} | {len(designs[k])} | {d.get('stage', '')} "
+                f"| {md(k)} | {ex} |\n"
+            )
         if len(rows) > opts.rows:
             rest = set()
             for k in rows[opts.rows :]:
@@ -666,6 +687,26 @@ def report(base, opts):
         {"rejected"},
         {"error"},
     )
+
+    refused = [r for r in recs if r["outcome"] in ("lowered", "accepted") and r.get("stage") == "btor2"]
+    if refused:
+        w(
+            "## Lowered, not written as Btor2\n\n"
+            "The netlist came out and the Btor2 writer (`sv-btor2`) refused it: the netlist holds something\n"
+            "its transition system has no form for yet.\n\n"
+        )
+        groups = collections.defaultdict(list)
+        for r in refused:
+            for d in r["diags"]:
+                # The writer names the signals without quotes: (a.b, c.d) lists and dotted paths.
+                what = re.sub(r"\s*\([^()]*\)", "", d["message"])
+                what = re.sub(r"\b[A-Za-z_][\w$]*(?:\.[\w$\[\]]+)+", "…", what)
+                groups[construct(what)].append(r)
+        w("| tops | designs | what the writer says | example |\n| ---: | ---: | --- | --- |\n")
+        for key, rs in sorted(groups.items(), key=lambda kv: (-len(kv[1]), kv[0]))[: opts.rows]:
+            ex = min(rs, key=lambda r: r["files"])
+            w(f"| {len(rs)} | {len({r['design'] for r in rs})} | {md(key)} | `{ex['file']}` `{ex['module']}` |\n")
+        w("\n")
 
     crashes = [r for r in recs if r["outcome"] in ("crash", "memout", "timeout")]
     if crashes:
@@ -756,7 +797,7 @@ def main():
     ap.add_argument("--timeout", type=int, default=120, help="seconds per module")
     ap.add_argument("--mem", type=float, default=4.0, help="GB of address space per process")
     ap.add_argument("--define", action="append", default=[], help="a define for every compilation (repeatable)")
-    ap.add_argument("--flag", action="append", default=[], help="a dv-build flag for every compilation (repeatable)")
+    ap.add_argument("--flag", action="append", default=[], help="an svlang flag for every compilation (repeatable)")
     ap.add_argument("--variant", action="append", default=[], help="report: another results file to summarize beside this one")
     ap.add_argument("--rows", type=int, default=40, help="rows per ranked table")
     ap.add_argument("-o", "--output", help="results file (default <dir>/results.jsonl)")
