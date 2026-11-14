@@ -28,6 +28,7 @@ commands:
   netlist    lower the design to a word-level RTL netlist and print it
   btor2      write the design as a Btor2 transition system
   aiger      write the design as an and-inverter graph in AIGER
+  yosys      write the design as a Yosys JSON netlist (read_json)
   help       print this text
   version    print the version
 
@@ -37,19 +38,19 @@ compile arguments (as a simulator takes them):
 
 options:
   --json                  check: print the diagnostics as a JSON array
-  -o, --output FILE       netlist, btor2, aiger: write to FILE, not stdout
+  -o, --output FILE       netlist, btor2, aiger, yosys: write to FILE, not stdout
   --ascii                 aiger: write the ASCII form (.aag), not binary
   --trace-outputs         btor2: add the section that names combinational nets
-  --properties            netlist, btor2, aiger: compile concurrent properties
+  --properties            netlist, btor2, aiger, yosys: compile concurrent properties
                           (assert/assume/cover property) into checks
   --skip-cycles N         with --properties: do not check attempts that start in
                           the first N clock ticks (the length of reset)
   --covers                btor2, aiger: write covers as reachable bad states
   --both-edges            btor2, aiger: accept both edges of the one clock
-  --blast-memories N      netlist, btor2, aiger: expand memories of depth <= N
-  --four-state            netlist, btor2, aiger: keep ===, !== and $isunknown
-  --cut PATH              netlist, btor2, aiger: cut the signal at PATH (repeatable)
-  --black-box MODULE      netlist, btor2, aiger: do not lower MODULE (repeatable)
+  --blast-memories N      netlist, btor2, aiger, yosys: expand memories of depth <= N
+  --four-state            netlist, btor2, aiger, yosys: keep ===, !== and $isunknown
+  --cut PATH              netlist, btor2, aiger, yosys: cut the signal at PATH (repeatable)
+  --black-box MODULE      netlist, btor2, aiger, yosys: do not lower MODULE (repeatable)
   --black-box-instance PATH   the same for one instance (repeatable)
 
 exit status: 0 success, 1 errors in the design, 2 bad usage
@@ -287,6 +288,20 @@ fn run(command: &str, o: &Opts) -> Result<ExitCode, Usage> {
                     eprintln!("note: {}", m.aig.summary());
                     let data = if o.ascii { m.aig.to_ascii().into_bytes() } else { m.aig.to_binary() };
                     emit(o, &data)?;
+                    Ok(ExitCode::SUCCESS)
+                }
+                Err(e) => {
+                    eprintln!("svlang: {e}");
+                    Ok(failed)
+                }
+            }
+        }
+        "yosys" => {
+            let Some(nl) = lower(&compile(o)?, o) else { return Ok(failed) };
+            match svlang::yosys::write(&nl, &svlang::yosys::Options::default()) {
+                Ok(m) => {
+                    notes(&m.notes);
+                    emit(o, m.json.as_bytes())?;
                     Ok(ExitCode::SUCCESS)
                 }
                 Err(e) => {

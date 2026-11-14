@@ -126,6 +126,9 @@ class Netlist:
         both_edges: bool = False,
         clocks: Sequence[tuple[str, int, int]] = ...,
     ) -> tuple[Union[bytes, str], list[str]]: ...
+    def to_yosys_json(
+        self, *, checks: bool = True, src_attributes: bool = True
+    ) -> tuple[str, list[str]]: ...
     @property
     def properties(self) -> list[tuple[str, str, bool]]: ...
 

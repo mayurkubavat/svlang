@@ -73,6 +73,13 @@ data, notes = nl.to_aiger()
 open("top.aig", "wb").write(data)       # then: ric3 check top.aig ic3
 ```
 
+`nl.to_yosys_json()` writes the netlist for Yosys, as its word-level cells:
+
+```python
+text, notes = nl.to_yosys_json()
+open("top.json", "w").write(text)       # then: yosys -p 'read_json top.json; synth; stat'
+```
+
 Immediate assertions become `bad` lines. For concurrent properties
 (`assert property`, `assume property`, `cover property`), lower with
 `compile_properties=True`: each one over bounded sequences becomes a check

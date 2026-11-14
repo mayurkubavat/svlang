@@ -15,6 +15,7 @@
 //!   bit-level driver analysis, SVA lowering, and memory blasting
 //! - [`btor2`]: the netlist written as a Btor2 transition system for model checkers
 //! - [`aiger`]: the netlist bit-blasted to an and-inverter graph and written as AIGER
+//! - [`yosys`]: the netlist as a Yosys JSON netlist of word-level cells
 //!
 //! Configure inputs on a [`Driver`] and build a [`Compilation`]:
 //!
@@ -46,6 +47,7 @@ pub use sv_preprocessor as preprocessor;
 pub use sv_semantic as semantic;
 pub use sv_source as source;
 pub use sv_syntax as syntax;
+pub use sv_yosys as yosys;
 
 pub use sv_netlist::{LowerConfig, LowerOutcome, Netlist, NetlistDiag};
 

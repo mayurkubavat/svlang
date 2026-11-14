@@ -19,3 +19,4 @@ sv-semantic = { version = "0.1.1", path = "../sv-semantic" }
 sv-netlist = { version = "0.1.1", path = "../sv-netlist" }
 sv-btor2 = { version = "0.1.1", path = "../sv-btor2" }
 sv-aiger = { version = "0.1.1", path = "../sv-aiger" }
+sv-yosys = { version = "0.1.1", path = "../sv-yosys" }

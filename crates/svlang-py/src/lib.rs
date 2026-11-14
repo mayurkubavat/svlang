@@ -838,6 +838,27 @@ impl Netlist {
         Ok((data, model.notes))
     }
 
+    /// The netlist as a Yosys JSON netlist (``yosys -p 'read_json top.json'``),
+    /// built from Yosys's word-level cells, for synthesis, equivalence
+    /// checking, drawing and SymbiYosys. Returns ``(text, notes)``.
+    ///
+    /// Registers, latches, asynchronous resets, ``$past``, free values and
+    /// checks all have their Yosys cell. ``checks=False`` leaves the
+    /// ``$assert``/``$assume``/``$cover`` cells out and ``src_attributes=False``
+    /// the source locations. Memories must be expanded first
+    /// (``lower_netlist(blast_memories_up_to=N)``). Raises ``SvlangError`` when
+    /// something has no exact Yosys form.
+    #[pyo3(signature = (*, checks = true, src_attributes = true))]
+    fn to_yosys_json(&self, py: Python<'_>, checks: bool, src_attributes: bool) -> PyResult<(String, Vec<String>)> {
+        let mut opts = svlang::yosys::Options::default();
+        opts.checks = checks;
+        opts.src_attributes = src_attributes;
+        let nl = self.inner.clone();
+        let model =
+            py.detach(move || svlang::yosys::write(&nl, &opts)).map_err(|e| SvlangError::new_err(e.to_string()))?;
+        Ok((model.json, model.notes))
+    }
+
     fn __repr__(&self) -> String {
         let n = &self.inner;
         format!(

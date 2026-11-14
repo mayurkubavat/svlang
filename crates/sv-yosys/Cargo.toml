@@ -1,0 +1,18 @@
+[package]
+name = "sv-yosys"
+description = "Yosys JSON writer for the svlang RTL netlist: SystemVerilog designs as Yosys word-level cells, for synthesis, equivalence and formal flows"
+readme = "README.md"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+keywords = ["systemverilog", "yosys", "netlist", "synthesis", "eda"]
+categories.workspace = true
+
+[dependencies]
+sv-netlist = { version = "0.1.1", path = "../sv-netlist" }
+sv-semantic = { version = "0.1.1", path = "../sv-semantic" }
+
+[dev-dependencies]
+sv-syntax = { version = "0.1.1", path = "../sv-syntax" }

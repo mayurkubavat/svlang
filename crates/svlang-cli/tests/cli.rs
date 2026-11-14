@@ -153,3 +153,13 @@ fn properties_option_writes_concurrent_assertions() {
     assert!(stdout(&o).lines().any(|l| l.contains(" bad ") && l.ends_with("hs.a_ack")), "{}", stdout(&o));
     assert!(stderr(&o).contains("1 of 1 concurrent properties compiled"), "{}", stderr(&o));
 }
+
+#[test]
+fn yosys_writes_a_json_netlist() {
+    let (_, f) = source("yosys", "cnt.sv", COUNTER);
+    let o = svlang(&["yosys", f.to_str().unwrap()]);
+    assert_eq!(o.status.code(), Some(0), "{}", stderr(&o));
+    let out = stdout(&o);
+    assert!(out.starts_with("{\n  \"creator\": \"svlang sv-yosys "), "{out}");
+    assert!(out.contains("\"type\": \"$dff\"") && out.contains("\"in_range\""), "{out}");
+}

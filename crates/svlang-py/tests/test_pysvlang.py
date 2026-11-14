@@ -241,3 +241,17 @@ endmodule
     text, _ = comp.lower_netlist(compile_properties=True).to_aiger(binary=False)
     assert text.splitlines()[0].split()[6] == "1"
     assert "b0 hs.a_ack" in text
+
+
+def test_to_yosys_json():
+    import json
+
+    nl = pysvlang.Compilation.from_source(SAT_COUNTER, "cnt.sv").lower_netlist()
+    text, notes = nl.to_yosys_json()
+    module = json.loads(text)["modules"]["cnt"]
+    assert module["ports"]["q"] == {"direction": "output", "bits": [4, 5, 6, 7]}
+    types = sorted(c["type"] for c in module["cells"].values())
+    assert "$dff" in types and "$assert" in types
+    assert module["cells"]["in_range"]["type"] == "$assert"
+    plain, _ = nl.to_yosys_json(checks=False, src_attributes=False)
+    assert "$assert" not in plain and '"src"' not in plain

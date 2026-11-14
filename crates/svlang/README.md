@@ -11,7 +11,7 @@ The API reference is on [docs.rs](https://docs.rs/svlang). The same pipeline is 
 
 ## Architecture
 
-`svlang` unifies eight focused crates behind one SDK:
+`svlang` unifies nine focused crates behind one SDK:
 
 | Module | Crate | Responsibility |
 | --- | --- | --- |
@@ -23,6 +23,7 @@ The API reference is on [docs.rs](https://docs.rs/svlang). The same pipeline is 
 | `svlang::netlist` | `sv-netlist` | Format-neutral word-level RTL netlist IR (`Netlist`), symbolic procedural execution (`always_ff` / `always_comb` / `always_latch`), bit-level driver analysis, static loop unrolling, subroutine inlining, SVA lowering, and `blast_memories` |
 | `svlang::btor2` | `sv-btor2` | The netlist written as a Btor2 transition system for word-level model checkers |
 | `svlang::aiger` | `sv-aiger` | The netlist bit-blasted to an and-inverter graph and written as AIGER for bit-level model checkers and logic tools |
+| `svlang::yosys` | `sv-yosys` | The netlist as a Yosys JSON netlist of word-level cells (`read_json`), for synthesis, equivalence checking and SymbiYosys |
 
 ## Quickstart
 

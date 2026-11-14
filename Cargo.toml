@@ -10,7 +10,7 @@ members = ["crates/*"]
 # when a crate's `slang` feature asks for it; see third_party/slang/README.md.
 default-members = [
     "crates/sv-source", "crates/sv-lexer", "crates/sv-preprocessor", "crates/sv-syntax", "crates/sv-semantic",
-    "crates/sv-netlist", "crates/sv-btor2", "crates/sv-aiger", "crates/svlang", "crates/svlang-cli",
+    "crates/sv-netlist", "crates/sv-btor2", "crates/sv-aiger", "crates/sv-yosys", "crates/svlang", "crates/svlang-cli",
     "crates/dv-model", "crates/dv-lint", "crates/dv-lsp", "crates/dv-build", "crates/dv-map",
     "crates/dv-filelist",
 ]

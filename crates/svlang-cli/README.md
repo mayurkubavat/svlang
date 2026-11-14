@@ -16,6 +16,7 @@ svlang cst     rtl/fifo.sv                     # the lossless syntax tree
 svlang netlist -f sim/top.f -top top           # the word-level RTL netlist
 svlang btor2   -f sim/top.f -top top -o top.btor2
 svlang aiger   -f sim/top.f -top top --blast-memories 1024 -o top.aig
+svlang yosys   -f sim/top.f -top top --blast-memories 1024 -o top.json   # yosys: read_json
 ```
 
 The compile arguments are the ones a simulator takes: source files, `-f` and
