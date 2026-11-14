@@ -11,6 +11,7 @@ cargo install svlang-cli        # installs the `svlang` binary
 ```sh
 svlang check   -f sim/top.f -top top           # errors and warnings; exit 1 on errors
 svlang check   --json rtl/*.sv                 # the same as a JSON array, for CI and editors
+svlang preprocess rtl/top.sv +define+SYNTH    # the source after macros, includes and `ifdef
 svlang hier    -f sim/top.f -top top -G W=16   # elaborated instances and parameter values
 svlang cst     rtl/fifo.sv                     # the lossless syntax tree
 svlang netlist -f sim/top.f -top top           # the word-level RTL netlist

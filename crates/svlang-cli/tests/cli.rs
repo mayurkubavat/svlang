@@ -163,3 +163,22 @@ fn yosys_writes_a_json_netlist() {
     assert!(out.starts_with("{\n  \"creator\": \"svlang sv-yosys "), "{out}");
     assert!(out.contains("\"type\": \"$dff\"") && out.contains("\"in_range\""), "{out}");
 }
+
+#[test]
+fn preprocess_expands_and_judges_only_the_preprocessor() {
+    // The macro expands; the undeclared name it makes is not the preprocessor's business.
+    let (_, f) = source(
+        "pp",
+        "pp.sv",
+        "`define append(f) f``_master\n`ifdef NOPE\nhidden\n`endif\nmodule top;\n  initial $display(`append(clock));\nendmodule\n",
+    );
+    let o = svlang(&["preprocess", f.to_str().unwrap()]);
+    assert_eq!(o.status.code(), Some(0), "{}", stderr(&o));
+    assert_eq!(stdout(&o), "module top;\ninitial $display(clock_master);\nendmodule\n");
+    assert_eq!(svlang(&["check", f.to_str().unwrap()]).status.code(), Some(1));
+
+    let (_, f) = source("pp-bad", "bad.sv", "`include \"no_such_file.svh\"\nmodule top; endmodule\n");
+    let o = svlang(&["preprocess", f.to_str().unwrap()]);
+    assert_eq!(o.status.code(), Some(1));
+    assert!(stderr(&o).contains("bad.sv:1:") && stderr(&o).contains("cannot find include file"), "{}", stderr(&o));
+}

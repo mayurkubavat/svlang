@@ -96,6 +96,13 @@ crates and the gates that compare the front end, construct by construct, with
 [Slang](https://github.com/MikePopoloski/slang) as a reference. Slang is
 never needed to build or use svlang.
 
+On [sv-tests](https://github.com/chipsalliance/sv-tests), the public
+SystemVerilog conformance suite, svlang passes 1,022 of the 1,024 tests it
+can judge; [docs/reference/sv-tests.md](docs/reference/sv-tests.md) has the
+numbers by clause and the tests that fail.
+[docs/reference/census.md](docs/reference/census.md) measures the other end:
+how much open-source RTL lowers to a netlist, and what stops the rest.
+
 ## Tools built on svlang
 
 This repository also holds the DV tools that use the library:

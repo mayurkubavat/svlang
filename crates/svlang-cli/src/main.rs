@@ -23,6 +23,7 @@ usage: svlang <command> [options] <compile arguments>
 
 commands:
   check      report every error and warning; exit 1 when there are errors
+  preprocess print the source after macro expansion, includes and conditionals
   hier       print the elaborated instance hierarchy and parameter values
   cst        print the syntax tree of every source file
   netlist    lower the design to a word-level RTL netlist and print it
@@ -38,7 +39,7 @@ compile arguments (as a simulator takes them):
 
 options:
   --json                  check: print the diagnostics as a JSON array
-  -o, --output FILE       netlist, btor2, aiger, yosys: write to FILE, not stdout
+  -o, --output FILE       preprocess, netlist, btor2, aiger, yosys: write to FILE, not stdout
   --ascii                 aiger: write the ASCII form (.aag), not binary
   --trace-outputs         btor2: add the section that names combinational nets
   --properties            netlist, btor2, aiger, yosys: compile concurrent properties
@@ -237,6 +238,38 @@ fn run(command: &str, o: &Opts) -> Result<ExitCode, Usage> {
                 }
                 println!("{errors} error(s), {} warning(s)", diags.len() - errors);
             }
+            Ok(if errors == 0 { ExitCode::SUCCESS } else { failed })
+        }
+        "preprocess" => {
+            let comp = compile(o)?;
+            let mut loc = svlang::Locator::default();
+            let (mut text, mut errors) = (String::new(), 0);
+            for (ix, tree) in comp.trees().iter().enumerate() {
+                for d in &tree.pp_diagnostics {
+                    let (f, line, column) = loc.position(ix, tree, d.origin);
+                    let file = loc.files().get(f as usize).map_or("", String::as_str);
+                    eprintln!("{file}:{line}:{column}: error: {}", d.message);
+                    errors += 1;
+                }
+                for (i, token) in tree.tokens.iter().enumerate() {
+                    // Line breaks and spaces as written (the text before a token also holds
+                    // comments, directives and macro uses); inside an expansion, the macro's
+                    // own spacing.
+                    let gap = tree.trivia(i as u32);
+                    if i == 0 {
+                    } else if gap.contains('\n') {
+                        text.push('\n');
+                    } else if gap.contains(char::is_whitespace)
+                        || gap.contains("/*")
+                        || (token.from_macro && token.space_before)
+                    {
+                        text.push(' ');
+                    }
+                    text.push_str(&token.text);
+                }
+                text.push('\n');
+            }
+            emit(o, text.as_bytes())?;
             Ok(if errors == 0 { ExitCode::SUCCESS } else { failed })
         }
         "hier" => {
