@@ -56,6 +56,17 @@ them all, and asking for a kind that does not exist raises `ValueError`.
 uses constructs outside the synthesizable/formal subset. The exception's
 `diagnostics` list says why, and `unsupported` tells the two cases apart.
 
+`nl.to_btor2()` returns the netlist as a Btor2 transition system for
+word-level model checkers, with a list of notes on anything left out:
+
+```python
+text, notes = comp.lower_netlist().to_btor2()
+open("top.btor2", "w").write(text)      # then: ric3 check top.btor2 ic3
+```
+
+Immediate assertions become `bad` lines; concurrent assertions
+(`assert property`) are not written yet.
+
 Parsing, checking and lowering release the GIL, so several compilations
 can run in threads at once.
 

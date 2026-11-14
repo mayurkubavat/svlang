@@ -107,6 +107,13 @@ class Netlist:
     @property
     def num_values(self) -> int: ...
     def dump(self) -> str: ...
+    def to_btor2(
+        self,
+        *,
+        trace_outputs: bool = False,
+        trace_marker: Optional[str] = None,
+        name_prefix: Optional[str] = None,
+    ) -> tuple[str, list[str]]: ...
 
 class Compilation:
     def __init__(

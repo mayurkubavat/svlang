@@ -13,6 +13,7 @@
 //!   design hierarchy, bound expressions and SVA properties, compiler checks, and OOP class model
 //! - [`netlist`]: format-neutral word-level RTL netlist IR, symbolic procedural execution,
 //!   bit-level driver analysis, SVA lowering, and memory blasting
+//! - [`btor2`]: the netlist written as a Btor2 transition system for model checkers
 //!
 //! Configure inputs on a [`Driver`] and build a [`Compilation`]:
 //!
@@ -36,6 +37,7 @@
 use std::fmt;
 use std::path::PathBuf;
 
+pub use sv_btor2 as btor2;
 pub use sv_lexer as lexer;
 pub use sv_netlist as netlist;
 pub use sv_preprocessor as preprocessor;

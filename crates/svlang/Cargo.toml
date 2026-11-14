@@ -17,3 +17,4 @@ sv-preprocessor = { version = "0.1.0", path = "../sv-preprocessor" }
 sv-syntax = { version = "0.1.0", path = "../sv-syntax" }
 sv-semantic = { version = "0.1.0", path = "../sv-semantic" }
 sv-netlist = { version = "0.1.0", path = "../sv-netlist" }
+sv-btor2 = { version = "0.1.0", path = "../sv-btor2" }

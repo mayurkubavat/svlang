@@ -150,3 +150,26 @@ def test_black_box(kw):
     boxed = c.lower_netlist(top="top", **kw)
     assert "not(" in full.dump()
     assert "not(" not in boxed.dump()
+
+
+SAT_COUNTER = """module cnt (input logic clk, rst, output logic [3:0] q);
+  always_ff @(posedge clk) if (rst) q <= 4'd0; else if (q != 4'd9) q <= q + 4'd1;
+  always @(posedge clk) in_range: assert (rst || q <= 4'd9);
+endmodule
+"""
+
+
+def test_to_btor2():
+    nl = pysvlang.Compilation.from_source(SAT_COUNTER, "cnt.sv").lower_netlist()
+    text, notes = nl.to_btor2()
+    assert any(line.endswith(" in_range") and " bad " in line for line in text.splitlines())
+    assert isinstance(notes, list)
+    traced, _ = nl.to_btor2(trace_outputs=True, trace_marker="; my-marker")
+    assert "; my-marker" in traced
+
+
+def test_to_btor2_rejects_two_clocks():
+    src = "module two(input logic a, b, d, output logic p, q);\n always_ff @(posedge a) p <= d;\n always_ff @(posedge b) q <= d;\nendmodule\n"
+    nl = pysvlang.Compilation.from_source(src, "two.sv").lower_netlist()
+    with pytest.raises(pysvlang.SvlangError, match="more than one clock"):
+        nl.to_btor2()

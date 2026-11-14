@@ -196,6 +196,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
 
 [[package]]
+name = "sv-btor2"
+version = "0.1.0"
+dependencies = [
+ "sv-netlist",
+ "sv-semantic",
+ "sv-syntax",
+]
+
+[[package]]
 name = "sv-lexer"
 version = "0.1.0"
 
@@ -242,6 +251,7 @@ dependencies = [
 name = "svlang"
 version = "0.1.0"
 dependencies = [
+ "sv-btor2",
  "sv-lexer",
  "sv-netlist",
  "sv-preprocessor",

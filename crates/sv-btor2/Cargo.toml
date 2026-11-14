@@ -1,0 +1,18 @@
+[package]
+name = "sv-btor2"
+description = "Btor2 writer for the svlang word-level RTL netlist: SystemVerilog designs as transition systems for model checkers"
+readme = "README.md"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+keywords = ["systemverilog", "btor2", "formal", "model-checking", "eda"]
+categories.workspace = true
+
+[dependencies]
+sv-netlist = { version = "0.1.0", path = "../sv-netlist" }
+sv-semantic = { version = "0.1.0", path = "../sv-semantic" }
+
+[dev-dependencies]
+sv-syntax = { version = "0.1.0", path = "../sv-syntax" }

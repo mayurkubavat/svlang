@@ -11,7 +11,7 @@ The API reference is on [docs.rs](https://docs.rs/svlang). The same pipeline is 
 
 ## Architecture
 
-`svlang` unifies six focused crates behind one SDK:
+`svlang` unifies seven focused crates behind one SDK:
 
 | Module | Crate | Responsibility |
 | --- | --- | --- |
@@ -21,6 +21,7 @@ The API reference is on [docs.rs](https://docs.rs/svlang). The same pipeline is 
 | `svlang::syntax` | `sv-syntax` | Error-recovering lossless Concrete Syntax Tree (CST) |
 | `svlang::semantic` | `sv-semantic` | Scopes, 4-state arbitrary-width constant evaluation, elaborated design objects (`ElaboratedDesign`), IEEE 11.6/11.8 bound expressions (`ExprBinder`), bound SVA property/sequence trees (`SvaBinder`), compiler checks, and OOP class model |
 | `svlang::netlist` | `sv-netlist` | Format-neutral word-level RTL netlist IR (`Netlist`), symbolic procedural execution (`always_ff` / `always_comb` / `always_latch`), bit-level driver analysis, static loop unrolling, subroutine inlining, SVA lowering, and `blast_memories` |
+| `svlang::btor2` | `sv-btor2` | The netlist written as a Btor2 transition system for word-level model checkers |
 
 ## Quickstart
 

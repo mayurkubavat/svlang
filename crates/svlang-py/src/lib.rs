@@ -707,6 +707,40 @@ impl Netlist {
         self.inner.dump()
     }
 
+    /// The netlist as a Btor2 transition system, for model checkers such as
+    /// rIC3, Pono, AVR and BtorMC. Returns ``(text, notes)``; the notes say
+    /// what was left out, such as concurrent assertions.
+    ///
+    /// One step is one clock edge, so the design must have a single clock.
+    /// Immediate assertions become ``bad`` lines named by their label and
+    /// immediate assumptions become ``constraint`` lines. Raises
+    /// ``SvlangError`` when the netlist cannot be modelled exactly.
+    ///
+    /// With ``trace_outputs``, the model is followed by ``trace_marker`` and
+    /// one ``output`` line per named combinational net. ``name_prefix``
+    /// prefixes the names of invented inputs and history registers.
+    #[pyo3(signature = (*, trace_outputs = false, trace_marker = None, name_prefix = None))]
+    fn to_btor2(
+        &self,
+        py: Python<'_>,
+        trace_outputs: bool,
+        trace_marker: Option<String>,
+        name_prefix: Option<String>,
+    ) -> PyResult<(String, Vec<String>)> {
+        let mut opts = svlang::btor2::Options::default();
+        opts.trace_outputs = trace_outputs;
+        if let Some(m) = trace_marker {
+            opts.trace_marker = m;
+        }
+        if let Some(p) = name_prefix {
+            opts.name_prefix = p;
+        }
+        let nl = self.inner.clone();
+        let model =
+            py.detach(move || svlang::btor2::write(&nl, &opts)).map_err(|e| SvlangError::new_err(e.to_string()))?;
+        Ok((model.btor2, model.notes))
+    }
+
     fn __repr__(&self) -> String {
         let n = &self.inner;
         format!(
