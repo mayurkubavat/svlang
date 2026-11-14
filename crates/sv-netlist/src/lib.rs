@@ -63,7 +63,7 @@ pub mod sva;
 
 pub use ir::*;
 pub use lower::lower_design;
-pub use sva::{ClockSkip, PropertyOptions, PropertyOutcome, MAX_PROPERTY_SPAN, MAX_PROPERTY_TERMS};
+pub use sva::{ClockSkip, ExternalProperty, PropertyOptions, PropertyOutcome, MAX_PROPERTY_SPAN, MAX_PROPERTY_TERMS};
 
 /// Runs syntax, semantic, and elaboration checks on `trees` and lowers the elaborated design
 /// into a [`Netlist`] fail-closed.

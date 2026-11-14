@@ -65,8 +65,8 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use sv_semantic::{
-    BoundProperty, CVal, CycleBound, CycleRange, ExprId, Loc, PropExpr, PropKind, RepeatKind, SampledKind, SeqExpr,
-    SvaEdge,
+    BoundProperty, CVal, CycleBound, CycleRange, ElaboratedDesign, ExprArena, ExprId, Loc, PropExpr, PropKind,
+    RepeatKind, SampledKind, SeqExpr, SvaEdge,
 };
 
 use crate::ir::{
@@ -104,6 +104,17 @@ pub struct ClockSkip {
     pub posedge: bool,
     /// Attempts that start in this many first ticks of that clock edge are not checked.
     pub ticks: u32,
+}
+
+/// A property that is not part of the design, for [`Netlist::compile_external_properties`].
+#[derive(Clone, Debug)]
+pub struct ExternalProperty<'a> {
+    /// The arena the property's expressions live in.
+    pub arena: &'a ExprArena,
+    /// The bound property.
+    pub property: &'a BoundProperty,
+    /// The label of its check (the name of its `bad` line in a Btor2 model).
+    pub name: String,
 }
 
 /// What [`Netlist::compile_properties`] did with one property of [`Netlist::properties`].
@@ -233,7 +244,9 @@ fn too_large() -> String {
 /// Enumerates the matches of bounded sequences, following the tight satisfaction relation of
 /// IEEE 1800-2023 annex F with a match as the ticks `start .. end` (`end` not included).
 struct Matcher<'a> {
-    nl: &'a Netlist,
+    /// The netlist value of each boolean, clock and reset expression of the property, by
+    /// [`ExprId`].
+    leaves: &'a [Option<ValueId>],
     terms: Terms,
 }
 
@@ -252,7 +265,7 @@ impl Matcher<'_> {
         if at > MAX_PROPERTY_SPAN {
             return Err(too_long());
         }
-        let value = self.nl.prop_expr_value(e).ok_or("an expression that was not lowered")?;
+        let value = self.leaves.get(e.0 as usize).copied().flatten().ok_or("an expression that was not lowered")?;
         self.terms.leaf(at, value)
     }
 
@@ -555,7 +568,8 @@ impl Matcher<'_> {
 
 /// A property as conditions over its leaves, ready to be made into a check.
 struct Plan {
-    index: usize,
+    kind: PropKind,
+    loc: Loc,
     clock: ClockSpec,
     terms: Vec<Term>,
     /// The terms the check reads.
@@ -627,10 +641,13 @@ impl Netlist {
         memo[v.0 as usize].unwrap_or(0)
     }
 
+    /// Plans the check for `prop`, whose expressions have the netlist values `leaves` (by
+    /// [`ExprId`]) and which is reached under `reached` when it stands in procedural code.
     fn plan(
         &self,
-        index: usize,
         prop: &BoundProperty,
+        leaves: &[Option<ValueId>],
+        reached: Option<ValueId>,
         opts: &PropertyOptions,
         memo: &mut Lookback,
     ) -> Result<Plan, String> {
@@ -645,10 +662,11 @@ impl Netlist {
             SvaEdge::AnyEdge => return Err("a clocking event on both edges".into()),
         };
         let not_lowered = || "an expression that was not lowered".to_string();
-        let signal = self.prop_expr_value(clock.signal).ok_or_else(not_lowered)?;
-        let mut m = Matcher { nl: self, terms: Terms::default() };
+        let leaf = |e: ExprId| leaves.get(e.0 as usize).copied().flatten();
+        let signal = leaf(clock.signal).ok_or_else(not_lowered)?;
+        let mut m = Matcher { leaves, terms: Terms::default() };
         // In procedural code under a condition: the attempt starts only when it is reached.
-        let reached = match self.property_enables.get(index).copied().flatten() {
+        let reached = match reached {
             Some(v) => m.terms.leaf(0, v)?,
             None => Cond::True,
         };
@@ -699,7 +717,7 @@ impl Netlist {
             }
         }
         let disable = match prop.disable_iff {
-            Some(d) => Some(self.prop_expr_value(d).ok_or_else(not_lowered)?),
+            Some(d) => Some(leaf(d).ok_or_else(not_lowered)?),
             None => None,
         };
         let mut history = 0u32;
@@ -722,7 +740,8 @@ impl Netlist {
         .unwrap_or(opts.skip_cycles);
         let warm = skip.saturating_add(span).max(history);
         Ok(Plan {
-            index,
+            kind: prop.kind,
+            loc: prop.loc,
             clock: ClockSpec { signal, edge },
             terms: terms.nodes,
             live,
@@ -865,30 +884,104 @@ impl Netlist {
         }
         let mut outcomes: Vec<Option<PropertyOutcome>> = vec![None; self.properties.len()];
         let mut plans = Vec::new();
+        let mut planned = Vec::new();
         let mut memo = Lookback { memo: vec![None; self.values.len()], open: vec![false; self.values.len()] };
         for (i, prop) in self.properties.iter().enumerate() {
             if let Some(check) = self.property_checks[i] {
                 outcomes[i] = Some(PropertyOutcome::Compiled { check });
                 continue;
             }
-            match self.plan(i, prop, opts, &mut memo) {
-                Ok(p) => plans.push(p),
+            let reached = self.property_enables.get(i).copied().flatten();
+            match self.plan(prop, &self.prop_expr_values, reached, opts, &mut memo) {
+                Ok(p) => {
+                    let name = self.property_names.get(i).cloned().or_else(|| prop.label.clone());
+                    plans.push((p, name));
+                    planned.push(i);
+                }
                 Err(why) => outcomes[i] = Some(PropertyOutcome::Unsupported(why)),
             }
         }
+        for (i, check) in planned.into_iter().zip(self.emit(&plans)) {
+            self.property_checks[i] = Some(check);
+            outcomes[i] = Some(PropertyOutcome::Compiled { check });
+        }
+        outcomes.into_iter().map(|o| o.expect("every property has an outcome")).collect()
+    }
 
+    /// Compiles properties that are not part of the design: each bound from text in a scope
+    /// of `design` (as `Compilation::bind_property_in_scope` of the `svlang` crate does),
+    /// with the arena its expressions live in and the name its check gets. The meaning is
+    /// that of [`Self::compile_properties`], and each property's own kind decides whether
+    /// its check is an assertion, an assumption or a cover.
+    ///
+    /// Returns, in order, the [`Self::checks`] index made for each property, or why there
+    /// is none: an expression that does not lower, or an operator outside the bounded
+    /// subset. Calling this may re-index [`Self::values`].
+    pub fn compile_external_properties(
+        &mut self,
+        design: &ElaboratedDesign,
+        properties: &[ExternalProperty<'_>],
+        opts: &PropertyOptions,
+    ) -> Vec<Result<usize, String>> {
+        // Lowering one property's expressions may re-index the values, so the expressions
+        // already lowered ride at the end of `prop_expr_values`, which is kept in step.
+        let base = self.prop_expr_values.len();
+        let mut lowered: Vec<Result<(usize, Vec<ExprId>), String>> = Vec::new();
+        for x in properties {
+            lowered.push(match self.lower_external_property(design, x.arena, x.property, false) {
+                Ok(pairs) => {
+                    let at = self.prop_expr_values.len();
+                    self.prop_expr_values.extend(pairs.iter().map(|&(_, v)| Some(v)));
+                    Ok((at, pairs.into_iter().map(|(e, _)| e).collect()))
+                }
+                Err(diags) => Err(diags.iter().map(|d| d.message.clone()).collect::<Vec<_>>().join("; ")),
+            });
+        }
+        let mut memo = Lookback { memo: vec![None; self.values.len()], open: vec![false; self.values.len()] };
+        let mut results: Vec<Option<Result<usize, String>>> = vec![None; properties.len()];
+        let mut plans = Vec::new();
+        let mut planned = Vec::new();
+        for (i, (x, low)) in properties.iter().zip(&lowered).enumerate() {
+            let (at, exprs) = match low {
+                Ok(l) => l,
+                Err(why) => {
+                    results[i] = Some(Err(why.clone()));
+                    continue;
+                }
+            };
+            let mut leaves = vec![None; x.arena.exprs.len()];
+            for (k, e) in exprs.iter().enumerate() {
+                leaves[e.0 as usize] = self.prop_expr_values[at + k];
+            }
+            match self.plan(x.property, &leaves, None, opts, &mut memo) {
+                Ok(p) => {
+                    plans.push((p, Some(x.name.clone())));
+                    planned.push(i);
+                }
+                Err(why) => results[i] = Some(Err(why)),
+            }
+        }
+        self.prop_expr_values.truncate(base);
+        for (i, check) in planned.into_iter().zip(self.emit(&plans)) {
+            results[i] = Some(Ok(check));
+        }
+        results.into_iter().map(|r| r.expect("every property has a result")).collect()
+    }
+
+    /// Writes the check of each plan, under the name beside it, and returns their indices
+    /// in [`Self::checks`].
+    fn emit(&mut self, plans: &[(Plan, Option<String>)]) -> Vec<usize> {
         // One tick counter per clock, as wide as its latest first check needs.
         let mut counters: Vec<TickCounter> = Vec::new();
-        for p in plans.iter().filter(|p| p.warm > 0) {
+        for (p, _) in plans.iter().filter(|(p, _)| p.warm > 0) {
             match counters.iter_mut().find(|c| c.0 == p.clock) {
                 Some(c) => c.1 = c.1.max(p.warm),
                 None => counters.push((p.clock, p.warm, None)),
             }
         }
-
-        for p in &plans {
-            let prop = &self.properties[p.index];
-            let (kind, loc) = (prop.kind, prop.loc);
+        let mut made = Vec::with_capacity(plans.len());
+        for (p, name) in plans {
+            let (kind, loc) = (p.kind, p.loc);
             let mut guard = None;
             if p.warm > 0 {
                 let nth = counters.iter().position(|c| c.0 == p.clock).expect("counter planned above");
@@ -924,22 +1017,20 @@ impl Netlist {
             let one = |nl: &mut Netlist, v: Option<ValueId>| v.unwrap_or_else(|| nl.sva_const(1, 1, loc));
             let enable = one(self, enable);
             let expr = one(self, expr);
-            let check = self.checks.len();
+            made.push(self.checks.len());
             self.checks.push(Check {
                 kind,
-                label: self.property_names.get(p.index).cloned().or_else(|| self.properties[p.index].label.clone()),
+                label: name.clone(),
                 immediate: false,
                 enable,
                 expr,
                 clock: Some(p.clock),
                 loc,
             });
-            self.property_checks[p.index] = Some(check);
-            outcomes[p.index] = Some(PropertyOutcome::Compiled { check });
         }
         if !plans.is_empty() {
             self.toposort();
         }
-        outcomes.into_iter().map(|o| o.expect("every property has an outcome")).collect()
+        made
     }
 }

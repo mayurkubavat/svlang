@@ -273,3 +273,65 @@ fn driver_add_args_errors_warning_display_and_fail_closed_edges() {
     );
     assert!(matches!(mixed.lower_netlist(&LowerConfig::default()), LowerOutcome::Error(_)));
 }
+
+#[test]
+fn properties_bound_from_text_compile_to_named_checks() {
+    use svlang::netlist::{CheckKind, ExternalProperty, PropertyOptions};
+
+    let comp = svlang::Compilation::from_source(
+        "ext.sv",
+        "module ext (input logic clk, rst, req, output logic gnt);\n\
+           always_ff @(posedge clk) gnt <= rst ? 1'b0 : req;\n\
+         endmodule\n",
+    );
+    let elab = comp.elaborate();
+    let mut nl = comp.lower_netlist(&svlang::LowerConfig::default()).unwrap_netlist();
+    let texts = [
+        ("a_next", "assert property (@(posedge clk) disable iff (rst) req |=> gnt)"),
+        ("a_window", "@(posedge clk) req |-> ##[1:2] gnt"),
+        ("m_req", "assume property (@(posedge clk) !rst |-> ##1 !req [*1:2])"),
+        ("c_gnt", "cover property (@(posedge clk) gnt ##1 !gnt)"),
+        ("a_live", "@(posedge clk) req |-> s_eventually gnt"),
+    ];
+    let mut arenas = Vec::new();
+    let mut bound = Vec::new();
+    for (_, text) in texts {
+        let mut arena = svlang::ExprArena::new();
+        bound.push(comp.bind_property_in_scope(&elab.design, "ext", text, &mut arena).expect("binds"));
+        arenas.push(arena);
+    }
+    let external: Vec<ExternalProperty<'_>> = texts
+        .iter()
+        .zip(arenas.iter().zip(&bound))
+        .map(|((name, _), (arena, property))| ExternalProperty { arena, property, name: (*name).to_string() })
+        .collect();
+    let checks_before = nl.checks.len();
+    let out = nl.compile_external_properties(&elab.design, &external, &PropertyOptions::default());
+    assert!(out[4].as_ref().is_err_and(|why| why.contains("eventually")), "{out:?}");
+    let kinds: Vec<(Option<&str>, CheckKind)> = out[..4]
+        .iter()
+        .map(|r| {
+            let c = &nl.checks[*r.as_ref().expect("compiled")];
+            (c.label.as_deref(), c.kind)
+        })
+        .collect();
+    assert_eq!(
+        kinds,
+        [
+            (Some("a_next"), CheckKind::Assert),
+            (Some("a_window"), CheckKind::Assert),
+            (Some("m_req"), CheckKind::Assume),
+            (Some("c_gnt"), CheckKind::Cover),
+        ]
+    );
+    assert_eq!(nl.checks.len(), checks_before + 4);
+    // The design's own property list is untouched, and the model names the checks.
+    assert!(nl.properties.is_empty() && nl.prop_expr_values.len() == nl.sva_arena.exprs.len());
+    let mut opts = svlang::btor2::Options::default();
+    opts.covers = true;
+    let model = svlang::btor2::write(&nl, &opts).expect("writes");
+    for name in ["a_next", "a_window", "c_gnt"] {
+        assert!(model.btor2.lines().any(|l| l.contains(" bad ") && l.ends_with(&format!(" {name}"))), "{name}");
+    }
+    assert_eq!(model.btor2.lines().filter(|l| l.contains(" constraint ")).count(), 1);
+}
