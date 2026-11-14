@@ -10,6 +10,7 @@
 //!
 //! ```text
 //! property := seq | seq |-> seq | seq |=> seq        (weak(seq) and strong(seq) as seq)
+//!           | [seq |-> | seq |=>] b until c | [seq |-> | seq |=>] b until_with c
 //! seq      := b
 //!           | seq ##N seq | seq ##[M:N] seq | ##N seq | ##[M:N] seq
 //!           | seq [*N] | seq [*M:N]
@@ -20,8 +21,8 @@
 //! `M` and `N` are constants, and `M` may be 0. Not in the subset, and reported by name:
 //! a range that ends at `$` (with `[*]` and `[+]`), goto `[->]` and non-consecutive `[=]`
 //! repetition, a sequence with its own clock, and every property operator other than one
-//! implication at the top (`not`, property `and` and `or` over implications, `if`, `until`,
-//! `always`, `eventually`, `nexttime`, `#-#`, `accept_on`, ...).
+//! implication at the top (`not`, property `and` and `or` over implications, `if`,
+//! `s_until`, `always`, `eventually`, `nexttime`, `#-#`, `accept_on`, ...).
 //!
 //! A bounded sequence has finitely many possible matches, each of a known length. The pass
 //! enumerates them as IEEE 1800-2023 annex F defines a match: for the attempt that starts at
@@ -50,6 +51,13 @@
 //!   used as a property or a consequent that admits an empty match or has no match at all,
 //!   and an antecedent with no match that starts a consequent, are illegal by 16.12.22 and
 //!   are reported as unsupported.
+//! - **`b until c`** (assert, assume): from the tick it starts (the tick an antecedent match
+//!   ends, the next one with `|=>`, or every tick without an antecedent), `b` has to hold at
+//!   each tick before the first one where `c` holds; with `until_with`, at that tick too.
+//!   If `c` never comes, `b` has to hold for ever. A one-bit monitor state
+//!   (`<top>._sva_until`) remembers that an `until` is under way; `disable iff` clears it.
+//!   The strong forms (`s_until`), which also require `c` to come, are liveness and are not
+//!   compiled.
 //! - **`disable iff (d)`**: the attempt is dropped when `d` was true at any tick from `t` to
 //!   `t + span`.
 //! - **In procedural code**: a property under a condition (`if (en) assert property (...)`
@@ -566,6 +574,61 @@ impl Matcher<'_> {
     }
 }
 
+/// The plan of `[seq |-> | seq |=>] b until c` (or `until_with`): a one-bit monitor that is
+/// set where the antecedent lets the `until` start and stays set up to the tick `c` holds.
+struct Until {
+    /// Where the `until` can start, as a tick of the attempt, with the condition for it
+    /// and the first tick counter value at which that condition reads only sampled values.
+    starts: Vec<(u32, Cond, u32)>,
+    /// `b`: has to hold while the monitor is set.
+    hold: ValueId,
+    /// `c`: ends it.
+    release: ValueId,
+    /// `until_with`: `b` has to hold at the tick `c` holds too.
+    with: bool,
+}
+
+/// The `until` of a property that is one, alone or as the consequent of an implication:
+/// its antecedent (with whether the implication is `|->`), and the `until` itself.
+type UntilParts<'a> = (Option<(&'a SeqExpr, bool)>, &'a PropExpr);
+
+fn until_parts(p: &PropExpr) -> Option<UntilParts<'_>> {
+    match p {
+        PropExpr::Until { .. } => Some((None, p)),
+        PropExpr::OverlappedImplication { lhs, rhs } if matches!(**rhs, PropExpr::Until { .. }) => {
+            Some((Some((lhs, true)), rhs))
+        }
+        PropExpr::NonOverlappedImplication { lhs, rhs } if matches!(**rhs, PropExpr::Until { .. }) => {
+            Some((Some((lhs, false)), rhs))
+        }
+        _ => None,
+    }
+}
+
+/// The terms `root` is made of.
+fn live_terms(nodes: &[Term], root: Cond) -> Vec<bool> {
+    let mut live = vec![false; nodes.len()];
+    if let Cond::Node(i) = root {
+        live[i as usize] = true;
+    }
+    for i in (0..nodes.len()).rev() {
+        if !live[i] {
+            continue;
+        }
+        let (a, b) = match nodes[i] {
+            Term::Leaf { .. } => continue,
+            Term::Not(a) => (Cond::Node(a), Cond::True),
+            Term::And(a, b) | Term::Or(a, b) => (a, b),
+        };
+        for operand in [a, b] {
+            if let Cond::Node(j) = operand {
+                live[j as usize] = true;
+            }
+        }
+    }
+    live
+}
+
 /// A property as conditions over its leaves, ready to be made into a check.
 struct Plan {
     kind: PropKind,
@@ -583,6 +646,8 @@ struct Plan {
     span: u32,
     /// First tick at which the check may fire.
     warm: u32,
+    /// For `until`: the monitor to make instead of `enable` and `expr`.
+    until: Option<Until>,
 }
 
 /// A tick counter to make: its clock, the highest tick it must count to, and once made its
@@ -670,6 +735,10 @@ impl Netlist {
             Some(v) => m.terms.leaf(0, v)?,
             None => Cond::True,
         };
+        if let Some((antecedent, until)) = until_parts(&prop.expr) {
+            let clock = ClockSpec { signal, edge };
+            return self.plan_until(prop, antecedent, until, m, reached, clock, opts, memo);
+        }
         let Shape { obligations, span } = m.shape(&prop.expr, reached)?;
         let mut terms = m.terms;
         let (enable, expr) = match (prop.kind, &obligations[..]) {
@@ -729,15 +798,7 @@ impl Netlist {
         if let Some(d) = disable {
             history = history.max(span.saturating_add(self.lookback(d, memo)));
         }
-        let skip = match self.value(signal).kind {
-            ValueKind::Input(i) => opts
-                .skip_by_clock
-                .iter()
-                .find(|k| k.input == self.inputs[i].name && k.posedge == (edge == Edge::Posedge))
-                .map(|k| k.ticks),
-            _ => None,
-        }
-        .unwrap_or(opts.skip_cycles);
+        let skip = self.skip_for(ClockSpec { signal, edge }, opts);
         let warm = skip.saturating_add(span).max(history);
         Ok(Plan {
             kind: prop.kind,
@@ -751,6 +812,118 @@ impl Netlist {
             disable,
             span,
             warm,
+            until: None,
+        })
+    }
+
+    /// The first tick counter value at which properties on `clock` may be checked
+    /// ([`PropertyOptions::skip_cycles`], or the entry for this clock and edge).
+    fn skip_for(&self, clock: ClockSpec, opts: &PropertyOptions) -> u32 {
+        match self.value(clock.signal).kind {
+            ValueKind::Input(i) => opts
+                .skip_by_clock
+                .iter()
+                .find(|k| k.input == self.inputs[i].name && k.posedge == (clock.edge == Edge::Posedge))
+                .map(|k| k.ticks),
+            _ => None,
+        }
+        .unwrap_or(opts.skip_cycles)
+    }
+
+    /// Plans `[antecedent |-> | antecedent |=>] b until c`.
+    #[allow(clippy::too_many_arguments)]
+    fn plan_until(
+        &self,
+        prop: &BoundProperty,
+        antecedent: Option<(&SeqExpr, bool)>,
+        until: &PropExpr,
+        mut m: Matcher<'_>,
+        reached: Cond,
+        clock: ClockSpec,
+        opts: &PropertyOptions,
+        memo: &mut Lookback,
+    ) -> Result<Plan, String> {
+        let PropExpr::Until { strong, overlapping, lhs, rhs } = until else {
+            unreachable!("until_parts returns an until");
+        };
+        if *strong {
+            return Err("`s_until` / `s_until_with` (the end has to come: liveness)".into());
+        }
+        if prop.kind == PropKind::Cover {
+            return Err("a cover of `until`".into());
+        }
+        let boolean = |p: &PropExpr| match as_seq(p) {
+            Ok(SeqExpr::Bool(e)) => Ok(*e),
+            _ => Err("`until` between properties that are not single booleans".to_string()),
+        };
+        let not_lowered = || "an expression that was not lowered".to_string();
+        let leaf = |e: ExprId| m.leaves.get(e.0 as usize).copied().flatten();
+        let hold = leaf(boolean(lhs)?).ok_or_else(not_lowered)?;
+        let release = leaf(boolean(rhs)?).ok_or_else(not_lowered)?;
+        let disable = match prop.disable_iff {
+            Some(d) => Some(leaf(d).ok_or_else(not_lowered)?),
+            None => None,
+        };
+        // Where the `until` starts, and when.
+        let mut starts: BTreeMap<u32, Cond> = BTreeMap::new();
+        match antecedent {
+            Some((seq, overlapped)) => {
+                for (end, cond) in m.matches(seq, 0)? {
+                    let at = match (overlapped, end) {
+                        (true, 0) => continue,
+                        (true, _) => end - 1,
+                        (false, _) => end,
+                    };
+                    let cond = m.terms.and(reached, cond)?;
+                    m.add(&mut starts, at, cond)?;
+                }
+                if starts.is_empty() {
+                    return Err("an antecedent that has no match".into());
+                }
+            }
+            None => {
+                starts.insert(0, reached);
+            }
+        }
+        let terms = m.terms;
+        let skip = self.skip_for(clock, opts);
+        let now = self.lookback(hold, memo).max(self.lookback(release, memo));
+        let gone = disable.map_or(0, |d| self.lookback(d, memo));
+        let mut live = vec![false; terms.nodes.len()];
+        let mut planned = Vec::new();
+        let (mut span, mut warm) = (0u32, 0u32);
+        for (at, when) in starts {
+            if at > MAX_PROPERTY_SPAN {
+                return Err(too_long());
+            }
+            // Everything the start reads, the booleans of the `until` and the disable
+            // condition over the antecedent's ticks have to be sampled values.
+            let mut history = now.max(if disable.is_some() { at.saturating_add(gone) } else { 0 });
+            for (i, used) in live_terms(&terms.nodes, when).into_iter().enumerate() {
+                if let (true, &Term::Leaf { at: tick, value }) = (used, &terms.nodes[i]) {
+                    live[i] = true;
+                    history = history.max((at - tick).saturating_add(self.lookback(value, memo)));
+                }
+                live[i] |= used;
+            }
+            let first = skip.saturating_add(at).max(history);
+            span = span.max(at);
+            warm = warm.max(first);
+            planned.push((at, when, first));
+        }
+        Ok(Plan {
+            kind: prop.kind,
+            loc: prop.loc,
+            clock,
+            terms: terms.nodes,
+            live,
+            two_state: terms.negated,
+            enable: Cond::True,
+            expr: Cond::True,
+            disable,
+            span,
+            warm,
+            until: Some(Until { starts: planned, hold, release, with: *overlapping }),
         })
     }
 
@@ -842,6 +1015,110 @@ impl Netlist {
         let enable = root(p.enable);
         let expr = root(p.expr);
         (enable, expr)
+    }
+
+    /// The condition `root` of plan `p` as a value at tick `at` of an attempt, each boolean
+    /// read back to its own tick (`None` is true).
+    fn sva_cond_at(&mut self, p: &Plan, root: Cond, at: u32, loc: Loc) -> Option<ValueId> {
+        let live = live_terms(&p.terms, root);
+        let mut made: Vec<Option<ValueId>> = vec![None; p.terms.len()];
+        for (i, term) in p.terms.iter().enumerate() {
+            if !live[i] {
+                continue;
+            }
+            let of = |made: &[Option<ValueId>], c: Cond| match c {
+                Cond::Node(j) => made[j as usize].expect("an operand is made before its use"),
+                Cond::False | Cond::True => unreachable!("constant operand"),
+            };
+            made[i] = Some(match *term {
+                Term::Leaf { at: tick, value } => {
+                    let b = self.sva_bool(value, loc);
+                    let b = if p.two_state { self.sva_two_state(b, loc) } else { b };
+                    self.sva_past(b, at - tick, p.clock, loc)
+                }
+                Term::Not(a) => self.sva_op(NetOp::LogNot, vec![of(&made, Cond::Node(a))], 1, loc),
+                Term::And(a, b) => self.sva_op(NetOp::LogAnd, vec![of(&made, a), of(&made, b)], 1, loc),
+                Term::Or(a, b) => self.sva_op(NetOp::LogOr, vec![of(&made, a), of(&made, b)], 1, loc),
+            });
+        }
+        match root {
+            Cond::True => None,
+            Cond::Node(i) => made[i as usize],
+            Cond::False => Some(self.sva_const(1, 0, loc)),
+        }
+    }
+
+    /// `b` with an unknown value counting as false.
+    fn sva_two_state(&mut self, b: ValueId, loc: Loc) -> ValueId {
+        if !self.value(b).four_state {
+            return b;
+        }
+        let cast = ValueKind::Op { op: NetOp::CastFourState { four_state: false }, args: vec![b] };
+        self.sva_value(1, false, cast, loc)
+    }
+
+    /// The check of an `until` plan: a monitor bit that is set where the `until` starts and
+    /// stays set up to the tick its end holds; while it is set, the held boolean has to hold.
+    /// Returns the check's enable and expression.
+    fn sva_until(&mut self, p: &Plan, u: &Until, ticks: Option<(ValueId, u32)>, nth: usize) -> (ValueId, ValueId) {
+        let loc = p.loc;
+        let off_now = p.disable.map(|d| {
+            let d = self.sva_bool(d, loc);
+            (d, self.sva_op(NetOp::LogNot, vec![d], 1, loc))
+        });
+        // Where it starts now: an antecedent that ends here, checked like any attempt.
+        let mut start = None;
+        for &(at, when, first) in &u.starts {
+            let mut here = self.sva_cond_at(p, when, at, loc);
+            if first > 0 {
+                let (counter, width) = ticks.expect("a tick counter is planned for a start that waits");
+                let from = self.sva_const(width, first, loc);
+                let warm = self.sva_op(NetOp::ULe, vec![from, counter], 1, loc);
+                here = self.sva_and(here, warm, loc);
+            }
+            if let Some((d, _)) = off_now {
+                // Dropped when disabled at any tick of the antecedent (this tick is below).
+                for back in 1..=at {
+                    let was = self.sva_past(d, back, p.clock, loc);
+                    let off = self.sva_op(NetOp::LogNot, vec![was], 1, loc);
+                    here = self.sva_and(here, off, loc);
+                }
+            }
+            let here = here.unwrap_or_else(|| self.sva_const(1, 1, loc));
+            start = Some(match start {
+                None => here,
+                Some(s) => self.sva_op(NetOp::LogOr, vec![s, here], 1, loc),
+            });
+        }
+        let start = start.expect("an until has a start");
+        let id = StateId(self.states.len() as u32);
+        let pending = self.sva_value(1, false, ValueKind::StateOut(id), loc);
+        let mut active = self.sva_op(NetOp::LogOr, vec![start, pending], 1, loc);
+        if let Some((_, off)) = off_now {
+            active = self.sva_op(NetOp::LogAnd, vec![active, off], 1, loc);
+        }
+        let hold = self.sva_bool(u.hold, loc);
+        let release = self.sva_bool(u.release, loc);
+        let release = self.sva_two_state(release, loc);
+        let ended = self.sva_op(NetOp::LogNot, vec![release], 1, loc);
+        let next = self.sva_op(NetOp::LogAnd, vec![active, ended], 1, loc);
+        let name = if nth == 0 { format!("{}._sva_until", self.top) } else { format!("{}._sva_until_{nth}", self.top) };
+        self.states.push(State {
+            id,
+            name,
+            width: 1,
+            signed: false,
+            four_state: false,
+            clock: Some(p.clock),
+            async_reset: None,
+            latch_enable: None,
+            init: Some(CVal::new(1, false, 0)),
+            next,
+            out: pending,
+            loc,
+        });
+        let expr = if u.with { hold } else { self.sva_op(NetOp::LogOr, vec![hold, release], 1, loc) };
+        (active, expr)
     }
 
     /// A tick counter on `clock` that starts at 0 and stops at `max`.
@@ -980,8 +1257,36 @@ impl Netlist {
             }
         }
         let mut made = Vec::with_capacity(plans.len());
+        let mut untils = self.states.iter().filter(|s| s.name.contains("._sva_until")).count();
         for (p, name) in plans {
             let (kind, loc) = (p.kind, p.loc);
+            if let Some(u) = &p.until {
+                let mut ticks = None;
+                if p.warm > 0 {
+                    let nth = counters.iter().position(|c| c.0 == p.clock).expect("counter planned above");
+                    ticks = Some(match counters[nth].2 {
+                        Some(made) => made,
+                        None => {
+                            let made = self.sva_tick_counter(p.clock, counters[nth].1, nth, loc);
+                            counters[nth].2 = Some(made);
+                            made
+                        }
+                    });
+                }
+                let (enable, expr) = self.sva_until(p, u, ticks, untils);
+                untils += 1;
+                made.push(self.checks.len());
+                self.checks.push(Check {
+                    kind: if kind == PropKind::Assert { CheckKind::Assert } else { CheckKind::Assume },
+                    label: name.clone(),
+                    immediate: false,
+                    enable,
+                    expr,
+                    clock: Some(p.clock),
+                    loc,
+                });
+                continue;
+            }
             let mut guard = None;
             if p.warm > 0 {
                 let nth = counters.iter().position(|c| c.0 == p.clock).expect("counter planned above");

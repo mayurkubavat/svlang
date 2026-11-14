@@ -206,7 +206,7 @@ fn kinds_names_and_unsupported_operators() {
          end\n\
          u1: assert property (a |-> ##[1:$] b);\n\
          u2: assert property (a |-> s_eventually b);\n\
-         u3: assert property (a until b);\n\
+         u3: assert property (a s_until b);\n\
          u4: assert property (@(clk) a);\n\
          u5: assert property (a [*1:$] |-> b);\n\
          u6: assert property (not a);\n\
@@ -228,7 +228,7 @@ fn kinds_names_and_unsupported_operators() {
     };
     assert_eq!(why("m.u1"), "the delay range [1:$]");
     assert_eq!(why("m.u2"), "`eventually`");
-    assert_eq!(why("m.u3"), "`until`");
+    assert!(why("m.u3").contains("s_until"), "{}", why("m.u3"));
     assert_eq!(why("m.u4"), "a clocking event on both edges");
     assert_eq!(why("m.u5"), "the repetition range [1:$]");
     assert_eq!(why("m.u6"), "property `not`");
@@ -858,4 +858,84 @@ fn a_skip_can_be_given_per_clock_and_edge() {
     // 3 for posedge clk (2 bits), the default 1 for negedge clk, and none for clk2.
     let widths: Vec<u32> = nl.states.iter().filter(|s| s.name.starts_with("m._sva_tick")).map(|s| s.width).collect();
     assert_eq!(widths, [2, 1], "{:?}", nl.states);
+}
+
+#[test]
+fn until_holds_its_left_side_up_to_the_tick_before_its_end() {
+    const NONE: [usize; 0] = [];
+    let p = "p: assert property (a |-> b until c);";
+    // Started at 0, b held at 0 and 1, c ends it at 2; nothing is owed after that.
+    assert_eq!(fails(p, &["0110", "0010", "0001", "0000"]), NONE);
+    // b dropped at 1 before c came.
+    assert_eq!(fails(p, &["0110", "0000", "0001"]), [1]);
+    // It stays owed for as long as c stays away, and fails at each such tick.
+    assert_eq!(fails(p, &["0110", "0010", "0000", "0000", "0001", "0000"]), [2, 3]);
+    // At the starting tick itself: b or c.
+    assert_eq!(fails(p, &["0100", "0000"]), [0, 1]);
+    assert_eq!(fails(p, &["0101", "0000"]), NONE);
+    // No start, nothing owed.
+    assert_eq!(fails(p, &["0000", "0000"]), NONE);
+}
+
+#[test]
+fn until_with_needs_its_left_side_at_the_end_tick_too() {
+    const NONE: [usize; 0] = [];
+    let with = "p: assert property (a |-> b until_with c);";
+    let plain = "p: assert property (a |-> b until c);";
+    let rows = ["0110", "0001", "0000"];
+    assert_eq!(fails(plain, &rows), NONE);
+    assert_eq!(fails(with, &rows), [1]);
+    assert_eq!(fails(with, &["0110", "0011", "0000"]), NONE);
+}
+
+#[test]
+fn until_after_an_antecedent_sequence_and_next_cycle_implication() {
+    const NONE: [usize; 0] = [];
+    // `|=>`: owed from the tick after a.
+    let next = "p: assert property (a |=> b until c);";
+    assert_eq!(fails(next, &["0100", "0000", "0001"]), [1]);
+    assert_eq!(fails(next, &["0100", "0010", "0001", "0000"]), NONE);
+    // The antecedent `a ##1 a` ends at tick 1: owed from there.
+    let seq = "p: assert property (a ##1 a |-> b until c);";
+    assert_eq!(fails(seq, &["0100", "0100", "0000", "0001"]), [1, 2]);
+    assert_eq!(fails(seq, &["0100", "0000", "0000"]), NONE);
+    // Without an antecedent an `until` starts at every tick.
+    let bare = "p: assert property (b until c);";
+    assert_eq!(fails(bare, &["0010", "0000", "0001", "0010"]), [1]);
+}
+
+#[test]
+fn until_is_dropped_by_disable_iff_and_waits_out_the_skipped_cycles() {
+    const NONE: [usize; 0] = [];
+    let p = "p: assert property (disable iff (rst) a |-> b until c);";
+    // Owed from 0; the reset at 1 drops it for good.
+    assert_eq!(fails(p, &["0110", "1000", "0000", "0000"]), NONE);
+    assert_eq!(fails(p, &["0110", "0000", "0000"]), [1, 2]);
+    // An attempt in a skipped cycle is never owed.
+    let q = "p: assert property (a |-> b until c);";
+    assert_eq!(failures(&compiled(q, 1), &["0110", "0000", "0000"]), NONE);
+    assert_eq!(failures(&compiled(q, 1), &["0000", "0110", "0000"]), [2]);
+}
+
+#[test]
+fn until_forms_that_are_not_compiled() {
+    let src = format!(
+        "module m({PORTS});\n default clocking @(posedge clk); endclocking\n\
+         u1: assert property (a |-> b s_until c);\n\
+         u2: cover property (a |-> b until c);\n\
+         u3: assert property (a |-> (b ##1 b) until c);\n\
+         endmodule\n"
+    );
+    let mut nl = lower_src(&src).unwrap_netlist();
+    let out = nl.compile_properties(&PropertyOptions::default());
+    let why: Vec<&str> = out
+        .iter()
+        .map(|o| match o {
+            PropertyOutcome::Unsupported(w) => w.as_str(),
+            other => panic!("{other:?}"),
+        })
+        .collect();
+    assert!(why[0].contains("s_until"), "{why:?}");
+    assert!(why[1].contains("cover of `until`"), "{why:?}");
+    assert!(why[2].contains("not single booleans"), "{why:?}");
 }
