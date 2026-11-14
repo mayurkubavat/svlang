@@ -31,6 +31,8 @@
 - [IEEE 1800 conformance corpus](reference/conformance.md).
 - [Measured vendor tables](reference/vendor-tables.md): which non-standard
   SystemVerilog each tool accepts, and the slang options that match it.
+- [Front-end census](reference/census.md): which constructs stop open RTL
+  designs from lowering to the netlist, ranked by the modules they block.
 - [Rules only dv-lint has](rules/native-rules.md).
 - [Slang: pin, patches and updating it](../third_party/slang/README.md).
 
