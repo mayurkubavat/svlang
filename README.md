@@ -96,11 +96,28 @@ The full uvmcheck guide (profiles, fixes, reports, Python rules, baselines,
 waivers, CI) is [docs/guide/uvmcheck.md](docs/guide/uvmcheck.md). The Rust
 tools are described in [docs/architecture/rust.md](docs/architecture/rust.md).
 
+## svlang from Python
+
+[`crates/svlang-py`](crates/svlang-py/) builds `pysvlang`, Python bindings
+for the svlang front end: parse files or filelists, read diagnostics, walk
+the lossless syntax tree, print the elaborated hierarchy and lower to a
+netlist. It is a self-contained wheel with no C++ build.
+
+```python
+import pysvlang
+comp = pysvlang.Compilation(["rtl/top.sv"], include_dirs=["rtl"])
+for d in comp.diagnostics():
+    print(d)
+```
+
+See [its README](crates/svlang-py/README.md) to build it.
+
 ## Repository layout
 
 ```
 cpp/               uvmcheck: src/, include/uvmcheck/, tests/ (drivers of the binary)
 crates/            Rust workspace members (Cargo.toml is at the root)
+crates/svlang-py/  pysvlang: Python bindings for the svlang front end (PyO3 + maturin)
 python/            Python SDK: rules, waivers and project config in Python (+ examples/, tests/)
 editors/vscode/    VS Code / Cursor extension
 testdata/          fixtures both engines read: rules/, common/, conformance/, map/, model/

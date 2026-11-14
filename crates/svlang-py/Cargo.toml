@@ -1,0 +1,24 @@
+[package]
+name = "svlang-py"
+description = "Python bindings for svlang (published to PyPI as pysvlang)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+# PyO3 needs a newer compiler than the workspace floor.
+rust-version = "1.85"
+# Shipped as a Python wheel (pysvlang), not as a Rust crate.
+publish = false
+
+[lib]
+name = "_pysvlang"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+svlang = { version = "0.1.0", path = "../svlang" }
+pyo3 = { version = "0.30", features = ["abi3-py39"] }
+
+[features]
+# maturin turns this on when it builds the wheel (see pyproject.toml); it stays
+# off for `cargo build` / `cargo test` so the crate links as an ordinary library.
+extension-module = ["pyo3/extension-module"]

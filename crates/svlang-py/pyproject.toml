@@ -1,0 +1,34 @@
+[build-system]
+requires = ["maturin>=1.7,<2"]
+build-backend = "maturin"
+
+[project]
+name = "pysvlang"
+description = "Python bindings for svlang, a pure-Rust IEEE 1800-2023 SystemVerilog front end"
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.9"
+authors = [{ name = "Mayur Kubavat" }]
+keywords = ["systemverilog", "verilog", "eda", "parser", "hdl", "formal"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Programming Language :: Rust",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering :: Electronic Design Automation (EDA)",
+    "Topic :: Software Development :: Compilers",
+]
+dynamic = ["version"]
+
+[project.urls]
+Repository = "https://github.com/mayurkubavat/svlang"
+
+[project.optional-dependencies]
+test = ["pytest>=7"]
+
+[tool.maturin]
+python-source = "python"
+module-name = "pysvlang._pysvlang"
+features = ["extension-module"]
+# The workspace release profile keeps debug info; wheels do not need it.
+strip = true

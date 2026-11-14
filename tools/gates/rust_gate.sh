@@ -55,7 +55,8 @@ msrv=$(sed -n 's/^rust-version *= *"\(.*\)"/\1/p' Cargo.toml | head -n 1)
 want=${UVMCHECK_MSRV:-auto}
 if [ "$want" != no ] && [ -n "$msrv" ] && command -v rustup >/dev/null 2>&1 \
     && rustup run "$msrv" rustc --version >/dev/null 2>&1; then
-    step rustup run "$msrv" cargo check --workspace --all-targets --locked --target-dir target/msrv
+    # svlang-py (the Python wheel) follows PyO3's newer floor; see its Cargo.toml.
+    step rustup run "$msrv" cargo check --workspace --exclude svlang-py --all-targets --locked --target-dir target/msrv
 elif [ "$want" = yes ]; then
     echo "rust_gate: UVMCHECK_MSRV=yes needs rustup with toolchain $msrv" >&2
     exit 2
