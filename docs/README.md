@@ -1,5 +1,13 @@
 # Documentation
 
+## Using the svlang library
+
+- [svlang crate](../crates/svlang/README.md): the Rust API, with examples;
+  reference on [docs.rs](https://docs.rs/svlang).
+- [pysvlang](../crates/svlang-py/README.md): the Python bindings.
+- [sv-netlist](../crates/sv-netlist/README.md): the word-level RTL netlist.
+- [Rust architecture](architecture/rust.md): how the crates fit together.
+
 ## Using the linter
 
 - [uvmcheck guide](guide/uvmcheck.md): building, running, profiles, fixes,

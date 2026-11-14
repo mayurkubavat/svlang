@@ -1,3 +1,99 @@
+# svlang
+
+[![crates.io](https://img.shields.io/crates/v/svlang.svg)](https://crates.io/crates/svlang)
+[![docs.rs](https://img.shields.io/docsrs/svlang)](https://docs.rs/svlang)
+[![PyPI](https://img.shields.io/pypi/v/pysvlang.svg)](https://pypi.org/project/pysvlang/)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+
+A SystemVerilog (IEEE 1800-2023) compiler front end written in pure Rust,
+usable from Rust and from Python. It reads simulator filelists, preprocesses,
+parses to a lossless syntax tree, elaborates the design hierarchy, runs the
+compiler checks, and lowers synthesizable RTL and SVA to a word-level
+netlist. There is no C++ toolchain to build and no dependency on any other
+crate.
+
+It is the library to reach for when you are building a linter, a language
+server, a formatter, a documentation generator, a formal or equivalence
+checker, or any script that needs to understand SystemVerilog.
+
+```sh
+cargo add svlang        # Rust
+pip install pysvlang    # Python 3.9+, wheels for Linux, macOS and Windows
+```
+
+## What is in it
+
+| Stage | Crate | What it does |
+|---|---|---|
+| Filelists | [`sv-source`](crates/sv-source/) | VCS and Xcelium `-f`/`-F` lists, `$VAR` expansion, `+incdir+`, `+define+`, `-G`, `-y`/`-v` |
+| Lexer | [`sv-lexer`](crates/sv-lexer/) | lossless tokenizer: every source byte is kept |
+| Preprocessor | [`sv-preprocessor`](crates/sv-preprocessor/) | Clause 22 macros, `` `include ``, `` `ifdef ``, with the origin of every token |
+| Syntax | [`sv-syntax`](crates/sv-syntax/) | error-recovering lossless concrete syntax tree |
+| Semantics | [`sv-semantic`](crates/sv-semantic/) | scopes, 4-state constant evaluation, elaboration, bound expressions and SVA, compiler checks, class model |
+| Netlist | [`sv-netlist`](crates/sv-netlist/) | word-level RTL netlist: procedural blocks, driver analysis, loop unrolling, SVA lowering, memories, cut points and black boxes |
+| All of it | [`svlang`](crates/svlang/) | one crate that re-exports the stages behind `Driver` and `Compilation` |
+| Python | [`pysvlang`](crates/svlang-py/) | the same pipeline from Python |
+
+## Quick start
+
+Rust:
+
+```rust
+use svlang::{Compilation, LowerConfig, SyntaxKind};
+
+let comp = Compilation::from_args(["-f", "sim/top.f", "-top", "top"])?;
+for diag in comp.diagnostics() {
+    eprintln!("{diag}");
+}
+for tree in comp.trees() {
+    let modules = tree.preorder().into_iter().filter(|&n| tree.kind(n) == SyntaxKind::ModuleDecl).count();
+    println!("{modules} modules");
+}
+println!("{}", comp.elaborate().hierarchy.join("\n"));
+let netlist = comp.lower_netlist(&LowerConfig::default()).unwrap_netlist();
+println!("{} registers", netlist.states.len());
+```
+
+Python:
+
+```python
+import pysvlang
+
+comp = pysvlang.Compilation.from_args(["-f", "sim/top.f", "-top", "top"])
+for diag in comp.diagnostics():
+    print(diag)
+for tree in comp.trees:
+    for mod in tree.root.find_all("ModuleDecl"):
+        print(mod.child("Name").bare_text, mod.location)
+print("\n".join(comp.hierarchy()))
+netlist = comp.lower_netlist()
+print(len(netlist.states), "registers")
+```
+
+More: the [svlang crate README](crates/svlang/README.md) and its
+[examples](crates/svlang/examples/) (a custom linter, hierarchy elaboration,
+netlist lowering with an external SVA property), the
+[pysvlang README](crates/svlang-py/README.md), and the API reference on
+[docs.rs](https://docs.rs/svlang).
+
+## Status
+
+Version 0.1: the API works and is tested, and it may still change before
+1.0. [docs/architecture/rust.md](docs/architecture/rust.md) describes the
+crates and the gates that compare the front end, construct by construct, with
+[Slang](https://github.com/MikePopoloski/slang) as a reference. Slang is
+never needed to build or use svlang.
+
+## Tools built on svlang
+
+This repository also holds the DV tools that use the library:
+
+- **UVMCheck** (`uvmcheck`, also built as `dv-lint`): static analysis for
+  SystemVerilog and UVM testbenches, described below.
+- **dv-lsp**: a language server, with a [VS Code extension](editors/vscode/).
+- **dv-build**, **dv-map**, **dv-filelist**: compile checking, design
+  mapping and filelist tools.
+
 # UVMCheck
 
 Static analysis for SystemVerilog (IEEE 1800) and UVM (IEEE 1800.2)
@@ -95,22 +191,6 @@ behind the design rules.
 The full uvmcheck guide (profiles, fixes, reports, Python rules, baselines,
 waivers, CI) is [docs/guide/uvmcheck.md](docs/guide/uvmcheck.md). The Rust
 tools are described in [docs/architecture/rust.md](docs/architecture/rust.md).
-
-## svlang from Python
-
-[`crates/svlang-py`](crates/svlang-py/) builds `pysvlang`, Python bindings
-for the svlang front end: parse files or filelists, read diagnostics, walk
-the lossless syntax tree, print the elaborated hierarchy and lower to a
-netlist. It is a self-contained wheel with no C++ build.
-
-```python
-import pysvlang
-comp = pysvlang.Compilation(["rtl/top.sv"], include_dirs=["rtl"])
-for d in comp.diagnostics():
-    print(d)
-```
-
-See [its README](crates/svlang-py/README.md) to build it.
 
 ## Repository layout
 

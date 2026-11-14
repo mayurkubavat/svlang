@@ -10,6 +10,10 @@ The wheels are self-contained native extensions built with
 C++ build and nothing else to install; one abi3 wheel per platform works on
 every Python from 3.9 on.
 
+```sh
+pip install pysvlang
+```
+
 > Status: alpha. The API below is the first slice (parse, diagnostics,
 > tree walking, hierarchy, netlist summary) and may change before 1.0.
 
@@ -57,7 +61,7 @@ can run in threads at once.
 
 ## Build from source
 
-Needs Rust 1.85 or later and Python 3.9 or later.
+Only needed to work on the bindings. Needs Rust 1.85 or later and Python 3.9 or later.
 
 ```sh
 cd crates/svlang-py

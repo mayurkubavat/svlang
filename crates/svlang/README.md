@@ -2,6 +2,13 @@
 
 Pure-Rust IEEE 1800-2023 SystemVerilog compiler front end and RTL netlist SDK, serving as the Rust counterpart to C++ `slang` with **zero C++ toolchain dependencies**, **zero external crates**, and **zero UVM coupling**.
 
+```sh
+cargo add svlang
+```
+
+The API reference is on [docs.rs](https://docs.rs/svlang). The same pipeline is available from Python as
+[`pysvlang`](https://pypi.org/project/pysvlang/) (`pip install pysvlang`).
+
 ## Architecture
 
 `svlang` unifies six focused crates behind one SDK:
