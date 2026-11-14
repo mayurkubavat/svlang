@@ -132,3 +132,21 @@ def test_lower_error_carries_diagnostics():
 def test_cut_points(comp):
     nl = comp.lower_netlist(cut_points=["counter.q"])
     assert nl.top == "counter"
+
+
+BLACK_BOX = """module leaf (input logic a, output logic y);
+  assign y = ~a;
+endmodule
+module top (input logic a, output logic y);
+  leaf u (.a(a), .y(y));
+endmodule
+"""
+
+
+@pytest.mark.parametrize("kw", [{"black_box_modules": ["leaf"]}, {"black_box_instances": ["top.u"]}])
+def test_black_box(kw):
+    c = pysvlang.Compilation.from_source(BLACK_BOX, "bb.sv")
+    full = c.lower_netlist(top="top")
+    boxed = c.lower_netlist(top="top", **kw)
+    assert "not(" in full.dump()
+    assert "not(" not in boxed.dump()

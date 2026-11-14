@@ -140,4 +140,6 @@ class Compilation:
         blast_memories_up_to: Optional[int] = None,
         allow_four_state_ops: bool = False,
         cut_points: Sequence[str] = ...,
+        black_box_modules: Sequence[str] = ...,
+        black_box_instances: Sequence[str] = ...,
     ) -> Netlist: ...

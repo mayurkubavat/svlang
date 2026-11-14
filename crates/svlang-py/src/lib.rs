@@ -268,9 +268,14 @@ impl Compilation {
 
     /// Elaborates and lowers the design to a word-level RTL netlist.
     ///
+    /// ``black_box_modules`` names modules and ``black_box_instances`` names
+    /// instance paths whose bodies are not lowered: their ports stay and their
+    /// outputs become free values.
+    ///
     /// Raises ``LowerError`` when the design has errors or uses constructs
     /// outside the synthesizable/formal subset.
-    #[pyo3(signature = (*, top = None, max_loop_iters = 65_536, blast_memories_up_to = None, allow_four_state_ops = false, cut_points = Vec::new()))]
+    #[allow(clippy::too_many_arguments)]
+    #[pyo3(signature = (*, top = None, max_loop_iters = 65_536, blast_memories_up_to = None, allow_four_state_ops = false, cut_points = Vec::new(), black_box_modules = Vec::new(), black_box_instances = Vec::new()))]
     fn lower_netlist(
         &self,
         py: Python<'_>,
@@ -279,6 +284,8 @@ impl Compilation {
         blast_memories_up_to: Option<usize>,
         allow_four_state_ops: bool,
         cut_points: Vec<String>,
+        black_box_modules: Vec<String>,
+        black_box_instances: Vec<String>,
     ) -> PyResult<Netlist> {
         // `..Default::default()` keeps this building when svlang adds a LowerConfig option.
         #[allow(clippy::needless_update)]
@@ -288,6 +295,8 @@ impl Compilation {
             blast_memories_up_to,
             allow_four_state_ops,
             cut_points,
+            black_box_modules,
+            black_box_instances,
             ..Default::default()
         };
         let comp = self.inner.clone();
