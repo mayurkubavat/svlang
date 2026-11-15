@@ -989,7 +989,7 @@ impl Preprocessor {
         // Macros used inside an argument are expanded before substitution.
         let args: Vec<Vec<T>> = args
             .into_iter()
-            .map(|a| if a.iter().any(|t| t.kind == Kind::Directive) { self.expand_list(a, name) } else { a })
+            .map(|a| if a.iter().any(|t| t.kind == Kind::Directive) { self.expand_list(a) } else { a })
             .collect();
         let names: Vec<&str> =
             m.params.as_ref().map(|p| p.iter().map(|(n, _)| n.as_str()).collect()).unwrap_or_default();
@@ -1005,13 +1005,14 @@ impl Preprocessor {
     }
 
     /// Fully expands a token list on its own (a macro argument), keeping
-    /// the recursion guard of the expansions in progress.
-    fn expand_list(&mut self, toks: Vec<T>, outer: &str) -> Vec<T> {
+    /// the recursion guard of the expansions in progress. The macro whose
+    /// argument this is is not one of them: an argument is text of the place
+    /// that uses the macro, so `` `MAX(a, `MAX(b, c)) `` is not recursion.
+    fn expand_list(&mut self, toks: Vec<T>) -> Vec<T> {
         let saved = std::mem::take(&mut self.frames);
         for f in saved.iter().filter(|f| f.macro_name.is_some()) {
             self.frames.push(Frame { toks: Vec::new(), idx: 0, macro_name: f.macro_name.clone(), file: None });
         }
-        self.frames.push(Frame { toks: Vec::new(), idx: 0, macro_name: Some(Arc::from(outer)), file: None });
         let file = saved.iter().rev().find_map(|f| f.file);
         self.frames.push(Frame { toks, idx: 0, macro_name: None, file });
         let mut out = Vec::new();

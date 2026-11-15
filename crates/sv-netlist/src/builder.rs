@@ -45,6 +45,9 @@ pub(crate) struct NetBuilder {
     pub undriven: Vec<UndrivenSlice>,
     pub traces: Vec<TraceSignal>,
     pub diags: Vec<NetlistDiag>,
+    /// Slices made while splitting reads on a cycle, by `(source, hi, lo)`: the same
+    /// bits of the same value are one node however many reads come down to them.
+    split_slices: sv_semantic::fx::FxMap<(u32, u32, u32), ValueId>,
 }
 
 impl NetBuilder {
@@ -62,6 +65,7 @@ impl NetBuilder {
             undriven: Vec::new(),
             traces: Vec::new(),
             diags: Vec::new(),
+            split_slices: Default::default(),
         }
     }
 
@@ -102,6 +106,7 @@ impl NetBuilder {
             undriven: nl.undriven.clone(),
             traces: nl.traces.clone(),
             diags: Vec::new(),
+            split_slices: Default::default(),
         }
     }
 
@@ -510,10 +515,37 @@ impl NetBuilder {
             }
         }
 
+        // Reads are first pointed at the one driver that holds all their bits. A read
+        // that spans several drivers is split only if a cycle is still found: splitting
+        // every wide read of a signal with hundreds of drivers (a register block's
+        // storage struct) multiplies the netlist, and is needed only to tell a carry
+        // chain from a loop. So only the reads on a cycle are split, until none is left
+        // to split.
         self.forward_slices();
+        let mut cycles = self.combinational_cycles();
+        for _ in 0..8 {
+            if cycles.is_empty() {
+                break;
+            }
+            let before = self.nodes.len();
+            for &i in cycles.iter().flatten() {
+                self.forward_slice(i, true);
+            }
+            if self.nodes.len() == before {
+                break;
+            }
+            // What a split leaves behind is split in turn, down to single drivers.
+            let mut i = before;
+            while i < self.nodes.len() {
+                self.forward_slice(i, true);
+                i += 1;
+            }
+            cycles = self.combinational_cycles();
+        }
+        self.split_slices = Default::default();
 
-        // Combinational cycle check (iterative Tarjan SCC).
-        self.check_combinational_loops()?;
+        // What is still a cycle is a combinational loop.
+        self.report_combinational_loops(cycles);
         if !self.diags.is_empty() {
             return Err(self.diags);
         }
@@ -693,15 +725,12 @@ impl NetBuilder {
     /// slice through aliases, constant right shifts, other slices and the concatenation
     /// part that holds all its bits leaves only the real dependencies.
     fn forward_slices(&mut self) {
-        // Nodes added below are visited too.
-        let mut i = 0;
-        while i < self.nodes.len() {
-            self.forward_slice(i);
-            i += 1;
+        for i in 0..self.nodes.len() {
+            self.forward_slice(i, false);
         }
     }
 
-    fn forward_slice(&mut self, i: usize) {
+    fn forward_slice(&mut self, i: usize, split: bool) {
         {
             let BuildKind::Op { op: NetOp::Slice { hi, lo }, args } = &self.nodes[i].kind else { return };
             let (mut hi, mut lo, mut src) = (*hi, *lo, args[0]);
@@ -711,6 +740,12 @@ impl NetBuilder {
                 let next = match &node.kind {
                     BuildKind::Alias(target) if self.nodes[target.0 as usize].width == node.width => {
                         Some((hi, lo, *target))
+                    }
+                    // Bits below the width of what was extended are its own bits.
+                    BuildKind::Op { op: NetOp::ZeroExt { .. } | NetOp::SignExt { .. }, args }
+                        if hi < self.nodes[args[0].0 as usize].width =>
+                    {
+                        Some((hi, lo, args[0]))
                     }
                     BuildKind::Op { op: NetOp::Slice { lo: inner_lo, .. }, args } => {
                         Some((hi + inner_lo, lo + inner_lo, args[0]))
@@ -767,21 +802,32 @@ impl NetBuilder {
                     }
                 }
             }
-            if pieces.len() > 1 && pieces.iter().all(|(part, _, _)| part.0 as usize != i) {
+            // Bits of a choice between two values are a choice between their bits: a
+            // struct assigned a field at a time under `if` is a multiplexer of whole
+            // structs, and a field read back must not depend on the other fields.
+            let mux_arms = match &self.nodes[src.0 as usize].kind {
+                BuildKind::Op { op: NetOp::Mux, args }
+                    if split
+                        && args.len() == 3
+                        && args[1..].iter().all(|a| {
+                            self.nodes[a.0 as usize].width == self.nodes[src.0 as usize].width && a.0 as usize != i
+                        }) =>
+                {
+                    Some((args[0], args[1], args[2]))
+                }
+                _ => None,
+            };
+            if let Some((sel, a, b)) = mux_arms {
                 let (four, loc) = (self.nodes[i].four_state, self.nodes[i].loc);
-                let mut parts: Vec<ValueId> = pieces
-                    .into_iter()
-                    .map(|(part, h, l)| {
-                        self.alloc_raw(
-                            h - l + 1,
-                            false,
-                            four,
-                            BuildKind::Op { op: NetOp::Slice { hi: h, lo: l }, args: vec![part] },
-                            None,
-                            loc,
-                        )
-                    })
-                    .collect();
+                let arm = |this: &mut Self, v: ValueId| this.split_slice(v, hi, lo, four, loc);
+                let (sa, sb) = (arm(self, a), arm(self, b));
+                self.nodes[i].kind = BuildKind::Op { op: NetOp::Mux, args: vec![sel, sa, sb] };
+                return;
+            }
+            if split && pieces.len() > 1 && pieces.iter().all(|(part, _, _)| part.0 as usize != i) {
+                let (four, loc) = (self.nodes[i].four_state, self.nodes[i].loc);
+                let mut parts: Vec<ValueId> =
+                    pieces.into_iter().map(|(part, h, l)| self.split_slice(part, h, l, four, loc)).collect();
                 parts.reverse();
                 self.nodes[i].kind = BuildKind::Op { op: NetOp::Concat, args: parts };
             } else if moved {
@@ -790,7 +836,47 @@ impl NetBuilder {
         }
     }
 
-    fn check_combinational_loops(&mut self) -> Result<(), Vec<NetlistDiag>> {
+    /// Bits `hi:lo` of `src`, as one shared node.
+    fn split_slice(&mut self, src: ValueId, hi: u32, lo: u32, four: bool, loc: Loc) -> ValueId {
+        if let Some(&v) = self.split_slices.get(&(src.0, hi, lo)) {
+            return v;
+        }
+        let v = self.alloc_raw(
+            hi - lo + 1,
+            false,
+            four,
+            BuildKind::Op { op: NetOp::Slice { hi, lo }, args: vec![src] },
+            None,
+            loc,
+        );
+        self.split_slices.insert((src.0, hi, lo), v);
+        v
+    }
+
+    fn report_combinational_loops(&mut self, cycles: Vec<Vec<usize>>) {
+        for scc in cycles {
+            let mut named: Vec<(String, Loc)> = Vec::new();
+            for &idx in scc.iter().rev() {
+                if let Some(nm) = &self.nodes[idx].name {
+                    if !named.iter().any(|(existing, _)| existing == nm) {
+                        named.push((nm.clone(), self.nodes[idx].loc));
+                    }
+                }
+            }
+            let (loc, cycle_str) = if let Some((first_nm, first_loc)) = named.first().cloned() {
+                let mut names: Vec<String> = named.into_iter().map(|(nm, _)| nm).collect();
+                names.push(first_nm);
+                (first_loc, names.join(" -> "))
+            } else {
+                let first_idx = scc[0];
+                (self.nodes[first_idx].loc, "<anonymous combinational expression>".to_string())
+            };
+            self.err(loc, format!("combinational loop detected: {cycle_str}"));
+        }
+    }
+
+    /// The strongly connected components of the combinational graph that are cycles.
+    fn combinational_cycles(&self) -> Vec<Vec<usize>> {
         struct Frame {
             v: usize,
             deps: Vec<usize>,
@@ -864,26 +950,7 @@ impl NetBuilder {
             }
         }
 
-        for scc in cycles {
-            let mut named: Vec<(String, Loc)> = Vec::new();
-            for &idx in scc.iter().rev() {
-                if let Some(nm) = &self.nodes[idx].name {
-                    if !named.iter().any(|(existing, _)| existing == nm) {
-                        named.push((nm.clone(), self.nodes[idx].loc));
-                    }
-                }
-            }
-            let (loc, cycle_str) = if let Some((first_nm, first_loc)) = named.first().cloned() {
-                let mut names: Vec<String> = named.into_iter().map(|(nm, _)| nm).collect();
-                names.push(first_nm);
-                (first_loc, names.join(" -> "))
-            } else {
-                let first_idx = scc[0];
-                (self.nodes[first_idx].loc, "<anonymous combinational expression>".to_string())
-            };
-            self.err(loc, format!("combinational loop detected: {cycle_str}"));
-        }
-        Ok(())
+        cycles
     }
 }
 

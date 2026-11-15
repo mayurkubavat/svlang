@@ -1471,6 +1471,10 @@ impl<'a> DesignLowerer<'a> {
             let mut ever = vec![false; w as usize];
             let mut def = vec![false; w as usize];
             let mut wcond = vec![zero1; w as usize];
+            // Bits written together share their write condition: one node for each
+            // distinct pair, none where both branches agree. A wide signal written a
+            // field at a time would otherwise get a node for every bit at every `if`.
+            let mut shared: FxMap<(ValueId, ValueId), ValueId> = FxMap::default();
             for b in 0..(w as usize) {
                 let te = t_sw.is_some_and(|x| x.ever_written[b]);
                 let ee = e_sw.is_some_and(|x| x.ever_written[b]);
@@ -1483,7 +1487,13 @@ impl<'a> DesignLowerer<'a> {
 
                 let twc = t_sw.map_or(zero1, |x| x.write_cond[b]);
                 let ewc = e_sw.map_or(zero1, |x| x.write_cond[b]);
-                wcond[b] = self.builder.alloc_op(NetOp::Mux, vec![cond, twc, ewc], 1, false, false, loc);
+                wcond[b] = if twc == ewc {
+                    twc
+                } else {
+                    *shared.entry((twc, ewc)).or_insert_with(|| {
+                        self.builder.alloc_op(NetOp::Mux, vec![cond, twc, ewc], 1, false, false, loc)
+                    })
+                };
             }
             merged.slot_writes.insert(
                 sidx,
@@ -2611,9 +2621,18 @@ impl<'a> DesignLowerer<'a> {
         let mut new_wconds = Vec::with_capacity(hi_bound.saturating_sub(const_lo as usize));
         // The index is also the value id / bit number, and the body borrows the container again.
         #[allow(clippy::needless_range_loop)]
+        let mut shared: FxMap<ValueId, ValueId> = FxMap::default();
         for b in (const_lo as usize)..hi_bound {
             let prev_wc = ctx.slot_writes[&sidx].write_cond[b];
-            new_wconds.push((b, self.builder.alloc_or1(prev_wc, reach, loc)));
+            let wc = match shared.get(&prev_wc) {
+                Some(&wc) => wc,
+                None => {
+                    let wc = self.builder.alloc_or1(prev_wc, reach, loc);
+                    shared.insert(prev_wc, wc);
+                    wc
+                }
+            };
+            new_wconds.push((b, wc));
         }
         let sw = ctx.slot_writes.get_mut(&sidx).expect("inserted above");
         sw.next_val = new_nxt;
