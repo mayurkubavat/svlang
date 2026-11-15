@@ -2,11 +2,11 @@
 
 What happens when every module of a set of open RTL designs is made a top and lowered to
 the word-level netlist (`tools/quality/census.py`, designs in `tools/quality/census_corpus.json`).
-svlang `ce5a86981972`, 2026-11-15, reference front end slang version 12.1.0+d02b7cd --timescale=1ns/1ps. Regenerate after a fix; the designs are kept outside the repository.
+svlang `4b5d424bae61`, 2026-11-15, reference front end slang version 12.1.0+d02b7cd --timescale=1ns/1ps. Regenerate after a fix; the designs are kept outside the repository.
 
 2184 modules. 611 cannot stand alone as a top (see *Invalid as a top*), which leaves 1573 measured: **1081 lowered (68.7%)**, 360 unsupported, 102 wrongly rejected, 0 crashes, 5 out of memory, 0 timeouts, 25 lowered although the reference rejects the input.
 
-Where the unsupported and wrongly rejected ones stop: 3 at parse, 9 at elaborate, 450 at lower. Of the 1106 netlists, the Btor2 writer takes 976 and refuses 130 (see *Lowered, not written as Btor2*).
+Where the unsupported and wrongly rejected ones stop: 3 at parse, 9 at elaborate, 450 at lower. Of the 1106 netlists, the Btor2 writer takes 976 as they are, 78 more once it is told the clocks, and refuses 52 (see *Lowered, not written as Btor2*).
 
 With `--skip-initial-checks` `--isunknown-is-false`: 1359 of 1571 lowered (86.5%), 50 unsupported, 115 wrongly rejected.
 
@@ -91,17 +91,18 @@ svlang is wrong, or stricter than the standard asks.
 
 ## Lowered, not written as Btor2
 
-The netlist came out and the Btor2 writer (`sv-btor2`) refused it: the netlist holds something
-its transition system has no form for yet.
+The netlist came out and the Btor2 writer (`sv-btor2`) refused it with its default options: 130
+netlists. 78 of them are written once the writer is told what a formal tool tells it: every
+clock input declared (`--clock`, all with one period), in-RTL properties compiled (`--properties`) and
+both edges allowed (`--both-edges`). The other 52 are still refused, for these reasons:
 
 | tops | designs | what the writer says | example |
 | ---: | ---: | --- | --- |
-| 81 | 6 | not modelled: more than one clock; every register steps on each model step | `verilog-axi/rtl/axi_vfifo_raw_rd.v` `axi_vfifo_raw_rd` |
-| 30 | 3 | not modelled: more than one clock, and the clock of … is not a top-level input | `caliptra-rtl/src/riscv_core/veer_el2/rtl/lib/beh_lib.sv` `rvdffpcie` |
-| 10 | 3 | not supported yet: concurrent assumptions in the RTL that are not compiled to checks: leaving them out would make the model weaker than the design says | `caliptra-rtl/src/caliptra_prim/rtl/caliptra_prim_arbiter_ppc.sv` `caliptra_prim_arbiter_ppc` |
+| 29 | 3 | not modelled: more than one clock, and the clock of … is not a top-level input | `caliptra-rtl/src/riscv_core/veer_el2/rtl/lib/beh_lib.sv` `rvdffpcie` |
+| 12 | 3 | not modelled: more than one clock; every register steps on each model step | `common_cells/src/cc_clk_int_div.sv` `cc_clk_int_div` |
 | 5 | 1 | not supported yet: initial values of memory … kept as an array | `verilog-axi/rtl/axi_ram.v` `axi_ram` |
-| 3 | 3 | not modelled: blocks clocked on different edges; every register steps on each model step | `picorv32/picosoc/spimemio.v` `spimemio` |
-| 1 | 1 | not modelled: latch …: its value depends on itself within a step | `verilog-axi/rtl/axi_vfifo_enc.v` `axi_vfifo_enc` |
+| 4 | 2 | not modelled: latch …: its value depends on itself within a step | `verilog-axi/rtl/axi_vfifo_enc.v` `axi_vfifo_enc` |
+| 2 | 2 | not supported yet: concurrent assumptions in the RTL that are not compiled to checks: leaving them out would make the model weaker than the design says | `opentitan/hw/ip/prim/rtl/prim_dom_and_2share.sv` `prim_dom_and_2share` |
 
 ## Crashes and limits
 
@@ -143,7 +144,7 @@ tops. Where another top instantiates one, it is still measured there:
 
 | tops | reference error | example |
 | ---: | --- | --- |
-| 277 | parameter '…' has no constant value | `basejump_stl` `bsg_imod_range` |
+| 273 | parameter '…' has no constant value | `basejump_stl` `bsg_imod_range` |
 | 93 | invalid member access for type '…' (aka '…') | `axi` `axi_chan_compare` |
 | 58 | unknown module '…' | `picorv32` `ice40up5k_spram` |
 | 55 | top-level module '…' has unconnected interface port '…' | `axi` `axi_dumper_intf` |

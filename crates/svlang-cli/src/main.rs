@@ -13,7 +13,7 @@ use std::fmt::Write as _;
 use std::io::Write as _;
 use std::process::ExitCode;
 
-use svlang::netlist::{PropertyOptions, PropertyOutcome};
+use svlang::netlist::{PropertyOptions, PropertyOutcome, ValueKind};
 use svlang::{Compilation, Diagnostic, DiagnosticStage, Driver, LowerConfig, LowerOutcome, Netlist, Severity};
 
 const USAGE: &str = "\
@@ -308,6 +308,29 @@ fn stages(o: &Opts) -> Result<(String, bool), Usage> {
                     nl.memories.len(),
                     nl.checks.len(),
                     nl.properties.len()
+                );
+                // The top-level inputs that clock a register, by name: what `--clock` takes.
+                let mut clocks: Vec<&str> = nl
+                    .states
+                    .iter()
+                    .filter_map(|st| st.clock)
+                    .filter_map(|c| {
+                        let mut v = c.signal;
+                        loop {
+                            match &nl.values[v.0 as usize].kind {
+                                ValueKind::Input(i) => return Some(nl.inputs[*i].name.as_str()),
+                                ValueKind::Op { args, .. } if args.len() == 1 => v = args[0],
+                                _ => return None,
+                            }
+                        }
+                    })
+                    .collect();
+                clocks.sort_unstable();
+                clocks.dedup();
+                let _ = write!(
+                    sizes,
+                    ",\n  \"clocks\": [{}]",
+                    clocks.iter().map(|c| json_string(c)).collect::<Vec<_>>().join(", ")
                 );
                 let t = Instant::now();
                 let written = svlang::btor2::write(&nl, &btor2_options(o));

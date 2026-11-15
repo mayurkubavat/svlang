@@ -54,6 +54,8 @@ What changed in each release of the svlang crates (`svlang`, `sv-*`,
   (`e_t t = t.first()` in a `for` loop).
 - A part-select written against the declared direction (`a[0:3]` of
   `logic [3:0] a`) is an error (11.5.1); it used to be read as `a[3:0]`.
+- A connection to a port the module does not have, and an override of a
+  parameter it does not have, are errors; both used to be ignored.
 - A member label in an assignment pattern is not a use before declaration.
 - A macro may be used inside its own argument.
 

@@ -391,6 +391,24 @@ def measure(design, module, path, plan, tools, opts):
         rec["stage_seconds"] = got["seconds"]
     # A netlist that the Btor2 writer refuses is still lowered; the report counts it apart.
     lowered = bool(got) and got.get("blocked_at") in (None, "btor2")
+    # The writer refuses several clocks, in-RTL properties and both edges unless it is
+    # told how to model them, as a formal tool tells it. Ask again with every clock
+    # input declared (all with one period), properties compiled and both edges allowed.
+    if got.get("blocked_at") == "btor2":
+        clocks = got.get("clocks", [])
+        setup = ["--properties", "--both-edges"] + [x for c in clocks if len(clocks) > 1 for x in ("--clock", c)]
+        _, out2, _, _ = run_tool(
+            [tools["svlang"], "stages", *opts.flag, *setup, *args, "-top", module, *files], opts.timeout, opts.mem
+        )
+        try:
+            got2 = json.loads(out2)
+        except ValueError:
+            got2 = {"blocked_at": "?", "diagnostics": [{"message": "no result"}]}
+        rec["btor2_setup"] = {
+            "written": got2.get("blocked_at") is None,
+            "clocks": len(clocks),
+            "messages": [d["message"].replace(design.base + os.sep, "") for d in got2.get("diagnostics", [])][:5],
+        }
 
     if code is None:
         rec["outcome"] = "timeout"
@@ -627,9 +645,11 @@ def report(base, opts):
             + ". "
         )
         low = [r for r in recs if r["outcome"] in ("lowered", "accepted")]
-        refused = sum(1 for r in low if r.get("stage") == "btor2")
+        refused = [r for r in low if r.get("stage") == "btor2"]
+        with_setup = sum(1 for r in refused if r.get("btor2_setup", {}).get("written"))
         w(
-            f"Of the {len(low)} netlists, the Btor2 writer takes {len(low) - refused} and refuses {refused} "
+            f"Of the {len(low)} netlists, the Btor2 writer takes {len(low) - len(refused)} as they are, "
+            f"{with_setup} more once it is told the clocks, and refuses {len(refused) - with_setup} "
             "(see *Lowered, not written as Btor2*).\n\n"
         )
 
@@ -736,23 +756,33 @@ def report(base, opts):
 
     refused = [r for r in recs if r["outcome"] in ("lowered", "accepted") and r.get("stage") == "btor2"]
     if refused:
+        with_setup = [r for r in refused if r.get("btor2_setup", {}).get("written")]
+        still = [r for r in refused if not r.get("btor2_setup", {}).get("written")]
         w(
             "## Lowered, not written as Btor2\n\n"
-            "The netlist came out and the Btor2 writer (`sv-btor2`) refused it: the netlist holds something\n"
-            "its transition system has no form for yet.\n\n"
+            f"The netlist came out and the Btor2 writer (`sv-btor2`) refused it with its default options: {len(refused)}\n"
+            f"netlists. {len(with_setup)} of them are written once the writer is told what a formal tool tells it: every\n"
+            "clock input declared (`--clock`, all with one period), in-RTL properties compiled (`--properties`) and\n"
+            f"both edges allowed (`--both-edges`). The other {len(still)} are still refused, for these reasons:\n\n"
         )
+
+        def reason(message):
+            # The writer names the signals without quotes: (a.b, c.d) lists and dotted paths.
+            what = re.sub(r"\s*\([^()]*\)", "", message)
+            what = re.sub(r"\b[A-Za-z_][\w$]*(?:\.[\w$\[\]]+)+", "…", what)
+            return construct(what)
+
         groups = collections.defaultdict(list)
-        for r in refused:
-            for d in r["diags"]:
-                # The writer names the signals without quotes: (a.b, c.d) lists and dotted paths.
-                what = re.sub(r"\s*\([^()]*\)", "", d["message"])
-                what = re.sub(r"\b[A-Za-z_][\w$]*(?:\.[\w$\[\]]+)+", "…", what)
-                groups[construct(what)].append(r)
-        w("| tops | designs | what the writer says | example |\n| ---: | ---: | --- | --- |\n")
-        for key, rs in sorted(groups.items(), key=lambda kv: (-len(kv[1]), kv[0]))[: opts.rows]:
-            ex = min(rs, key=lambda r: r["files"])
-            w(f"| {len(rs)} | {len({r['design'] for r in rs})} | {md(key)} | `{ex['file']}` `{ex['module']}` |\n")
-        w("\n")
+        for r in still:
+            messages = r.get("btor2_setup", {}).get("messages") or [d["message"] for d in r["diags"]]
+            for m in messages[:1]:
+                groups[reason(m)].append(r)
+        if groups:
+            w("| tops | designs | what the writer says | example |\n| ---: | ---: | --- | --- |\n")
+            for key, rs in sorted(groups.items(), key=lambda kv: (-len(kv[1]), kv[0]))[: opts.rows]:
+                ex = min(rs, key=lambda r: r["files"])
+                w(f"| {len(rs)} | {len({r['design'] for r in rs})} | {md(key)} | `{ex['file']}` `{ex['module']}` |\n")
+            w("\n")
 
     crashes = [r for r in recs if r["outcome"] in ("crash", "memout", "timeout")]
     if crashes:

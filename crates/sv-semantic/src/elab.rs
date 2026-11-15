@@ -2152,6 +2152,16 @@ impl<'b, 't> Elab<'b, 't> {
                     let own = b.own_tokens(*a);
                     let e = b.children(*a).into_iter().find(|x| b.kind(*x) != Attribute);
                     if own.first() == Some(&".") {
+                        // An override names a parameter the module has.
+                        if let Some(nm) = own.get(1).map(|s| s.strip_prefix('\\').unwrap_or(s)) {
+                            if self.uninst == 0 && !order.iter().any(|(n, _)| n == nm) && self.checked.insert(*a) {
+                                self.diags.push(crate::names::Diag {
+                                    tree: a.tree,
+                                    node: a.node,
+                                    message: format!("parameter '{nm}' does not exist in '{def}'"),
+                                });
+                            }
+                        }
                         (own.get(1).map(|s| s.to_string()), e)
                     } else {
                         (order.get(k).map(|o| o.0.clone()), e)
@@ -2234,8 +2244,36 @@ impl<'b, 't> Elab<'b, 't> {
                     }
                 }
                 let env = Rc::new(types.clone());
-                self.instance(&def, &n, &format!("{path}.{n}"), &over, pend, env, port_conns.clone(), loc, depth + 1);
+                let child_path = format!("{path}.{n}");
+                self.instance(&def, &n, &child_path, &over, pend, env, port_conns.clone(), loc, depth + 1);
+                self.check_port_names(inst, &def, &child_path, &port_conns);
             }
+        }
+    }
+
+    /// A named connection (`.p(x)`, `.p`) names a port the module has.
+    fn check_port_names(&mut self, inst_node: NodeRef, def: &str, child_path: &str, conns: &[PortConn]) {
+        if self.uninst > 0 {
+            return;
+        }
+        let Some(&cid) = self.design.inst_by_path.get(child_path) else { return };
+        let ports: HashSet<&str> = self.design.instances[cid.0 as usize]
+            .ports
+            .iter()
+            .map(|sid| self.design.symbols[sid.0 as usize].name.as_str())
+            .collect();
+        let b = self.b;
+        let Some(al) = b.child(inst_node, ArgList) else { return };
+        let args: Vec<NodeRef> = b.children(al).into_iter().filter(|a| b.kind(*a) == Arg).collect();
+        let mut found = Vec::new();
+        for c in conns {
+            let (Some(name), Some(&arg)) = (&c.port_name, args.get(c.arg_index)) else { continue };
+            if !ports.contains(name.as_str()) && self.checked.insert(arg) {
+                found.push((arg, format!("port '{name}' does not exist in '{def}'")));
+            }
+        }
+        for (arg, message) in found {
+            self.diags.push(crate::names::Diag { tree: arg.tree, node: arg.node, message });
         }
     }
 
