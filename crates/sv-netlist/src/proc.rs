@@ -2619,9 +2619,9 @@ impl<'a> DesignLowerer<'a> {
 
         let hi_bound = (const_lo + const_w).min(total_w) as usize;
         let mut new_wconds = Vec::with_capacity(hi_bound.saturating_sub(const_lo as usize));
-        // The index is also the value id / bit number, and the body borrows the container again.
-        #[allow(clippy::needless_range_loop)]
         let mut shared: FxMap<ValueId, ValueId> = FxMap::default();
+        // The index is also the bit number, and the body borrows the container again.
+        #[allow(clippy::needless_range_loop)]
         for b in (const_lo as usize)..hi_bound {
             let prev_wc = ctx.slot_writes[&sidx].write_cond[b];
             let wc = match shared.get(&prev_wc) {
