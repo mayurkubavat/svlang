@@ -8,7 +8,9 @@ what stops them.
 
 The designs are listed in census_corpus.json with their commit and license.
 They are third-party code and stay outside this repository; only this tool,
-the list and the report are checked in.
+the list, the report and a few patches are checked in. A patch
+(census_patches/<design>.patch) rewrites code that is not standard
+SystemVerilog, which svlang rejects on purpose; `fetch` applies it.
 
 How a module is measured. Each module defined under a design's `roots` is
 made the top of its own compilation: the file that defines it plus the files
@@ -20,6 +22,8 @@ one of:
     lowered        a netlist came out
     unsupported    legal SystemVerilog outside the netlist subset; the diagnostic names it
     rejected       svlang reports an error and the reference front end (slang) accepts the same input
+    nonstandard    both reject it, and the reference accepts it only in its simulator-compatible
+                   mode: the code is not standard SystemVerilog and needs rewriting
     invalid        both reject it: the module cannot stand alone as a top with its default
                    parameters, or the design needs files or defines the census does not have
     accepted       svlang lowers it and the reference rejects it
@@ -27,7 +31,8 @@ one of:
     memout/timeout it ran past the memory or time limit
 
 `unsupported`, `rejected`, `crash`, `memout` and `timeout` are svlang's to fix and are
-ranked. `invalid` is the census's own limit and is counted separately; a module
+ranked. `nonstandard` is the design's to fix and is listed on its own. `invalid` is
+the census's own limit and is counted separately; a module
 that is `invalid` as a top is still measured where another top instantiates it
 (the "in a design" columns).
 
@@ -72,9 +77,12 @@ DEFINITION = re.compile(
 )
 END_MODULE = re.compile(r"\bendmodule\b")
 IDENT = re.compile(r"[A-Za-z_][A-Za-z0-9_$]*")
-# The reference runs the way a simulator would be run on these designs: its VCS
-# compatibility mode, and a default time scale for files that set none.
-REFERENCE_FLAGS = ["--quiet", "--error-limit=5", "--compat=vcs", "--timescale=1ns/1ps"]
+# The reference judges by the standard, as svlang does, with a default time scale for
+# files that set none. Where it rejects, it is asked again in its simulator-compatible
+# mode: code that only that mode accepts is not standard SystemVerilog and needs
+# rewriting; it is not svlang's to accept.
+REFERENCE_FLAGS = ["--quiet", "--error-limit=5", "--timescale=1ns/1ps"]
+REFERENCE_COMPAT = "--compat=vcs"
 SELF_CHECK = re.compile(r"^immediate (assertion|assumption) in initial block is false")
 
 
@@ -107,7 +115,15 @@ def fetch(out, only):
             git(["fetch", "-q", "--depth", "1", "origin", want], dest)
             git(["checkout", "-q", "--detach", "FETCH_HEAD"], dest)
             have = git(["rev-parse", "HEAD"], dest)
-        print(f"{d['name']:16} {have}")
+        # The design's patch, if it has one, on a clean tree: the few files rewritten to
+        # the standard (census_patches/README.md).
+        patch = os.path.join(HERE, "census_patches", d["name"] + ".patch")
+        note = ""
+        if os.path.isfile(patch):
+            git(["checkout", "-q", "--", "."], dest)
+            git(["apply", "--whitespace=nowarn", patch], dest)
+            note = "  (patched)"
+        print(f"{d['name']:16} {have}{note}")
 
 
 # ---------------------------------------------------------------- scan
@@ -336,7 +352,12 @@ def measure(design, module, path, plan, tools, opts):
     args = [f"+incdir+{d}" for d in incdirs + [os.path.join(design.dir, x) for x in design.entry.get("incdirs", [])]]
     defines = design.entry.get("defines", []) + opts.define
     args += [f"+define+{x}" for x in defines]
+    # Parameter values for a top whose defaults are placeholders the design always overrides.
+    params = design.entry.get("params", {}).get(module, [])
+    args += [x for p in params for x in ("-G", p)]
     rec = {"design": design.name, "module": module, "file": design.rel(path), "files": len(files)}
+    if params:
+        rec["params"] = params
 
     code, out, err, secs = run_tool(
         [tools["svlang"], "stages", *opts.flag, *args, "-top", module, *files], opts.timeout, opts.mem
@@ -394,6 +415,7 @@ def measure(design, module, path, plan, tools, opts):
         sl = [tools["slang"], *REFERENCE_FLAGS, "--top", module]
         sl += [x for d in incdirs + [os.path.join(design.dir, x) for x in design.entry.get("incdirs", [])] for x in ("-I", d)]
         sl += [x for d in defines for x in ("-D", d)]
+        sl += [x for p in params for x in ("-G", p)]
         scode, sout, serr, _ = run_tool([*sl, *files], opts.timeout, opts.mem)
         if scode is None:
             rec["reference"] = "timeout"
@@ -409,8 +431,16 @@ def measure(design, module, path, plan, tools, opts):
                     "line": int(m.group(2)),
                     "message": m.group(4).replace(design.base + os.sep, ""),
                 }
+            ccode, _, _, _ = run_tool([sl[0], REFERENCE_COMPAT, *sl[1:], *files], opts.timeout, opts.mem)
+            rec["reference_compat"] = "accepts" if ccode == 0 else "rejects"
         if rec["outcome"] == "error":
             rec["outcome"] = {"accepts": "rejected", "rejects": "invalid"}.get(rec["reference"], "error")
+            if (
+                rec["outcome"] == "invalid"
+                and rec.get("reference_compat") == "accepts"
+                and module not in design.entry.get("default_only", [])
+            ):
+                rec["outcome"] = "nonstandard"
             # The module's own elaboration check refuses its default parameters; the
             # reference does not evaluate those checks.
             if rec["outcome"] == "rejected" and all(SELF_CHECK.search(d["message"]) for d in diags):
@@ -530,7 +560,18 @@ def report(base, opts):
             else:
                 recs.append(r)
     corpus = {d["name"]: d for d in load_corpus()}
-    outcomes = ["lowered", "unsupported", "rejected", "crash", "memout", "timeout", "accepted", "invalid", "error"]
+    outcomes = [
+        "lowered",
+        "unsupported",
+        "rejected",
+        "crash",
+        "memout",
+        "timeout",
+        "accepted",
+        "nonstandard",
+        "invalid",
+        "error",
+    ]
     per_design = collections.defaultdict(collections.Counter)
     for r in recs:
         per_design[r["design"]][r["outcome"]] += 1
@@ -562,10 +603,15 @@ def report(base, opts):
         + (f", with `{' '.join(meta['flags'])}`" if meta.get("flags") else "")
         + ". Regenerate after a fix; the designs are kept outside the repository.\n\n"
     )
-    measured = sum(total[o] for o in used if o != "invalid")
+    measured = sum(total[o] for o in used if o not in ("invalid", "nonstandard"))
     w(
-        f"{sum(total.values())} modules. {total['invalid']} cannot stand alone as a top (see *Invalid as a top*), "
-        f"which leaves {measured} measured: **{total['lowered']} lowered "
+        f"{sum(total.values())} modules. {total['invalid']} cannot stand alone as a top (see *Invalid as a top*)"
+        + (
+            f" and {total['nonstandard']} are not standard SystemVerilog (see *Not standard SystemVerilog*)"
+            if total["nonstandard"]
+            else ""
+        )
+        + f", which leaves {measured} measured: **{total['lowered']} lowered "
         f"({100 * total['lowered'] / max(measured, 1):.1f}%)**, {total['unsupported']} unsupported, "
         f"{total['rejected']} wrongly rejected, {total['crash']} crashes, {total['memout']} out of memory, "
         f"{total['timeout']} timeouts, "
@@ -597,7 +643,7 @@ def report(base, opts):
                 else:
                     vtotal[r["outcome"]] += 1
         how = " ".join([f"`{x}`" for x in vmeta.get("flags", [])] + [f"`+define+{x}`" for x in vmeta.get("defines", [])])
-        vmeasured = sum(vtotal.values()) - vtotal["invalid"]
+        vmeasured = sum(vtotal.values()) - vtotal["invalid"] - vtotal["nonstandard"]
         w(
             f"With {how or 'the same settings'}: {vtotal['lowered']} of {vmeasured} lowered "
             f"({100 * vtotal['lowered'] / max(vmeasured, 1):.1f}%), {vtotal['unsupported']} unsupported, "
@@ -612,7 +658,7 @@ def report(base, opts):
         if not c:
             continue
         n = sum(c.values())
-        m = n - c["invalid"]
+        m = n - c["invalid"] - c["nonstandard"]
         d = corpus[name]
         w(
             f"| [{name}]({d['repo']}) | `{d['rev'][:10]}` | {d['license']} | {n} | "
@@ -745,6 +791,27 @@ def report(base, opts):
             ex = min(rs, key=lambda r: r["files"])
             e = ex.get("reference_error", {})
             w(f"| {len(rs)} | {md(key)} | `{e.get('file', ex['file'])}:{e.get('line', 0)}` (top `{ex['module']}`) |\n")
+        w("\n")
+
+    nonstandard = [r for r in recs if r["outcome"] == "nonstandard"]
+    if nonstandard:
+        w(
+            "## Not standard SystemVerilog\n\n"
+            "svlang and the reference both reject these by the standard; the reference accepts them only in its\n"
+            "simulator-compatible mode. svlang stays strict: the code is what needs to change. By the reference's\n"
+            "first error:\n\n"
+        )
+        groups = collections.defaultdict(list)
+        for r in nonstandard:
+            groups[construct(r.get("reference_error", {}).get("message", "?"))].append(r)
+        w("| tops | designs | reference error | example |\n| ---: | ---: | --- | --- |\n")
+        for key, rs in sorted(groups.items(), key=lambda kv: (-len(kv[1]), kv[0]))[: opts.rows]:
+            ex = min(rs, key=lambda r: r["files"])
+            e = ex.get("reference_error", {})
+            w(
+                f"| {len(rs)} | {len({r['design'] for r in rs})} | {md(key)} "
+                f"| `{e.get('file', ex['file'])}:{e.get('line', 0)}` (top `{ex['module']}`) |\n"
+            )
         w("\n")
 
     invalid = [r for r in recs if r["outcome"] in ("invalid", "error")]

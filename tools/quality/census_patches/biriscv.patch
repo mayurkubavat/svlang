@@ -1,0 +1,93 @@
+diff --git a/src/dcache/dcache_core.v b/src/dcache/dcache_core.v
+index 61cde13..e30b565 100644
+--- a/src/dcache/dcache_core.v
++++ b/src/dcache/dcache_core.v
+@@ -174,6 +174,7 @@ begin
+     mem_flush_m_q     <= 1'b0;
+ end
+ 
++wire tag_hit_any_m_w;
+ reg mem_accept_r;
+ 
+ always @ *
+@@ -219,6 +220,11 @@ wire [ 31:0]   pmem_read_data_w;
+ wire           evict_way_w;
+ wire           tag_dirty_any_m_w;
+ wire           tag_hit_and_dirty_m_w;
++wire           tag0_hit_m_w;
++wire           tag1_hit_m_w;
++wire [ 31:0]   data0_data_out_m_w;
++wire [ 31:0]   data1_data_out_m_w;
++reg [DCACHE_TAG_REQ_LINE_W-1:0] flush_addr_q;
+ 
+ reg            flushing_q;
+ 
+@@ -347,7 +353,7 @@ wire                           tag0_dirty_m_w     = tag0_data_out_m_w[CACHE_TAG_
+ wire [CACHE_TAG_ADDR_BITS-1:0] tag0_addr_bits_m_w = tag0_data_out_m_w[`CACHE_TAG_ADDR_RNG];
+ 
+ // Tag hit?
+-wire                           tag0_hit_m_w = tag0_valid_m_w ? (tag0_addr_bits_m_w == req_addr_tag_cmp_m_w) : 1'b0;
++assign                         tag0_hit_m_w = tag0_valid_m_w ? (tag0_addr_bits_m_w == req_addr_tag_cmp_m_w) : 1'b0;
+ 
+ // Tag RAM write enable (way 1)
+ reg tag1_write_m_r;
+@@ -403,10 +409,10 @@ wire                           tag1_dirty_m_w     = tag1_data_out_m_w[CACHE_TAG_
+ wire [CACHE_TAG_ADDR_BITS-1:0] tag1_addr_bits_m_w = tag1_data_out_m_w[`CACHE_TAG_ADDR_RNG];
+ 
+ // Tag hit?
+-wire                           tag1_hit_m_w = tag1_valid_m_w ? (tag1_addr_bits_m_w == req_addr_tag_cmp_m_w) : 1'b0;
++assign                         tag1_hit_m_w = tag1_valid_m_w ? (tag1_addr_bits_m_w == req_addr_tag_cmp_m_w) : 1'b0;
+ 
+ 
+-wire tag_hit_any_m_w = 1'b0
++assign tag_hit_any_m_w = 1'b0
+                    | tag0_hit_m_w
+                    | tag1_hit_m_w
+                     ;
+@@ -522,7 +528,6 @@ begin
+         data0_write_m_r = mem_wr_m_q & {4{tag0_hit_m_w}};
+ end
+ 
+-wire [31:0] data0_data_out_m_w;
+ wire [31:0] data0_data_in_m_w = (state_q == STATE_REFILL) ? pmem_read_data_w : mem_data_m_q;
+ 
+ dcache_core_data_ram
+@@ -559,7 +564,6 @@ begin
+         data1_write_m_r = mem_wr_m_q & {4{tag1_hit_m_w}};
+ end
+ 
+-wire [31:0] data1_data_out_m_w;
+ wire [31:0] data1_data_in_m_w = (state_q == STATE_REFILL) ? pmem_read_data_w : mem_data_m_q;
+ 
+ dcache_core_data_ram
+@@ -587,8 +591,6 @@ u_data1
+ //-----------------------------------------------------------------
+ // Flush counter
+ //-----------------------------------------------------------------
+-reg [DCACHE_TAG_REQ_LINE_W-1:0] flush_addr_q;
+-
+ always @ (posedge clk_i or posedge rst_i)
+ if (rst_i)
+     flush_addr_q <= {(DCACHE_TAG_REQ_LINE_W){1'b0}};
+diff --git a/src/icache/icache.v b/src/icache/icache.v
+index 2e8201d..f764055 100644
+--- a/src/icache/icache.v
++++ b/src/icache/icache.v
+@@ -156,6 +156,8 @@ reg                         invalidate_q;
+ 
+ reg [0:0]  replace_way_q;
+ 
++reg [ICACHE_TAG_REQ_LINE_W-1:0] flush_addr_q;
++
+ //-----------------------------------------------------------------
+ // Lookup validation
+ //-----------------------------------------------------------------
+@@ -383,8 +385,6 @@ u_data1
+ //-----------------------------------------------------------------
+ // Flush counter
+ //-----------------------------------------------------------------
+-reg [ICACHE_TAG_REQ_LINE_W-1:0] flush_addr_q;
+-
+ always @ (posedge clk_i or posedge rst_i)
+ if (rst_i)
+     flush_addr_q <= {(ICACHE_TAG_REQ_LINE_W){1'b0}};

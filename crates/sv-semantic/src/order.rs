@@ -223,6 +223,17 @@ impl<'a> Order<'a> {
                     if self.up(n).is_some_and(|p| t.kind(p) == CallExpr && t.children(p).next() == Some(n)) {
                         continue;
                     }
+                    // A member label of an assignment pattern, `'{name: value}`: it names a
+                    // field of the pattern's type, not anything declared in this scope.
+                    if self.up(n).is_some_and(|p| {
+                        t.kind(p) == AssignPattern
+                            && t.node(p).children.windows(2).any(|w| {
+                                matches!(w[0], Child::Node(k) if k == n)
+                                    && matches!(w[1], Child::Token(i) if &*t.tokens[i as usize].text == ":")
+                            })
+                    }) {
+                        continue;
+                    }
                     (t.tokens[a as usize].text.to_string(), false)
                 }
                 DataType => {

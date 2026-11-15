@@ -1,0 +1,40 @@
+diff --git a/hw/top_earlgrey/ip_autogen/pwrmgr/rtl/pwrmgr.sv b/hw/top_earlgrey/ip_autogen/pwrmgr/rtl/pwrmgr.sv
+index a9437ed..a5d67ea 100644
+--- a/hw/top_earlgrey/ip_autogen/pwrmgr/rtl/pwrmgr.sv
++++ b/hw/top_earlgrey/ip_autogen/pwrmgr/rtl/pwrmgr.sv
+@@ -148,6 +148,8 @@ module pwrmgr
+     .esc_tx_i(esc_rst_tx_i)
+   );
+ 
++  pwr_peri_t slow_peri_reqs_masked;
++
+   // These assertions use formal or simulation to prove that once esc_rst_req is latched, we expect
+   // to see the lc reset requests in pwr_rst_o. The one exception is when escalation requests are
+   // cancelled while the CPU fetch is disabled, meaning the fast fsm is inactive.
+@@ -292,7 +294,7 @@ module pwrmgr
+   logic [NumRstReqs-1:0] slow_reset_en;
+ 
+   pwr_ast_rsp_t slow_ast;
+-  pwr_peri_t slow_peri_reqs, slow_peri_reqs_masked;
++  pwr_peri_t slow_peri_reqs;
+ 
+   pwrup_cause_e slow_pwrup_cause;
+   logic slow_pwrup_cause_toggle;
+diff --git a/hw/top_earlgrey/ip_autogen/rstmgr/rtl/rstmgr_crash_info.sv b/hw/top_earlgrey/ip_autogen/rstmgr/rtl/rstmgr_crash_info.sv
+index e252c43..3e08bcf 100644
+--- a/hw/top_earlgrey/ip_autogen/rstmgr/rtl/rstmgr_crash_info.sv
++++ b/hw/top_earlgrey/ip_autogen/rstmgr/rtl/rstmgr_crash_info.sv
+@@ -42,7 +42,12 @@ module rstmgr_crash_info
+   end
+ 
+   assign slots_cnt_o = CrashStoreSlot[IdxWidth-1:0];
+-  assign slot_o = slots[slot_sel_i[SlotCntWidth-1:0]];
++  // A single slot needs no index bits.
++  if (SlotCntWidth > 0) begin : gen_slot_sel
++    assign slot_o = slots[slot_sel_i[SlotCntWidth-1:0]];
++  end else begin : gen_single_slot
++    assign slot_o = slots[0];
++  end
+ 
+   if (SlotCntWidth < IdxWidth) begin : gen_tieoffs
+     //VCS coverage off
