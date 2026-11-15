@@ -207,3 +207,46 @@ fn preprocess_expands_and_judges_only_the_preprocessor() {
     assert_eq!(o.status.code(), Some(1));
     assert!(stderr(&o).contains("bad.sv:1:") && stderr(&o).contains("cannot find include file"), "{}", stderr(&o));
 }
+
+#[test]
+fn an_unknown_top_is_an_error() {
+    let (_, f) = source("notop", "cnt.sv", COUNTER);
+    for command in ["check", "hier"] {
+        let o = svlang(&[command, f.to_str().unwrap(), "-top", "nope"]);
+        assert_eq!(o.status.code(), Some(1), "{command}");
+        assert!((stdout(&o) + &stderr(&o)).contains("top module 'nope' is not defined"), "{command}");
+    }
+    assert_eq!(svlang(&["check", f.to_str().unwrap(), "-top", "cnt"]).status.code(), Some(0));
+}
+
+#[test]
+fn declared_clocks_let_a_two_clock_design_through() {
+    let (_, f) = source(
+        "clocks",
+        "two.sv",
+        "module two(input logic a, b, d, output logic p, q);\n always_ff @(posedge a) p <= d;\n always_ff @(posedge b) q <= p;\nendmodule\n",
+    );
+    let path = f.to_str().unwrap();
+    assert_eq!(svlang(&["btor2", path]).status.code(), Some(1));
+    let o = svlang(&["btor2", path, "--clock", "a", "--clock", "b:2:1"]);
+    assert_eq!(o.status.code(), Some(0), "{}", stderr(&o));
+    assert_eq!(svlang(&["btor2", path, "--clock", "a:0"]).status.code(), Some(2));
+    assert_eq!(svlang(&["btor2", path, "--clock", "a:x"]).status.code(), Some(2));
+}
+
+#[test]
+fn liveness_goes_to_aiger_as_justice() {
+    let (_, f) = source(
+        "live",
+        "live.sv",
+        "module live (input logic clk, req, output logic gnt);\n always_ff @(posedge clk) gnt <= req;\n granted: assert property (@(posedge clk) req |-> s_eventually gnt);\nendmodule\n",
+    );
+    let o = svlang(&["aiger", "--ascii", "--properties", f.to_str().unwrap()]);
+    assert_eq!(o.status.code(), Some(0), "{}", stderr(&o));
+    let header: Vec<String> = stdout(&o).lines().next().unwrap().split_whitespace().map(str::to_owned).collect();
+    assert_eq!(&header[8..], ["1", "0"], "{header:?}");
+    assert!(stdout(&o).contains("j0 live.granted"), "{}", stdout(&o));
+    // The Yosys writer says that it leaves the obligation out.
+    let o = svlang(&["yosys", "--properties", f.to_str().unwrap()]);
+    assert!(stderr(&o).contains("1 liveness obligation is not written"), "{}", stderr(&o));
+}

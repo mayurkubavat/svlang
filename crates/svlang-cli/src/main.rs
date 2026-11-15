@@ -49,6 +49,9 @@ options:
   --skip-cycles N         with --properties: do not check attempts that start in
                           the first N clock ticks (the length of reset)
   --covers                btor2, aiger: write covers as reachable bad states
+  --clock NAME[:HALF[:PHASE]]  btor2, aiger: a clock of a design with several: the
+                          input NAME is low then high for HALF model steps each
+                          (default 1), its wave moved PHASE steps later (repeatable)
   --both-edges            btor2, aiger: accept both edges of the one clock
   --blast-memories N      netlist, btor2, aiger, yosys: expand memories of depth <= N
   --four-state            netlist, btor2, aiger, yosys: keep ===, !== and $isunknown
@@ -72,6 +75,7 @@ struct Opts {
     skip_cycles: u32,
     covers: bool,
     both_edges: bool,
+    clocks: Vec<svlang::btor2::Clock>,
     lower: LowerConfig,
     compile_args: Vec<String>,
 }
@@ -93,6 +97,20 @@ fn parse(args: &[String]) -> Result<Opts, Usage> {
             "--properties" => o.properties = true,
             "--covers" => o.covers = true,
             "--both-edges" => o.both_edges = true,
+            "--clock" => {
+                let v = value(a, &mut it)?;
+                let mut parts = v.split(':');
+                let input = parts.next().unwrap_or_default().to_owned();
+                let mut number = |what: &str, default: u32| match parts.next() {
+                    None => Ok(default),
+                    Some(n) => n.parse().map_err(|_| Usage(format!("--clock {v}: {what} must be a number"))),
+                };
+                let (half_period, phase) = (number("HALF", 1)?, number("PHASE", 0)?);
+                if input.is_empty() || half_period == 0 {
+                    return Err(Usage(format!("--clock {v}: expected NAME[:HALF[:PHASE]] with HALF at least 1")));
+                }
+                o.clocks.push(svlang::btor2::Clock { input, half_period, phase });
+            }
             "--skip-cycles" => {
                 let v = value(a, &mut it)?;
                 o.skip_cycles = v.parse().map_err(|_| Usage(format!("--skip-cycles needs a number, not '{v}'")))?;
@@ -221,6 +239,7 @@ fn btor2_options(o: &Opts) -> svlang::btor2::Options {
     opts.trace_outputs = o.trace_outputs;
     opts.covers = o.covers;
     opts.both_edges = o.both_edges;
+    opts.clocks.clone_from(&o.clocks);
     opts
 }
 

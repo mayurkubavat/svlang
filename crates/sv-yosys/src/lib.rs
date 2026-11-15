@@ -34,7 +34,8 @@
 //!   constant bit is the constant `x` or `z`;
 //! - a check as a `$assert`, `$assume` or `$cover` cell, named by its label;
 //!   concurrent properties through the checks `Netlist::compile_properties`
-//!   made, the others are left out and [`Model::notes`] says how many;
+//!   made; the others, and liveness obligations (`s_eventually`), are left out
+//!   and [`Model::notes`] says how many;
 //! - registers and the design's named signals as wires under their
 //!   hierarchical names (`top.u0.count`), and the source location of each
 //!   cell as its `src` attribute.
@@ -608,7 +609,18 @@ impl<'n> Writer<'n> {
 
     fn checks(&mut self) {
         let nl = self.nl;
-        let left_out = nl.properties.len() - nl.property_checks.iter().filter(|c| c.is_some()).count();
+        let live = nl.liveness.len();
+        if live > 0 {
+            self.notes.push(format!(
+                "{live} liveness obligation{} not written (the Btor2 and AIGER writers take them)",
+                if live == 1 { " is" } else { "s are" }
+            ));
+        }
+        let compiled = |i: usize| {
+            nl.property_checks.get(i).copied().flatten().is_some()
+                || nl.property_liveness.get(i).copied().flatten().is_some()
+        };
+        let left_out = (0..nl.properties.len()).filter(|&i| !compiled(i)).count();
         if left_out > 0 {
             self.notes.push(format!(
                 "{left_out} concurrent propert{} not written (not compiled by Netlist::compile_properties)",

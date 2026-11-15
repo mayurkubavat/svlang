@@ -488,6 +488,22 @@ impl Compilation {
                 message: d.message,
             });
         }
+        // A `-top` that names nothing would otherwise pass in silence with an empty design.
+        if !out.iter().any(|d| d.severity == Severity::Error) {
+            for top in &self.tops {
+                let root = format!("$root instance {top} ");
+                if !elab.hierarchy.iter().any(|line| line.starts_with(&root)) {
+                    out.push(Diagnostic {
+                        file: String::new(),
+                        line: 0,
+                        column: 0,
+                        stage: DiagnosticStage::Semantic,
+                        severity: Severity::Error,
+                        message: format!("top module '{top}' is not defined"),
+                    });
+                }
+            }
+        }
         (out, elab)
     }
 

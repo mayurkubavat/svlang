@@ -38,8 +38,8 @@ ports.
   constant bit is the constant `x` or `z`.
 - A check is a `$assert`, `$assume` or `$cover` cell named by its label.
   Concurrent properties are written through the checks
-  `Netlist::compile_properties` made; the rest are left out and
-  `Model::notes` says how many. `Options::checks` turns the cells off for a
+  `Netlist::compile_properties` made; the rest, and liveness obligations
+  (`s_eventually`), are left out and `Model::notes` says how many. `Options::checks` turns the cells off for a
   synthesis flow.
 - Registers and the design's named signals are wires under their
   hierarchical names (`top.u0.count`), and each cell carries its source
