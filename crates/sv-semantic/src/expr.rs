@@ -1247,9 +1247,30 @@ impl<'a> ExprBinder<'a> {
                 }),
                 _ => None,
             };
+            let (mut bop, mut lhs) = (bop, lhs);
             if op_str == "**" && cval.is_none() && self.arena.get(rhs).cval.is_none() {
-                self.unsup(loc, "exponentiation '**' with non-constant exponent is not synthesizable");
-                return None;
+                // `2**n` is one shifted left by `n` (an address-range mask, a one-hot
+                // decode). Only for an unsigned `n`: a negative exponent gives 0, which
+                // a shift by the same bits read as unsigned does not.
+                let base_is_two = self
+                    .arena
+                    .get(lhs)
+                    .cval
+                    .as_ref()
+                    .is_some_and(|c| c.known() && c.two_state().v == crate::bigint::Int::from(2));
+                let exp_unsigned = self.arena.get(rhs).ty.integral_shape().is_some_and(|(_, signed, _)| !signed);
+                if !(base_is_two && exp_unsigned) {
+                    self.unsup(loc, "exponentiation '**' with non-constant exponent is not synthesizable");
+                    return None;
+                }
+                let one = CVal::new(target.0, target.1, 1);
+                lhs = self.arena.alloc(
+                    ExprKind::Const(one.clone()),
+                    RtlType::Integral { width: target.0, signed: target.1, four_state: false },
+                    Some(one),
+                    loc,
+                );
+                bop = BinaryOp::Shl;
             }
             let out = self.arena.alloc(
                 ExprKind::Binary { op: bop, lhs, rhs },
@@ -1482,11 +1503,7 @@ impl<'a> ExprBinder<'a> {
         let t = self.tree(tree_idx);
         let own = Self::own_toks(t, node);
         if own.iter().any(|tok| matches!(*tok, "<<" | ">>")) {
-            self.unsup(
-                loc,
-                "streaming concatenation '{<< ...}' / '{>> ...}' is not yet supported in RTL netlist lowering",
-            );
-            return None;
+            return self.bind_streaming(tree_idx, node, kids, ctx, loc);
         }
         if kids.is_empty() {
             self.err(loc, "empty concatenation '{}' is illegal");
@@ -1578,6 +1595,111 @@ impl<'a> ExprBinder<'a> {
             cval,
             loc,
         );
+        Some(self.apply_ctx(id, ctx, ctx.is_some(), loc))
+    }
+
+    /// A streaming concatenation of packed values used as a value: `{>>{a, b}}` is the
+    /// items in order, `{<<N{a, b}}` is that cut into `N`-bit blocks from the right and
+    /// the blocks put in the opposite order (`{<<{a}}` reverses the bits, `{<<8{a}}` the
+    /// bytes). Unpacked items, a type as the block size, `with` ranges and a target of a
+    /// different width are not handled.
+    fn bind_streaming(
+        &mut self,
+        tree_idx: usize,
+        node: NodeId,
+        kids: &[NodeId],
+        ctx: Option<(u32, bool, bool)>,
+        loc: Loc,
+    ) -> Option<ExprId> {
+        let t = self.tree(tree_idx);
+        let own = Self::own_toks(t, node);
+        let reverse = own.contains(&"<<");
+        // An expression before the inner `{` is the block size.
+        let mut braces = 0;
+        let mut size_node = None;
+        for c in &t.node(node).children {
+            match *c {
+                sv_syntax::Child::Token(i) if &*t.tokens[i as usize].text == "{" => braces += 1,
+                sv_syntax::Child::Node(n) if braces < 2 && kids.contains(&n) => size_node = Some(n),
+                _ => {}
+            }
+        }
+        let unsupported = |this: &mut Self, what: &str| {
+            this.unsup(loc, format!("streaming concatenation {what} is not supported in RTL netlist lowering"));
+            None
+        };
+        let block = match size_node {
+            None => 1u32,
+            Some(n) => {
+                if t.kind(n) == SyntaxKind::DataType {
+                    return unsupported(self, "with a type as its block size");
+                }
+                let e = self.bind_self(tree_idx, n)?;
+                match self.arena.get(e).cval.as_ref().and_then(|c| cval_pos_u32(c, MAX_BIT_WIDTH)) {
+                    Some(b) => b,
+                    None => {
+                        self.err(loc, "streaming block size must be a positive constant");
+                        return None;
+                    }
+                }
+            }
+        };
+        let mut elems = Vec::new();
+        let (mut width, mut four) = (0u32, false);
+        for &k in kids.iter().filter(|&&k| Some(k) != size_node) {
+            let e = self.bind_self(tree_idx, k)?;
+            let Some((ew, _, e4)) = self.arena.get(e).ty.integral_shape() else {
+                return unsupported(self, "of an unpacked value");
+            };
+            let Some(next) = width.checked_add(ew).filter(|&w| w <= MAX_BIT_WIDTH) else {
+                self.err(loc, "concatenation bit width exceeds maximum limit");
+                return None;
+            };
+            width = next;
+            four |= e4;
+            elems.push(e);
+        }
+        if elems.is_empty() {
+            self.err(loc, "empty concatenation '{}' is illegal");
+            return None;
+        }
+        if ctx.is_some_and(|(cw, _, _)| cw != width) {
+            return unsupported(self, "assigned to a target of a different width");
+        }
+        let fold = |this: &Self, parts: &[ExprId]| -> Option<CVal> {
+            let mut vals = parts.iter().map(|&e| this.arena.get(e).cval.clone());
+            let first = vals.next()??;
+            vals.try_fold(first, |acc, v| Some(CVal::concat(&acc, &v?)))
+        };
+        let ty = RtlType::Integral { width, signed: false, four_state: four };
+        let cval = fold(self, &elems);
+        let stream = self.arena.alloc(ExprKind::Concat(elems), ty.clone(), cval, loc);
+        if !reverse || block >= width {
+            return Some(self.apply_ctx(stream, ctx, ctx.is_some(), loc));
+        }
+        // Blocks from the right; the rightmost becomes the leftmost.
+        let stream_cval = self.arena.get(stream).cval.clone();
+        let mut blocks = Vec::new();
+        let mut lo = 0u32;
+        while lo < width {
+            let w = block.min(width - lo);
+            let cv = stream_cval.as_ref().map(|c| c.slice(lo, w, false));
+            blocks.push(self.arena.alloc(
+                ExprKind::PartSelect {
+                    base: stream,
+                    msb: i128::from(lo + w - 1),
+                    lsb: i128::from(lo),
+                    bounds: (i128::from(width - 1), 0),
+                    elem_width: 1,
+                },
+                RtlType::Integral { width: w, signed: false, four_state: four },
+                cv,
+                loc,
+            ));
+            lo += w;
+        }
+        let cval = fold(self, &blocks);
+        let id = self.arena.alloc(ExprKind::Concat(blocks), ty, cval, loc);
         Some(self.apply_ctx(id, ctx, ctx.is_some(), loc))
     }
 
