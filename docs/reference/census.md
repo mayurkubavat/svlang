@@ -2,13 +2,13 @@
 
 What happens when every module of a set of open RTL designs is made a top and lowered to
 the word-level netlist (`tools/quality/census.py`, designs in `tools/quality/census_corpus.json`).
-svlang `db957328fc88`, 2026-11-14, reference front end slang version 12.1.0+d02b7cd --timescale=1ns/1ps. Regenerate after a fix; the designs are kept outside the repository.
+svlang `ce5a86981972`, 2026-11-15, reference front end slang version 12.1.0+d02b7cd --timescale=1ns/1ps. Regenerate after a fix; the designs are kept outside the repository.
 
-2184 modules. 611 cannot stand alone as a top (see *Invalid as a top*), which leaves 1573 measured: **1064 lowered (67.6%)**, 360 unsupported, 119 wrongly rejected, 0 crashes, 5 out of memory, 0 timeouts, 25 lowered although the reference rejects the input.
+2184 modules. 611 cannot stand alone as a top (see *Invalid as a top*), which leaves 1573 measured: **1081 lowered (68.7%)**, 360 unsupported, 102 wrongly rejected, 0 crashes, 5 out of memory, 0 timeouts, 25 lowered although the reference rejects the input.
 
-Where the unsupported and wrongly rejected ones stop: 3 at parse, 9 at elaborate, 467 at lower. Of the 1089 netlists, the Btor2 writer takes 959 and refuses 130 (see *Lowered, not written as Btor2*).
+Where the unsupported and wrongly rejected ones stop: 3 at parse, 9 at elaborate, 450 at lower. Of the 1106 netlists, the Btor2 writer takes 976 and refuses 130 (see *Lowered, not written as Btor2*).
 
-With `--skip-initial-checks` `--isunknown-is-false`: 1267 of 1564 lowered (81.0%), 49 unsupported, 208 wrongly rejected.
+With `--skip-initial-checks` `--isunknown-is-false`: 1359 of 1571 lowered (86.5%), 50 unsupported, 115 wrongly rejected.
 
 ## Designs
 
@@ -27,10 +27,10 @@ With `--skip-initial-checks` `--isunknown-is-false`: 1267 of 1564 lowered (81.0%
 | [cv32e40p](https://github.com/openhwgroup/cv32e40p) | `b353438ff4` | SHL-0.51 | 123 | 96 | 1 | 10 | 3 | 2 | 11 | 86% |
 | [cv32e40x](https://github.com/openhwgroup/cv32e40x) | `d952cd63bc` | SHL-0.51 | 42 | 31 | 0 | 1 | 0 | 0 | 10 | 97% |
 | [cva6](https://github.com/openhwgroup/cva6) | `742dc82a0c` | SHL-0.51 | 84 | 8 | 1 | 3 | 0 | 4 | 68 | 50% |
-| [caliptra-rtl](https://github.com/chipsalliance/caliptra-rtl) | `f2d4641cfa` | Apache-2.0 | 401 | 281 | 53 | 37 | 0 | 3 | 27 | 75% |
-| [opentitan](https://github.com/lowRISC/opentitan) | `0d2b191a4a` | Apache-2.0 | 615 | 262 | 275 | 36 | 0 | 7 | 35 | 45% |
+| [caliptra-rtl](https://github.com/chipsalliance/caliptra-rtl) | `f2d4641cfa` | Apache-2.0 | 401 | 297 | 53 | 21 | 0 | 3 | 27 | 79% |
+| [opentitan](https://github.com/lowRISC/opentitan) | `0d2b191a4a` | Apache-2.0 | 615 | 263 | 275 | 35 | 0 | 7 | 35 | 45% |
 | [basejump_stl](https://github.com/bespoke-silicon-group/basejump_stl) | `8c01732c0d` | BSD-3-Clause | 314 | 24 | 0 | 0 | 2 | 3 | 285 | 83% |
-| **all** | | | 2184 | 1064 | 360 | 119 | 5 | 25 | 611 | 68% |
+| **all** | | | 2184 | 1081 | 360 | 102 | 5 | 25 | 611 | 69% |
 
 ## Unsupported constructs
 
@@ -62,8 +62,6 @@ svlang is wrong, or stricter than the standard asks.
 | tops blocked | only blocker | modules with it | designs | stage | diagnostic | example |
 | ---: | ---: | ---: | ---: | --- | --- | --- |
 | 21 | 11 | 26 | 4 | lower | parameter '…' has no constant value | `tech_cells_generic/src/rtl/tc_clk.sv:108` `parameter int unsigned Delay = 300ps` |
-| 17 | 0 | 2 | 2 | lower | cannot resolve hierarchical or member reference '…' | `caliptra-rtl/src/caliptra_prim/rtl/caliptra_prim_sparse_fsm_flop.sv:48` `for (int i = 0, StateEnumT t = t.first(); i < t.num(); i += 1, t = t.next()) begin` |
-| 17 | 0 | 2 | 2 | lower | unsupported call target '…' | `caliptra-rtl/src/caliptra_prim/rtl/caliptra_prim_sparse_fsm_flop.sv:48` `for (int i = 0, StateEnumT t = t.first(); i < t.num(); i += 1, t = t.next()) begin` |
 | 10 | 0 | 13 | 1 | lower | signal '…' has non-synthesizable type 'packed dimension with non-constant bounds' | `opentitan/hw/ip/lc_ctrl/rtl/lc_ctrl_state_decode.sv:33` `logic [$bits(ext_dec_lc_state_t)-1:0] dec_lc_state_buf;` |
 | 9 | 3 | 5 | 2 | lower | unsized unbased literal is illegal inside concatenation | `scr1/src/core/pipeline/scr1_pipe_ialu.sv:467` `? {'0, div_quo_bit}` |
 | 8 | 8 | 3 | 2 | lower | combinational loop detected | `verilog-axi/rtl/axi_crossbar_addr.v:277` `wire [S_INT_THREADS-1:0] thread_trans_start;` |
@@ -153,7 +151,7 @@ tops. Where another top instantiates one, it is still measured there:
 | 15 | value must not have any unknown bits | `serv` `serv_rf_ram` |
 | 12 | immediate assertion in initial block is false | `cv32e40p` `stream_fork` |
 | 12 | value must be positive | `cva6` `ariane_regfile_fpga` |
-| 10 | no top-level module found to lower | `biriscv` `RAM16X1D` |
+| 10 | top module '…' is not defined | `biriscv` `RAM16X1D` |
 | 7 | duplicate definition of '…' [-Wduplicate-definition] | `cva6` `cva6_ptw` |
 | 5 | '…': No such file or directory | `serv` `ice40_pll` |
 | 5 | replication constant can only be zero inside of a concatenation | `cv32e40p` `id_queue` |
