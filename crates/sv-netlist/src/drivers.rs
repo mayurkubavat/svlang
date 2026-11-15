@@ -225,6 +225,18 @@ fn resolve_one_signal(slot: &SignalSlot, builder: &mut NetBuilder, read: &FxSet<
                     format!("[{ov_hi}:{ov_lo}]")
                 };
                 let first_file = builder.file_of(a.loc);
+                // Several drivers on a net are legal: the net resolves them. That is not
+                // modeled, which is a limit of the netlist, not an error in the design.
+                if slot.is_net && !a.kind.is_procedural() && !b.kind.is_procedural() {
+                    builder.unsup(
+                        b.loc,
+                        format!(
+                            "net '{}{bits}' has more than one driver (first driven at {}:{}:{}); resolving drivers is not supported",
+                            slot.name, first_file, a.loc.line, a.loc.column
+                        ),
+                    );
+                    continue;
+                }
                 builder.err(
                     b.loc,
                     format!(

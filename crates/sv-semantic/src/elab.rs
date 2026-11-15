@@ -1156,10 +1156,101 @@ impl<'b, 't> Elab<'b, 't> {
             self.bound -= 1;
         }
         if pushed_design {
+            self.check_variable_drivers();
             self.non_ansi_stack.pop();
             self.gen_stack.pop();
             self.design_stack.pop();
             self.b.sig_scopes.borrow_mut().pop();
+        }
+    }
+
+    /// IEEE 1800 section 6.5: a variable takes one continuous assignment, or procedural
+    /// assignments, never both and never two continuous ones. Checked on the elaborated
+    /// items of the instance being closed, for assignments to the whole variable (a
+    /// select of it is left to the bit-level driver check of netlist lowering).
+    fn check_variable_drivers(&mut self) {
+        let Some(&inst_id) = self.design_stack.last() else { return };
+        let b = self.b;
+        let inst = &self.design.instances[inst_id.0 as usize];
+        // Whole-variable targets: symbol -> (node of the first continuous assignment, any procedural one).
+        let mut continuous: HashMap<SymbolId, NodeRef> = HashMap::default();
+        let mut procedural: HashMap<SymbolId, NodeRef> = HashMap::default();
+        let mut found: Vec<(NodeRef, String)> = Vec::new();
+        let is_variable = |sid: SymbolId| {
+            let sym = &self.design.symbols[sid.0 as usize];
+            matches!(sym.kind, SymbolKind::Var | SymbolKind::Port { is_net: false, .. })
+        };
+        let target = |assign: NodeRef, prefix: &str| -> Option<(SymbolId, NodeRef)> {
+            let lhs = *b.children(assign).first()?;
+            if b.kind(lhs) != NameExpr {
+                return None;
+            }
+            let toks = b.toks_of(lhs);
+            let [name] = toks.as_slice() else { return None };
+            let sid = inst.resolve_lexical(prefix, name.strip_prefix('\\').unwrap_or(name))?;
+            is_variable(sid).then_some((sid, lhs))
+        };
+        for item in &inst.items {
+            let root = NodeRef { tree: item.tree, node: item.node };
+            match item.kind {
+                ElabItemKind::ContinuousAssign => {
+                    for a in b.children(root) {
+                        if b.kind(a) != BinaryExpr || b.own_tokens(a).first() != Some(&"=") {
+                            continue;
+                        }
+                        let Some((sid, lhs)) = target(a, &item.scope_prefix) else { continue };
+                        if continuous.insert(sid, lhs).is_some() {
+                            let name = &self.design.symbols[sid.0 as usize].name;
+                            found.push((
+                                lhs,
+                                format!("cannot have multiple continuous assignments to variable '{name}'"),
+                            ));
+                        }
+                    }
+                }
+                ElabItemKind::ProceduralBlock => {
+                    let t = &b.trees[item.tree];
+                    let mut nodes = vec![item.node];
+                    let mut at = 0;
+                    while at < nodes.len() {
+                        nodes.extend(t.children(nodes[at]));
+                        at += 1;
+                    }
+                    // A name the block declares itself is its own variable, not the module's.
+                    let local: HashSet<String> = nodes
+                        .iter()
+                        .filter(|&&n| t.kind(n) == Declarator)
+                        .filter_map(|&n| t.child(n, Name).map(|nm| t.bare_text(nm).trim().to_string()))
+                        .collect();
+                    for &n in &nodes {
+                        if t.kind(n) != ExprStmt {
+                            continue;
+                        }
+                        let stmt = NodeRef { tree: item.tree, node: n };
+                        let Some(a) = b.children(stmt).into_iter().find(|c| b.kind(*c) == BinaryExpr) else { continue };
+                        if !matches!(b.own_tokens(a).first(), Some(&"=") | Some(&"<=")) {
+                            continue;
+                        }
+                        let Some((sid, lhs)) = target(a, &item.scope_prefix) else { continue };
+                        if !local.contains(&self.design.symbols[sid.0 as usize].name) {
+                            procedural.entry(sid).or_insert(lhs);
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        for (sid, lhs) in &procedural {
+            if continuous.contains_key(sid) {
+                let name = &self.design.symbols[sid.0 as usize].name;
+                found.push((*lhs, format!("cannot mix continuous and procedural assignments to variable '{name}'")));
+            }
+        }
+        found.sort_by_key(|(n, _)| (n.tree, n.node.0));
+        for (n, message) in found {
+            if self.checked.insert(n) {
+                self.diags.push(crate::names::Diag { tree: n.tree, node: n.node, message });
+            }
         }
     }
 

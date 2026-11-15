@@ -41,10 +41,13 @@ EXPECTED_FAIL = {
     "initial_assert_false.sv": "immediate assertion in initial block is false",
     "initial_signal_check.sv": "immediate assertion on a non-constant value inside initial block",
     "isunknown.sv": "$isunknown",
+    "net_two_drivers.sv": "has more than one driver",
     "overlap_drivers.sv": "overlapping drivers",
     "reset_typo.sv": "undeclared",
     "udp_instance.sv": "user-defined primitive 'udp_mux' is not supported",
     "unknown_module.sv": "unknown module 'not_defined'",
+    "var_mixed_assigns.sv": "cannot mix continuous and procedural assignments to variable 'v'",
+    "var_two_assigns.sv": "cannot have multiple continuous assignments to variable 'v'",
 }
 
 
