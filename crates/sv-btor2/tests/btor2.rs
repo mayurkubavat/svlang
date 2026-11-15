@@ -3,7 +3,7 @@
 
 use std::collections::HashSet;
 
-use sv_btor2::{write, Clock, Fail, Options};
+use sv_btor2::{write, Clock, Fail, Options, Reset};
 use sv_netlist::{lower_trees, LowerConfig, Netlist};
 
 fn netlist(src: &str) -> Netlist {
@@ -450,4 +450,28 @@ fn assertions_and_history_on_a_computed_clock() {
     assert_eq!(lines(&m.btor2, "constraint").len(), 2, "{}", m.btor2);
     // What the edge sampled is kept from the step before.
     assert!(lines(&m.btor2, "state").iter().any(|l| l.contains(" svlang_was_")), "{}", m.btor2);
+}
+
+#[test]
+fn a_reset_is_held_for_the_first_steps() {
+    let nl = netlist(
+        "module rs(input logic clk, rst_n, d, output logic q);\n\
+           always_ff @(posedge clk) q <= rst_n ? d : 1'b0;\n\
+           logic in_reset;\n\
+           assign in_reset = !rst_n;\n\
+         endmodule\n",
+    );
+    let value = nl.traces.iter().find(|t| t.name == "rs.in_reset").expect("the reset condition").value;
+    let mut opts = Options::default();
+    opts.reset = Some(Reset { value, steps: 3 });
+    let m = write(&nl, &opts).unwrap();
+    well_formed(&m.btor2);
+    // A step counter that stops at 3, and one constraint choosing reset on or off by it.
+    assert!(lines(&m.btor2, "state").iter().any(|l| l.ends_with(" svlang_step")), "{}", m.btor2);
+    assert_eq!(lines(&m.btor2, "constraint").len(), 1, "{}", m.btor2);
+    // No steps: the reset is simply off.
+    opts.reset = Some(Reset { value, steps: 0 });
+    let m = write(&nl, &opts).unwrap();
+    assert_eq!(lines(&m.btor2, "constraint").len(), 1);
+    assert!(!lines(&m.btor2, "state").iter().any(|l| l.ends_with(" svlang_step")));
 }

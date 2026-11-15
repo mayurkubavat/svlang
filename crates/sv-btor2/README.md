@@ -43,6 +43,8 @@ Then, for example, `ric3 check counter.btor2 ic3`.
   history and clocked checks on such a clock follow it the same way; a
   memory written on one is rejected.
 - An asynchronous reset acts synchronously.
+- With `Options::reset`, a reset condition is held true for the first model
+  steps and false after them.
 - `(* anyconst *)` signals hold one free value for the whole trace.
   `(* anyseq *)` signals, cut points, black-box outputs, undriven bits and
   X or Z constant bits are free on every step.

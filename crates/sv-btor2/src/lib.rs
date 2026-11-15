@@ -69,6 +69,8 @@
 //!   is a counterexample. A liveness assumption is a `fair` line;
 //! - a cover is a `bad` line that is reached when the cover is hit, with
 //!   [`Options::covers`]; without it covers are left out and noted;
+//! - with [`Options::reset`], a reset condition is held true for the first model steps and
+//!   false after them;
 //! - `$past` and friends are history registers with no initial value, so a
 //!   property that reads them is only meaningful once the history is real.
 //!
@@ -133,6 +135,22 @@ pub struct Options {
     /// clocked checks all use one edge of one clock is written with one step per edge of
     /// that clock whatever is declared here.
     pub clocks: Vec<Clock>,
+    /// A reset condition the model holds true for its first steps and false ever after
+    /// ([`Reset`]). `None` by default: the design's reset is an input like any other.
+    pub reset: Option<Reset>,
+}
+
+/// A reset that the model applies: `value` is true in each of the first `steps` model steps
+/// and false in every step after them (two `constraint` lines over a step counter state,
+/// `<prefix>_step`). A tool that proves properties "after reset" declares its reset this way,
+/// and leaves the attempts of the reset steps out of its properties
+/// (`PropertyOptions::skip_cycles` in `sv-netlist`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Reset {
+    /// The condition "in reset", a value of the netlist (any bit set counts as true).
+    pub value: ValueId,
+    /// How many model steps it holds for, from the first.
+    pub steps: u32,
 }
 
 /// A clock that the model drives: a top-level input held to a square wave.
@@ -161,6 +179,7 @@ impl Default for Options {
             covers: false,
             both_edges: false,
             clocks: Vec::new(),
+            reset: None,
         }
     }
 }
@@ -1438,6 +1457,29 @@ impl<'n> Writer<'n> {
                     self.bad(hit, c);
                 }
                 CheckKind::Cover => covers_left_out += 1,
+            }
+        }
+        // The reset: held for the first steps, off after them.
+        if let Some(r) = self.opts.reset {
+            let on = self.value(r.value)?;
+            let on = self.bool(on);
+            let off = self.un("not", on);
+            if r.steps == 0 {
+                self.line(format!("constraint {off}"));
+            } else {
+                let w = (32 - r.steps.leading_zeros()).max(1);
+                let step = self.state(w, &format!("{}_step", self.opts.name_prefix));
+                let zero = self.num(w, 0);
+                let srt = self.sort(w);
+                self.line(format!("init {srt} {step} {zero}"));
+                let last = self.num(w, u64::from(r.steps));
+                let early = self.cmp("ult", step, last);
+                let one = self.num(w, 1);
+                let up = self.bin("add", step, one);
+                let next = self.ite(early, up, step);
+                self.pending.push((srt, step, next));
+                let held = self.ite(early, on, off);
+                self.line(format!("constraint {held}"));
             }
         }
         // Liveness: a `justice` line that a trace hitting it infinitely often witnesses, or
