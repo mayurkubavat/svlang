@@ -11,8 +11,8 @@ fn netlist(src: &str) -> Netlist {
     lower_trees(&[tree], &[], &[], &LowerConfig::default()).unwrap_netlist()
 }
 
-/// Every line is `<id> <op> ...` with ids that go up, and every sort or node
-/// a line refers to was defined above it.
+/// Every line is `<id> <op> ...` with ids that go up, every sort or node a line
+/// refers to was defined above it, and an `init` value comes before its state.
 fn well_formed(btor: &str) {
     let mut seen: HashSet<u64> = HashSet::new();
     let mut last = 0;
@@ -30,6 +30,11 @@ fn well_formed(btor: &str) {
             "slice" | "uext" | "sext" => &[2, 3],
             _ => &[2, 3, 4, 5],
         };
+        // The reference parser (btor2tools) wants an initial value defined before its state.
+        if w[1] == "init" {
+            let (state, value): (u64, u64) = (w[3].parse().unwrap(), w[4].parse().unwrap());
+            assert!(value < state, "initial value {value} must be defined before state {state}: {line}");
+        }
         for &i in refs {
             let Some(word) = w.get(i) else { continue };
             let Ok(n) = word.trim_start_matches('-').parse::<u64>() else { continue };

@@ -512,8 +512,9 @@ impl<'n> Writer<'n> {
             Some(&s) => s,
             None => {
                 let k = self.clock_before.len();
-                let s = self.state(1, &format!("{}_clk_{k}", self.opts.name_prefix));
+                // An initial value is declared before its state, as the format asks.
                 let quiet = self.konst(if rising { "1" } else { "0" }.into());
+                let s = self.state(1, &format!("{}_clk_{k}", self.opts.name_prefix));
                 let srt = self.sort(1);
                 self.line(format!("init {srt} {s} {quiet}"));
                 self.pending.push((srt, s, now));
@@ -537,10 +538,10 @@ impl<'n> Writer<'n> {
             return s;
         }
         let w = self.w(v);
+        let z = zero.then(|| self.num(w, 0));
         let s = self.state(w, &format!("{}_was_{}", self.opts.name_prefix, self.before.len()));
         let srt = self.sort(w);
-        if zero {
-            let z = self.num(w, 0);
+        if let Some(z) = z {
             self.line(format!("init {srt} {s} {z}"));
         }
         self.pending.push((srt, s, v));
@@ -628,8 +629,8 @@ impl<'n> Writer<'n> {
         // Wide enough for the counter plus one period, so the sums below do not wrap.
         let bits_for = |n: u64| (64 - n.leading_zeros()).max(1);
         let tw = bits_for(cycle - 1);
-        let tick = self.state(tw, &format!("{}_clock_phase", self.opts.name_prefix));
         let zero = self.num(tw, 0);
+        let tick = self.state(tw, &format!("{}_clock_phase", self.opts.name_prefix));
         let srt = self.sort(tw);
         self.line(format!("init {srt} {tick} {zero}"));
         let last = self.num(tw, cycle - 1);
@@ -1308,6 +1309,14 @@ impl<'n> Writer<'n> {
 
     fn run(&mut self, trace_outputs: bool) -> Result<(), Fail> {
         let nl = self.nl;
+        // The format wants an initial value declared before the state it initialises
+        // (the reference parser refuses the other order), and a register can be
+        // reached from logic long before its own turn below. So the constants go first.
+        for st in &nl.states {
+            if let Some(init) = st.init.as_ref().filter(|c| c.known()) {
+                self.konst(bits(init, st.width));
+            }
+        }
         self.clock_waves();
         // Values in netlist order (topological), so names come out in
         // declaration order.
@@ -1468,8 +1477,8 @@ impl<'n> Writer<'n> {
                 self.line(format!("constraint {off}"));
             } else {
                 let w = (32 - r.steps.leading_zeros()).max(1);
-                let step = self.state(w, &format!("{}_step", self.opts.name_prefix));
                 let zero = self.num(w, 0);
+                let step = self.state(w, &format!("{}_step", self.opts.name_prefix));
                 let srt = self.sort(w);
                 self.line(format!("init {srt} {step} {zero}"));
                 let last = self.num(w, u64::from(r.steps));
