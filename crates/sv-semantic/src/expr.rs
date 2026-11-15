@@ -925,6 +925,10 @@ impl<'a> ExprBinder<'a> {
                 let id = self.arena.alloc(ExprKind::Const(cv.clone()), ty, Some(cv), loc);
                 return Some(self.apply_ctx(id, ctx, ctx.is_some(), loc));
             }
+            if let Some((ty, tr, nd)) = self.design.resolve_scoped_array_param(&pkg, ident) {
+                let ty = ty.clone();
+                return self.bind_assigned(tr, nd, &ty);
+            }
             self.err(loc, format!("undeclared identifier '{ident}'"));
             return None;
         }
@@ -970,6 +974,11 @@ impl<'a> ExprBinder<'a> {
             return Some(self.apply_ctx(id, ctx, ctx.is_some(), loc));
         }
 
+        if let Some((ty, tr, nd)) = self.design.resolve_imported_array_param(self.inst_id, self.scope_prefix, ident) {
+            let ty = ty.clone();
+            return self.bind_assigned(tr, nd, &ty);
+        }
+
         // 6. Zero-arg (or all-default-arg) `let` declaration (`let do_push = push && !full;`).
         if let Some((lt_tree, lt_node, lt_inst, lt_prefix, lt_consts)) = self.resolve_let_decl(None, ident) {
             return self.expand_let_decl(lt_tree, lt_node, lt_inst, &lt_prefix, &lt_consts, tree_idx, None, ctx, loc);
@@ -1012,6 +1021,10 @@ impl<'a> ExprBinder<'a> {
                 let ty = ty.clone();
                 let id = self.arena.alloc(ExprKind::Const(cv.clone()), ty, Some(cv), loc);
                 return Some(self.apply_ctx(id, ctx, ctx.is_some(), loc));
+            }
+            if let Some((ty, tr, nd)) = self.design.resolve_scoped_array_param(pkg, clean_ident) {
+                let ty = ty.clone();
+                return self.bind_assigned(tr, nd, &ty);
             }
             if let Some((lt_tree, lt_node, lt_inst, lt_prefix, lt_consts)) =
                 self.resolve_let_decl(Some(pkg), clean_ident)

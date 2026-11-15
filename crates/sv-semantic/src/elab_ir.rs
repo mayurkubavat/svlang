@@ -367,6 +367,9 @@ pub struct PackageScope {
     pub typedefs: Vec<(String, RtlType)>,
     /// Package or unit `function`, `task`, `let`, `sequence`, and `property` declarations `(name, kind, tree, node, loc)`.
     pub subroutines: Vec<(String, ElabItemKind, usize, NodeId, Loc)>,
+    /// Parameters of an unpacked type (lookup tables) `(name, ty, tree, initializer node)`.
+    /// Their value is not one [`CVal`]: a reader binds the initializer against `ty`.
+    pub array_params: Vec<(String, RtlType, usize, NodeId)>,
 }
 
 /// One elaborated module, interface, or program instance in [`ElaboratedDesign`].
@@ -626,6 +629,51 @@ impl ElaboratedDesign {
             }
         }
         own("$unit")
+    }
+
+    /// A parameter of an unpacked type named `pkg::ident`, or one `pkg` imports: its type
+    /// and the tree and node of its initializer.
+    pub fn resolve_scoped_array_param(&self, pkg_name: &str, ident: &str) -> Option<(&RtlType, usize, NodeId)> {
+        let p = self.package_scope(pkg_name)?;
+        if let Some((_, ty, tree, node)) = p.array_params.iter().find(|(n, _, _, _)| n == ident) {
+            return Some((ty, *tree, *node));
+        }
+        for (imp_pkg, imp_item) in &p.imports {
+            if imp_item.as_deref().is_none_or(|x| x == ident) && imp_pkg != pkg_name {
+                if let Some(found) = self.resolve_scoped_array_param(imp_pkg, ident) {
+                    return Some(found);
+                }
+            }
+        }
+        None
+    }
+
+    /// As [`Self::resolve_imported_const`], for a parameter of an unpacked type.
+    pub fn resolve_imported_array_param(
+        &self,
+        inst_id: InstanceId,
+        scope_prefix: &str,
+        ident: &str,
+    ) -> Option<(&RtlType, usize, NodeId)> {
+        let inst = self.instance(inst_id);
+        let mut prefix = scope_prefix;
+        loop {
+            for (sp, pkg, item) in &inst.imports {
+                if sp == prefix && item.as_deref().is_none_or(|x| x == ident) {
+                    if let Some(found) = self.resolve_scoped_array_param(pkg, ident) {
+                        return Some(found);
+                    }
+                }
+            }
+            if prefix.is_empty() {
+                break;
+            }
+            prefix = match prefix.rfind('.') {
+                Some(i) => &prefix[..i],
+                None => "",
+            };
+        }
+        self.resolve_scoped_array_param("$unit", ident)
     }
 
     /// Resolves `pkg::ident` (or `$unit::ident`) to a parameter or enum constant.

@@ -446,6 +446,7 @@ impl<'b, 't> Elab<'b, 't> {
             enum_consts: Vec::new(),
             typedefs: Vec::new(),
             subroutines: Vec::new(),
+            array_params: Vec::new(),
         };
         for (ti, t) in b.trees.iter().enumerate() {
             let root = NodeRef { tree: ti, node: t.root };
@@ -483,6 +484,14 @@ impl<'b, 't> Elab<'b, 't> {
                     let Some(vnode) = b.children(d).into_iter().find(|k| !matches!(b.kind(*k), Name | Dim)) else {
                         continue;
                     };
+                    // A table: kept as its initializer, bound against the type where it is read.
+                    if dt.is_some() && b.child(d, Dim).is_some() {
+                        let pty = b.rtl_type(dt, Some(d), scope_idx, empty, 0);
+                        if !pty.is_packed() && !matches!(pty, RtlType::NonSynthesizable(_)) {
+                            out.array_params.push((pname, pty, vnode.tree, vnode.node));
+                            continue;
+                        }
+                    }
                     let val = match dt {
                         Some(t) if b.kind(vnode) == AssignPattern => {
                             b.eval_typed(vnode, Ty::of(t, scope_idx), scope_idx, empty, 0)

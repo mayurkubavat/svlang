@@ -519,7 +519,7 @@ impl<'a> DesignLowerer<'a> {
 
         // Two-event async-reset block: `@(posedge clk or posedge/negedge rst) if (rst_cond) ... else ...`
         let _ = is_always_ff;
-        let Some(top_if) = unwrap_single_if_stmt(t, body) else {
+        let Some((block_decls, top_if)) = unwrap_if_and_decls(t, body) else {
             self.builder
                 .err(item.loc, "two-event clocked block must have top-level 'if (reset) ... else ...' structure");
             return;
@@ -567,6 +567,10 @@ impl<'a> DesignLowerer<'a> {
         let rst_mem_marks: Vec<usize> = self.builder.memories.iter().map(|m| m.writes.len()).collect();
         let rst_check_mark = self.builder.checks.len();
         let rst_assert_mark = self.proc_assert_enables.len();
+        // The block's own declarations are in scope in both branches.
+        for &d in &block_decls {
+            self.exec_stmt(item.tree, d, &mut rst_ctx);
+        }
         self.exec_stmt(item.tree, rst_stmt, &mut rst_ctx);
         for ai in rst_assert_mark..self.proc_assert_enables.len() {
             let (old_en, aloc) = (self.proc_assert_enables[ai].3, self.proc_assert_enables[ai].2);
@@ -599,6 +603,9 @@ impl<'a> DesignLowerer<'a> {
         let check_mark = self.builder.checks.len();
         let assert_mark = self.proc_assert_enables.len();
         if let Some(clk_stmt) = clk_stmt_opt {
+            for &d in &block_decls {
+                self.exec_stmt(item.tree, d, &mut sync_ctx);
+            }
             self.exec_stmt(item.tree, clk_stmt, &mut sync_ctx);
         }
         for ai in assert_mark..self.proc_assert_enables.len() {
@@ -2958,24 +2965,31 @@ fn extract_root_symbol(arena: &ExprArena, mut eid: ExprId) -> Option<ResetTarget
     }
 }
 
-pub(crate) fn unwrap_single_if_stmt(t: &Tree, mut stmt: NodeId) -> Option<NodeId> {
+/// The one `if` a block comes down to, through nested `begin`/`end`, ignoring labels
+/// and local declarations (`begin : reg_update integer i; if (!rst_n) ... end`).
+pub(crate) fn unwrap_single_if_stmt(t: &Tree, stmt: NodeId) -> Option<NodeId> {
+    unwrap_if_and_decls(t, stmt).map(|(_, top_if)| top_if)
+}
+
+/// As [`unwrap_single_if_stmt`], with the local declarations met on the way, in order.
+pub(crate) fn unwrap_if_and_decls(t: &Tree, mut stmt: NodeId) -> Option<(Vec<NodeId>, NodeId)> {
+    let mut decls = Vec::new();
     while t.kind(stmt) == SyntaxKind::SeqBlock {
-        let stmts: Vec<NodeId> = t
-            .children(stmt)
-            .filter(|&c| {
-                !matches!(
-                    t.kind(c),
-                    SyntaxKind::Attribute | SyntaxKind::StmtLabel | SyntaxKind::Name | SyntaxKind::EndLabel
-                )
-            })
-            .collect();
-        if stmts.len() == 1 {
-            stmt = stmts[0];
+        let mut rest = Vec::new();
+        for c in t.children(stmt) {
+            match t.kind(c) {
+                SyntaxKind::Attribute | SyntaxKind::StmtLabel | SyntaxKind::Name | SyntaxKind::EndLabel => {}
+                SyntaxKind::DataDecl | SyntaxKind::ParamDecl | SyntaxKind::TypedefDecl => decls.push(c),
+                _ => rest.push(c),
+            }
+        }
+        if rest.len() == 1 {
+            stmt = rest[0];
         } else {
             return None;
         }
     }
-    (t.kind(stmt) == SyntaxKind::IfStmt).then_some(stmt)
+    (t.kind(stmt) == SyntaxKind::IfStmt).then_some((decls, stmt))
 }
 
 fn top_if_else_stmt(t: &Tree, if_node: NodeId, kids: &[NodeId]) -> Option<NodeId> {
