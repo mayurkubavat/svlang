@@ -58,6 +58,8 @@ What changed in each release of the svlang crates (`svlang`, `sv-*`,
   parameter it does not have, are errors; both used to be ignored.
 - A member label in an assignment pattern is not a use before declaration.
 - A macro may be used inside its own argument.
+- An attribute written through a macro (`` `define KEEP (* keep *) ``) is
+  recognised.
 
 ### Python (`pysvlang`)
 

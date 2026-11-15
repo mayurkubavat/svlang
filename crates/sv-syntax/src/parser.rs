@@ -120,7 +120,11 @@ impl<'t> Parser<'t> {
     pub(crate) fn joined(&self, n: usize) -> bool {
         match (self.toks.get(self.pos + n - 1), self.toks.get(self.pos + n)) {
             (Some(a), Some(b)) => {
-                a.origin.file == b.origin.file && a.origin.offset + a.text.len() as u32 == b.origin.offset
+                // Text from a macro has the place of the macro's use as its origin, so
+                // two of its tokens are compared where they were written (`(*` in a
+                // `define body).
+                let (x, y) = if a.from_macro || b.from_macro { (a.written, b.written) } else { (a.origin, b.origin) };
+                x.file == y.file && x.offset + a.text.len() as u32 == y.offset
             }
             _ => false,
         }
