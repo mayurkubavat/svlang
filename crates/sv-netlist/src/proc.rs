@@ -2958,7 +2958,7 @@ fn extract_root_symbol(arena: &ExprArena, mut eid: ExprId) -> Option<ResetTarget
     }
 }
 
-fn unwrap_single_if_stmt(t: &Tree, mut stmt: NodeId) -> Option<NodeId> {
+pub(crate) fn unwrap_single_if_stmt(t: &Tree, mut stmt: NodeId) -> Option<NodeId> {
     while t.kind(stmt) == SyntaxKind::SeqBlock {
         let stmts: Vec<NodeId> = t
             .children(stmt)

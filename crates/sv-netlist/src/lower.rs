@@ -2419,6 +2419,28 @@ fn prescan_eligible_memories(trees: &[Tree], design: &ElaboratedDesign, top_id: 
                         &mut disqualified,
                         &mut clocked_writers,
                     );
+                    // An array written in the reset branch of an async-reset block is
+                    // cleared as a whole on reset: registers, not a memory. Scanning that
+                    // branch as combinational code disqualifies what it writes by index.
+                    if let (ProcScanMode::Clocked(_), Some(reset_branch)) = (mode, async_reset_branch(t, body)) {
+                        let mut locals = FxSet::default();
+                        let mut visited_subs = FxSet::default();
+                        prescan_proc_node(
+                            trees,
+                            design,
+                            inst_id,
+                            &item.scope_prefix,
+                            item.tree,
+                            reset_branch,
+                            None,
+                            ProcScanMode::Comb,
+                            &mut locals,
+                            &mut visited_subs,
+                            &candidates,
+                            &mut disqualified,
+                            &mut clocked_writers,
+                        );
+                    }
                 }
                 _ => {}
             }
@@ -2429,6 +2451,29 @@ fn prescan_eligible_memories(trees: &[Tree], design: &ElaboratedDesign, top_id: 
         .into_iter()
         .filter(|s| !disqualified.contains(s) && clocked_writers.get(s).map_or(0, |w| w.len()) <= 1)
         .collect()
+}
+
+/// The reset branch of `@(posedge clk or negedge rst_n) if (!rst_n) ... else ...`:
+/// the `then` statement of the block's one `if`, when the block has two edge events.
+fn async_reset_branch(t: &Tree, stmt: NodeId) -> Option<NodeId> {
+    if t.kind(stmt) != SyntaxKind::TimedStmt {
+        return None;
+    }
+    let tc = t.child(stmt, SyntaxKind::TimingControl)?;
+    let edges = subtree_preorder(t, tc)
+        .into_iter()
+        .filter(|&n| t.kind(n) == SyntaxKind::EventExpr)
+        .filter(|&n| crate::proc::own_toks(t, n).iter().any(|k| matches!(*k, "posedge" | "negedge")))
+        .count();
+    if edges < 2 {
+        return None;
+    }
+    let body = t
+        .children(stmt)
+        .find(|&c| !matches!(t.kind(c), SyntaxKind::TimingControl | SyntaxKind::Attribute | SyntaxKind::StmtLabel))?;
+    let top_if = crate::proc::unwrap_single_if_stmt(t, body)?;
+    // Children of an `if`: the condition, then the `then` statement.
+    t.children(top_if).filter(|&c| !matches!(t.kind(c), SyntaxKind::Attribute | SyntaxKind::StmtLabel)).nth(1)
 }
 
 fn is_edge_timed_stmt(t: &Tree, stmt: NodeId) -> bool {
