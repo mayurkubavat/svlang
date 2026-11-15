@@ -43,8 +43,10 @@
 //!   were before an edge they share (a divided clock's registers do not see what the
 //!   dividing edge changed), and an enable that changes while the gated clock's source is
 //!   high makes an edge. What happens inside a step, such as a glitch shorter than a step
-//!   or the order of two changes in it, is not modelled. Memory writes, sampled-value
-//!   functions and assertions on a computed clock are rejected;
+//!   or the order of two changes in it, is not modelled. Sampled-value history on such a
+//!   clock moves the same way, and a clocked check on it is made on what the edge sampled:
+//!   it fails in the step after the one whose values break it. A memory write on a
+//!   computed clock is rejected;
 //! - a latch is transparent within a step: its value is its data where the data assigns
 //!   it and, where the data leaves it alone, what it held at the end of the step before (a
 //!   state named `<prefix>_latch_<n>`). A latch whose value depends on itself within a
@@ -183,7 +185,7 @@ impl std::error::Error for Fail {}
 pub fn write(nl: &Netlist, options: &Options) -> Result<Model, Fail> {
     let mut w = Writer::new(nl, options);
     let computed;
-    (w.waves, computed) = w.check_clocks()?;
+    (w.waves, computed, w.reads_clocks) = w.check_clocks()?;
     w.computed = computed.into_iter().collect();
     w.run(options.trace_outputs)?;
     let steps_per_cycle = w.waves.iter().map(|c| 2 * c.half_period).min().unwrap_or(1);
@@ -204,6 +206,9 @@ struct Wave {
     rise: u32,
     fall: u32,
 }
+
+/// History on a computed clock: the value's node, the gate's, the edge's, and the depth.
+type HistoryKey = (u32, Option<u32>, u32, u32);
 
 struct Writer<'n> {
     nl: &'n Netlist,
@@ -226,6 +231,13 @@ struct Writer<'n> {
     /// The clocks the model drives, for a design on both edges or on several clocks: one
     /// model step is then one tick. Empty for a design on one edge of one clock.
     waves: Vec<Wave>,
+    /// The design has registers, sampled-value functions or checks on a clock computed in
+    /// it: such a clock is read in every model step.
+    reads_clocks: bool,
+    /// The state that holds a value from the step before, by the value's node.
+    before: HashMap<u32, u32>,
+    /// History on a computed clock: (value, gate, edge, depth) to the value's node.
+    history_computed: HashMap<HistoryKey, (u32, u32)>,
     /// Registers on a clock computed in the design (indices into the netlist's states).
     computed: std::collections::HashSet<usize>,
     /// Each such register written: its state index, the state that holds its value from
@@ -289,6 +301,9 @@ impl<'n> Writer<'n> {
             mems: HashMap::new(),
             notes: Vec::new(),
             waves: Vec::new(),
+            reads_clocks: false,
+            before: HashMap::new(),
+            history_computed: HashMap::new(),
             computed: Default::default(),
             computed_regs: Vec::new(),
             clock_before: HashMap::new(),
@@ -308,7 +323,7 @@ impl<'n> Writer<'n> {
     ///
     /// With declared clocks, a register may also be on a clock computed in the design (gated,
     /// divided): the second value returned lists those registers.
-    fn check_clocks(&self) -> Result<(Vec<Wave>, Vec<usize>), Fail> {
+    fn check_clocks(&self) -> Result<(Vec<Wave>, Vec<usize>, bool), Fail> {
         let nl = self.nl;
         let mut uses: Vec<(ClockSpec, String)> = Vec::new();
         // Registers on a clock that is not a top-level input, when clocks are declared.
@@ -331,14 +346,21 @@ impl<'n> Writer<'n> {
                 }
             }
         }
+        // Sampled-value functions and checks on a computed clock, when clocks are declared.
+        let mut others: Vec<ClockSpec> = Vec::new();
+        let on_computed = |c: ClockSpec| !self.opts.clocks.is_empty() && !is_input(c.signal);
         for s in &nl.sampled {
-            if let Some(c) = s.clock {
-                uses.push((c, "a sampled-value function".into()));
+            match s.clock {
+                Some(c) if on_computed(c) => others.push(c),
+                Some(c) => uses.push((c, "a sampled-value function".into())),
+                None => {}
             }
         }
         for c in &nl.checks {
-            if let Some(k) = c.clock {
-                uses.push((k, "an assertion".into()));
+            match c.clock {
+                Some(k) if on_computed(k) => others.push(k),
+                Some(k) => uses.push((k, "an assertion".into())),
+                None => {}
             }
         }
         // Everything on one edge of one clock, computed or not: one step is that edge.
@@ -346,12 +368,14 @@ impl<'n> Writer<'n> {
             .iter()
             .map(|(c, _)| *c)
             .chain(computed.iter().map(|&i| nl.states[i].clock.expect("a computed clock")))
+            .chain(others.iter().copied())
             .collect();
         if all.iter().all(|c| *c == all[0]) {
-            return Ok((Vec::new(), Vec::new()));
+            return Ok((Vec::new(), Vec::new(), false));
         }
+        let reads_clocks = !computed.is_empty() || !others.is_empty();
         let mut waves: Vec<Wave> = Vec::new();
-        if !computed.is_empty() {
+        if reads_clocks {
             // A computed clock is read in every model step, so the steps have to be those
             // of the declared clocks: all of those the design has are driven.
             for k in &self.opts.clocks {
@@ -374,11 +398,12 @@ impl<'n> Writer<'n> {
         let (c0, n0) = match uses.first() {
             Some(u) => u,
             None => {
-                first_computed = (all[0], nl.states[computed[0]].name.clone());
+                let name = computed.first().map_or("an assertion".to_string(), |&i| nl.states[i].name.clone());
+                first_computed = (all[0], name);
                 &first_computed
             }
         };
-        let one_clock = computed.is_empty() && uses.iter().all(|(c, _)| c.signal == c0.signal);
+        let one_clock = !reads_clocks && uses.iter().all(|(c, _)| c.signal == c0.signal);
         for (c, n) in &uses {
             if waves.iter().any(|w| w.signal == c.signal) {
                 continue;
@@ -393,7 +418,7 @@ impl<'n> Writer<'n> {
                     )
                 } else {
                     format!(
-                        "{n} is on a clock computed in the design: only registers are modelled on such a clock, not memory writes, sampled-value functions or assertions"
+                        "{n} is written on a clock computed in the design: registers, sampled-value functions and assertions are modelled on such a clock, memory writes are not"
                     )
                 });
             };
@@ -444,7 +469,97 @@ impl<'n> Writer<'n> {
                 ));
             }
         }
-        Ok((waves, computed))
+        Ok((waves, computed, reads_clocks))
+    }
+
+    /// True for a clock computed in the design, in a model that reads such clocks.
+    fn is_computed(&self, clock: Option<ClockSpec>) -> bool {
+        self.reads_clocks && clock.is_some_and(|c| !self.waves.iter().any(|w| w.signal == c.signal))
+    }
+
+    /// True when the computed clock `clock` had its edge between the step before and this
+    /// one. A state (`<prefix>_clk_<n>`) holds the clock's value in the step before; no
+    /// edge is seen in the first step.
+    fn computed_edge(&mut self, clock: ClockSpec) -> Result<u32, Fail> {
+        // The clock's logic first, operands before users (it may be reached before it is
+        // written).
+        for v in self.cone(clock.signal) {
+            self.value(v)?;
+        }
+        let now = self.value(clock.signal)?;
+        let now = self.bool(now);
+        let rising = clock.edge == sv_netlist::Edge::Posedge;
+        let was = match self.clock_before.get(&(now, rising)) {
+            Some(&s) => s,
+            None => {
+                let k = self.clock_before.len();
+                let s = self.state(1, &format!("{}_clk_{k}", self.opts.name_prefix));
+                let quiet = self.konst(if rising { "1" } else { "0" }.into());
+                let srt = self.sort(1);
+                self.line(format!("init {srt} {s} {quiet}"));
+                self.pending.push((srt, s, now));
+                self.clock_before.insert((now, rising), s);
+                s
+            }
+        };
+        Ok(if rising {
+            let low = self.un("not", was);
+            self.bin("and", low, now)
+        } else {
+            let low = self.un("not", now);
+            self.bin("and", was, low)
+        })
+    }
+
+    /// A state that holds the value of node `v` in the step before (`<prefix>_was_<n>`),
+    /// starting at 0 when `zero`.
+    fn value_before(&mut self, v: u32, zero: bool) -> u32 {
+        if let Some(&s) = self.before.get(&v) {
+            return s;
+        }
+        let w = self.w(v);
+        let s = self.state(w, &format!("{}_was_{}", self.opts.name_prefix, self.before.len()));
+        let srt = self.sort(w);
+        if zero {
+            let z = self.num(w, 0);
+            self.line(format!("init {srt} {s} {z}"));
+        }
+        self.pending.push((srt, s, v));
+        self.before.insert(v, s);
+        s
+    }
+
+    /// `$past(v, depth)` on a computed clock with the edge `edge`, gated by `gate`: the
+    /// history moves when the clock had its edge since the step before, taking what `v`
+    /// was then (the value the edge sampled). Like a register on such a clock, each level
+    /// is a choice between a state and the level below as it was.
+    fn past_computed(&mut self, v: u32, gate: Option<u32>, depth: u32, edge: u32) -> u32 {
+        let mut shift = edge;
+        if let Some(g) = gate {
+            let was = self.value_before(g, false);
+            shift = self.bin("and", edge, was);
+        }
+        let mut below = self.value_before(v, false);
+        let mut value = v;
+        for d in 1..=depth {
+            let key = (v, gate, edge, d);
+            let (state, shown) = match self.history_computed.get(&key) {
+                Some(&made) => made,
+                None => {
+                    let w = self.w(v);
+                    let k = self.history.len() + self.history_computed.len();
+                    let state = self.state(w, &format!("{}_past_{k}", self.opts.name_prefix));
+                    let shown = self.ite(shift, below, state);
+                    let srt = self.sort(w);
+                    self.pending.push((srt, state, shown));
+                    self.history_computed.insert(key, (state, shown));
+                    (state, shown)
+                }
+            };
+            below = state;
+            value = shown;
+        }
+        value
     }
 
     /// The value of register `sidx`, which is on a clock computed in the design.
@@ -470,34 +585,7 @@ impl<'n> Writer<'n> {
             self.line(format!("init {srt} {before} {c}"));
         }
         let data = self.state(w, &format!("{}_data_{n}", self.opts.name_prefix));
-        // The clock's logic first, operands before users (it is reached before it is written).
-        for v in self.cone(clock.signal) {
-            self.value(v)?;
-        }
-        let now = self.value(clock.signal)?;
-        let now = self.bool(now);
-        let rising = clock.edge == sv_netlist::Edge::Posedge;
-        let was = match self.clock_before.get(&(now, rising)) {
-            Some(&s) => s,
-            None => {
-                let k = self.clock_before.len();
-                let s = self.state(1, &format!("{}_clk_{k}", self.opts.name_prefix));
-                // No edge is seen in the first step: there is no step before it.
-                let quiet = self.konst(if rising { "1" } else { "0" }.into());
-                let srt = self.sort(1);
-                self.line(format!("init {srt} {s} {quiet}"));
-                self.pending.push((srt, s, now));
-                self.clock_before.insert((now, rising), s);
-                s
-            }
-        };
-        let edge = if rising {
-            let low = self.un("not", was);
-            self.bin("and", low, now)
-        } else {
-            let low = self.un("not", now);
-            self.bin("and", was, low)
-        };
+        let edge = self.computed_edge(clock)?;
         let value = self.ite(edge, data, before);
         self.computed_regs.push((sidx, before, data, value));
         self.latch_open.remove(&sidx);
@@ -1114,6 +1202,25 @@ impl<'n> Writer<'n> {
             }
             None => None,
         };
+        if self.is_computed(clock) {
+            let edge = self.computed_edge(clock.expect("a computed clock"))?;
+            return Ok(match kind {
+                SampledKind::Sampled => v,
+                SampledKind::Past => self.past_computed(v, gate, depth.max(1), edge),
+                SampledKind::Rose | SampledKind::Fell => {
+                    let b = self.slice_lsb(v);
+                    let p = self.past_computed(b, gate, 1, edge);
+                    let (now, before) =
+                        if kind == SampledKind::Rose { (b, self.un("not", p)) } else { (self.un("not", b), p) };
+                    self.bin("and", now, before)
+                }
+                SampledKind::Stable | SampledKind::Changed => {
+                    let p = self.past_computed(v, gate, 1, edge);
+                    let name = if kind == SampledKind::Stable { "eq" } else { "neq" };
+                    self.cmp(name, v, p)
+                }
+            });
+        }
         // On both edges, history moves only at this function's own clock edge.
         let gate = match (self.fire(clock), gate) {
             (Some(f), Some(g)) => Some(self.bin("and", f, g)),
@@ -1288,10 +1395,32 @@ impl<'n> Writer<'n> {
         for c in &nl.checks {
             let en = self.value(c.enable)?;
             let en = self.bool(en);
-            // On both edges, a clocked check is looked at only at its own clock edge.
-            let en = self.on_edge(c.clock, en);
             let ex = self.value(c.expr)?;
             let ex = self.bool(ex);
+            if self.is_computed(c.clock) {
+                // On a computed clock the edge is seen one step late, so the check is on
+                // what the edge sampled: whether it failed (or was hit) in the step before.
+                let edge = self.computed_edge(c.clock.expect("a computed clock"))?;
+                let cover = c.kind == CheckKind::Cover;
+                if cover && !self.opts.covers {
+                    covers_left_out += 1;
+                    continue;
+                }
+                let then = if cover { ex } else { self.un("not", ex) };
+                let then = self.bin("and", en, then);
+                let was = self.value_before(then, true);
+                let at_edge = self.bin("and", edge, was);
+                if c.kind == CheckKind::Assume {
+                    let ok = self.un("not", at_edge);
+                    self.line(format!("constraint {ok}"));
+                } else {
+                    self.bad(at_edge, c);
+                    bads += usize::from(!cover);
+                }
+                continue;
+            }
+            // On both edges, a clocked check is looked at only at its own clock edge.
+            let en = self.on_edge(c.clock, en);
             match c.kind {
                 CheckKind::Assert => {
                     let nex = self.un("not", ex);

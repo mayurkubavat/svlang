@@ -399,17 +399,23 @@ fn computed_clocks_have_limits() {
     );
     let e = write(&own, &opts).unwrap_err();
     assert!(e.to_string().contains("computed from its own value"), "{e}");
-    // An assertion on a computed clock.
-    let checked = netlist(
-        "module ac(input logic clk, en, d, output logic p);\n\
+    // A memory written on a computed clock.
+    // (Kept as an array: a small memory would become registers.)
+    let kept = sv_netlist::LowerConfig { blast_memories_up_to: None, ..Default::default() };
+    let tree = sv_syntax::parse_source(
+        "module mw(input logic clk, en, input logic [1:0] a, input logic d, output logic q);\n\
            logic g;\n\
+           logic mem [0:3];\n\
            assign g = clk & en;\n\
-           always_ff @(posedge clk) p <= d;\n\
-           always @(posedge g) a_g: assert (p || !p);\n\
+           always_ff @(posedge clk) q <= mem[a];\n\
+           always_ff @(posedge g) mem[a] <= d;\n\
          endmodule\n",
+        "t.sv",
+        Default::default(),
     );
-    let e = write(&checked, &opts).unwrap_err();
-    assert!(e.to_string().contains("only registers are modelled on such a clock"), "{e}");
+    let nl = lower_trees(&[tree], &[], &[], &kept).unwrap_netlist();
+    let e = write(&nl, &opts).unwrap_err();
+    assert!(e.to_string().contains("memory writes are not"), "{e}");
 }
 
 #[test]
@@ -421,4 +427,27 @@ fn declared_clocks_do_not_change_a_one_edge_design() {
     let m = write(&nl, &opts).unwrap();
     assert_eq!(m.btor2, plain.btor2);
     assert_eq!(m.steps_per_cycle, 1);
+}
+
+#[test]
+fn assertions_and_history_on_a_computed_clock() {
+    let mut opts = Options::default();
+    opts.clocks = vec![Clock { input: "clk".into(), half_period: 1, phase: 0 }];
+    let nl = netlist(
+        "module ac(input logic clk, en, d, output logic p, q);\n\
+           logic g;\n\
+           assign g = clk & en;\n\
+           always_ff @(posedge clk) p <= d;\n\
+           always_ff @(posedge g) q <= p;\n\
+           always @(posedge g) a_g: assert (q == $past(p));\n\
+           always @(posedge g) m_g: assume (!$rose(d));\n\
+         endmodule\n",
+    );
+    let m = write(&nl, &opts).unwrap();
+    well_formed(&m.btor2);
+    assert!(lines(&m.btor2, "bad").iter().any(|l| l.ends_with(" a_g")), "{}", m.btor2);
+    // The clock input's wave, and the assumption on the computed clock.
+    assert_eq!(lines(&m.btor2, "constraint").len(), 2, "{}", m.btor2);
+    // What the edge sampled is kept from the step before.
+    assert!(lines(&m.btor2, "state").iter().any(|l| l.contains(" svlang_was_")), "{}", m.btor2);
 }

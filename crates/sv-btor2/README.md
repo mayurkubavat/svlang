@@ -39,9 +39,9 @@ Then, for example, `ric3 check counter.btor2 ic3`.
 - With declared clocks, a register may be on a clock computed in the design
   (gated, also through a clock-gating latch, or divided). Such a clock is
   read once in every step: the register has the data of the step before
-  when its clock has its edge between that step and this one. Memory
-  writes, sampled-value functions and assertions on such a clock are
-  rejected.
+  when its clock has its edge between that step and this one. Sampled-value
+  history and clocked checks on such a clock follow it the same way; a
+  memory written on one is rejected.
 - An asynchronous reset acts synchronously.
 - `(* anyconst *)` signals hold one free value for the whole trace.
   `(* anyseq *)` signals, cut points, black-box outputs, undriven bits and
