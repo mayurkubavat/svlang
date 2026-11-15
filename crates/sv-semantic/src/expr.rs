@@ -2061,6 +2061,62 @@ impl<'a> ExprBinder<'a> {
                             let id = self.arena.alloc_const(cv, false, loc);
                             return Some(self.apply_ctx(id, ctx, ctx.is_some(), loc));
                         }
+                        // The member after or before this one, wrapping round. For a
+                        // value that is no member the result is the type's default value
+                        // (IEEE 1800 6.19.5.3): X for a four-state base, 0 otherwise.
+                        "next" | "prev" if !variants.is_empty() => {
+                            let n = variants.len();
+                            let step = |i: usize| if field == "next" { (i + 1) % n } else { (i + n - 1) % n };
+                            let (w, s, four) = base_ty.integral_shape()?;
+                            let default = if four { CVal::all_x(w, s) } else { CVal::new(w, s, 0) };
+                            let id = match self.arena.get(base_id).cval.clone() {
+                                Some(cur) => {
+                                    let cv = variants
+                                        .iter()
+                                        .position(|(_, v)| v.cast(w, s) == cur.cast(w, s))
+                                        .map_or(default, |i| variants[step(i)].1.clone());
+                                    self.arena.alloc(ExprKind::Const(cv.clone()), base_ty.clone(), Some(cv), loc)
+                                }
+                                None => {
+                                    let mut acc = self.arena.alloc(
+                                        ExprKind::Const(default.clone()),
+                                        base_ty.clone(),
+                                        Some(default),
+                                        loc,
+                                    );
+                                    for i in (0..n).rev() {
+                                        let here = variants[i].1.clone();
+                                        let there = variants[step(i)].1.clone();
+                                        let here = self.arena.alloc(
+                                            ExprKind::Const(here.clone()),
+                                            base_ty.clone(),
+                                            Some(here),
+                                            loc,
+                                        );
+                                        let there = self.arena.alloc(
+                                            ExprKind::Const(there.clone()),
+                                            base_ty.clone(),
+                                            Some(there),
+                                            loc,
+                                        );
+                                        let hit = self.arena.alloc(
+                                            ExprKind::Binary { op: BinaryOp::Eq, lhs: base_id, rhs: here },
+                                            RtlType::Integral { width: 1, signed: false, four_state: four },
+                                            None,
+                                            loc,
+                                        );
+                                        acc = self.arena.alloc(
+                                            ExprKind::Cond { cond: hit, then_val: there, else_val: acc },
+                                            base_ty.clone(),
+                                            None,
+                                            loc,
+                                        );
+                                    }
+                                    acc
+                                }
+                            };
+                            return Some(self.apply_ctx(id, ctx, ctx.is_some(), loc));
+                        }
                         _ => {}
                     }
                 }
@@ -2243,11 +2299,11 @@ impl<'a> ExprBinder<'a> {
         let al = t.child(node, SyntaxKind::ArgList);
         let slots = parse_arg_list_slots(t, al);
 
-        // Method call on an enum (`e.first()`, `e.last()`, `e.num()`).
+        // Method call on an enum (`e.first()`, `e.last()`, `e.num()`, `e.next()`, `e.prev()`).
         if t.kind(callee_node) == SyntaxKind::MemberExpr {
             let mkids = Self::expr_kids(t, callee_node);
             let mname = *Self::own_toks(t, callee_node).last()?;
-            if slots.is_empty() && matches!(mname, "first" | "last" | "num") {
+            if slots.is_empty() && matches!(mname, "first" | "last" | "num" | "next" | "prev") {
                 return self.bind_member(tree_idx, callee_node, &mkids, ctx, loc);
             }
         }

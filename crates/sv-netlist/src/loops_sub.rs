@@ -125,6 +125,13 @@ impl<'a> DesignLowerer<'a> {
             };
 
             let lid = self.alloc_local_id();
+            // A variable is in scope in its own initializer (`e_t t = t.first()` asks only
+            // for its type); until the initializer is done it has no value.
+            if init_node.is_some() {
+                ctx.cur_locals.insert(lid, make_oob_obj_val(&mut self.builder, &ty, loc));
+                ctx.local_decls
+                    .insert(name.clone(), LocalBinding { id: lid, ty: ty.clone(), packed_bounds, cval: None });
+            }
             let (init_val, init_cval) = if let Some(in_n) = init_node {
                 let mut arena = ExprArena::new();
                 let mut binder = self.make_proc_binder(ctx, &mut arena);
