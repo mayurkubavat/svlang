@@ -260,6 +260,13 @@ impl Compilation {
         py.detach(move || comp.diagnostics()).into_iter().map(Diagnostic::from).collect()
     }
 
+    /// The elaborated design as a tree of scopes, one root for each top module: instances
+    /// and generate blocks with the signals declared in them.
+    fn scope_tree(&self, py: Python<'_>) -> Vec<Scope> {
+        let comp = self.inner.clone();
+        py.detach(move || comp.elaborate().design.scope_tree()).iter().map(Scope::of).collect()
+    }
+
     /// The elaborated instance hierarchy and parameter values, one line each.
     fn hierarchy(&self, py: Python<'_>) -> Vec<String> {
         let comp = self.inner.clone();
@@ -742,6 +749,108 @@ impl Netlist {
             .collect()
     }
 
+    /// The value with index ``id`` (0 to ``num_values - 1``). Raises ``IndexError`` past
+    /// the end.
+    fn value(&self, id: usize) -> PyResult<Value> {
+        if id >= self.inner.values.len() {
+            return Err(pyo3::exceptions::PyIndexError::new_err(format!(
+                "value {id} of a netlist with {} values",
+                self.inner.values.len()
+            )));
+        }
+        Ok(Value { nl: self.inner.clone(), id: svlang::netlist::ValueId(id as u32) })
+    }
+
+    /// Every value, in order: each one comes after the values it is computed from.
+    fn values(&self) -> Vec<Value> {
+        (0..self.inner.values.len() as u32)
+            .map(|i| Value { nl: self.inner.clone(), id: svlang::netlist::ValueId(i) })
+            .collect()
+    }
+
+    /// The values with operator ``op`` (one of ``NET_OPS``). Raises ``ValueError`` for a
+    /// name that is not an operator.
+    fn find_ops(&self, op: &str) -> PyResult<Vec<Value>> {
+        if !kinds::NET_OPS.contains(&op) {
+            return Err(PyValueError::new_err(format!("unknown operator {op:?} (see pysvlang.NET_OPS)")));
+        }
+        Ok(self.values().into_iter().filter(|v| v.op().as_deref() == Some(op)).collect())
+    }
+
+    /// The value of the top-level input ``name``. Raises ``KeyError`` when there is none.
+    fn input(&self, name: &str) -> PyResult<Value> {
+        match self.inner.inputs.iter().find(|p| p.name == name) {
+            Some(p) => Ok(Value { nl: self.inner.clone(), id: p.value }),
+            None => Err(pyo3::exceptions::PyKeyError::new_err(format!("no input {name:?}"))),
+        }
+    }
+
+    /// The value that drives the top-level output ``name``. Raises ``KeyError`` when
+    /// there is none.
+    fn output(&self, name: &str) -> PyResult<Value> {
+        match self.inner.outputs.iter().find(|p| p.name == name) {
+            Some(p) => Ok(Value { nl: self.inner.clone(), id: p.value }),
+            None => Err(pyo3::exceptions::PyKeyError::new_err(format!("no output {name:?}"))),
+        }
+    }
+
+    /// The value of the named signal ``path`` (``"top.u0.sum"``), when the netlist has it
+    /// under that name. Raises ``KeyError`` otherwise.
+    fn signal(&self, path: &str) -> PyResult<Value> {
+        match self.inner.traces.iter().find(|t| t.name == path) {
+            Some(t) => Ok(Value { nl: self.inner.clone(), id: t.value }),
+            None => Err(pyo3::exceptions::PyKeyError::new_err(format!("no signal {path:?}"))),
+        }
+    }
+
+    /// The flip-flops and latches, as objects (``states`` gives their names and widths).
+    fn registers(&self) -> Vec<Register> {
+        (0..self.inner.states.len()).map(|ix| Register { nl: self.inner.clone(), ix }).collect()
+    }
+
+    /// The memories that were kept as arrays.
+    fn memories(&self) -> Vec<Memory> {
+        (0..self.inner.memories.len()).map(|ix| Memory { nl: self.inner.clone(), ix }).collect()
+    }
+
+    /// The checks: immediate assertions, assumptions and covers, and the concurrent
+    /// properties that ``compile_properties`` compiled.
+    fn checks(&self) -> Vec<Check> {
+        self.inner
+            .checks
+            .iter()
+            .map(|c| {
+                let (clock, edge) = clock_pair(&self.inner, c.clock);
+                Check {
+                    kind: c.kind.as_str(),
+                    label: c.label.clone(),
+                    immediate: c.immediate,
+                    enable: Value { nl: self.inner.clone(), id: c.enable },
+                    expr: Value { nl: self.inner.clone(), id: c.expr },
+                    clock,
+                    edge,
+                    location: netlist_location(&self.inner, c.loc),
+                }
+            })
+            .collect()
+    }
+
+    /// The liveness obligations that ``compile_properties`` made.
+    fn liveness(&self) -> Vec<Liveness> {
+        self.inner
+            .liveness
+            .iter()
+            .map(|l| Liveness {
+                label: l.label.clone(),
+                assume: l.assume,
+                signal: Value { nl: self.inner.clone(), id: l.signal },
+                clock: Value { nl: self.inner.clone(), id: l.clock.signal },
+                edge: edge_name(l.clock.edge),
+                location: netlist_location(&self.inner, l.loc),
+            })
+            .collect()
+    }
+
     /// The netlist in svlang's readable text form.
     fn dump(&self) -> String {
         self.inner.dump()
@@ -875,12 +984,588 @@ impl Netlist {
 }
 
 // ---------------------------------------------------------------------------
+// The netlist as objects
+// ---------------------------------------------------------------------------
+
+/// The kinds a [`Value`] can have, as `Value.kind` gives them.
+const VALUE_KINDS: &[&str] = &["Input", "Const", "StateOut", "Op", "MemRead", "Sampled", "Undriven"];
+
+/// A constant as a string of bits, most significant first: `0`, `1`, `x` or `z`.
+fn bits_of(c: &svlang::semantic::CVal, width: u32) -> String {
+    use svlang::semantic::BitState;
+    (0..width)
+        .rev()
+        .map(|i| match c.bit_state(i) {
+            BitState::Zero => '0',
+            BitState::One => '1',
+            BitState::X => 'x',
+            BitState::Z => 'z',
+        })
+        .collect()
+}
+
+fn edge_name(e: svlang::netlist::Edge) -> &'static str {
+    match e {
+        svlang::netlist::Edge::Posedge => "posedge",
+        svlang::netlist::Edge::Negedge => "negedge",
+    }
+}
+
+fn netlist_location(nl: &svlang::Netlist, loc: svlang::semantic::Loc) -> Option<Location> {
+    let file = nl.files.get(loc.file as usize).filter(|f| !f.is_empty())?;
+    let (expansion_file, expansion_line) = match loc.expansion {
+        Some((f, l)) => (nl.files.get(f as usize).cloned(), Some(l)),
+        None => (None, None),
+    };
+    Some(Location { file: file.clone(), line: loc.line, column: loc.column, expansion_file, expansion_line })
+}
+
+/// One node of a netlist's value graph: an input, a constant, a register's output, an
+/// operator over other values, a memory read, a sampled-value function or an undriven bit
+/// range. A handle: it stays valid for as long as anything refers to it.
+#[pyclass(frozen, module = "pysvlang")]
+#[derive(Clone)]
+struct Value {
+    nl: Arc<svlang::Netlist>,
+    id: svlang::netlist::ValueId,
+}
+
+impl Value {
+    fn node(&self) -> &svlang::netlist::ValueNode {
+        self.nl.value(self.id)
+    }
+
+    fn at(&self, id: svlang::netlist::ValueId) -> Value {
+        Value { nl: self.nl.clone(), id }
+    }
+}
+
+#[pymethods]
+impl Value {
+    /// The value's index in the netlist (`Netlist.value(id)`). Operands have smaller ids.
+    #[getter]
+    fn id(&self) -> u32 {
+        self.id.0
+    }
+
+    #[getter]
+    fn width(&self) -> u32 {
+        self.node().width
+    }
+
+    #[getter]
+    fn signed(&self) -> bool {
+        self.node().signed
+    }
+
+    /// True when the value can carry x or z.
+    #[getter]
+    fn four_state(&self) -> bool {
+        self.node().four_state
+    }
+
+    /// One of ``VALUE_KINDS``: ``"Input"``, ``"Const"``, ``"StateOut"``, ``"Op"``,
+    /// ``"MemRead"``, ``"Sampled"`` or ``"Undriven"``.
+    #[getter]
+    fn kind(&self) -> &'static str {
+        use svlang::netlist::ValueKind::*;
+        match self.node().kind {
+            Input(_) => "Input",
+            Const(_) => "Const",
+            StateOut(_) => "StateOut",
+            Op { .. } => "Op",
+            MemRead { .. } => "MemRead",
+            Sampled(_) => "Sampled",
+            Undriven(_) => "Undriven",
+        }
+    }
+
+    /// For kind ``"Op"``: the operator, one of ``NET_OPS`` (``"Add"``, ``"Mux"``,
+    /// ``"Slice"``, ...). For kind ``"Sampled"``: the function (``"Past"``, ``"Rose"``, ...).
+    /// ``None`` otherwise.
+    #[getter]
+    fn op(&self) -> Option<String> {
+        let name = |d: String| d.chars().take_while(|c| c.is_ascii_alphanumeric()).collect::<String>();
+        match &self.node().kind {
+            svlang::netlist::ValueKind::Op { op, .. } => Some(name(format!("{op:?}"))),
+            svlang::netlist::ValueKind::Sampled(i) => Some(name(format!("{:?}", self.nl.sampled[*i].kind))),
+            _ => None,
+        }
+    }
+
+    /// The numbers an operator carries beside its operands: ``{"hi": 7, "lo": 4}`` for
+    /// ``"Slice"``, ``{"width": 8}`` for ``"ZeroExt"`` and ``"SignExt"``, ``{"depth": 2}``
+    /// for a sampled-value function, ``{"rhs": "1x0"}`` (a bit string) for a wildcard
+    /// equality. Empty for the others.
+    fn op_params<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
+        use svlang::netlist::{NetOp, ValueKind};
+        let d = PyDict::new(py);
+        match &self.node().kind {
+            ValueKind::Op { op, .. } => match op {
+                NetOp::Slice { hi, lo } => {
+                    d.set_item("hi", hi)?;
+                    d.set_item("lo", lo)?;
+                }
+                NetOp::ZeroExt { width } | NetOp::SignExt { width } => d.set_item("width", width)?,
+                NetOp::CastFourState { four_state } => d.set_item("four_state", four_state)?,
+                NetOp::WildEq { rhs } | NetOp::WildNeq { rhs } => d.set_item("rhs", bits_of(rhs, rhs.w))?,
+                _ => {}
+            },
+            ValueKind::Sampled(i) => d.set_item("depth", self.nl.sampled[*i].depth)?,
+            _ => {}
+        }
+        Ok(d)
+    }
+
+    /// The values this one is computed from, in the operator's order: an operator's
+    /// operands, a memory read's address, a sampled-value function's argument (and its
+    /// gate, when it has one). Empty for the other kinds.
+    fn operands(&self) -> Vec<Value> {
+        use svlang::netlist::ValueKind;
+        match &self.node().kind {
+            ValueKind::Op { args, .. } => args.iter().map(|a| self.at(*a)).collect(),
+            ValueKind::MemRead { addr, .. } => vec![self.at(*addr)],
+            ValueKind::Sampled(i) => {
+                let s = &self.nl.sampled[*i];
+                std::iter::once(s.expr).chain(s.gate).map(|v| self.at(v)).collect()
+            }
+            _ => Vec::new(),
+        }
+    }
+
+    /// The signal's hierarchical name, when the value is one (``"top.u0.sum"``).
+    #[getter]
+    fn name(&self) -> Option<String> {
+        match &self.node().kind {
+            svlang::netlist::ValueKind::Input(i) => Some(format!("{}.{}", self.nl.top, self.nl.inputs[*i].name)),
+            _ => self.node().name.clone(),
+        }
+    }
+
+    /// For kind ``"Const"``: the constant as a string of ``width`` bits, most significant
+    /// first, each ``0``, ``1``, ``x`` or ``z``. ``None`` otherwise.
+    #[getter]
+    fn bits(&self) -> Option<String> {
+        match &self.node().kind {
+            svlang::netlist::ValueKind::Const(c) => Some(bits_of(c, self.node().width)),
+            _ => None,
+        }
+    }
+
+    /// For kind ``"Const"`` with no x or z bit: the constant as an unsigned integer.
+    /// ``None`` otherwise.
+    #[getter]
+    fn int(&self, py: Python<'_>) -> PyResult<Option<Py<PyAny>>> {
+        let Some(bits) = self.bits() else { return Ok(None) };
+        if bits.contains(['x', 'z']) {
+            return Ok(None);
+        }
+        // Any width: let Python read the bits.
+        let int = py.get_type::<pyo3::types::PyInt>().call1((bits, 2))?;
+        Ok(Some(int.unbind()))
+    }
+
+    /// For kind ``"StateOut"``: the register or latch this is the output of.
+    #[getter]
+    fn register(&self) -> Option<Register> {
+        match self.node().kind {
+            svlang::netlist::ValueKind::StateOut(s) => Some(Register { nl: self.nl.clone(), ix: s.0 as usize }),
+            _ => None,
+        }
+    }
+
+    /// For kind ``"MemRead"``: the memory that is read.
+    #[getter]
+    fn memory(&self) -> Option<Memory> {
+        match self.node().kind {
+            svlang::netlist::ValueKind::MemRead { mem, .. } => Some(Memory { nl: self.nl.clone(), ix: mem.0 as usize }),
+            _ => None,
+        }
+    }
+
+    /// Where the value comes from in the source, when known.
+    #[getter]
+    fn location(&self) -> Option<Location> {
+        netlist_location(&self.nl, self.node().loc)
+    }
+
+    fn __eq__(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.nl, &other.nl) && self.id == other.id
+    }
+
+    fn __hash__(&self) -> u64 {
+        (Arc::as_ptr(&self.nl) as u64) ^ ((self.id.0 as u64) << 3)
+    }
+
+    fn __repr__(&self) -> String {
+        let what = match (self.op(), self.name()) {
+            (Some(op), _) => op,
+            (None, Some(name)) => format!("{} {name:?}", self.kind()),
+            (None, None) => self.kind().to_string(),
+        };
+        format!("Value(v{}, {what}, width={})", self.id.0, self.node().width)
+    }
+}
+
+/// A clock of a register, memory write, check or liveness obligation: the 1-bit value and
+/// ``"posedge"`` or ``"negedge"``.
+fn clock_pair(
+    nl: &Arc<svlang::Netlist>,
+    c: Option<svlang::netlist::ClockSpec>,
+) -> (Option<Value>, Option<&'static str>) {
+    match c {
+        Some(c) => (Some(Value { nl: nl.clone(), id: c.signal }), Some(edge_name(c.edge))),
+        None => (None, None),
+    }
+}
+
+/// A flip-flop or a latch of a netlist. A handle, like [`Value`].
+#[pyclass(frozen, module = "pysvlang")]
+#[derive(Clone)]
+struct Register {
+    nl: Arc<svlang::Netlist>,
+    ix: usize,
+}
+
+impl Register {
+    fn state(&self) -> &svlang::netlist::State {
+        &self.nl.states[self.ix]
+    }
+
+    fn at(&self, id: svlang::netlist::ValueId) -> Value {
+        Value { nl: self.nl.clone(), id }
+    }
+}
+
+#[pymethods]
+impl Register {
+    /// The hierarchical name (``"top.q"``, or ``"top.q[3:0]"`` for part of a signal).
+    #[getter]
+    fn name(&self) -> String {
+        self.state().name.clone()
+    }
+
+    #[getter]
+    fn width(&self) -> u32 {
+        self.state().width
+    }
+
+    #[getter]
+    fn signed(&self) -> bool {
+        self.state().signed
+    }
+
+    /// True for a latch: it has ``latch_enable`` and no clock.
+    #[getter]
+    fn is_latch(&self) -> bool {
+        self.state().latch_enable.is_some()
+    }
+
+    /// The clock signal of a flip-flop (``None`` for a latch).
+    #[getter]
+    fn clock(&self) -> Option<Value> {
+        clock_pair(&self.nl, self.state().clock).0
+    }
+
+    /// ``"posedge"`` or ``"negedge"`` (``None`` for a latch).
+    #[getter]
+    fn edge(&self) -> Option<&'static str> {
+        clock_pair(&self.nl, self.state().clock).1
+    }
+
+    /// The asynchronous reset as ``(signal, active_high, value)``, when there is one:
+    /// while ``signal`` is at its active level the register holds ``value``.
+    #[getter]
+    fn async_reset(&self) -> Option<(Value, bool, Value)> {
+        self.state().async_reset.map(|r| (self.at(r.signal), r.active_high, self.at(r.value)))
+    }
+
+    /// For a latch: the value that is 1 while the latch is open.
+    #[getter]
+    fn latch_enable(&self) -> Option<Value> {
+        self.state().latch_enable.map(|v| self.at(v))
+    }
+
+    /// The initial value as a string of bits (see ``Value.bits``), when the design gives one.
+    #[getter]
+    fn init(&self) -> Option<String> {
+        self.state().init.as_ref().map(|c| bits_of(c, self.state().width))
+    }
+
+    /// The value the register takes at its clock edge (a latch: while it is open).
+    #[getter]
+    fn next(&self) -> Value {
+        self.at(self.state().next)
+    }
+
+    /// The register's own value, as the logic that reads it sees it.
+    #[getter]
+    fn out(&self) -> Value {
+        self.at(self.state().out)
+    }
+
+    #[getter]
+    fn location(&self) -> Option<Location> {
+        netlist_location(&self.nl, self.state().loc)
+    }
+
+    fn __eq__(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.nl, &other.nl) && self.ix == other.ix
+    }
+
+    fn __hash__(&self) -> u64 {
+        (Arc::as_ptr(&self.nl) as u64) ^ ((self.ix as u64) << 3) ^ 1
+    }
+
+    fn __repr__(&self) -> String {
+        let kind = if self.is_latch() { "latch" } else { "register" };
+        format!("Register({:?}, width={}, {kind})", self.state().name, self.state().width)
+    }
+}
+
+/// One write port of a [`Memory`].
+#[pyclass(frozen, get_all, module = "pysvlang")]
+#[derive(Clone)]
+struct MemoryWrite {
+    /// The clock of the write (``None`` for an unclocked one).
+    clock: Option<Value>,
+    /// ``"posedge"`` or ``"negedge"``.
+    edge: Option<&'static str>,
+    /// The word that is written, counted from 0 at the memory's lowest index.
+    addr: Value,
+    data: Value,
+    /// 1 when the write happens.
+    enable: Value,
+}
+
+#[pymethods]
+impl MemoryWrite {
+    fn __repr__(&self) -> String {
+        format!("MemoryWrite(addr=v{}, data=v{}, enable=v{})", self.addr.id.0, self.data.id.0, self.enable.id.0)
+    }
+}
+
+/// A memory of a netlist: an unpacked array that was kept as an array (see
+/// ``lower_netlist(blast_memories_up_to=N)``). A handle, like [`Value`].
+#[pyclass(frozen, module = "pysvlang")]
+#[derive(Clone)]
+struct Memory {
+    nl: Arc<svlang::Netlist>,
+    ix: usize,
+}
+
+impl Memory {
+    fn mem(&self) -> &svlang::netlist::Memory {
+        &self.nl.memories[self.ix]
+    }
+}
+
+#[pymethods]
+impl Memory {
+    #[getter]
+    fn name(&self) -> String {
+        self.mem().name.clone()
+    }
+
+    /// Bits in a word.
+    #[getter]
+    fn width(&self) -> u32 {
+        self.mem().width
+    }
+
+    /// Words.
+    #[getter]
+    fn depth(&self) -> u32 {
+        self.mem().depth
+    }
+
+    /// The lowest index the array is declared with: word 0 of the memory.
+    #[getter]
+    fn low_index(&self) -> i64 {
+        self.mem().lo_idx as i64
+    }
+
+    #[getter]
+    fn signed(&self) -> bool {
+        self.mem().signed
+    }
+
+    /// The words with an initial value, as ``(word, bits)`` (see ``Value.bits``).
+    fn init(&self) -> Vec<(u32, String)> {
+        self.mem().init.iter().map(|(i, c)| (*i, bits_of(c, self.mem().width))).collect()
+    }
+
+    /// The write ports, in the order of the source: a later one wins over an earlier one
+    /// that writes the same word at the same edge.
+    fn writes(&self) -> Vec<MemoryWrite> {
+        let at = |id| Value { nl: self.nl.clone(), id };
+        self.mem()
+            .writes
+            .iter()
+            .map(|w| {
+                let (clock, edge) = clock_pair(&self.nl, w.clock);
+                MemoryWrite { clock, edge, addr: at(w.addr), data: at(w.data), enable: at(w.enable) }
+            })
+            .collect()
+    }
+
+    fn __eq__(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.nl, &other.nl) && self.ix == other.ix
+    }
+
+    fn __hash__(&self) -> u64 {
+        (Arc::as_ptr(&self.nl) as u64) ^ ((self.ix as u64) << 3) ^ 2
+    }
+
+    fn __repr__(&self) -> String {
+        format!("Memory({:?}, width={}, depth={})", self.mem().name, self.mem().width, self.mem().depth)
+    }
+}
+
+/// A check of a netlist: an immediate ``assert``, ``assume`` or ``cover``, or a concurrent
+/// property that ``compile_properties`` compiled. For an assertion or an assumption,
+/// ``expr`` has to hold whenever ``enable`` does; a cover is hit when both hold.
+#[pyclass(frozen, get_all, module = "pysvlang")]
+#[derive(Clone)]
+struct Check {
+    /// ``"assert"``, ``"assume"`` or ``"cover"``.
+    kind: &'static str,
+    /// The statement's label, or a compiled property's full hierarchical name.
+    label: Option<String>,
+    /// False for a check compiled from a concurrent property.
+    immediate: bool,
+    enable: Value,
+    expr: Value,
+    /// The clock the check is made at (``None``: in every step).
+    clock: Option<Value>,
+    /// ``"posedge"`` or ``"negedge"``.
+    edge: Option<&'static str>,
+    location: Option<Location>,
+}
+
+#[pymethods]
+impl Check {
+    fn __repr__(&self) -> String {
+        format!("Check({}, {:?})", self.kind, self.label.as_deref().unwrap_or(""))
+    }
+}
+
+/// A liveness obligation of a netlist, from a property such as
+/// ``req |-> s_eventually gnt``. For an assertion, a trace on which ``signal`` is 1 again
+/// and again for ever is a counterexample; for an assumption (``assume`` is True), only
+/// such traces count.
+#[pyclass(frozen, get_all, module = "pysvlang")]
+#[derive(Clone)]
+struct Liveness {
+    label: Option<String>,
+    assume: bool,
+    signal: Value,
+    clock: Value,
+    /// ``"posedge"`` or ``"negedge"``.
+    edge: &'static str,
+    location: Option<Location>,
+}
+
+#[pymethods]
+impl Liveness {
+    fn __repr__(&self) -> String {
+        let kind = if self.assume { "assume" } else { "assert" };
+        format!("Liveness({kind}, {:?})", self.label.as_deref().unwrap_or(""))
+    }
+}
+
+/// A signal declared in a [`Scope`].
+#[pyclass(frozen, get_all, module = "pysvlang")]
+#[derive(Clone)]
+struct ScopeSignal {
+    name: String,
+    /// The full hierarchical path (``"top.u0.q"``).
+    path: String,
+    /// Bits (0 for a memory or anything that is not a bit vector).
+    width: u32,
+    signed: bool,
+    /// ``"port"``, ``"var"``, ``"net"``, ``"param"`` or ``"genvar"``.
+    kind: &'static str,
+    /// For a port: ``"input"``, ``"output"``, ``"inout"`` or ``"ref"``.
+    direction: Option<String>,
+}
+
+#[pymethods]
+impl ScopeSignal {
+    fn __repr__(&self) -> String {
+        format!("ScopeSignal({:?}, {}, width={})", self.path, self.kind, self.width)
+    }
+}
+
+/// One scope of the elaborated design: a module or interface instance, or a generate
+/// block, with the signals declared in it and the scopes inside it.
+#[pyclass(frozen, get_all, module = "pysvlang")]
+#[derive(Clone)]
+struct Scope {
+    /// The full hierarchical path (``"top"``, ``"top.g[0].u0"``).
+    path: String,
+    /// The scope's own name (``"u0"``).
+    name: String,
+    /// The module or interface it is an instance of; ``"$generate"`` for a generate block.
+    module: String,
+    signals: Vec<ScopeSignal>,
+    children: Vec<Scope>,
+}
+
+impl Scope {
+    fn of(n: &svlang::ScopeNode) -> Scope {
+        Scope {
+            path: n.path.clone(),
+            name: n.name.clone(),
+            module: n.module.clone(),
+            signals: n
+                .signals
+                .iter()
+                .map(|s| ScopeSignal {
+                    name: s.name.clone(),
+                    path: s.path.clone(),
+                    width: s.width,
+                    signed: s.signed,
+                    kind: s.kind,
+                    direction: s.dir.map(|d| d.as_str().to_string()),
+                })
+                .collect(),
+            children: n.children.iter().map(Scope::of).collect(),
+        }
+    }
+}
+
+#[pymethods]
+impl Scope {
+    /// This scope and every scope below it, depth first.
+    fn walk(&self) -> Vec<Scope> {
+        let mut out = vec![self.clone()];
+        for c in &self.children {
+            out.extend(c.walk());
+        }
+        out
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "Scope({:?}, {}, signals={}, children={})",
+            self.path,
+            self.module,
+            self.signals.len(),
+            self.children.len()
+        )
+    }
+}
+
+// ---------------------------------------------------------------------------
 
 #[pymodule]
 fn _pysvlang(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
     m.add("SYNTAX_KINDS", kinds::SYNTAX_KINDS.to_vec())?;
     m.add("TOKEN_KINDS", kinds::TOKEN_KINDS.to_vec())?;
+    m.add("NET_OPS", kinds::NET_OPS.to_vec())?;
+    m.add("VALUE_KINDS", VALUE_KINDS.to_vec())?;
     m.add("SvlangError", m.py().get_type::<SvlangError>())?;
     m.add("LowerError", m.py().get_type::<LowerError>())?;
     m.add_class::<Compilation>()?;
@@ -893,5 +1578,13 @@ fn _pysvlang(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<Netlist>()?;
     m.add_class::<NetlistDiagnostic>()?;
     m.add_class::<Signal>()?;
+    m.add_class::<Value>()?;
+    m.add_class::<Register>()?;
+    m.add_class::<Memory>()?;
+    m.add_class::<MemoryWrite>()?;
+    m.add_class::<Check>()?;
+    m.add_class::<Liveness>()?;
+    m.add_class::<Scope>()?;
+    m.add_class::<ScopeSignal>()?;
     Ok(())
 }

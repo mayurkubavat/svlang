@@ -91,6 +91,27 @@ nl = comp.lower_netlist(compile_properties=True, skip_cycles=1)
 text, notes = nl.to_btor2(covers=True)
 ```
 
+The netlist can also be read as objects. A `Value` is one node of its graph:
+an input, a constant, a register's output or an operator over other values.
+
+```python
+nl = comp.lower_netlist()
+for reg in nl.registers():
+    print(reg.name, reg.width, reg.clock.name, reg.edge)
+    print("  next:", reg.next.op, [v.id for v in reg.next.operands()])
+
+q = nl.output("q")                      # also nl.input(name), nl.signal("top.u0.sum")
+adds = nl.find_ops("Add")               # operator names are in pysvlang.NET_OPS
+const = adds[0].operands()[1]
+print(const.kind, const.bits, const.int)   # Const 0001 1
+```
+
+`nl.memories()` gives the arrays that were kept as memories, with their
+write ports. `nl.checks()` gives the assertions, assumptions and covers, and
+`nl.liveness()` the obligations made from properties such as `s_eventually`.
+`comp.scope_tree()` gives the elaborated hierarchy as `Scope` objects, each
+with its signals and child scopes. All of these are read-only.
+
 Parsing, checking and lowering release the GIL, so several compilations
 can run in threads at once.
 

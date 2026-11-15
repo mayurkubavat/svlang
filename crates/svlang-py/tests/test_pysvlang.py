@@ -255,3 +255,160 @@ def test_to_yosys_json():
     assert module["cells"]["in_range"]["type"] == "$assert"
     plain, _ = nl.to_yosys_json(checks=False, src_attributes=False)
     assert "$assert" not in plain and '"src"' not in plain
+
+
+def test_values(comp):
+    nl = comp.lower_netlist()
+    assert len(nl.values()) == nl.num_values
+    assert nl.value(0) == nl.values()[0] and hash(nl.value(0)) == hash(nl.values()[0])
+    with pytest.raises(IndexError):
+        nl.value(nl.num_values)
+    clk = nl.input("clk")
+    assert (clk.kind, clk.width, clk.name, clk.op, clk.operands()) == ("Input", 1, "counter.clk", None, [])
+    with pytest.raises(KeyError):
+        nl.input("nope")
+    q = nl.output("q")
+    assert q.kind == "StateOut" and q.register.name == "counter.q"
+    assert nl.signal("counter.q") == q
+    (add,) = nl.find_ops("Add")
+    assert add.kind == "Op" and add.width == 4
+    lhs, rhs = add.operands()
+    assert lhs == q
+    assert (rhs.kind, rhs.bits, rhs.int) == ("Const", "0001", 1)
+    assert all(v.id < add.id for v in add.operands())
+    assert add.location.file == "counter.sv" and add.location.line == 3
+    with pytest.raises(ValueError):
+        nl.find_ops("Plus")
+    assert {v.kind for v in nl.values()} <= set(pysvlang.VALUE_KINDS)
+    assert {v.op for v in nl.values() if v.kind == "Op"} <= set(pysvlang.NET_OPS)
+    assert "Mux" in pysvlang.NET_OPS and "Slice" in pysvlang.NET_OPS
+
+
+def test_registers(comp):
+    nl = comp.lower_netlist()
+    (reg,) = nl.registers()
+    assert [s.name for s in nl.states] == [reg.name]
+    assert (reg.name, reg.width, reg.is_latch, reg.edge) == ("counter.q", 4, False, "posedge")
+    assert reg.clock == nl.input("clk")
+    assert reg.async_reset is None and reg.latch_enable is None
+    assert reg.out == nl.output("q")
+    assert reg.next.op == "Mux"
+    assert reg == nl.registers()[0] and len({reg, nl.registers()[0]}) == 1
+
+
+def test_async_reset_and_latch():
+    src = (
+        "module r(input logic clk, rst_n, en, d, output logic q, l);\n"
+        " always_ff @(posedge clk or negedge rst_n) if (!rst_n) q <= 1'b1; else q <= d;\n"
+        " always_latch if (en) l = d;\n"
+        "endmodule\n"
+    )
+    nl = pysvlang.Compilation.from_source(src, "r.sv").lower_netlist()
+    by_name = {r.name: r for r in nl.registers()}
+    signal, active_high, value = by_name["r.q"].async_reset
+    assert signal == nl.input("rst_n") and not active_high and value.bits == "1"
+    latch = by_name["r.l"]
+    assert latch.is_latch and latch.clock is None and latch.edge is None
+    enable = latch.latch_enable
+    assert enable.width == 1 and nl.input("en") in enable.operands()
+
+
+def test_slice_params():
+    src = "module s(input logic [7:0] a, output logic [3:0] y);\n assign y = a[6:3];\nendmodule\n"
+    nl = pysvlang.Compilation.from_source(src, "s.sv").lower_netlist()
+    (sl,) = nl.find_ops("Slice")
+    assert sl.op_params() == {"hi": 6, "lo": 3}
+    assert sl.operands() == [nl.input("a")]
+    assert nl.input("a").op_params() == {}
+
+
+def test_memories():
+    src = (
+        "module m(input logic clk, we, input logic [1:0] wa, ra, input logic [7:0] wd,\n"
+        "         output logic [7:0] rd);\n"
+        " logic [7:0] mem [0:3];\n"
+        " always_ff @(posedge clk) if (we) mem[wa] <= wd;\n"
+        " assign rd = mem[ra];\n"
+        "endmodule\n"
+    )
+    nl = pysvlang.Compilation.from_source(src, "m.sv").lower_netlist()
+    (mem,) = nl.memories()
+    assert (mem.name, mem.width, mem.depth, mem.low_index) == ("m.mem", 8, 4, 0)
+    (w,) = mem.writes()
+    assert w.clock == nl.input("clk") and w.edge == "posedge"
+    assert w.data == nl.input("wd")
+    reads = [v for v in nl.values() if v.kind == "MemRead"]
+    assert reads and all(v.memory == mem for v in reads)
+
+
+def test_checks_and_liveness():
+    src = (
+        "module c(input logic clk, req, gnt);\n"
+        " always_comb chk: assert (!(req && gnt));\n"
+        " a_next: assert property (@(posedge clk) req |=> gnt);\n"
+        " a_live: assert property (@(posedge clk) req |-> s_eventually gnt);\n"
+        "endmodule\n"
+    )
+    nl = pysvlang.Compilation.from_source(src, "c.sv").lower_netlist(compile_properties=True)
+    checks = {c.label: c for c in nl.checks()}
+    assert checks["chk"].immediate and checks["chk"].kind == "assert"
+    prop = checks["c.a_next"]
+    assert not prop.immediate and prop.clock == nl.input("clk") and prop.edge == "posedge"
+    assert prop.enable.width == 1 and prop.expr.width == 1
+    assert prop.location.line == 3
+    (live,) = nl.liveness()
+    assert (live.label, live.assume, live.edge) == ("c.a_live", False, "posedge")
+    assert live.clock == nl.input("clk") and live.signal.width == 1
+
+
+def test_scope_tree():
+    src = (
+        "module leaf(input logic a, output logic y);\n logic t;\n assign t = a;\n assign y = t;\nendmodule\n"
+        "module top(input logic [3:0] a, output logic [3:0] y);\n"
+        " for (genvar i = 0; i < 2; i++) begin : g\n  leaf u(.a(a[i]), .y(y[i]));\n end\n"
+        " assign y[3:2] = a[3:2];\n"
+        "endmodule\n"
+    )
+    (root,) = pysvlang.Compilation.from_source(src, "t.sv").scope_tree()
+    assert (root.path, root.name, root.module) == ("top", "top", "top")
+    ports = {s.name: s for s in root.signals}
+    assert (ports["a"].kind, ports["a"].direction, ports["a"].width) == ("port", "input", 4)
+    paths = [s.path for s in root.walk()]
+    assert paths[0] == "top" and "top.g[0].u" in paths and "top.g[1].u" in paths
+    leaf = next(s for s in root.walk() if s.path == "top.g[1].u")
+    assert leaf.module == "leaf"
+    t = next(s for s in leaf.signals if s.name == "t")
+    assert (t.path, t.kind, t.direction) == ("top.g[1].u.t", "var", None)
+
+
+def test_stubs_match_module():
+    """Every public name and member of the native module is in the stub file, and the reverse."""
+    import ast
+    import pathlib
+
+    stub = pathlib.Path(pysvlang.__file__).with_name("_pysvlang.pyi")
+    tree = ast.parse(stub.read_text())
+    native = pysvlang._pysvlang
+    stub_names, stub_members = set(), {}
+    for node in tree.body:
+        if isinstance(node, ast.ClassDef):
+            stub_names.add(node.name)
+            members = set()
+            for item in node.body:
+                if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    members.add(item.name)
+                elif isinstance(item, ast.AnnAssign):
+                    members.add(item.target.id)
+            stub_members[node.name] = members
+        elif isinstance(node, ast.AnnAssign):
+            stub_names.add(node.target.id)
+    real_names = {n for n in dir(native) if not n.startswith("_")} | {"__version__"}
+    assert stub_names == real_names
+    assert set(pysvlang.__all__) == real_names
+    ignore = {"__init__", "__eq__", "__hash__", "__repr__", "__str__", "__len__"}
+    for name, members in stub_members.items():
+        cls = getattr(native, name)
+        if issubclass(cls, BaseException):
+            continue
+        real = {m for m in vars(cls) if not m.startswith("_")}
+        assert members - ignore == real, name
