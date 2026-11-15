@@ -11,7 +11,10 @@
 //! ```text
 //! property := seq | seq |-> seq | seq |=> seq        (weak(seq) and strong(seq) as seq)
 //!           | [seq |-> | seq |=>] b until c | [seq |-> | seq |=>] b until_with c
+//!           | [seq |-> | seq |=>] b s_until c | [seq |-> | seq |=>] b s_until_with c
 //!           | [seq |-> | seq |=>] s_eventually b
+//! seq     also: nexttime [N] seq, eventually [M:N] seq, always [M:N] seq (and their s_ forms),
+//!           which are ##N seq, ##[M:N] seq and the conjunction of ##M seq ... ##N seq
 //! seq      := b
 //!           | seq ##N seq | seq ##[M:N] seq | ##N seq | ##[M:N] seq
 //!           | seq [*N] | seq [*M:N]
@@ -23,7 +26,7 @@
 //! a range that ends at `$` (with `[*]` and `[+]`), goto `[->]` and non-consecutive `[=]`
 //! repetition, a sequence with its own clock, and every property operator other than one
 //! implication at the top (`not`, property `and` and `or` over implications, `if`,
-//! `s_until`, `always`, `eventually`, `nexttime`, `#-#`, `accept_on`, ...).
+//! `always` and `eventually` with no upper bound, `#-#`, `accept_on`, ...).
 //!
 //! A bounded sequence has finitely many possible matches, each of a known length. The pass
 //! enumerates them as IEEE 1800-2023 annex F defines a match: for the attempt that starts at
@@ -57,8 +60,9 @@
 //!   each tick before the first one where `c` holds; with `until_with`, at that tick too.
 //!   If `c` never comes, `b` has to hold for ever. A one-bit monitor state
 //!   (`<top>._sva_until`) remembers that an `until` is under way; `disable iff` clears it.
-//!   The strong forms (`s_until`), which also require `c` to come, are liveness and are not
-//!   compiled.
+//!   The strong forms (`s_until`, `s_until_with`) also require `c` to come: the same check,
+//!   and a [`Liveness`] as for `s_eventually` beside it ([`Netlist::property_checks`] and
+//!   [`Netlist::property_liveness`] both name the property).
 //! - **`s_eventually c`** (assert, assume): from the tick it starts, `c` has to hold at that
 //!   tick or a later one. No finite trace violates this, so it is not a [`Check`] but a
 //!   [`Liveness`] in [`Netlist::liveness`]: the same monitor bit, and a signal that is true
@@ -76,6 +80,7 @@
 //! - **Size**: a property that reads further than [`MAX_PROPERTY_SPAN`] ticks, or needs more
 //!   than [`MAX_PROPERTY_TERMS`] conditions, is reported as unsupported.
 
+use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use sv_semantic::{
@@ -501,11 +506,36 @@ impl Matcher<'_> {
     }
 }
 
-/// The sequence a property that is only a sequence stands for.
-fn as_seq(p: &PropExpr) -> Result<&SeqExpr, String> {
+/// The sequence a property that is only a sequence stands for. Besides a sequence itself,
+/// the property operators with a bound are sequences in other words, on an infinite trace:
+/// `nexttime [N] p` is `##N p`, `eventually [M:N] p` is `##[M:N] p`, and `always [M:N] p` is
+/// `##M p and ##(M+1) p and ... and ##N p`. Weak and strong forms agree, since the bound is
+/// always reached.
+fn as_seq(p: &PropExpr) -> Result<Cow<'_, SeqExpr>, String> {
+    let delayed = |range: CycleRange, s: SeqExpr| SeqExpr::Delay { range, lhs: None, rhs: Box::new(s) };
     match p {
         // On an infinite trace a bounded sequence always ends, so weak and strong agree.
-        PropExpr::Seq(s) | PropExpr::Weak(s) | PropExpr::Strong(s) => Ok(s),
+        PropExpr::Seq(s) | PropExpr::Weak(s) | PropExpr::Strong(s) => Ok(Cow::Borrowed(s)),
+        PropExpr::Nexttime { cycles, prop, .. } => {
+            Ok(Cow::Owned(delayed(CycleRange::exact(*cycles), as_seq(prop)?.into_owned())))
+        }
+        PropExpr::Eventually { range, prop, .. } if range.max != CycleBound::Unbounded => {
+            Ok(Cow::Owned(delayed(*range, as_seq(prop)?.into_owned())))
+        }
+        PropExpr::Always { range, prop, .. } => {
+            let CycleBound::Const(last) = range.max else {
+                return Err("`always` with no upper bound".into());
+            };
+            if last > MAX_PROPERTY_SPAN || last < range.min {
+                return Err(too_long());
+            }
+            let inner = as_seq(prop)?.into_owned();
+            let mut all = delayed(CycleRange::exact(range.min), inner.clone());
+            for at in range.min + 1..=last {
+                all = SeqExpr::And(Box::new(all), Box::new(delayed(CycleRange::exact(at), inner.clone())));
+            }
+            Ok(Cow::Owned(all))
+        }
         other => Err(prop_name(other).into()),
     }
 }
@@ -522,8 +552,8 @@ fn prop_name(p: &PropExpr) -> &'static str {
             "an implication inside another property operator"
         }
         PropExpr::FollowedBy { .. } => "followed-by (#-#, #=#)",
-        PropExpr::Nexttime { .. } => "`nexttime`",
-        PropExpr::Always { .. } => "`always`",
+        PropExpr::Nexttime { .. } => "`nexttime` of a property that is not a bounded sequence",
+        PropExpr::Always { .. } => "`always` with no upper bound",
         PropExpr::Eventually { strong: true, .. } => "`s_eventually` with a range, or inside another operator",
         PropExpr::Eventually { .. } => "`eventually`",
         PropExpr::Until { .. } => "`until`",
@@ -576,7 +606,7 @@ impl Matcher<'_> {
         let mut obligations = Vec::new();
         let mut span = 0;
         for (at, when) in starts {
-            let (holds, last) = self.holds(consequent, at)?;
+            let (holds, last) = self.holds(&consequent, at)?;
             span = span.max(last);
             obligations.push((when, holds));
         }
@@ -592,6 +622,8 @@ impl Matcher<'_> {
 enum Monitor {
     Check(ValueId, ValueId),
     Liveness(ValueId),
+    /// `s_until`: the check of `until`, and the signal for its end having to come.
+    Both(ValueId, ValueId, ValueId),
 }
 
 /// What compiling one property made.
@@ -601,6 +633,9 @@ pub enum Compiled {
     Check(usize),
     /// `Netlist::liveness[i]` does.
     Liveness(usize),
+    /// Both do (`s_until`): the check for what has to hold meanwhile, the liveness
+    /// obligation for the end having to come.
+    CheckAndLiveness(usize, usize),
 }
 
 /// The plan of `[seq |-> | seq |=>] b until c` (or `until_with`): a one-bit monitor that is
@@ -616,6 +651,8 @@ struct Until {
     release: ValueId,
     /// `until_with`: `b` has to hold at the tick `c` holds too.
     with: bool,
+    /// `s_until` / `s_until_with`: `c` has to come, too. A [`Liveness`] beside the check.
+    strong: bool,
 }
 
 /// True for `s_eventually` with no range (or the whole range `[0:$]`).
@@ -886,30 +923,29 @@ impl Netlist {
     ) -> Result<Plan, String> {
         let not_lowered = || "an expression that was not lowered".to_string();
         let leaf = |e: ExprId| m.leaves.get(e.0 as usize).copied().flatten();
+        let mut ends = false;
         let (hold, release, with) = match until {
             PropExpr::Until { strong, overlapping, lhs, rhs } => {
-                if *strong {
-                    return Err("`s_until` / `s_until_with`".into());
-                }
                 if prop.kind == PropKind::Cover {
                     return Err("a cover of `until`".into());
                 }
-                let boolean = |p: &PropExpr| match as_seq(p) {
+                let boolean = |p: &PropExpr| match as_seq(p).as_deref() {
                     Ok(SeqExpr::Bool(e)) => Ok(*e),
                     _ => Err("`until` between properties that are not single booleans".to_string()),
                 };
                 let hold = leaf(boolean(lhs)?).ok_or_else(not_lowered)?;
                 let release = leaf(boolean(rhs)?).ok_or_else(not_lowered)?;
+                ends = *strong;
                 (Some(hold), release, *overlapping)
             }
             PropExpr::Eventually { prop: awaited, .. } => {
                 if prop.kind == PropKind::Cover {
                     return Err("a cover of `s_eventually`".into());
                 }
-                let Ok(SeqExpr::Bool(e)) = as_seq(awaited) else {
+                let Ok(SeqExpr::Bool(e)) = as_seq(awaited).as_deref().cloned() else {
                     return Err("`s_eventually` of a property that is not a single boolean".into());
                 };
-                (None, leaf(*e).ok_or_else(not_lowered)?, false)
+                (None, leaf(e).ok_or_else(not_lowered)?, false)
             }
             _ => unreachable!("until_parts returns an until or an eventually"),
         };
@@ -976,7 +1012,7 @@ impl Netlist {
             disable,
             span,
             warm,
-            until: Some(Until { starts: planned, hold, release, with }),
+            until: Some(Until { starts: planned, hold, release, with, strong: ends }),
         })
     }
 
@@ -1177,6 +1213,11 @@ impl Netlist {
         };
         let hold = self.sva_bool(hold, loc);
         let expr = if u.with { hold } else { self.sva_op(NetOp::LogOr, vec![hold, release], 1, loc) };
+        if u.strong {
+            let off = off_now.map(|(_, off)| off);
+            let signal = self.sva_liveness(p, pending, active, ended, off, nth);
+            return Monitor::Both(active, expr, signal);
+        }
         Monitor::Check(active, expr)
     }
 
@@ -1324,6 +1365,11 @@ impl Netlist {
                     self.property_liveness[i] = Some(index);
                     PropertyOutcome::Liveness { index }
                 }
+                Compiled::CheckAndLiveness(check, index) => {
+                    self.property_checks[i] = Some(check);
+                    self.property_liveness[i] = Some(index);
+                    PropertyOutcome::Compiled { check }
+                }
             });
         }
         outcomes.into_iter().map(|o| o.expect("every property has an outcome")).collect()
@@ -1419,21 +1465,32 @@ impl Netlist {
                 }
                 let monitor = self.sva_until(p, u, ticks, untils);
                 untils += 1;
+                let live = |nl: &mut Netlist, signal: ValueId| {
+                    nl.liveness.push(Liveness {
+                        label: name.clone(),
+                        assume: kind != PropKind::Assert,
+                        signal,
+                        clock: p.clock,
+                        loc,
+                    });
+                    nl.liveness.len() - 1
+                };
                 let (enable, expr) = match monitor {
-                    Monitor::Check(enable, expr) => (enable, expr),
+                    Monitor::Check(enable, expr) => {
+                        made.push(Compiled::Check(self.checks.len()));
+                        (enable, expr)
+                    }
                     Monitor::Liveness(signal) => {
-                        made.push(Compiled::Liveness(self.liveness.len()));
-                        self.liveness.push(Liveness {
-                            label: name.clone(),
-                            assume: kind != PropKind::Assert,
-                            signal,
-                            clock: p.clock,
-                            loc,
-                        });
+                        let index = live(self, signal);
+                        made.push(Compiled::Liveness(index));
                         continue;
                     }
+                    Monitor::Both(enable, expr, signal) => {
+                        let index = live(self, signal);
+                        made.push(Compiled::CheckAndLiveness(self.checks.len(), index));
+                        (enable, expr)
+                    }
                 };
-                made.push(Compiled::Check(self.checks.len()));
                 self.checks.push(Check {
                     kind: if kind == PropKind::Assert { CheckKind::Assert } else { CheckKind::Assume },
                     label: name.clone(),

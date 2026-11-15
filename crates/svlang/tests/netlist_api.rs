@@ -308,7 +308,10 @@ fn properties_bound_from_text_compile_to_named_checks() {
         .collect();
     let checks_before = nl.checks.len();
     let out = nl.compile_external_properties(&elab.design, &external, &PropertyOptions::default());
-    assert!(out[5].as_ref().is_err_and(|why| why.contains("s_until")), "{out:?}");
+    // The strong until is a check for what holds meanwhile and an obligation for its end.
+    let Ok(Compiled::CheckAndLiveness(until_check, until_live)) = out[5] else { panic!("{out:?}") };
+    assert_eq!(nl.checks[until_check].label.as_deref(), Some("a_strong"));
+    assert_eq!(nl.liveness[until_live].label.as_deref(), Some("a_strong"));
     // The liveness property is an obligation of its own, not a check.
     let Ok(Compiled::Liveness(live)) = out[4] else { panic!("{out:?}") };
     assert_eq!(nl.liveness[live].label.as_deref(), Some("a_live"));
@@ -330,7 +333,7 @@ fn properties_bound_from_text_compile_to_named_checks() {
             (Some("c_gnt"), CheckKind::Cover),
         ]
     );
-    assert_eq!(nl.checks.len(), checks_before + 4);
+    assert_eq!(nl.checks.len(), checks_before + 5);
     // The design's own property list is untouched, and the model names the checks.
     assert!(nl.properties.is_empty() && nl.prop_expr_values.len() == nl.sva_arena.exprs.len());
     let mut opts = svlang::btor2::Options::default();

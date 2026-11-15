@@ -205,8 +205,8 @@ fn kinds_names_and_unsupported_operators() {
            a2: assert property (a |-> c);\n\
          end\n\
          u1: assert property (a |-> ##[1:$] b);\n\
-         u2: assert property (a |-> eventually [1:3] b);\n\
-         u3: assert property (a s_until b);\n\
+         u2: assert property (a |-> always b);\n\
+         u3: assert property (a implies b);\n\
          u4: assert property (@(clk) a);\n\
          u5: assert property (a [*1:$] |-> b);\n\
          u6: assert property (not a);\n\
@@ -227,8 +227,8 @@ fn kinds_names_and_unsupported_operators() {
         other => panic!("{name}: {other:?}"),
     };
     assert_eq!(why("m.u1"), "the delay range [1:$]");
-    assert_eq!(why("m.u2"), "`eventually`");
-    assert!(why("m.u3").contains("s_until"), "{}", why("m.u3"));
+    assert_eq!(why("m.u2"), "`always` with no upper bound");
+    assert_eq!(why("m.u3"), "`implies`");
     assert_eq!(why("m.u4"), "a clocking event on both edges");
     assert_eq!(why("m.u5"), "the repetition range [1:$]");
     assert_eq!(why("m.u6"), "property `not`");
@@ -921,7 +921,7 @@ fn until_is_dropped_by_disable_iff_and_waits_out_the_skipped_cycles() {
 fn until_forms_that_are_not_compiled() {
     let src = format!(
         "module m({PORTS});\n default clocking @(posedge clk); endclocking\n\
-         u1: assert property (a |-> b s_until c);\n\
+         u1: assert property (a |-> s_eventually [1:$] c);\n\
          u2: cover property (a |-> b until c);\n\
          u3: assert property (a |-> (b ##1 b) until c);\n\
          endmodule\n"
@@ -935,7 +935,7 @@ fn until_forms_that_are_not_compiled() {
             other => panic!("{other:?}"),
         })
         .collect();
-    assert!(why[0].contains("s_until"), "{why:?}");
+    assert!(why[0].contains("s_eventually"), "{why:?}");
     assert!(why[1].contains("cover of `until`"), "{why:?}");
     assert!(why[2].contains("not single booleans"), "{why:?}");
 }
@@ -976,4 +976,48 @@ fn s_eventually_is_a_liveness_obligation_with_a_waiting_monitor() {
     // The assertion's signal is a watch bit that only the free pick input can set.
     assert!(nl.undriven.iter().any(|u| u.signal == "m._sva_pick"));
     assert!(nl.states.iter().any(|s| s.name == "m._sva_watch"));
+}
+
+#[test]
+fn s_until_is_the_check_of_until_and_a_liveness_obligation() {
+    const NONE: [usize; 0] = [];
+    let src = format!(
+        "module m({PORTS});\n default clocking @(posedge clk); endclocking\n\
+         p: assert property (a |-> b s_until c);\n\
+         endmodule\n"
+    );
+    let mut nl = lower_src(&src).unwrap_netlist();
+    let out = nl.compile_properties(&PropertyOptions::default());
+    assert!(matches!(out[0], PropertyOutcome::Compiled { .. }), "{out:?}");
+    assert_eq!(nl.property_liveness, [Some(0)]);
+    assert_eq!(nl.liveness[0].label.as_deref(), Some("m.p"));
+    assert_eq!(nl.checks[nl.property_checks[0].unwrap()].label.as_deref(), Some("m.p"));
+    // The safety part is that of `until`.
+    assert_eq!(failures(&nl, &["0110", "0010", "0001", "0000"]), NONE);
+    assert_eq!(failures(&nl, &["0110", "0000", "0001"]), [1]);
+}
+
+#[test]
+fn the_bounded_property_operators_are_sequences() {
+    const NONE: [usize; 0] = [];
+    // nexttime [N] b is ##N b.
+    let next = "p: assert property (a |-> nexttime b);";
+    assert_eq!(fails(next, &["0100", "0000", "0000"]), [1]);
+    assert_eq!(fails(next, &["0100", "0010", "0000"]), NONE);
+    let next2 = "p: assert property (a |-> nexttime [2] b);";
+    assert_eq!(fails(next2, &["0100", "0010", "0000"]), [2]);
+    assert_eq!(fails(next2, &["0100", "0000", "0010"]), NONE);
+    // s_eventually [M:N] b is ##[M:N] b: some tick of the window.
+    let soon = "p: assert property (a |-> s_eventually [1:2] b);";
+    assert_eq!(fails(soon, &["0110", "0000", "0000"]), [2]);
+    assert_eq!(fails(soon, &["0100", "0000", "0010"]), NONE);
+    assert_eq!(fails(soon, &["0100", "0010", "0000"]), NONE);
+    // always [M:N] b: every tick of the window, decided at its end.
+    let all = "p: assert property (a |-> always [0:2] b);";
+    assert_eq!(fails(all, &["0110", "0010", "0010", "0000"]), NONE);
+    assert_eq!(fails(all, &["0110", "0000", "0010", "0000"]), [2]);
+    assert_eq!(fails(all, &["0110", "0010", "0000", "0000"]), [2]);
+    let later = "p: assert property (a |-> always [1:2] b);";
+    assert_eq!(fails(later, &["0100", "0010", "0010"]), NONE);
+    assert_eq!(fails(later, &["0110", "0010", "0000"]), [2]);
 }
