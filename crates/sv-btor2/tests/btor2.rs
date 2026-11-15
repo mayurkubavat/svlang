@@ -334,19 +334,82 @@ fn several_clocks_need_a_wave_each() {
     assert!(write(&nl, &opts).unwrap_err().to_string().contains("half period of 0"));
 }
 
+const DIVIDED: &str = "module dv(input logic clk, d, output logic q);\n\
+       logic half;\n\
+       always_ff @(posedge clk) half <= ~half;\n\
+       always_ff @(posedge half) q <= d;\n\
+     endmodule\n";
+
 #[test]
-fn a_derived_second_clock_is_rejected() {
-    let nl = netlist(
-        "module dv(input logic clk, d, output logic q);\n\
-           logic half;\n\
-           always_ff @(posedge clk) half <= ~half;\n\
-           always_ff @(posedge half) q <= d;\n\
-         endmodule\n",
-    );
+fn a_clock_computed_in_the_design_needs_a_declared_clock() {
+    let nl = netlist(DIVIDED);
+    // With no clock declared there is nothing to derive it from.
+    let e = write(&nl, &Options::default()).unwrap_err();
+    assert!(e.to_string().contains("more than one clock"), "{e}");
+
     let mut opts = Options::default();
     opts.clocks = vec![Clock { input: "clk".into(), half_period: 1, phase: 0 }];
-    let e = write(&nl, &opts).unwrap_err();
-    assert!(e.to_string().contains("not a top-level input"), "{e}");
+    let m = write(&nl, &opts).unwrap();
+    well_formed(&m.btor2);
+    assert_eq!(m.steps_per_cycle, 2);
+    assert!(m.notes.iter().any(|n| n.contains("1 register(s) are on clocks computed in the design")), "{:?}", m.notes);
+    // The register's value is a choice between its data and its value of the step before,
+    // by whether its clock rose since then: three states, the clock one starting high.
+    for name in ["svlang_reg_0", "svlang_data_0", "svlang_clk_0"] {
+        assert!(lines(&m.btor2, "state").iter().any(|l| l.ends_with(&format!(" {name}"))), "{name}");
+    }
+    assert!(!lines(&m.btor2, "state").iter().any(|l| l.ends_with(" dv.q")), "{}", m.btor2);
+}
+
+#[test]
+fn gated_clocks_plain_and_through_a_latch() {
+    let mut opts = Options::default();
+    opts.clocks = vec![Clock { input: "clk".into(), half_period: 1, phase: 0 }];
+    let plain = netlist(
+        "module gc(input logic clk, en, d, output logic p, q);\n\
+           logic g;\n\
+           assign g = clk & en;\n\
+           always_ff @(posedge clk) p <= d;\n\
+           always_ff @(posedge g) q <= p;\n\
+         endmodule\n",
+    );
+    well_formed(&write(&plain, &opts).unwrap().btor2);
+    let cell = netlist(
+        "module icg(input logic clk, en, d, output logic p, q);\n\
+           logic en_l, g;\n\
+           always_latch if (!clk) en_l <= en;\n\
+           assign g = clk & en_l;\n\
+           always_ff @(posedge clk) p <= d;\n\
+           always_ff @(posedge g) q <= p;\n\
+         endmodule\n",
+    );
+    well_formed(&write(&cell, &opts).unwrap().btor2);
+}
+
+#[test]
+fn computed_clocks_have_limits() {
+    let mut opts = Options::default();
+    opts.clocks = vec![Clock { input: "clk".into(), half_period: 1, phase: 0 }];
+    // A clock that feeds itself.
+    let own = netlist(
+        "module oc(input logic clk, d, output logic p, q);\n\
+           always_ff @(posedge clk) p <= d;\n\
+           always_ff @(posedge q) q <= ~q;\n\
+         endmodule\n",
+    );
+    let e = write(&own, &opts).unwrap_err();
+    assert!(e.to_string().contains("computed from its own value"), "{e}");
+    // An assertion on a computed clock.
+    let checked = netlist(
+        "module ac(input logic clk, en, d, output logic p);\n\
+           logic g;\n\
+           assign g = clk & en;\n\
+           always_ff @(posedge clk) p <= d;\n\
+           always @(posedge g) a_g: assert (p || !p);\n\
+         endmodule\n",
+    );
+    let e = write(&checked, &opts).unwrap_err();
+    assert!(e.to_string().contains("only registers are modelled on such a clock"), "{e}");
 }
 
 #[test]

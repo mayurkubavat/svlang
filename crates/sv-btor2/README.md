@@ -35,8 +35,13 @@ Then, for example, `ric3 check counter.btor2 ic3`.
   on every step. `Model::steps_per_cycle` says which model was written.
 - With `Options::clocks`, a design on several clocks is written the same
   way: each clock in use is a top-level input declared with the steps it
-  stays at one level and a phase. A clock computed in the design (divided
-  or gated) is rejected.
+  stays at one level and a phase.
+- With declared clocks, a register may be on a clock computed in the design
+  (gated, also through a clock-gating latch, or divided). Such a clock is
+  read once in every step: the register has the data of the step before
+  when its clock has its edge between that step and this one. Memory
+  writes, sampled-value functions and assertions on such a clock are
+  rejected.
 - An asynchronous reset acts synchronously.
 - `(* anyconst *)` signals hold one free value for the whole trace.
   `(* anyseq *)` signals, cut points, black-box outputs, undriven bits and

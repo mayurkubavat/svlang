@@ -34,7 +34,17 @@
 //!   one edge is written as above either way ([`Model::steps_per_cycle`] says which);
 //! - with [`Options::clocks`], a design on several clocks is written the same way: each
 //!   clock in use must be a top-level input declared there with its wave in model steps
-//!   ([`Clock`]), and a clock that is computed in the design (divided or gated) is rejected;
+//!   ([`Clock`]);
+//! - with declared clocks, a register may be on a clock that is computed in the design: a
+//!   gated clock (`clk & en`, also through a clock-gating latch), a divided one (the output
+//!   of a register), any signal. Such a clock is read once in every model step, like any
+//!   other signal: the register has the data of the step before when its clock has its
+//!   edge between that step and this one. So it sees the registers on other clocks as they
+//!   were before an edge they share (a divided clock's registers do not see what the
+//!   dividing edge changed), and an enable that changes while the gated clock's source is
+//!   high makes an edge. What happens inside a step, such as a glitch shorter than a step
+//!   or the order of two changes in it, is not modelled. Memory writes, sampled-value
+//!   functions and assertions on a computed clock are rejected;
 //! - a latch is transparent within a step: its value is its data where the data assigns
 //!   it and, where the data leaves it alone, what it held at the end of the step before (a
 //!   state named `<prefix>_latch_<n>`). A latch whose value depends on itself within a
@@ -172,7 +182,9 @@ impl std::error::Error for Fail {}
 /// two clocks.
 pub fn write(nl: &Netlist, options: &Options) -> Result<Model, Fail> {
     let mut w = Writer::new(nl, options);
-    w.waves = w.check_clocks()?;
+    let computed;
+    (w.waves, computed) = w.check_clocks()?;
+    w.computed = computed.into_iter().collect();
     w.run(options.trace_outputs)?;
     let steps_per_cycle = w.waves.iter().map(|c| 2 * c.half_period).min().unwrap_or(1);
     Ok(Model { btor2: w.text, notes: w.notes, steps_per_cycle })
@@ -214,6 +226,14 @@ struct Writer<'n> {
     /// The clocks the model drives, for a design on both edges or on several clocks: one
     /// model step is then one tick. Empty for a design on one edge of one clock.
     waves: Vec<Wave>,
+    /// Registers on a clock computed in the design (indices into the netlist's states).
+    computed: std::collections::HashSet<usize>,
+    /// Each such register written: its state index, the state that holds its value from
+    /// the step before, the state that holds its data from the step before, and its value.
+    computed_regs: Vec<(usize, u32, u32, u32)>,
+    /// The state that holds a computed clock's value in the step before, by clock value and
+    /// whether the rising edge is the one looked for.
+    clock_before: HashMap<(u32, bool), u32>,
     /// Latches whose value is being written (indices into the netlist's states).
     latch_open: std::collections::HashSet<usize>,
     /// Latches written so far.
@@ -269,6 +289,9 @@ impl<'n> Writer<'n> {
             mems: HashMap::new(),
             notes: Vec::new(),
             waves: Vec::new(),
+            computed: Default::default(),
+            computed_regs: Vec::new(),
+            clock_before: HashMap::new(),
             latch_open: Default::default(),
             latches: 0,
             names: HashMap::new(),
@@ -282,11 +305,18 @@ impl<'n> Writer<'n> {
     /// one clock (one model step is then one edge of it). Otherwise each clock in use must
     /// be a top-level input with a wave: declared in [`Options::clocks`], or the design's
     /// only clock with [`Options::both_edges`].
-    fn check_clocks(&self) -> Result<Vec<Wave>, Fail> {
+    ///
+    /// With declared clocks, a register may also be on a clock computed in the design (gated,
+    /// divided): the second value returned lists those registers.
+    fn check_clocks(&self) -> Result<(Vec<Wave>, Vec<usize>), Fail> {
         let nl = self.nl;
         let mut uses: Vec<(ClockSpec, String)> = Vec::new();
-        for s in &nl.states {
+        // Registers on a clock that is not a top-level input, when clocks are declared.
+        let mut computed: Vec<usize> = Vec::new();
+        let is_input = |v: ValueId| matches!(nl.value(v).kind, ValueKind::Input(_));
+        for (i, s) in nl.states.iter().enumerate() {
             match s.clock {
+                Some(c) if !self.opts.clocks.is_empty() && !is_input(c.signal) => computed.push(i),
                 Some(c) => uses.push((c, s.name.clone())),
                 // A latch has no clock: it is open or closed within a step.
                 None if s.latch_enable.is_some() => {}
@@ -311,14 +341,44 @@ impl<'n> Writer<'n> {
                 uses.push((k, "an assertion".into()));
             }
         }
-        let Some((c0, n0)) = uses.first() else {
-            return Ok(Vec::new());
-        };
-        let one_clock = uses.iter().all(|(c, _)| c.signal == c0.signal);
-        if one_clock && uses.iter().all(|(c, _)| c.edge == c0.edge) {
-            return Ok(Vec::new());
+        // Everything on one edge of one clock, computed or not: one step is that edge.
+        let all: Vec<ClockSpec> = uses
+            .iter()
+            .map(|(c, _)| *c)
+            .chain(computed.iter().map(|&i| nl.states[i].clock.expect("a computed clock")))
+            .collect();
+        if all.iter().all(|c| *c == all[0]) {
+            return Ok((Vec::new(), Vec::new()));
         }
         let mut waves: Vec<Wave> = Vec::new();
+        if !computed.is_empty() {
+            // A computed clock is read in every model step, so the steps have to be those
+            // of the declared clocks: all of those the design has are driven.
+            for k in &self.opts.clocks {
+                if k.half_period == 0 {
+                    return rejected(format!("clock {} is declared with a half period of 0", k.input));
+                }
+                if let Some(p) = nl.inputs.iter().find(|p| p.name == k.input) {
+                    waves.push(Wave {
+                        signal: p.value,
+                        half_period: k.half_period,
+                        phase: k.phase,
+                        level: 0,
+                        rise: 0,
+                        fall: 0,
+                    });
+                }
+            }
+        }
+        let first_computed;
+        let (c0, n0) = match uses.first() {
+            Some(u) => u,
+            None => {
+                first_computed = (all[0], nl.states[computed[0]].name.clone());
+                &first_computed
+            }
+        };
+        let one_clock = computed.is_empty() && uses.iter().all(|(c, _)| c.signal == c0.signal);
         for (c, n) in &uses {
             if waves.iter().any(|w| w.signal == c.signal) {
                 continue;
@@ -327,9 +387,13 @@ impl<'n> Writer<'n> {
             let ValueKind::Input(i) = nl.value(c.signal).kind else {
                 return rejected(if one_clock {
                     format!("blocks clocked on different edges of a clock that is not a top-level input ({n0})")
+                } else if self.opts.clocks.is_empty() {
+                    format!(
+                        "more than one clock ({n0}, {n}), and the clock of {n} is not a top-level input (no clock is declared, so a computed clock is not modelled)"
+                    )
                 } else {
                     format!(
-                        "more than one clock ({n0}, {n}), and the clock of {n} is not a top-level input (a derived clock is not modelled)"
+                        "{n} is on a clock computed in the design: only registers are modelled on such a clock, not memory writes, sampled-value functions or assertions"
                     )
                 });
             };
@@ -380,7 +444,64 @@ impl<'n> Writer<'n> {
                 ));
             }
         }
-        Ok(waves)
+        Ok((waves, computed))
+    }
+
+    /// The value of register `sidx`, which is on a clock computed in the design.
+    ///
+    /// Such a clock is read once in every model step, like any other signal. The register
+    /// has the data of the step before when its clock has its edge between that step and
+    /// this one, and otherwise the value it had in the step before. So its value is not a
+    /// state of the model but a choice between two: `<prefix>_reg_<n>` (the value before)
+    /// and `<prefix>_data_<n>` (the data before), with `<prefix>_clk_<n>` holding the
+    /// clock's value before.
+    fn computed_register(&mut self, sidx: usize) -> Result<u32, Fail> {
+        let st = &self.nl.states[sidx];
+        let (w, name) = (st.width, st.name.clone());
+        let clock = st.clock.expect("a register has a clock");
+        if !self.latch_open.insert(sidx) {
+            return rejected(format!("register {name}: its clock is computed from its own value within a step"));
+        }
+        let n = self.computed_regs.len();
+        let before = self.state(w, &format!("{}_reg_{n}", self.opts.name_prefix));
+        if let Some(init) = st.init.as_ref().filter(|c| c.known()) {
+            let c = self.konst(bits(init, w));
+            let srt = self.sort(w);
+            self.line(format!("init {srt} {before} {c}"));
+        }
+        let data = self.state(w, &format!("{}_data_{n}", self.opts.name_prefix));
+        // The clock's logic first, operands before users (it is reached before it is written).
+        for v in self.cone(clock.signal) {
+            self.value(v)?;
+        }
+        let now = self.value(clock.signal)?;
+        let now = self.bool(now);
+        let rising = clock.edge == sv_netlist::Edge::Posedge;
+        let was = match self.clock_before.get(&(now, rising)) {
+            Some(&s) => s,
+            None => {
+                let k = self.clock_before.len();
+                let s = self.state(1, &format!("{}_clk_{k}", self.opts.name_prefix));
+                // No edge is seen in the first step: there is no step before it.
+                let quiet = self.konst(if rising { "1" } else { "0" }.into());
+                let srt = self.sort(1);
+                self.line(format!("init {srt} {s} {quiet}"));
+                self.pending.push((srt, s, now));
+                self.clock_before.insert((now, rising), s);
+                s
+            }
+        };
+        let edge = if rising {
+            let low = self.un("not", was);
+            self.bin("and", low, now)
+        } else {
+            let low = self.un("not", now);
+            self.bin("and", was, low)
+        };
+        let value = self.ite(edge, data, before);
+        self.computed_regs.push((sidx, before, data, value));
+        self.latch_open.remove(&sidx);
+        Ok(value)
     }
 
     /// Writes the tick counter and each clock's level and edges from it.
@@ -434,6 +555,12 @@ impl<'n> Writer<'n> {
             (self.waves[i].level, self.waves[i].rise, self.waves[i].fall) = (level, rise, fall);
         }
         let fastest = self.waves.iter().map(|w| w.half_period).min().unwrap_or(1);
+        if !self.computed.is_empty() {
+            self.notes.push(format!(
+                "{} register(s) are on clocks computed in the design: such a clock is read once in every model step",
+                self.computed.len()
+            ));
+        }
         self.notes.push(if self.waves.len() == 1 {
             "the design uses both edges of its clock: one model step is half a clock cycle, the clock starts low".into()
         } else {
@@ -659,6 +786,9 @@ impl<'n> Writer<'n> {
                 }
                 if st.latch_enable.is_some() {
                     return self.latch(s.0 as usize, id);
+                }
+                if self.computed.contains(&(s.0 as usize)) {
+                    return self.computed_register(s.0 as usize);
                 }
                 self.state(w, &st.name)
             }
@@ -1089,8 +1219,9 @@ impl<'n> Writer<'n> {
             if self.cut(&st.name) {
                 continue;
             }
-            // A latch: its value and held state are written where it is read.
-            if st.latch_enable.is_some() {
+            // A latch: its value and held state are written where it is read. So is a
+            // register on a computed clock (its next values follow below).
+            if st.latch_enable.is_some() || self.computed.contains(&(st.id.0 as usize)) {
                 self.value(st.out)?;
                 continue;
             }
@@ -1114,6 +1245,23 @@ impl<'n> Writer<'n> {
             }
             let srt = self.sort(st.width);
             self.pending.push((srt, s, n));
+        }
+        // A register on a computed clock: it keeps its value of this step, and its data of
+        // this step (an asynchronous reset acts as part of the data, as for any register).
+        for i in 0..self.computed_regs.len() {
+            let (sidx, before, data, value) = self.computed_regs[i];
+            let st = &nl.states[sidx];
+            let mut n = self.value(st.next)?;
+            if let Some(r) = st.async_reset {
+                let sig = self.value(r.signal)?;
+                let sig = self.bool(sig);
+                let on = if r.active_high { sig } else { self.un("not", sig) };
+                let val = self.value(r.value)?;
+                n = self.ite(on, val, n);
+            }
+            let srt = self.sort(st.width);
+            self.pending.push((srt, before, value));
+            self.pending.push((srt, data, n));
         }
         // Memory writes: later ports win.
         for (k, mem) in nl.memories.iter().enumerate() {
@@ -1201,7 +1349,9 @@ impl<'n> Writer<'n> {
                 match nl.value(t.value).kind {
                     ValueKind::Input(_) => {}
                     // A register is a named state already; a latch's value is not.
-                    ValueKind::StateOut(s) if nl.states[s.0 as usize].latch_enable.is_none() => {}
+                    ValueKind::StateOut(s)
+                        if nl.states[s.0 as usize].latch_enable.is_none()
+                            && !self.computed.contains(&(s.0 as usize)) => {}
                     _ => named.push((t.name.clone(), t.value)),
                 }
             }
