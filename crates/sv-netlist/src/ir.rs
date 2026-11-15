@@ -641,6 +641,9 @@ pub struct Netlist {
     /// condition that reaches it: an attempt starts only at a clock tick where it is true
     /// (IEEE 1800-2023 §16.14.6). `None` for a property that is always reached.
     pub property_enables: Vec<Option<ValueId>>,
+    /// The words of each read-only memory that [`Self::blast_memories`] turned into
+    /// constants, named like the array's elements (`"top.tab[3]"`).
+    pub table_words: Vec<TraceSignal>,
     /// Full hierarchical name of each property of [`Self::properties`] (`"top.u0.a_no_overflow"`,
     /// `"top.g[1].a_x"`). A property with no label is named `_assert_<n>`, `_assume_<n>`,
     /// `_cover_<n>` or `_restrict_<n>` in its instance, counted from 1 over the design.
@@ -872,6 +875,27 @@ impl Netlist {
             }
 
             if mem.writes.is_empty() {
+                // Each word under the name of its array element, so that a property bound
+                // after lowering can still read `mem[i]` (kept apart from the traces: a
+                // table of constants is not a waveform).
+                for w_idx in 0..mem.depth {
+                    let cv = mem.init.iter().find(|(i, _)| *i == w_idx).map(|(_, c)| c.clone()).unwrap_or_else(|| {
+                        if mem.four_state {
+                            CVal::all_x(mem.width, mem.signed)
+                        } else {
+                            CVal::new(mem.width, mem.signed, 0)
+                        }
+                    });
+                    let value = self.push_const(cv, mem.four_state, mem.loc);
+                    self.table_words.push(TraceSignal {
+                        name: format!("{}[{}]", mem.name, mem.lo_idx + i128::from(w_idx)),
+                        width: mem.width,
+                        signed: mem.signed,
+                        four_state: mem.four_state,
+                        value,
+                        loc: mem.loc,
+                    });
+                }
                 actions[mid_idx] = Some(BlastedMem::Rom {
                     width: mem.width,
                     depth: mem.depth,
@@ -932,6 +956,16 @@ impl Netlist {
                 }
 
                 let init_cv = mem.init.iter().find(|(i, _)| *i == w_idx).map(|(_, c)| c.clone());
+                // Named like an element of the array, so that a property bound after
+                // lowering can still read `mem[i]`.
+                self.traces.push(TraceSignal {
+                    name: word_name.clone(),
+                    width: mem.width,
+                    signed: mem.signed,
+                    four_state: mem.four_state,
+                    value: out_val,
+                    loc: mem.loc,
+                });
                 self.states.push(State {
                     id: state_id,
                     name: word_name,
@@ -1385,7 +1419,7 @@ impl Netlist {
                 );
             }
         }
-        for tr in &self.traces {
+        for tr in self.traces.iter().chain(&self.table_words) {
             visit_root(
                 tr.value.0 as usize,
                 &self.values,
@@ -1466,7 +1500,7 @@ impl Netlist {
         for u in &mut self.undriven {
             map_v(&mut u.value);
         }
-        for tr in &mut self.traces {
+        for tr in self.traces.iter_mut().chain(&mut self.table_words) {
             map_v(&mut tr.value);
         }
         for pv in self.prop_expr_values.iter_mut().flatten() {

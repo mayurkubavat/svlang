@@ -638,6 +638,7 @@ impl NetBuilder {
             traces: self.traces,
             sva_arena,
             property_enables,
+            table_words: Vec::new(),
             property_names: Vec::new(),
             property_checks: vec![None; properties.len()],
             liveness: Vec::new(),

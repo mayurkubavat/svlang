@@ -345,3 +345,47 @@ fn properties_bound_from_text_compile_to_named_checks() {
     assert_eq!(model.btor2.lines().filter(|l| l.contains(" constraint ")).count(), 1);
     assert!(model.btor2.lines().any(|l| l.contains(" justice 1 ") && l.ends_with(" a_live")), "{}", model.btor2);
 }
+
+#[test]
+fn a_property_bound_from_text_can_read_a_memory_that_became_registers() {
+    use svlang::netlist::{ExternalProperty, PropertyOptions};
+
+    let comp = svlang::Compilation::from_source(
+        "mm.sv",
+        "module mm (input logic clk, we, input logic [1:0] wa, ra, input logic [3:0] wd, output logic [3:0] rd);\n\
+           logic [3:0] mem [0:3];\n\
+           always_ff @(posedge clk) if (we) mem[wa] <= wd;\n\
+           assign rd = mem[ra];\n\
+         endmodule\n",
+    );
+    let elab = comp.elaborate();
+    let config = svlang::LowerConfig { blast_memories_up_to: Some(16), ..Default::default() };
+    let mut nl = comp.lower_netlist(&config).unwrap_netlist();
+    assert!(nl.memories.is_empty(), "the memory is four registers");
+    let mut arena = svlang::ExprArena::new();
+    // A constant index and a signal index.
+    let text = "@(posedge clk) we |=> mem[$past(wa)] == $past(wd) && (mem[2'd1] == mem[1])";
+    let prop = comp.bind_property_in_scope(&elab.design, "mm", text, &mut arena).expect("binds");
+    let external = [ExternalProperty { arena: &arena, property: &prop, name: "a_mem".into() }];
+    let out = nl.compile_external_properties(&elab.design, &external, &PropertyOptions::default());
+    assert!(out[0].is_ok(), "{out:?}");
+
+    // A table that is only read becomes constants; its words can be read the same way.
+    let comp = svlang::Compilation::from_source(
+        "rom.sv",
+        "module rom (input logic clk, input logic [1:0] a, output logic [3:0] d);\n\
+           logic [3:0] tab [0:3];\n\
+           initial begin tab[0] = 4'd1; tab[1] = 4'd3; tab[2] = 4'd5; tab[3] = 4'd7; end\n\
+           assign d = tab[a];\n\
+         endmodule\n",
+    );
+    let elab = comp.elaborate();
+    let mut nl = comp.lower_netlist(&config).unwrap_netlist();
+    assert!(nl.memories.is_empty());
+    let mut arena = svlang::ExprArena::new();
+    let text = "@(posedge clk) d == tab[a] && tab[2] == 4'd5";
+    let prop = comp.bind_property_in_scope(&elab.design, "rom", text, &mut arena).expect("binds");
+    let external = [ExternalProperty { arena: &arena, property: &prop, name: "a_tab".into() }];
+    let out = nl.compile_external_properties(&elab.design, &external, &PropertyOptions::default());
+    assert!(out[0].is_ok(), "{out:?}");
+}

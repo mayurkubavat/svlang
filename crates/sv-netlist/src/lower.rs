@@ -1858,7 +1858,8 @@ pub(crate) fn lower_external_property_on_netlist(
         builder.files.push(name);
     }
 
-    let trace_map: FxMap<&str, ValueId> = nl.traces.iter().map(|tr| (tr.name.as_str(), tr.value)).collect();
+    let trace_map: FxMap<&str, ValueId> =
+        nl.traces.iter().chain(&nl.table_words).map(|tr| (tr.name.as_str(), tr.value)).collect();
     let mem_map: FxMap<&str, MemId> = nl.memories.iter().map(|m| (m.name.as_str(), m.id)).collect();
     let mut sym_slots: FxMap<SymbolId, ObjSlot> = FxMap::default();
     let mut placeholders: Vec<ValueId> = Vec::new();
