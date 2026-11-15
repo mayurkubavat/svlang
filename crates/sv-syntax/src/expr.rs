@@ -506,6 +506,10 @@ pub(crate) fn arg_list(p: &mut Parser) {
                 while !p.at_end() && !p.at_any(&[",", ")", ";"]) {
                     p.bump();
                 }
+                if p.at(";") {
+                    // The list was never closed: leave the `;` to the statement.
+                    break;
+                }
                 continue;
             }
         }

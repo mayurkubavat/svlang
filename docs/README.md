@@ -35,6 +35,8 @@
   SystemVerilog conformance suite, by clause.
 - [Front-end census](reference/census.md): which constructs stop open RTL
   designs from lowering to the netlist, ranked by the modules they block.
+- Robustness: `tools/quality/mutate_smoke.py` damages source files in small
+  ways and checks that svlang reports errors and never crashes or hangs.
 - [Rules only dv-lint has](rules/native-rules.md).
 - [Slang: pin, patches and updating it](../third_party/slang/README.md).
 

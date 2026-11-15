@@ -1114,7 +1114,8 @@ impl<'t> Builder<'t> {
         for &d in dims {
             let inner = {
                 let t = self.toks_of(d);
-                t[1..t.len().saturating_sub(1)].to_vec()
+                // A dimension the parser recovered from may have lost a bracket.
+                t.get(1..t.len().saturating_sub(1)).unwrap_or_default().to_vec()
             };
             let text = match inner.as_slice() {
                 [] => String::new(),

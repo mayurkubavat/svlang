@@ -932,10 +932,16 @@ pub(crate) fn data_type(p: &mut Parser) {
             }
             if p.expect("{") {
                 while !p.at_end() && !p.at("}") && !p.at_any(END_KEYWORDS) {
+                    let before = p.pos();
                     let d = p.start();
                     attributes(p);
                     data_decl(p);
                     d.complete(p, DataDecl);
+                    if p.pos() == before {
+                        // Not a member: step over the token, or the loop never ends.
+                        p.error(format!("unexpected `{}` in a struct or union", p.cur()));
+                        p.bump();
+                    }
                 }
                 p.expect("}");
             }
