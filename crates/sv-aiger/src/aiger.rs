@@ -18,9 +18,6 @@ pub fn read(bytes: &[u8]) -> Result<Aig> {
     let num = |i: usize| -> Result<u32> { h.get(i).map_or(Ok(0), |s| s.parse().context("bad AIGER header")) };
     let (m, ni, nl, no, na, nb, nc, nj, nf) =
         (num(1)?, num(2)?, num(3)?, num(4)?, num(5)?, num(6)?, num(7)?, num(8)?, num(9)?);
-    if nj > 0 || nf > 0 {
-        bail!("AIGER justice / fairness (liveness) is not supported yet");
-    }
     if m != ni + nl + na {
         bail!("AIGER header: M must equal I + L + A");
     }
@@ -54,6 +51,23 @@ pub fn read(bytes: &[u8]) -> Result<Aig> {
     let mut cons = Vec::new();
     for _ in 0..nc {
         cons.push(r.lit_line()?);
+    }
+    // Justice: the size of each property, then their literals; then the fairness literals.
+    let mut justice_sizes = Vec::new();
+    for _ in 0..nj {
+        justice_sizes.push(r.lit_line()?);
+    }
+    let mut justice = Vec::new();
+    for size in justice_sizes {
+        let mut set = Vec::new();
+        for _ in 0..size {
+            set.push(r.lit_line()?);
+        }
+        justice.push(set);
+    }
+    let mut fairness = Vec::new();
+    for _ in 0..nf {
+        fairness.push(r.lit_line()?);
     }
     let first_latch = ni + 1;
     for (k, line) in latch_lines.iter().enumerate() {
@@ -105,6 +119,7 @@ pub fn read(bytes: &[u8]) -> Result<Aig> {
     }
     // Symbols: i<k> name, l<k> name, b<k> name.
     let mut bad_names: Vec<(usize, String)> = Vec::new();
+    let mut justice_names: Vec<(usize, String)> = Vec::new();
     while let Ok(line) = r.line() {
         if line.starts_with('c') {
             break;
@@ -117,6 +132,10 @@ pub fn read(bytes: &[u8]) -> Result<Aig> {
                     "l" => Some(first_latch + i),
                     "b" => {
                         bad_names.push((i as usize, name.to_string()));
+                        None
+                    }
+                    "j" => {
+                        justice_names.push((i as usize, name.to_string()));
                         None
                     }
                     _ => None,
@@ -135,8 +154,23 @@ pub fn read(bytes: &[u8]) -> Result<Aig> {
         }
     }
     g.constraints = cons;
+    g.justice_names = vec![String::new(); justice.len()];
+    for (k, n) in justice_names {
+        if let Some(slot) = g.justice_names.get_mut(k) {
+            *slot = n;
+        }
+    }
+    g.justice = justice;
+    g.fairness = fairness;
     let maxv = g.num_vars();
-    for l in g.bads.iter().chain(&g.constraints).chain(g.latches.iter().map(|l| &l.next)) {
+    for l in g
+        .bads
+        .iter()
+        .chain(&g.constraints)
+        .chain(g.justice.iter().flatten())
+        .chain(&g.fairness)
+        .chain(g.latches.iter().map(|l| &l.next))
+    {
         if l >> 1 >= maxv {
             bail!("literal {l} out of range");
         }
@@ -177,8 +211,27 @@ impl Reader<'_> {
     }
 }
 
-/// The symbol table: `i<k>`, `l<k>` and `b<k>` lines for the inputs, latches and bad
-/// states that have a name.
+/// The J and F counts of the header, left off when both are zero (as AIGER 1.9 allows, and
+/// as tools that predate liveness expect).
+fn liveness_counts(g: &Aig) -> String {
+    if g.justice.is_empty() && g.fairness.is_empty() {
+        String::new()
+    } else {
+        format!(" {} {}", g.justice.len(), g.fairness.len())
+    }
+}
+
+/// The justice section (the size of each property, then every literal) and the fairness
+/// literals, one number a line.
+fn liveness_lines(g: &Aig, m: impl Fn(Lit) -> Lit) -> Vec<u32> {
+    let mut lines: Vec<u32> = g.justice.iter().map(|set| set.len() as u32).collect();
+    lines.extend(g.justice.iter().flatten().map(|&l| m(l)));
+    lines.extend(g.fairness.iter().map(|&l| m(l)));
+    lines
+}
+
+/// The symbol table: `i<k>`, `l<k>`, `b<k>` and `j<k>` lines for the inputs, latches, bad
+/// states and justice properties that have a name.
 fn symbols(g: &Aig) -> String {
     let mut s = String::new();
     for (k, &i) in g.inputs.iter().enumerate() {
@@ -193,6 +246,9 @@ fn symbols(g: &Aig) -> String {
     }
     for (k, n) in g.bad_names.iter().enumerate().filter(|(_, n)| !n.is_empty()) {
         s += &format!("b{k} {n}\n");
+    }
+    for (k, n) in g.justice_names.iter().enumerate().filter(|(_, n)| !n.is_empty()) {
+        s += &format!("j{k} {n}\n");
     }
     s
 }
@@ -220,13 +276,14 @@ pub fn write_ascii(g: &Aig) -> String {
     let m = |l: Lit| 2 * map[(l >> 1) as usize] + (l & 1);
     let na = g.num_ands();
     let mut s = format!(
-        "aag {} {} {} 0 {} {} {}\n",
+        "aag {} {} {} 0 {} {} {}{}\n",
         next - 1,
         g.inputs.len(),
         g.latches.len(),
         na,
         g.bads.len(),
-        g.constraints.len()
+        g.constraints.len(),
+        liveness_counts(g)
     );
     for &i in &g.inputs {
         s += &format!("{}\n", m(i));
@@ -244,6 +301,9 @@ pub fn write_ascii(g: &Aig) -> String {
     }
     for &c in &g.constraints {
         s += &format!("{}\n", m(c));
+    }
+    for l in liveness_lines(g, m) {
+        s += &format!("{l}\n");
     }
     for (v, n) in g.nodes.iter().enumerate() {
         if let Node::And(a, b) = *n {
@@ -275,13 +335,14 @@ pub fn write_binary(g: &Aig) -> Vec<u8> {
     }
     let m = |l: Lit| 2 * map[(l >> 1) as usize] + (l & 1);
     let mut out = format!(
-        "aig {} {} {} 0 {} {} {}\n",
+        "aig {} {} {} 0 {} {} {}{}\n",
         next - 1,
         g.inputs.len(),
         g.latches.len(),
         g.num_ands(),
         g.bads.len(),
-        g.constraints.len()
+        g.constraints.len(),
+        liveness_counts(g)
     )
     .into_bytes();
     for l in &g.latches {
@@ -294,6 +355,9 @@ pub fn write_binary(g: &Aig) -> Vec<u8> {
     }
     for &b in g.bads.iter().chain(&g.constraints) {
         out.extend(format!("{}\n", m(b)).bytes());
+    }
+    for l in liveness_lines(g, m) {
+        out.extend(format!("{l}\n").bytes());
     }
     let varint = |out: &mut Vec<u8>, mut x: u32| {
         while x >= 0x80 {

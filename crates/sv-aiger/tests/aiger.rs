@@ -118,3 +118,79 @@ fn two_clocks_are_an_error() {
     let e = lower(&nl, &Options::default()).unwrap_err();
     assert!(e.to_string().contains("more than one clock"), "{e}");
 }
+
+#[test]
+fn liveness_is_a_justice_property_and_reads_back() {
+    use sv_netlist::PropertyOptions;
+    let mut nl = netlist(
+        "module live (input logic clk, rst, req, output logic gnt);\n\
+           always_ff @(posedge clk) if (rst) gnt <= 1'b0; else gnt <= req;\n\
+           granted: assert property (@(posedge clk) req |-> s_eventually gnt);\n\
+           fair_req: assume property (@(posedge clk) s_eventually !req);\n\
+         endmodule\n",
+    );
+    nl.compile_properties(&PropertyOptions::default());
+    assert_eq!(nl.liveness.len(), 2, "both properties are liveness obligations");
+    let g = lower(&nl, &Options::default()).unwrap().aig;
+    assert_eq!((g.justice.len(), g.fairness.len()), (1, 1));
+    assert_eq!(g.justice[0].len(), 1);
+    assert!(g.justice_names[0].ends_with("granted"), "{:?}", g.justice_names);
+    let text = g.to_ascii();
+    let header: Vec<&str> = text.lines().next().unwrap().split_whitespace().collect();
+    assert_eq!(&header[8..], ["1", "1"], "{text}");
+    for back in [aiger::read(&g.to_binary()).unwrap(), aiger::read(text.as_bytes()).unwrap()] {
+        assert_eq!((back.justice.len(), back.justice[0].len(), back.fairness.len()), (1, 1, 1));
+        assert_eq!(back.justice_names, g.justice_names);
+        assert_eq!(back.num_ands(), g.num_ands());
+    }
+    // A design with no liveness keeps the short header.
+    let plain = aig(&COUNTER.replace("LIMIT", "4'd9")).to_ascii();
+    assert_eq!(plain.lines().next().unwrap().split_whitespace().count(), 8, "{plain}");
+}
+
+/// The value of justice property 0 at each of `steps` clock edges, from the initial state,
+/// with every input driven by `input(name, step)`.
+fn justice_trace(g: &Aig, steps: usize, input: impl Fn(&str, usize) -> bool) -> Vec<bool> {
+    let mut state: HashMap<u32, bool> = g.latches.iter().map(|l| (l.lit, l.init == Init::One)).collect();
+    let mut trace = Vec::new();
+    for step in 0..steps {
+        let vals = g.eval(|l| match state.get(&l) {
+            Some(&v) => v,
+            None => input(g.names.get(&(l >> 1)).map_or("", String::as_str), step),
+        });
+        trace.push(lit_val(&vals, g.justice[0][0]));
+        state = g.latches.iter().map(|l| (l.lit, lit_val(&vals, l.next))).collect();
+    }
+    trace
+}
+
+#[test]
+fn the_justice_literal_follows_the_design() {
+    use sv_netlist::PropertyOptions;
+    // A request is granted one edge later when `en` allows it.
+    let mut nl = netlist(
+        "module live (input logic clk, req, en, output logic gnt);\n\
+           initial gnt = 1'b0;\n\
+           always_ff @(posedge clk) gnt <= req & en;\n\
+           granted: assert property (@(posedge clk) req |-> s_eventually gnt);\n\
+         endmodule\n",
+    );
+    nl.compile_properties(&PropertyOptions::default());
+    let g = lower(&nl, &Options::default()).unwrap().aig;
+    // The model picks the request it watches with a free input; pick the one at step 2.
+    let pick = g.names.values().find(|n| n.contains("pick")).expect("the pick input").clone();
+    let run = |en: fn(usize) -> bool| {
+        justice_trace(&g, 40, |name, step| match name {
+            "live.req" => true,
+            "live.en" => en(step),
+            n if n == pick => step == 2,
+            _ => false,
+        })
+    };
+    // Never enabled: the watched request is never granted, and the literal stays true.
+    let starved = run(|_| false);
+    assert!(starved[10..].iter().all(|&b| b), "{starved:?}");
+    // Enabled from step 20: the grant comes, and the literal is false from then on.
+    let served = run(|step| step >= 20);
+    assert!(served[25..].iter().all(|&b| !b), "{served:?}");
+}

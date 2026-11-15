@@ -31,8 +31,11 @@ declared clocks):
   (`assert property`) are written through the checks
   `Netlist::compile_properties` made for them; see `sv-btor2` for which
   properties that covers and what happens to the rest.
-- Inputs, latches and bad states are named in the symbol table
-  (`i0 top.rst`, `l3 top.q[3]`, `b0 my_label`).
+- A liveness obligation (`req |-> s_eventually gnt`, compiled by
+  `Netlist::compile_properties`) is a justice property (`J` section), and a
+  liveness assumption a fairness constraint (`F` section).
+- Inputs, latches, bad states and justice properties are named in the symbol
+  table (`i0 top.rst`, `l3 top.q[3]`, `b0 my_label`, `j0 top.granted`).
 - Memories must be expanded into registers first
   (`LowerConfig::blast_memories_up_to`); arrays are an error.
 - Clocks, edges, latches and asynchronous resets are modelled as in

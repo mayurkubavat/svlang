@@ -26,7 +26,8 @@
 //! with that crate's modelling choices and [`Options`] (clocks and edges,
 //! asynchronous resets acting synchronously, free values for undriven and X
 //! bits, assertions as bad states and assumptions as constraints, concurrent
-//! properties through the checks `Netlist::compile_properties` made), and then
+//! properties through the checks `Netlist::compile_properties` made, liveness
+//! obligations as justice properties and fairness constraints), and then
 //! bit-blasted: every register bit is a latch, every input bit an input.
 //! Memories must be expanded into registers first
 //! ([`LowerConfig::blast_memories_up_to`](sv_netlist::LowerConfig)); anything
@@ -76,12 +77,12 @@ pub fn lower(nl: &Netlist, options: &Options) -> Result<Model, Error> {
     Ok(Model { aig, notes: m.notes })
 }
 
-/// Bit-blasts Btor2 text (bit-vectors only, no arrays, no liveness) into an AIG.
+/// Bit-blasts Btor2 text (bit-vectors only, no arrays) into an AIG.
 ///
 /// # Errors
 ///
-/// [`Error`] when the text is not well-formed Btor2, uses arrays or liveness, or has a
-/// state whose initial value is not a constant (AIGER cannot express it).
+/// [`Error`] when the text is not well-formed Btor2, uses arrays, or has a state whose
+/// initial value is not a constant (AIGER cannot express it).
 pub fn from_btor2(text: &str) -> Result<Aig, Error> {
     let parsed = parse::parse(text).map_err(|e| Error(e.to_string()))?;
     let aig = blast::from_btor2(&parsed)?;
@@ -158,6 +159,13 @@ pub struct Aig {
     /// The label of each entry of `bads` (empty when it has none), written as `b<k>` symbols.
     pub bad_names: Vec<String>,
     pub constraints: Vec<Lit>,
+    /// Liveness obligations (AIGER justice properties): each is a set of literals, and a
+    /// trace on which every literal of one set is true infinitely often is a counterexample.
+    pub justice: Vec<Vec<Lit>>,
+    /// The name of each entry of `justice` (empty when it has none), written as `j<k>` symbols.
+    pub justice_names: Vec<String>,
+    /// Fairness constraints: only traces on which each is true infinitely often count.
+    pub fairness: Vec<Lit>,
     /// Names for inputs and latches, by variable (when known).
     pub names: HashMap<u32, String, Fixed>,
     /// Named Btor2 `output` lines (bits LSB first), kept only so a trace
@@ -320,12 +328,14 @@ impl Aig {
 
     pub fn summary(&self) -> String {
         format!(
-            "inputs {} latches {} ands {} bads {} constraints {}",
+            "inputs {} latches {} ands {} bads {} constraints {} justice {} fairness {}",
             self.inputs.len(),
             self.latches.len(),
             self.num_ands(),
             self.bads.len(),
-            self.constraints.len()
+            self.constraints.len(),
+            self.justice.len(),
+            self.fairness.len()
         )
     }
 
