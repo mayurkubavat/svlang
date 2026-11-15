@@ -24,8 +24,8 @@ jobs:
 
       - name: Toolchain
         run: |
-          rustup toolchain install stable --profile minimal --component rustfmt,clippy
-          rustup default stable
+          # rust-toolchain.toml names the version (and its components).
+          rustup toolchain install
 
       - uses: actions/cache@v4
         with:
@@ -63,7 +63,9 @@ jobs:
       - name: Toolchain
         run: |
           rustup toolchain install 1.82 --profile minimal
-          rustup default 1.82
+          # rust-toolchain.toml would win over a default; this job's cargo
+          # calls must use the MSRV.
+          echo "RUSTUP_TOOLCHAIN=1.82" >> "$GITHUB_ENV"
 
       - uses: actions/cache@v4
         with:
@@ -88,8 +90,8 @@ jobs:
 
       - name: Toolchain
         run: |
-          rustup toolchain install stable --profile minimal
-          rustup default stable
+          # rust-toolchain.toml names the version.
+          rustup toolchain install
 
       - name: Build
         run: cargo build --locked --profile dist
@@ -113,8 +115,8 @@ jobs:
 
       - name: Toolchain
         run: |
-          rustup toolchain install stable --profile minimal
-          rustup default stable
+          # rust-toolchain.toml names the version.
+          rustup toolchain install
 
       - uses: actions/cache@v4
         with:
@@ -145,8 +147,8 @@ jobs:
 
       - name: Toolchain
         run: |
-          rustup toolchain install stable --profile minimal --target wasm32-unknown-unknown
-          rustup default stable
+          # rust-toolchain.toml names the version (and the wasm target).
+          rustup toolchain install
 
       - uses: actions/cache@v4
         with:

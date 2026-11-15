@@ -1,0 +1,8 @@
+# One Rust for the local gate (tools/gates/prepush.sh) and for CI, so a
+# lint that one rejects the other rejects too. Move it on purpose, in its
+# own commit, after the gate passes on the new version. The MSRV check
+# (rust-version in Cargo.toml) runs its own toolchain explicitly.
+[toolchain]
+channel = "1.100.0"
+components = ["rustfmt", "clippy"]
+targets = ["wasm32-unknown-unknown"]
