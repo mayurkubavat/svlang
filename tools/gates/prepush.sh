@@ -23,6 +23,16 @@
 #   python3 cpp/tests/regression.py --binary build/uvmcheck --mode all-rules \
 #       --uvm-home "$UVM_HOME" --baseline cpp/tests/baselines/baseline_uvm_core.json --update-baseline
 set -u
+# On the Linux box the whole gate is one job of the dvq build queue
+# (~/.local/bin/dvq, the front end of rdev queue), so it waits for CPUs and
+# memory instead of starting bare; the output and exit status pass through.
+# 4 CPUs match PREPUSH_JOBS; 10G (above the 6G build preset) covers the C++
+# build and the Rust tests. DVQ= or a missing dvq (the Mac) runs it directly.
+DVQ="${DVQ-$HOME/.local/bin/dvq run build --}"; [ -x "$HOME/.local/bin/dvq" ] || DVQ=
+if [ -n "$DVQ" ] && [ -z "${DVQ_CLASS:-}${RDEV_JOB_ID:-}" ]; then
+    export DVQ_CPU="${DVQ_CPU:-${PREPUSH_JOBS:-4}00%}" DVQ_MEM="${DVQ_MEM:-10G}"
+    exec $DVQ "$(cd "$(dirname "$0")" && pwd)/$(basename "$0")" "$@"
+fi
 cd "$(dirname "$0")/../.."
 
 rust=1 cpp=1 quick=0
