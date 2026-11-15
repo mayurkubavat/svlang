@@ -10,10 +10,12 @@
 #   tools/gates/prepush.sh --quick      # both, without the two slow steps
 #                                       # (all rules on real uvm-core, dist build)
 #
-# UVM_HOME must point at a uvm-core checkout of the tag CI uses (2020.3.1)
-# for the uvm-core steps; without it they are reported as NOT RUN and the
-# script fails, so a push never goes out half checked. --quick skips them
-# on purpose and says so.
+# The uvm-core steps need a uvm-core checkout of the tag CI uses (2020.3.1).
+# UVM_HOME names one; without it the script uses a checkout shared by every
+# clone on the machine, ~/.cache/svlang/uvm-core-2020.3.1, and fetches it
+# there the first time. If that fails the steps are reported as NOT RUN and
+# the script fails, so a push never goes out half checked. --quick skips
+# them on purpose and says so.
 #
 # A fixture edit changes the all-rules baselines. Regenerate both with:
 #   python3 cpp/tests/regression.py --binary build/uvmcheck --mode all-rules \
@@ -56,6 +58,19 @@ skip() {
 }
 uvm_ok() { [ -n "${UVM_HOME:-}" ] && [ -f "$UVM_HOME/src/uvm_pkg.sv" ]; }
 
+uvm_ref=2020.3.1   # UVM_CORE_REF in .github/workflows/ci.yml
+if [ -z "${UVM_HOME:-}" ] && [ "$quick" = 0 ]; then
+    UVM_HOME="${XDG_CACHE_HOME:-$HOME/.cache}/svlang/uvm-core-$uvm_ref"
+    export UVM_HOME
+    if ! uvm_ok; then
+        echo "fetching uvm-core $uvm_ref into $UVM_HOME (once per machine)"
+        mkdir -p "$(dirname "$UVM_HOME")"
+        git -c advice.detachedHead=false clone -q --depth 1 --branch "$uvm_ref" \
+            https://github.com/accellera-official/uvm-core.git "$UVM_HOME.tmp.$$" \
+            && mv "$UVM_HOME.tmp.$$" "$UVM_HOME" || rm -rf "$UVM_HOME.tmp.$$"
+    fi
+fi
+
 step "hygiene: no assistant state, keys or attribution" tools/gates/hygiene.sh
 
 if [ "$rust" = 1 ]; then
@@ -77,8 +92,8 @@ if [ "$rust" = 1 ]; then
     if uvm_ok; then
         step "ERROR budget (uvm-core)" python3 tools/quality/error_budget.py --binary target/release/uvmcheck
     else
-        skip "ERROR budget (uvm-core)" "NOT RUN: set UVM_HOME to a uvm-core 2020.3.1 checkout"
-        failed+=("ERROR budget (uvm-core): UVM_HOME not set")
+        skip "ERROR budget (uvm-core)" "NOT RUN: no uvm-core 2020.3.1 checkout (UVM_HOME, or the fetch failed)"
+        failed+=("ERROR budget (uvm-core): no uvm-core checkout")
     fi
 fi
 
@@ -96,8 +111,8 @@ if [ "$cpp" = 1 ]; then
         step "rules, all rules, real uvm-core" python3 cpp/tests/regression.py --binary $b --mode all-rules \
             --uvm-home "$UVM_HOME" --baseline cpp/tests/baselines/baseline_uvm_core.json
     else
-        skip "rules, all rules, real uvm-core" "NOT RUN: set UVM_HOME to a uvm-core 2020.3.1 checkout"
-        failed+=("rules, all rules, real uvm-core: UVM_HOME not set")
+        skip "rules, all rules, real uvm-core" "NOT RUN: no uvm-core 2020.3.1 checkout (UVM_HOME, or the fetch failed)"
+        failed+=("rules, all rules, real uvm-core: no uvm-core checkout")
     fi
     step "LSP" python3 cpp/tests/test_lsp.py
     for t in catalog config baseline findings init waivers changed fix fix_invariants report precision map explain \

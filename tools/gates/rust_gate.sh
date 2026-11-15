@@ -56,7 +56,13 @@ want=${UVMCHECK_MSRV:-auto}
 if [ "$want" != no ] && [ -n "$msrv" ] && command -v rustup >/dev/null 2>&1 \
     && rustup run "$msrv" rustc --version >/dev/null 2>&1; then
     # svlang-py (the Python wheel) follows PyO3's newer floor; see its Cargo.toml.
-    step rustup run "$msrv" cargo check --workspace --exclude svlang-py --all-targets --locked --target-dir target/msrv
+    # sv-slang links libuvmcheck_model and cannot build without it.
+    if [ "$have_lib" = yes ]; then
+        step rustup run "$msrv" cargo check --workspace --exclude svlang-py --all-targets --locked --target-dir target/msrv
+    else
+        step rustup run "$msrv" cargo check --workspace --exclude svlang-py --exclude sv-slang --all-targets --locked --target-dir target/msrv
+        echo "== the MSRV leg left out sv-slang (no libuvmcheck_model in $lib_dir)"
+    fi
 elif [ "$want" = yes ]; then
     echo "rust_gate: UVMCHECK_MSRV=yes needs rustup with toolchain $msrv" >&2
     exit 2
