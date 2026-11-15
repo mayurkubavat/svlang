@@ -2,13 +2,13 @@
 
 What happens when every module of a set of open RTL designs is made a top and lowered to
 the word-level netlist (`tools/quality/census.py`, designs in `tools/quality/census_corpus.json`).
-svlang `543d7e433842`, 2026-11-14, reference front end slang version 12.1.0+d02b7cd --compat=vcs --timescale=1ns/1ps. Regenerate after a fix; the designs are kept outside the repository.
+svlang `8eba4f0701e4`, 2026-11-14, reference front end slang version 12.1.0+d02b7cd --compat=vcs --timescale=1ns/1ps. Regenerate after a fix; the designs are kept outside the repository.
 
-2184 modules. 610 cannot stand alone as a top (see *Invalid as a top*), which leaves 1574 measured: **987 lowered (62.7%)**, 374 unsupported, 184 wrongly rejected, 0 crashes, 9 out of memory, 0 timeouts, 20 lowered although the reference rejects the input.
+2184 modules. 611 cannot stand alone as a top (see *Invalid as a top*), which leaves 1573 measured: **997 lowered (63.4%)**, 360 unsupported, 185 wrongly rejected, 0 crashes, 9 out of memory, 0 timeouts, 22 lowered although the reference rejects the input.
 
-Where the unsupported and wrongly rejected ones stop: 6 at parse, 20 at elaborate, 532 at lower. Of the 1007 netlists, the Btor2 writer takes 885 and refuses 122 (see *Lowered, not written as Btor2*).
+Where the unsupported and wrongly rejected ones stop: 6 at parse, 20 at elaborate, 519 at lower. Of the 1019 netlists, the Btor2 writer takes 895 and refuses 124 (see *Lowered, not written as Btor2*).
 
-With `--skip-initial-checks` `--isunknown-is-false`: 1121 of 1564 lowered (71.7%), 79 unsupported, 327 wrongly rejected.
+With `--skip-initial-checks` `--isunknown-is-false`: 1131 of 1561 lowered (72.5%), 65 unsupported, 328 wrongly rejected.
 
 ## Designs
 
@@ -16,7 +16,7 @@ With `--skip-initial-checks` `--isunknown-is-false`: 1121 of 1564 lowered (71.7%
 | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | [picorv32](https://github.com/YosysHQ/picorv32) | `ef203c2b0a` | ISC | 21 | 11 | 0 | 4 | 0 | 0 | 6 | 73% |
 | [serv](https://github.com/olofk/serv) | `f200eb2ed7` | ISC | 73 | 27 | 5 | 0 | 0 | 0 | 41 | 84% |
-| [biriscv](https://github.com/ultraembedded/biriscv) | `6af9c4be5a` | Apache-2.0 | 46 | 28 | 10 | 4 | 0 | 0 | 4 | 67% |
+| [biriscv](https://github.com/ultraembedded/biriscv) | `6af9c4be5a` | Apache-2.0 | 46 | 33 | 3 | 4 | 0 | 2 | 4 | 79% |
 | [verilog-axi](https://github.com/alexforencich/verilog-axi) | `516bd5dadc` | MIT | 55 | 41 | 12 | 2 | 0 | 0 | 0 | 75% |
 | [scr1](https://github.com/syntacore/scr1) | `ebb5e3551a` | SHL-2.0 | 38 | 29 | 0 | 8 | 0 | 0 | 1 | 78% |
 | [tech_cells_generic](https://github.com/pulp-platform/tech_cells_generic) | `55cb54513e` | SHL-0.51 | 12 | 9 | 2 | 1 | 0 | 0 | 0 | 75% |
@@ -24,13 +24,13 @@ With `--skip-initial-checks` `--isunknown-is-false`: 1121 of 1564 lowered (71.7%
 | [axi](https://github.com/pulp-platform/axi) | `ee000c0eba` | SHL-0.51 | 118 | 5 | 0 | 1 | 0 | 0 | 112 | 83% |
 | [cvfpu](https://github.com/openhwgroup/cvfpu) | `532f0f88b4` | SHL-0.51 | 12 | 6 | 2 | 1 | 0 | 0 | 3 | 67% |
 | [ibex](https://github.com/lowRISC/ibex) | `3d524f19ee` | Apache-2.0 | 30 | 9 | 9 | 9 | 0 | 0 | 3 | 33% |
-| [cv32e40p](https://github.com/openhwgroup/cv32e40p) | `b353438ff4` | SHL-0.51 | 123 | 95 | 4 | 10 | 3 | 0 | 11 | 85% |
+| [cv32e40p](https://github.com/openhwgroup/cv32e40p) | `b353438ff4` | SHL-0.51 | 123 | 97 | 2 | 10 | 3 | 0 | 11 | 87% |
 | [cv32e40x](https://github.com/openhwgroup/cv32e40x) | `d952cd63bc` | SHL-0.51 | 42 | 27 | 1 | 4 | 0 | 0 | 10 | 84% |
 | [cva6](https://github.com/openhwgroup/cva6) | `742dc82a0c` | SHL-0.51 | 84 | 9 | 1 | 4 | 0 | 3 | 67 | 53% |
-| [caliptra-rtl](https://github.com/chipsalliance/caliptra-rtl) | `f2d4641cfa` | Apache-2.0 | 401 | 240 | 50 | 77 | 4 | 3 | 27 | 64% |
-| [opentitan](https://github.com/lowRISC/opentitan) | `0d2b191a4a` | Apache-2.0 | 615 | 247 | 270 | 57 | 0 | 7 | 34 | 43% |
+| [caliptra-rtl](https://github.com/chipsalliance/caliptra-rtl) | `f2d4641cfa` | Apache-2.0 | 401 | 242 | 48 | 77 | 4 | 3 | 27 | 65% |
+| [opentitan](https://github.com/lowRISC/opentitan) | `0d2b191a4a` | Apache-2.0 | 615 | 248 | 267 | 58 | 0 | 7 | 35 | 43% |
 | [basejump_stl](https://github.com/bespoke-silicon-group/basejump_stl) | `8c01732c0d` | BSD-3-Clause | 314 | 22 | 1 | 1 | 2 | 3 | 285 | 76% |
-| **all** | | | 2184 | 987 | 374 | 184 | 9 | 20 | 610 | 63% |
+| **all** | | | 2184 | 997 | 360 | 185 | 9 | 22 | 611 | 63% |
 
 ## Unsupported constructs
 
@@ -43,9 +43,8 @@ arises. *Only blocker* counts those with no other diagnostic, so fixing the row 
 | ---: | ---: | ---: | ---: | --- | --- | --- |
 | 212 | 193 | 10 | 2 | lower | immediate assertion on a non-constant value inside initial block is not supported | `opentitan/hw/ip/prim/rtl/prim_sparse_fsm_flop.sv:64` `` `ASSERT_INIT_NET(AssertConnected_A, unused_assert_connected === 1'b1 \|\| !EnableAlertTriggerSVA) `` |
 | 105 | 105 | 54 | 4 | lower | $isunknown requires allow_four_state_ops | `common_cells/src/cc_addr_decode_dync.sv:151` `if (!$isunknown(addr_map_i) && ~config_ongoing_i) begin` |
-| 50 | 20 | 16 | 5 | lower | unsupported expression statement or task call inside initial block | `tech_cells_generic/src/rtl/tc_sram.sv:110` `for (int unsigned i = 0; i < NumWords; i++) begin` |
+| 49 | 19 | 15 | 5 | lower | unsupported expression statement or task call inside initial block | `tech_cells_generic/src/rtl/tc_sram.sv:110` `for (int unsigned i = 0; i < NumWords; i++) begin` |
 | 22 | 0 | 2 | 2 | lower | non-constant '…' condition inside initial block is not supported | `opentitan/hw/ip/prim/rtl/prim_util_memload.svh:63` `if (show_mem_paths) $display("%m");` |
-| 15 | 13 | 7 | 4 | lower | memory write inside asynchronous reset branch is not supported | `biriscv/src/core/biriscv_lsu.v:475` `ram_q[i] <= {(WIDTH) {1'b0}};` |
 | 15 | 12 | 10 | 3 | lower | exponentiation '…' with non-constant exponent is not synthesizable | `verilog-axi/rtl/axi_crossbar_addr.v:190` `if ((M_BASE_ADDR_INT[i*ADDR_WIDTH +: ADDR_WIDTH] & (2**M_ADDR_WIDTH[i*32 +: 32]-1)) != 0) begin` |
 | 9 | 9 | 7 | 5 | lower | scalarized unpacked array '…' exceeds maximum N elements | `biriscv/src/tcm/tcm_mem_ram.v:52` `reg [63:0] ram [8191:0] /*verilator public*/;` |
 | 6 | 5 | 6 | 2 | lower | inout port '…' is not supported in RTL netlist | `picorv32/picosoc/spiflash.v:42` `inout io0, // MOSI` |
@@ -63,7 +62,7 @@ svlang is wrong, or stricter than the standard asks.
 
 | tops blocked | only blocker | modules with it | designs | stage | diagnostic | example |
 | ---: | ---: | ---: | ---: | --- | --- | --- |
-| 28 | 28 | 24 | 6 | lower | combinational loop detected | `cv32e40x/rtl/cv32e40x_controller_bypass.sv:334` `ctrl_byp_o.jalr_fw_mux_sel = SELJ_FW_WB;` |
+| 29 | 29 | 24 | 6 | lower | combinational loop detected | `cv32e40x/rtl/cv32e40x_controller_bypass.sv:334` `ctrl_byp_o.jalr_fw_mux_sel = SELJ_FW_WB;` |
 | 21 | 14 | 5 | 2 | lower | two-event clocked block must have top-level 'if (reset) ... else ...' structure | `caliptra-rtl/src/doe/rtl/doe_key_mem.sv:132` `always @ (posedge clk or negedge reset_n)` |
 | 19 | 7 | 26 | 4 | lower | parameter '…' has no constant value | `tech_cells_generic/src/rtl/tc_clk.sv:108` `parameter int unsigned Delay = 300ps` |
 | 15 | 0 | 3 | 2 | lower | cannot resolve hierarchical or member reference '…' | `caliptra-rtl/src/caliptra_prim/rtl/caliptra_prim_sparse_fsm_flop.sv:48` `for (int i = 0, StateEnumT t = t.first(); i < t.num(); i += 1, t = t.next()) begin` |
@@ -113,7 +112,7 @@ its transition system has no form for yet.
 
 | tops | designs | what the writer says | example |
 | ---: | ---: | --- | --- |
-| 77 | 6 | not modelled: more than one clock; every register steps on each model step | `verilog-axi/rtl/axi_vfifo_raw_rd.v` `axi_vfifo_raw_rd` |
+| 79 | 6 | not modelled: more than one clock; every register steps on each model step | `verilog-axi/rtl/axi_vfifo_raw_rd.v` `axi_vfifo_raw_rd` |
 | 29 | 3 | not modelled: more than one clock, and the clock of … is not a top-level input | `caliptra-rtl/src/riscv_core/veer_el2/rtl/lib/beh_lib.sv` `rvdffpcie` |
 | 10 | 3 | not supported yet: concurrent assumptions in the RTL that are not compiled to checks: leaving them out would make the model weaker than the design says | `caliptra-rtl/src/caliptra_prim/rtl/caliptra_prim_arbiter_ppc.sv` `caliptra_prim_arbiter_ppc` |
 | 3 | 3 | not modelled: blocks clocked on different edges; every register steps on each model step | `picorv32/picosoc/spimemio.v` `spimemio` |
@@ -135,7 +134,7 @@ check it should make, or the reference is stricter than the simulators these des
 
 | tops | reference error | example |
 | ---: | --- | --- |
-| 7 | unknown macro or compiler directive | `opentitan/hw/ip/usbdev/rtl/usb_fs_tx.sv:267` (top `usb_fs_nb_pe`) |
+| 9 | unknown macro or compiler directive | `biriscv/src/core/biriscv_fetch.v:102` (top `biriscv_frontend`) |
 | 3 | use of undeclared identifier '…' | `basejump_stl/bsg_misc/bsg_mul/bsg_mul_booth_4_block.sv:28` (top `bsg_mul_32_32`) |
 | 2 | $error encountered: The clearable N-phase CDC with async resetsynchronization requires at least N synchronizer stages for the FIFO. | `common_cells/src/cc_cdc_2phase_clearable.sv:209` (top `cc_cdc_2phase_clearable_dst`) |
 | 2 | $error encountered: The clearable CDC FIFO with async reset synchronization requires at least3 synchronizer stages for the FIFO. | `common_cells/src/cc_cdc_fifo_gray_clearable.sv:265` (top `cc_cdc_fifo_gray_clearable_src`) |
@@ -152,9 +151,9 @@ Both front ends reject these: most are modules whose parameters have no usable d
 a file, a define or a generated header the census does not supply. They say nothing about svlang as
 tops. Where another top instantiates one, it is still measured there:
 
-- 10 of the 610 are instantiated inside a top that lowered
+- 10 of the 611 are instantiated inside a top that lowered
 - 3 hold a construct that blocks a top above them
-- 597 are not reached by any measured top
+- 598 are not reached by any measured top
 
 | tops | reference error | example |
 | ---: | --- | --- |
