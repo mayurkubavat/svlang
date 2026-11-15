@@ -251,6 +251,26 @@ cargo test                             # Rust, native only
 tools/gates/rust_gate.sh               # cargo fmt --check + Clippy -D warnings
 ```
 
+## Citing
+
+If you use this project, please cite the technical report:
+
+> M. Kubavat, "InFormal: An Open-Source Formal Property Verifier for SystemVerilog with Checked Verdicts," technical report, Zenodo, Nov. 2026. doi: [10.5281/zenodo.24261270](https://doi.org/10.5281/zenodo.24261270)
+
+```bibtex
+@techreport{kubavat2026informal,
+  author      = {Kubavat, Mayur},
+  title       = {{InFormal}: An Open-Source Formal Property Verifier for {SystemVerilog} with Checked Verdicts},
+  institution = {Zenodo},
+  year        = {2026},
+  month       = nov,
+  doi         = {10.5281/zenodo.24261270},
+  url         = {https://doi.org/10.5281/zenodo.24261270}
+}
+```
+
+GitHub's "Cite this repository" button reads the same data from `CITATION.cff`.
+
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for how to add a rule and its tests.
