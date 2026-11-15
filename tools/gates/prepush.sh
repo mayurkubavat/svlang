@@ -2,6 +2,7 @@
 # Everything CI runs on a push, run here first: the Rust workflow (rust.yml)
 # and the C++ workflow (ci.yml). Run it before every push; a batch is ready
 # when it ends with "prepush: all green".
+# One step runs here only, to keep hosted CI light: the netlist gate.
 #
 #   tools/gates/prepush.sh              # both flows
 #   tools/gates/prepush.sh --rust       # the Rust flow only
@@ -61,6 +62,8 @@ if [ "$rust" = 1 ]; then
     echo "Rust flow (rust.yml)"
     step "rust_gate: profiles, fmt, clippy" tools/gates/rust_gate.sh --native
     step "cargo test" cargo test --locked
+    step "netlist gate (dv-build --netlist, testdata/netlist)" sh -c \
+        'cargo build --locked -q -p dv-build && DV_BUILD=target/debug/dv-build python3 tools/gates/netlist_gate.py'
     step "rule docs are current" sh -c 'cargo build --locked -q -p dv-lint --bin uvmcheck && python3 tools/codegen/gen_rule_docs.py --binary target/debug/uvmcheck --check'
     if [ "$quick" = 1 ]; then
         skip "release archive and smoke test" "skipped by --quick"
