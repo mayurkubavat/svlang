@@ -34,6 +34,8 @@ What changed in each release of the svlang crates (`svlang`, `sv-*`,
   states.
 - Opt-in lowering switches for two-state tools: `skip_initial_checks` and
   `isunknown_is_false`.
+- The Btor2 writer declares an initial value before its state, which the
+  reference parser of btor2tools requires.
 
 ### Front end
 
@@ -48,6 +50,12 @@ What changed in each release of the svlang crates (`svlang`, `sv-*`,
   package tables, wide structs, streaming concatenation of packed values,
   powers of two, labelled and two-armed asynchronous reset blocks, and more.
   Unknown module instances are errors, not silent holes.
+- Enum `next()` and `prev()`, and a variable in scope in its own initializer
+  (`e_t t = t.first()` in a `for` loop).
+- A part-select written against the declared direction (`a[0:3]` of
+  `logic [3:0] a`) is an error (11.5.1); it used to be read as `a[3:0]`.
+- A member label in an assignment pattern is not a use before declaration.
+- A macro may be used inside its own argument.
 
 ### Python (`pysvlang`)
 

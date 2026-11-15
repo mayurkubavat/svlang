@@ -44,6 +44,7 @@ EXPECTED_FAIL = {
     "net_two_drivers.sv": "has more than one driver",
     "overlap_drivers.sv": "overlapping drivers",
     "reset_typo.sv": "undeclared",
+    "reversed_select.sv": "part-select [0:3] is reversed",
     "udp_instance.sv": "user-defined primitive 'udp_mux' is not supported",
     "unknown_module.sv": "unknown module 'not_defined'",
     "var_mixed_assigns.sv": "cannot mix continuous and procedural assignments to variable 'v'",

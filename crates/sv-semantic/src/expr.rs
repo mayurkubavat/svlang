@@ -1896,6 +1896,15 @@ impl<'a> ExprBinder<'a> {
                 self.err(loc, "part-select bounds '[msb:lsb]' exceed supported integer range");
                 return None;
             };
+            // The bounds run the way the declaration does (IEEE 1800 11.5.1): `a[0:3]` of
+            // `logic [3:0] a` is an error, not `a[3:0]` written backwards.
+            if (bounds.0 > bounds.1 && msb < lsb) || (bounds.0 < bounds.1 && msb > lsb) {
+                self.err(
+                    loc,
+                    format!("part-select [{msb}:{lsb}] is reversed: the range is declared [{}:{}]", bounds.0, bounds.1),
+                );
+                return None;
+            }
             let Some(count) = range_len_u32(msb, lsb, MAX_BIT_WIDTH) else {
                 self.err(loc, "part-select width exceeds maximum bit width");
                 return None;
