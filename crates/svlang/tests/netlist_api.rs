@@ -346,6 +346,64 @@ fn properties_bound_from_text_compile_to_named_checks() {
     assert!(model.btor2.lines().any(|l| l.contains(" justice 1 ") && l.ends_with(" a_live")), "{}", model.btor2);
 }
 
+/// Precondition and witness covers: one each beside every named assertion with an
+/// antecedent, none for a property with no antecedent, an assumption, a cover or an
+/// `until`; the design's own properties get them too.
+#[test]
+fn precondition_and_witness_covers_beside_assertions() {
+    use svlang::netlist::{CheckKind, ExternalProperty, PropertyOptions};
+
+    let comp = svlang::Compilation::from_source(
+        "rel.sv",
+        "module rel (input logic clk, rst, req, output logic gnt);\n\
+           always_ff @(posedge clk) gnt <= rst ? 1'b0 : req;\n\
+           a_rtl: assert property (@(posedge clk) disable iff (rst) req |=> gnt);\n\
+         endmodule\n",
+    );
+    let elab = comp.elaborate();
+    let mut nl = comp.lower_netlist(&svlang::LowerConfig::default()).unwrap_netlist();
+    let mut opts = PropertyOptions::default();
+    opts.precondition_covers = true;
+    opts.witness_covers = true;
+    nl.compile_properties(&opts);
+    let texts = [
+        ("a_next", "assert property (@(posedge clk) disable iff (rst) req |=> gnt)"),
+        ("a_plain", "@(posedge clk) gnt || !gnt"),
+        ("m_req", "assume property (@(posedge clk) req |-> ##1 !req)"),
+        ("c_gnt", "cover property (@(posedge clk) req ##1 gnt)"),
+        ("a_until", "@(posedge clk) req |-> gnt until !req"),
+    ];
+    let mut arenas = Vec::new();
+    let mut bound = Vec::new();
+    for (_, text) in texts {
+        let mut arena = svlang::ExprArena::new();
+        bound.push(comp.bind_property_in_scope(&elab.design, "rel", text, &mut arena).expect("binds"));
+        arenas.push(arena);
+    }
+    let external: Vec<ExternalProperty<'_>> = texts
+        .iter()
+        .zip(arenas.iter().zip(&bound))
+        .map(|((name, _), (arena, property))| ExternalProperty { arena, property, name: (*name).to_string() })
+        .collect();
+    let out = nl.compile_external_properties(&elab.design, &external, &opts);
+    assert!(out.iter().all(Result::is_ok), "{out:?}");
+    let related: Vec<(&str, CheckKind)> =
+        nl.checks.iter().filter_map(|c| c.label.as_deref().filter(|l| l.contains(':')).map(|l| (l, c.kind))).collect();
+    assert_eq!(
+        related,
+        [
+            ("rel.a_rtl:precondition", CheckKind::Cover),
+            ("rel.a_rtl:witness", CheckKind::Cover),
+            ("a_next:precondition", CheckKind::Cover),
+            ("a_next:witness", CheckKind::Cover),
+        ]
+    );
+    // Off by default.
+    let mut plain = comp.lower_netlist(&svlang::LowerConfig::default()).unwrap_netlist();
+    plain.compile_properties(&PropertyOptions::default());
+    assert!(plain.checks.iter().all(|c| !c.label.as_deref().unwrap_or("").contains(':')));
+}
+
 #[test]
 fn a_property_bound_from_text_can_read_a_memory_that_became_registers() {
     use svlang::netlist::{ExternalProperty, PropertyOptions};

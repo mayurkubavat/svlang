@@ -50,6 +50,12 @@
 //! - **assume** / **restrict**: the same condition, as a [`CheckKind::Assume`].
 //! - **cover**: [`CheckKind::Cover`] of some match of the antecedent whose consequent has a
 //!   match (a vacuous match of an implication is not a cover).
+//! - **Precondition and witness covers** ([`PropertyOptions::precondition_covers`],
+//!   [`PropertyOptions::witness_covers`]): beside a named assertion with an antecedent, a
+//!   cover of an attempt that is checked (`<name>:precondition`), and of one whose
+//!   consequent holds too (`<name>:witness`), with the assertion's clock, first ticks,
+//!   disable window and span. Not made for `until`, `s_eventually` or a property with no
+//!   antecedent.
 //! - **The empty match at the top**: an empty match of the antecedent starts no consequent
 //!   with `|->`, and one at tick `t` with `|=>` (`s |=> p` is `s ##1 1 |-> p`). A sequence
 //!   used as a property or a consequent that admits an empty match or has no match at all,
@@ -113,6 +119,15 @@ pub struct PropertyOptions {
     /// clocks and the first ticks of each cover a different stretch of time. A property on
     /// a clock and edge with no entry here uses [`Self::skip_cycles`].
     pub skip_by_clock: Vec<ClockSkip>,
+    /// Beside each named assertion with an antecedent (or a procedural enable), also make a
+    /// cover named `<name>:precondition` of an attempt that is checked: the antecedent
+    /// matches, the attempt is past the first ticks and `disable iff` was off over it. It
+    /// shares the assertion's clock, first ticks, disable window and span, so a tool can
+    /// tell a vacuous proof (this cover unreachable) from one that checked something.
+    pub precondition_covers: bool,
+    /// Likewise `<name>:witness`: an attempt that is checked and where the consequent holds
+    /// (the assertion compiled as a cover).
+    pub witness_covers: bool,
 }
 
 /// [`PropertyOptions::skip_cycles`] for the properties on one clock and edge.
@@ -740,6 +755,58 @@ struct Lookback {
     open: Vec<bool>,
 }
 
+/// The cover of an attempt of assertion `p` that is checked (`witness == false`), or of one
+/// that is checked and holds (`witness`), with `p`'s clock, first ticks, disable window and
+/// span. `None` when `p` is not an assertion with a condition that starts its attempts
+/// (no antecedent, no procedural enable) or is an `until`.
+fn related_cover(p: &Plan, witness: bool) -> Option<Plan> {
+    if p.kind != PropKind::Assert || p.until.is_some() || p.enable == Cond::True {
+        return None;
+    }
+    let mut terms = p.terms.clone();
+    let expr = match (witness, p.enable, p.expr) {
+        (false, enable, _) => enable,
+        (true, Cond::False, _) | (true, _, Cond::False) => Cond::False,
+        (true, enable, Cond::True) => enable,
+        (true, enable, expr) => {
+            terms.push(Term::And(enable, expr));
+            Cond::Node(terms.len() as u32 - 1)
+        }
+    };
+    let live = live_terms(&terms, expr);
+    Some(Plan {
+        kind: PropKind::Cover,
+        loc: p.loc,
+        clock: p.clock,
+        terms,
+        live,
+        two_state: p.two_state,
+        enable: Cond::True,
+        expr,
+        disable: p.disable,
+        span: p.span,
+        warm: p.warm,
+        until: None,
+    })
+}
+
+/// The precondition and witness covers `opts` asks for, for the named plans in `plans`,
+/// to emit after them.
+fn related_covers(plans: &[(Plan, Option<String>)], opts: &PropertyOptions) -> Vec<(Plan, Option<String>)> {
+    let mut out = Vec::new();
+    for (p, name) in plans {
+        let Some(name) = name else { continue };
+        for (wanted, witness, suffix) in
+            [(opts.precondition_covers, false, "precondition"), (opts.witness_covers, true, "witness")]
+        {
+            if let Some(c) = related_cover(p, witness).filter(|_| wanted) {
+                out.push((c, Some(format!("{name}:{suffix}"))));
+            }
+        }
+    }
+    out
+}
+
 impl Netlist {
     /// How many clock ticks back `v` reads through sampled-value functions.
     fn lookback(&self, v: ValueId, memo: &mut Lookback) -> u32 {
@@ -1355,6 +1422,10 @@ impl Netlist {
                 Err(why) => outcomes[i] = Some(PropertyOutcome::Unsupported(why)),
             }
         }
+        // The related covers ride after the properties' own plans: `zip` below stops at the
+        // properties, and their checks are found by name.
+        let related = related_covers(&plans, opts);
+        plans.extend(related);
         for (i, made) in planned.into_iter().zip(self.emit(&plans)) {
             outcomes[i] = Some(match made {
                 Compiled::Check(check) => {
@@ -1429,6 +1500,8 @@ impl Netlist {
             }
         }
         self.prop_expr_values.truncate(base);
+        let related = related_covers(&plans, opts);
+        plans.extend(related);
         for (i, made) in planned.into_iter().zip(self.emit(&plans)) {
             results[i] = Some(Ok(made));
         }
