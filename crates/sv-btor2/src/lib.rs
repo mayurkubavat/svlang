@@ -283,6 +283,11 @@ fn rejected<T>(s: impl Into<String>) -> Result<T, Fail> {
 }
 
 /// A Btor2 symbol: no spaces.
+/// The name a check's line carries: its label (an immediate check's last part).
+fn check_label(c: &sv_netlist::Check) -> Option<&str> {
+    c.label.as_deref().map(|l| if c.immediate { l.rsplit('.').next().unwrap_or(l) } else { l })
+}
+
 fn symbol(s: &str) -> String {
     s.chars().map(|c| if c.is_whitespace() { '_' } else { c }).collect()
 }
@@ -860,7 +865,8 @@ impl<'n> Writer<'n> {
                 if let Some(level) = self.waves.iter().find(|k| k.signal == id).map(|k| k.level) {
                     let level = if w == 1 { level } else { self.op("uext", w, &[level], &(w - 1).to_string()) };
                     let same = self.cmp("eq", input, level);
-                    self.line(format!("constraint {same}"));
+                    let name = format!("{}_clock", self.opts.name_prefix);
+                    self.constraint(same, Some(&name));
                 }
                 input
             }
@@ -1297,10 +1303,20 @@ impl<'n> Writer<'n> {
     /// A `bad` line for check `c`. An immediate check is named by its label, a compiled
     /// concurrent property by its full hierarchical name.
     fn bad(&mut self, cond: u32, c: &sv_netlist::Check) {
-        let label = c.label.as_deref().map(|l| if c.immediate { l.rsplit('.').next().unwrap_or(l) } else { l });
         let mut body = format!("bad {cond}");
-        if let Some(l) = label {
+        if let Some(l) = check_label(c) {
             write!(body, " {}", symbol(l)).unwrap();
+        }
+        self.line(body);
+    }
+
+    /// A `constraint` line, named when it has a name: an assumption's label, or
+    /// `<prefix>_reset` / `<prefix>_clock` for the ones the model adds, so a tool can
+    /// tell which assumption a conflict comes from.
+    fn constraint(&mut self, cond: u32, name: Option<&str>) {
+        let mut body = format!("constraint {cond}");
+        if let Some(n) = name {
+            write!(body, " {}", symbol(n)).unwrap();
         }
         self.line(body);
     }
@@ -1440,7 +1456,7 @@ impl<'n> Writer<'n> {
                 let at_edge = self.bin("and", edge, was);
                 if c.kind == CheckKind::Assume {
                     let ok = self.un("not", at_edge);
-                    self.line(format!("constraint {ok}"));
+                    self.constraint(ok, check_label(c));
                 } else {
                     self.bad(at_edge, c);
                     bads += usize::from(!cover);
@@ -1459,7 +1475,7 @@ impl<'n> Writer<'n> {
                 CheckKind::Assume => {
                     let nen = self.un("not", en);
                     let ok = self.bin("or", nen, ex);
-                    self.line(format!("constraint {ok}"));
+                    self.constraint(ok, check_label(c));
                 }
                 CheckKind::Cover if self.opts.covers => {
                     let hit = self.bin("and", en, ex);
@@ -1473,8 +1489,9 @@ impl<'n> Writer<'n> {
             let on = self.value(r.value)?;
             let on = self.bool(on);
             let off = self.un("not", on);
+            let name = format!("{}_reset", self.opts.name_prefix);
             if r.steps == 0 {
-                self.line(format!("constraint {off}"));
+                self.constraint(off, Some(&name));
             } else {
                 let w = (32 - r.steps.leading_zeros()).max(1);
                 let zero = self.num(w, 0);
@@ -1488,7 +1505,7 @@ impl<'n> Writer<'n> {
                 let next = self.ite(early, up, step);
                 self.pending.push((srt, step, next));
                 let held = self.ite(early, on, off);
-                self.line(format!("constraint {held}"));
+                self.constraint(held, Some(&name));
             }
         }
         // Liveness: a `justice` line that a trace hitting it infinitely often witnesses, or

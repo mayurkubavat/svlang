@@ -58,6 +58,10 @@ Then, for example, `ric3 check counter.btor2 ic3`.
   `intersect`, `within`, `throughout`, `first_match`, under `|->`, `|=>` and
   `disable iff`); a property without a check is
   **not** written, and `Model::notes` says how many were left out.
+- Every `constraint` line carries a name, so a tool can tell which one a
+  conflict comes from: an assumption's label (as for a `bad` line),
+  `svlang_reset` for the reset, `svlang_clock` for a clock held to its
+  wave (the prefix is `Options::name_prefix`).
 - A cover is a `bad` line that is reached when the cover is hit, with
   `Options::covers`; without it covers are left out and noted.
 - A concurrent assumption (`assume property`, `restrict property`) cannot

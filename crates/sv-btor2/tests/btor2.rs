@@ -185,7 +185,10 @@ fn compiled_properties_are_bad_lines_and_constraints() {
     assert_eq!(bads.len(), 2, "{bads:?}");
     assert!(bads[0].ends_with(" cp.a_next"), "{bads:?}");
     assert!(bads[1].ends_with(" cp._assert_1"), "{bads:?}");
-    assert_eq!(lines(&m.btor2, "constraint").len(), 1);
+    // The assumption's line carries its name, as a target's does.
+    let cons = lines(&m.btor2, "constraint");
+    assert_eq!(cons.len(), 1);
+    assert!(cons[0].ends_with(" cp.m_in"), "{cons:?}");
     assert!(m.notes.iter().any(|n| n.contains("1 cover(s)")), "{:?}", m.notes);
     assert!(!m.notes.iter().any(|n| n.contains("concurrent")), "{:?}", m.notes);
 
@@ -451,8 +454,11 @@ fn assertions_and_history_on_a_computed_clock() {
     let m = write(&nl, &opts).unwrap();
     well_formed(&m.btor2);
     assert!(lines(&m.btor2, "bad").iter().any(|l| l.ends_with(" a_g")), "{}", m.btor2);
-    // The clock input's wave, and the assumption on the computed clock.
-    assert_eq!(lines(&m.btor2, "constraint").len(), 2, "{}", m.btor2);
+    // The clock input's wave, and the assumption on the computed clock, each named.
+    let cons = lines(&m.btor2, "constraint");
+    assert_eq!(cons.len(), 2, "{}", m.btor2);
+    assert!(cons.iter().any(|l| l.ends_with(" svlang_clock")), "{cons:?}");
+    assert!(cons.iter().any(|l| l.ends_with(" m_g")), "{cons:?}");
     // What the edge sampled is kept from the step before.
     assert!(lines(&m.btor2, "state").iter().any(|l| l.contains(" svlang_was_")), "{}", m.btor2);
 }
@@ -473,7 +479,9 @@ fn a_reset_is_held_for_the_first_steps() {
     well_formed(&m.btor2);
     // A step counter that stops at 3, and one constraint choosing reset on or off by it.
     assert!(lines(&m.btor2, "state").iter().any(|l| l.ends_with(" svlang_step")), "{}", m.btor2);
-    assert_eq!(lines(&m.btor2, "constraint").len(), 1, "{}", m.btor2);
+    let cons = lines(&m.btor2, "constraint");
+    assert_eq!(cons.len(), 1, "{}", m.btor2);
+    assert!(cons[0].ends_with(" svlang_reset"), "{cons:?}");
     // No steps: the reset is simply off.
     opts.reset = Some(Reset { value, steps: 0 });
     let m = write(&nl, &opts).unwrap();
