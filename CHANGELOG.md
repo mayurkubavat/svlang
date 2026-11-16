@@ -75,6 +75,9 @@ What changed in each release of the svlang crates (`svlang`, `sv-*`,
   pass.
 - [Front-end census](docs/reference/census.md): how much of 15 open designs
   lowers to a netlist, and what blocks the rest.
+- [Lowering speed](docs/benchmarks/lowering.md): stage times, memory and
+  netlist size for the 1,081 census tops that lower, and `svlang check`
+  against slang on the same input.
 - `tools/quality/mutate_smoke.py`: tens of thousands of damaged source files,
   none of which may crash or hang the front end.
 
