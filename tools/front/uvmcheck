@@ -25,9 +25,9 @@ if [ "$engine" = auto ]; then
         fi
         case "$a" in
             # Options dv-lint takes, and those that take a value.
-            --rule|--preset|--json|--config|--waivers|--baseline|--update-baseline|--sarif|--html|-top|--top|-I|-D|-f|-F|-v|-y|-P|-l|-o|--timescale|-incdir|-define)
+            --rule|--preset|--json|--config|--waivers|--baseline|--update-baseline|--sarif|--html|-top|--top|-I|-D|-f|-F|-v|-y|-P|-l|-o|--timescale|-incdir|-define|-G|--param)
                 expect_value=yes ;;
-            --preset=*|--json=*|--config=*|--waivers=*|--baseline=*|--update-baseline=*|--sarif=*|--html=*|--experimental|--no-config|--no-cache|--history|--skip-libraries|--time|--frames|--no-frames|--in-context|--list|--single-unit)
+            --preset=*|--json=*|--config=*|--waivers=*|--baseline=*|--update-baseline=*|--sarif=*|--html=*|--param=*|--experimental|--no-config|--no-cache|--history|--skip-libraries|--time|--frames|--no-frames|--in-context|--list|--list-rules|--list-guidelines|--lsp|--report-library|--single-unit|-h|--help|--version)
                 ;;
             # --explain, --changed-since, waiver hygiene, the cache, --map,
             # --init, --python-rules.
@@ -42,7 +42,7 @@ if [ "$engine" = auto ]; then
                 expect_value=yes ;;
             --fix|--fix-dry-run|--unsafe-fixes|--fix-rule=*)
                 ;;
-            +incdir+*|+define+*|+undefine+*|+libext+*|-I*|-D*)
+            +incdir+*|+define+*|+undefine+*|+libext+*|-I*|-D*|-G*|-pvalue+*)
                 ;;
             -*) engine=slang; why=$a; break ;;
         esac

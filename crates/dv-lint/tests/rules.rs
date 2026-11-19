@@ -20,10 +20,10 @@ const MOCK: &str = "class uvm_object; function new(string name = \"\"); endfunct
 #[test]
 fn rules_have_unique_ids() {
     let r = rules();
-    assert_eq!(r.len(), 390);
+    assert_eq!(r.len(), 391);
     let mut ids: Vec<_> = r.iter().map(|r| r.id).collect();
     ids.dedup();
-    assert_eq!(ids.len(), 390);
+    assert_eq!(ids.len(), 391);
 }
 
 #[test]
@@ -1139,4 +1139,25 @@ fn component_new_through_the_class_own_this_type() {
                endclass\n\
                class item extends uvm_object; typedef item this_type; endclass\n";
     assert_eq!(rule_lines(src, "UVM-FAC-001"), vec![6]);
+}
+
+#[test]
+fn hardcoded_bounds_in_base_class_fixtures() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let dir = root.join("testdata/rules/random/SV-RND-040");
+    let json = std::fs::read_to_string(dir.join("expect.json")).unwrap();
+    let want: Vec<u32> = expected(&json).into_iter().filter(|(r, _)| r == "SV-RND-040").map(|(_, l)| l).collect();
+
+    let bad_args =
+        [format!("+incdir+{}", root.join("testdata/common").display()), dir.join("bad.sv").display().to_string()];
+    let (d_bad, trees_bad) = dv_model::load_with_trees(&bad_args).unwrap();
+    let (files_bad, found_bad) = dv_lint::lint_all(&d_bad, &trees_bad, |r| r == "SV-RND-040");
+    let got_bad: Vec<u32> = found_bad.iter().map(|f| f.position_in(&files_bad).1).collect();
+    assert_eq!(got_bad, want);
+
+    let good_args =
+        [format!("+incdir+{}", root.join("testdata/common").display()), dir.join("good.sv").display().to_string()];
+    let (d_good, trees_good) = dv_model::load_with_trees(&good_args).unwrap();
+    let (_, found_good) = dv_lint::lint_all(&d_good, &trees_good, |r| r == "SV-RND-040");
+    assert!(found_good.is_empty(), "{found_good:?}");
 }

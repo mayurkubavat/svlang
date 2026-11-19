@@ -493,6 +493,8 @@
      "description": "A `soft` constraint the class's hard constraints always override."},
     {"id": "SV-RND-032", "name": "DeadDistItem", "category": "Randomization", "severity": "WARNING", "profiles": ["soundness"], "guidelines": [], "engine": "native",
      "description": "A `dist` item whose values the hard constraints or the type never allow, so its weight is dropped."},
+    {"id": "SV-RND-040", "name": "HardcodedBounds", "category": "Advisory", "severity": "WARNING", "profiles": ["advisory"], "guidelines": [], "engine": "native",
+     "description": "Flags non-soft literal constant bounds on rand properties in base classes (virtual classes or classes extended in the design), which prevent derived classes from widening stimulus ranges without constraint_mode(0). Advisory: off by default."},
     {"id": "SV-RSC-001", "name": "LockNotReleased", "category": "Concurrency", "severity": "ERROR", "profiles": ["soundness"], "guidelines": [],
      "description": "Flags semaphore get()/try_get() and sequencer lock()/grab() that some path leaves without the matching put()/unlock()/ungrab(), such as an early return (Sonar S2222)."},
     {"id": "SV-RSC-002", "name": "FileHandleNotClosed", "category": "Correctness", "severity": "WARNING", "profiles": ["soundness"], "guidelines": [],

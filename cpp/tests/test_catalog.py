@@ -45,8 +45,11 @@ def main():
         if not r["description"].strip():
             failures.append(f"{r['id']}: empty description")
 
-    # IDs that rule tests expect must be declared in the catalog.
-    known = {r["id"] for r in rules}
+    # IDs that rule tests expect must be declared in the catalog (including
+    # native-only rules declared in docs/rules/catalog.json).
+    published = json.loads((REPO / "docs" / "rules" / "catalog.json").read_text())
+    native_ids = {r["id"] for r in published["rules"] if r.get("engine") == "native"}
+    known = {r["id"] for r in rules} | native_ids
     for expect in (REPO / "testdata" / "rules").glob("*/*/expect.json"):
         for findings in json.loads(expect.read_text()).values():
             for f in findings:
@@ -57,7 +60,6 @@ def main():
     # (tools/codegen/gen_rule_docs.py). This engine must declare the same
     # metadata for every rule it has; rules marked "engine": "native" are the
     # native engine's alone.
-    published = json.loads((REPO / "docs" / "rules" / "catalog.json").read_text())
     if published["categories"] != catalog["categories"]:
         failures.append("categories differ from docs/rules/catalog.json")
     shared = {r["id"]: r for r in published["rules"] if r.get("engine") != "native"}

@@ -13,6 +13,7 @@ mod cyclic_solve_before;
 mod dist_wide_range_colon_eq;
 mod empty_randomize_with;
 mod global_rng_in_class;
+mod hardcoded_bounds;
 mod inline_shadow_no_local;
 mod non_invertible_constraint_op;
 mod non_rand_field_constrained;
@@ -84,5 +85,6 @@ pub(crate) fn rules() -> Vec<Rule> {
         Rule { id: "SV-RND-026", name: "UnrelatedSolveBefore", category: "Randomization", severity: Severity::Warning, profiles: SOUNDNESS, guidelines: &[], experimental: false, native: false, about: "Flags 'solve a before b' when no constraint of the class (or its base classes) ties a to b, directly or through other variables. The ordering then has no effect except to suggest a dependency that does not exist.", check: Check::Syntax(unrelated_solve_before::unrelated_solve_before),
         },
         Rule { id: "SV-TST-001", name: "ConstantReseed", category: "Advisory", severity: Severity::Info, profiles: ADVISORY, guidelines: &[], experimental: false, native: false, about: "Flags srandom() or set_randstate() with a constant in components, sequences and other non-test classes; every seed of the regression then runs the same stimulus. Advisory: off by default.", check: Check::Syntax(constant_reseed::constant_reseed) },
+        Rule { id: "SV-RND-040", name: "HardcodedBounds", category: "Advisory", severity: Severity::Warning, profiles: ADVISORY, guidelines: &[], experimental: false, native: true, about: "Flags non-soft literal constant bounds on rand properties in base classes (virtual classes or classes extended in the design), which prevent derived classes from widening stimulus ranges without constraint_mode(0). Advisory: off by default.", check: Check::Mixed(hardcoded_bounds::hardcoded_bounds) },
     ]
 }

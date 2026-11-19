@@ -57,8 +57,9 @@ def files_with_errors(found):
 
 
 def ported(args, slang):
-    # Every rule, as the reference runs uvmcheck (--preset all --experimental).
-    res = subprocess.run([DVLINT, '--no-config', '--preset', 'all', '--experimental', *(['--slang'] if slang else []), *args],
+    # Every rule, as the reference runs uvmcheck (--preset all --experimental),
+    # including library findings (--report-library) since C++ uvmcheck reports them.
+    res = subprocess.run([DVLINT, '--no-config', '--no-cache', '--report-library', '--preset', 'all', '--experimental', *(['--slang'] if slang else []), *args],
                          capture_output=True, text=True,
                          errors='replace')
     got = collections.Counter()

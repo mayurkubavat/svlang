@@ -98,3 +98,4 @@ credentials*.json
 
 # The playground module, built by crates/svlang-wasm/www/build.sh
 crates/svlang-wasm/www/svlang.wasm
+sv-reference/

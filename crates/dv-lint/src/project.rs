@@ -344,7 +344,7 @@ fn strings(v: &Json) -> Vec<String> {
     }
 }
 
-/// The config to use: `explicit` (`--config`), else the first of [`NAMES`]
+/// The config to use: `explicit` (`--config`), else the first of `NAMES`
 /// in the working folder or a parent, else from the first source's folder
 /// up.
 pub fn find(explicit: Option<&str>, first_source: Option<&str>) -> Option<PathBuf> {

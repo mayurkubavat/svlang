@@ -309,6 +309,16 @@ def main():
             with open(args.baseline) as f:
                 baseline = json.load(f)
 
+    # Discover rules supported by this binary so C++ uvmcheck cleanly skips
+    # native-only rule directories (tested by cargo test / native uvmcheck).
+    supported_rules = None
+    with tempfile.TemporaryDirectory() as tmp_cat:
+        cat_path = Path(tmp_cat) / "cat.json"
+        cat_res = subprocess.run([binary, "--list-rules", "--json", str(cat_path)],
+                                 capture_output=True, text=True, cwd=tmp_cat)
+        if cat_res.returncode == 0 and cat_path.is_file():
+            supported_rules = {r["id"] for r in json.loads(cat_path.read_text()).get("rules", [])}
+
     # Discover test rule folders
     test_dirs = []
     for p in sorted(rules_dir.glob("*/*")):
@@ -316,6 +326,8 @@ def main():
             cat = p.parent.name
             rule_id = p.name
 
+            if supported_rules is not None and rule_id not in supported_rules:
+                continue
             if args.category and cat.lower() != args.category.lower():
                 continue
             if args.rule and args.rule.lower() not in rule_id.lower():

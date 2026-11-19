@@ -11,6 +11,7 @@ only: the catalog ([README.md](README.md)) marks them **Native**,
 | `SV-RND-030` | ContradictoryConstraints | ERROR | A rand variable whose hard constraints leave no legal value (`len > 10` on a `bit [3:0]`; `x < 5` with `x inside {[8:9]}`). Bounds in different constraint blocks count together only when no user code calls `constraint_mode()`. |
 | `SV-RND-031` | SoftConstraintNeverHolds | WARNING | A `soft` constraint the class's hard constraints always override. |
 | `SV-RND-032` | DeadDistItem | WARNING | A `dist` item whose values the hard constraints or the type never allow, so its weight is dropped. |
+| `SV-RND-040` | HardcodedBounds | WARNING | A non-`soft` literal constant bound on a `rand` property in a base class (`virtual` class or class extended in the design), which prevents derived classes from widening stimulus ranges without `constraint_mode(0)`. Advisory: off by default. |
 | `SV-COV-018` | CrossBinCountTooLarge | WARNING | A cross whose bin count, computed as a simulator builds the bins (explicit, `[N]`, `[]`, automatic up to `auto_bin_max`), is above 10,000. |
 | `SV-RCE-002` | ClockedBlockingRace | WARNING | A variable written with `=` in one edge-triggered always block and read by another on the same edge: a race (IEEE 1800 4.7). |
 | `DPI-PRT-001` | ConflictingDpiPrototypes | ERROR | One C function imported with two different prototypes. |
