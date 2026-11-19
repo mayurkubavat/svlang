@@ -518,16 +518,25 @@ impl<'a> DesignLowerer<'a> {
         }
 
         // Two-event async-reset block: `@(posedge clk or posedge/negedge rst) if (rst_cond) ... else ...`
+        // or single async-reset ternary assignment `lhs <= rst_cond ? rst_val : sync_val;`.
         let _ = is_always_ff;
-        let Some((block_decls, top_if)) = unwrap_if_and_decls(t, body) else {
+        let Some((block_decls, top_if_or_tern)) = unwrap_if_or_async_ternary(t, body) else {
             self.builder
                 .err(item.loc, "two-event clocked block must have top-level 'if (reset) ... else ...' structure");
             return;
         };
-        let if_kids: Vec<NodeId> = t.children(top_if).filter(|&c| t.kind(c) != SyntaxKind::Attribute).collect();
-        let Some(&cond_node) = if_kids.first() else { return };
-        let Some(&rst_stmt) = if_kids.get(1) else { return };
-        let clk_stmt_opt = top_if_else_stmt(t, top_if, &if_kids);
+        let (cond_node, branch_action) = match top_if_or_tern {
+            AsyncTop::If(top_if) => {
+                let if_kids: Vec<NodeId> = t.children(top_if).filter(|&c| t.kind(c) != SyntaxKind::Attribute).collect();
+                let Some(&cond_node) = if_kids.first() else { return };
+                let Some(&rst_stmt) = if_kids.get(1) else { return };
+                let clk_stmt_opt = top_if_else_stmt(t, top_if, &if_kids);
+                (cond_node, AsyncBranch::Stmts { rst_stmt, clk_stmt_opt })
+            }
+            AsyncTop::Ternary { lhs, op, cond, rst_val, sync_val, loc_node } => {
+                (cond, AsyncBranch::Ternary { lhs, op, rst_val, sync_val, loc_node })
+            }
+        };
 
         let mut cond_arena = ExprArena::new();
         let mut cond_binder =
@@ -571,7 +580,13 @@ impl<'a> DesignLowerer<'a> {
         for &d in &block_decls {
             self.exec_stmt(item.tree, d, &mut rst_ctx);
         }
-        self.exec_stmt(item.tree, rst_stmt, &mut rst_ctx);
+        match branch_action {
+            AsyncBranch::Stmts { rst_stmt, .. } => self.exec_stmt(item.tree, rst_stmt, &mut rst_ctx),
+            AsyncBranch::Ternary { lhs, op, rst_val, loc_node, .. } => {
+                let loc = self.stmt_loc(item.tree, loc_node, &rst_ctx);
+                self.exec_assignment(item.tree, lhs, op, Some(rst_val), &mut rst_ctx, loc);
+            }
+        }
         for ai in rst_assert_mark..self.proc_assert_enables.len() {
             let (old_en, aloc) = (self.proc_assert_enables[ai].3, self.proc_assert_enables[ai].2);
             self.proc_assert_enables[ai].3 = self.builder.alloc_and1(rst_asserted, old_en, aloc);
@@ -602,11 +617,21 @@ impl<'a> DesignLowerer<'a> {
         let mem_write_marks: Vec<usize> = self.builder.memories.iter().map(|m| m.writes.len()).collect();
         let check_mark = self.builder.checks.len();
         let assert_mark = self.proc_assert_enables.len();
-        if let Some(clk_stmt) = clk_stmt_opt {
-            for &d in &block_decls {
-                self.exec_stmt(item.tree, d, &mut sync_ctx);
+        match branch_action {
+            AsyncBranch::Stmts { clk_stmt_opt: Some(clk_stmt), .. } => {
+                for &d in &block_decls {
+                    self.exec_stmt(item.tree, d, &mut sync_ctx);
+                }
+                self.exec_stmt(item.tree, clk_stmt, &mut sync_ctx);
             }
-            self.exec_stmt(item.tree, clk_stmt, &mut sync_ctx);
+            AsyncBranch::Stmts { clk_stmt_opt: None, .. } => {}
+            AsyncBranch::Ternary { lhs, op, sync_val, loc_node, .. } => {
+                for &d in &block_decls {
+                    self.exec_stmt(item.tree, d, &mut sync_ctx);
+                }
+                let loc = self.stmt_loc(item.tree, loc_node, &sync_ctx);
+                self.exec_assignment(item.tree, lhs, op, Some(sync_val), &mut sync_ctx, loc);
+            }
         }
         for ai in assert_mark..self.proc_assert_enables.len() {
             let (old_en, aloc) = (self.proc_assert_enables[ai].3, self.proc_assert_enables[ai].2);
@@ -814,6 +839,9 @@ impl<'a> DesignLowerer<'a> {
                 SyntaxKind::IfStmt => {
                     self.exec_if_stmt(tree_idx, stmt, ctx);
                 }
+                SyntaxKind::CaseStmt => {
+                    self.exec_case_stmt(tree_idx, stmt, ctx);
+                }
                 SyntaxKind::ExprStmt => {
                     if let Some(expr_node) =
                         t.children(stmt).find(|&c| !matches!(t.kind(c), SyntaxKind::Attribute | SyntaxKind::StmtLabel))
@@ -1013,6 +1041,10 @@ impl<'a> DesignLowerer<'a> {
         };
         let sel_ty = sel_arena.get(sel_eid).ty.clone();
         let sel_cval = sel_arena.get(sel_eid).cval.clone();
+        if ctx.in_initial && sel_cval.as_ref().is_none_or(|c| !c.known()) {
+            self.builder.unsup(loc, "non-constant 'case' selector inside initial block is not supported");
+            return;
+        }
         let Some(sel_val) = self.lower_in_proc(&sel_arena, sel_eid, ctx).and_then(|o| o.as_packed()) else { return };
 
         let base_ctx = ctx.clone();
@@ -2987,11 +3019,24 @@ fn extract_root_symbol(arena: &ExprArena, mut eid: ExprId) -> Option<ResetTarget
 /// The one `if` a block comes down to, through nested `begin`/`end`, ignoring labels
 /// and local declarations (`begin : reg_update integer i; if (!rst_n) ... end`).
 pub(crate) fn unwrap_single_if_stmt(t: &Tree, stmt: NodeId) -> Option<NodeId> {
-    unwrap_if_and_decls(t, stmt).map(|(_, top_if)| top_if)
+    match unwrap_if_or_async_ternary(t, stmt) {
+        Some((_, AsyncTop::If(top_if))) => Some(top_if),
+        _ => None,
+    }
 }
 
 /// As [`unwrap_single_if_stmt`], with the local declarations met on the way, in order.
-pub(crate) fn unwrap_if_and_decls(t: &Tree, mut stmt: NodeId) -> Option<(Vec<NodeId>, NodeId)> {
+pub(crate) enum AsyncTop<'t> {
+    If(NodeId),
+    Ternary { lhs: NodeId, op: &'t str, cond: NodeId, rst_val: NodeId, sync_val: NodeId, loc_node: NodeId },
+}
+
+enum AsyncBranch<'t> {
+    Stmts { rst_stmt: NodeId, clk_stmt_opt: Option<NodeId> },
+    Ternary { lhs: NodeId, op: &'t str, rst_val: NodeId, sync_val: NodeId, loc_node: NodeId },
+}
+
+pub(crate) fn unwrap_if_or_async_ternary(t: &Tree, mut stmt: NodeId) -> Option<(Vec<NodeId>, AsyncTop<'_>)> {
     let mut decls = Vec::new();
     while t.kind(stmt) == SyntaxKind::SeqBlock {
         let mut rest = Vec::new();
@@ -3008,7 +3053,29 @@ pub(crate) fn unwrap_if_and_decls(t: &Tree, mut stmt: NodeId) -> Option<(Vec<Nod
             return None;
         }
     }
-    (t.kind(stmt) == SyntaxKind::IfStmt).then_some((decls, stmt))
+    if t.kind(stmt) == SyntaxKind::IfStmt {
+        return Some((decls, AsyncTop::If(stmt)));
+    }
+    if t.kind(stmt) == SyntaxKind::ExprStmt {
+        let expr_node =
+            t.children(stmt).find(|&c| !matches!(t.kind(c), SyntaxKind::Attribute | SyntaxKind::StmtLabel))?;
+        if t.kind(expr_node) == SyntaxKind::BinaryExpr {
+            let op = own_toks(t, expr_node).into_iter().next()?;
+            if matches!(op, "<=" | "=") {
+                let kids: Vec<NodeId> = t.children(expr_node).filter(|&c| t.kind(c) != SyntaxKind::Attribute).collect();
+                let [lhs, mut rhs] = kids[..] else { return None };
+                while t.kind(rhs) == SyntaxKind::ParenExpr {
+                    rhs = t.children(rhs).find(|&c| t.kind(c) != SyntaxKind::Attribute)?;
+                }
+                if t.kind(rhs) == SyntaxKind::CondExpr {
+                    let ckids: Vec<NodeId> = t.children(rhs).filter(|&c| t.kind(c) != SyntaxKind::Attribute).collect();
+                    let [cond, rst_val, sync_val] = ckids[..] else { return None };
+                    return Some((decls, AsyncTop::Ternary { lhs, op, cond, rst_val, sync_val, loc_node: expr_node }));
+                }
+            }
+        }
+    }
+    None
 }
 
 fn top_if_else_stmt(t: &Tree, if_node: NodeId, kids: &[NodeId]) -> Option<NodeId> {

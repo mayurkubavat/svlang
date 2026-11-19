@@ -637,7 +637,7 @@ impl<'a> ExprBinder<'a> {
     /// signedness into context-determined operators before converting the result to `lhs_ty`.
     ///
     /// Returns `None` and records one or more diagnostics in `self.diags` on any binding or typing error.
-    pub fn bind_assigned(&mut self, tree_idx: usize, node: NodeId, lhs_ty: &RtlType) -> Option<ExprId> {
+    pub fn bind_assigned(&mut self, tree_idx: usize, mut node: NodeId, lhs_ty: &RtlType) -> Option<ExprId> {
         let loc = self.loc_of(tree_idx, node);
         match lhs_ty {
             RtlType::NonSynthesizable(reason) => {
@@ -650,8 +650,35 @@ impl<'a> ExprBinder<'a> {
             }
             _ => {}
         }
+        while self.tree(tree_idx).kind(node) == SyntaxKind::ParenExpr {
+            let Some(inner) = Self::expr_kids(self.tree(tree_idx), node).into_iter().next() else {
+                break;
+            };
+            node = inner;
+        }
         if self.tree(tree_idx).kind(node) == SyntaxKind::AssignPattern {
             return self.bind_assign_pattern(tree_idx, node, Some(lhs_ty));
+        }
+        if self.tree(tree_idx).kind(node) == SyntaxKind::CondExpr
+            && (lhs_ty.integral_shape().is_none() || Self::has_untyped_assign_pattern(self.tree(tree_idx), node))
+        {
+            let kids = Self::expr_kids(self.tree(tree_idx), node);
+            let (c_node, t_node, e_node) = (*kids.first()?, *kids.get(1)?, *kids.get(2)?);
+            let cond = self.bind_condition(tree_idx, c_node)?;
+            let then_val = self.bind_assigned(tree_idx, t_node, lhs_ty)?;
+            let else_val = self.bind_assigned(tree_idx, e_node, lhs_ty)?;
+            let cval = match &self.arena.get(cond).cval {
+                Some(cc) => match cc.truth() {
+                    Some(true) => self.arena.get(then_val).cval.clone(),
+                    Some(false) => self.arena.get(else_val).cval.clone(),
+                    None => match (&self.arena.get(then_val).cval, &self.arena.get(else_val).cval) {
+                        (Some(a), Some(b)) => Some(CVal::merge(a, b)),
+                        _ => None,
+                    },
+                },
+                None => None,
+            };
+            return Some(self.arena.alloc(ExprKind::Cond { cond, then_val, else_val }, lhs_ty.clone(), cval, loc));
         }
         let Some(lhs_shape) = lhs_ty.integral_shape() else {
             let rhs = self.bind_self(tree_idx, node)?;
@@ -742,6 +769,22 @@ impl<'a> ExprBinder<'a> {
 
     fn expr_kids(t: &Tree, node: NodeId) -> Vec<NodeId> {
         t.children(node).filter(|&c| t.kind(c) != SyntaxKind::Attribute).collect()
+    }
+
+    fn has_untyped_assign_pattern(t: &Tree, mut node: NodeId) -> bool {
+        while t.kind(node) == SyntaxKind::ParenExpr {
+            let Some(inner) = Self::expr_kids(t, node).into_iter().next() else { return false };
+            node = inner;
+        }
+        match t.kind(node) {
+            SyntaxKind::AssignPattern => true,
+            SyntaxKind::CondExpr => {
+                let kids = Self::expr_kids(t, node);
+                kids.get(1).is_some_and(|&n| Self::has_untyped_assign_pattern(t, n))
+                    || kids.get(2).is_some_and(|&n| Self::has_untyped_assign_pattern(t, n))
+            }
+            _ => false,
+        }
     }
 
     fn own_toks(t: &Tree, node: NodeId) -> Vec<&str> {
@@ -1344,6 +1387,39 @@ impl<'a> ExprBinder<'a> {
     ) -> Option<ExprId> {
         let (c_node, t_node, e_node) = (*kids.first()?, *kids.get(1)?, *kids.get(2)?);
         let cond = self.bind_condition(tree_idx, c_node)?;
+        let t_pat = Self::has_untyped_assign_pattern(self.tree(tree_idx), t_node);
+        let e_pat = Self::has_untyped_assign_pattern(self.tree(tree_idx), e_node);
+        if t_pat != e_pat {
+            // IEEE 1800-2023 §10.9 & §11.4.11: if one branch has a known type and the
+            // other is an untyped assignment pattern, propagate the sibling branch's type.
+            let (then_val, else_val, res_ty) = if e_pat {
+                let tv = self.bind_self(tree_idx, t_node)?;
+                let ty = self.arena.get(tv).ty.clone();
+                let ev = self.bind_assigned(tree_idx, e_node, &ty)?;
+                (tv, ev, ty)
+            } else {
+                let ev = self.bind_self(tree_idx, e_node)?;
+                let ty = self.arena.get(ev).ty.clone();
+                let tv = self.bind_assigned(tree_idx, t_node, &ty)?;
+                (tv, ev, ty)
+            };
+            let cval = match &self.arena.get(cond).cval {
+                Some(cc) => match cc.truth() {
+                    Some(true) => self.arena.get(then_val).cval.clone(),
+                    Some(false) => self.arena.get(else_val).cval.clone(),
+                    None => match (&self.arena.get(then_val).cval, &self.arena.get(else_val).cval) {
+                        (Some(a), Some(b)) => Some(CVal::merge(a, b)),
+                        _ => None,
+                    },
+                },
+                None => None,
+            };
+            let out = self.arena.alloc(ExprKind::Cond { cond, then_val, else_val }, res_ty, cval, loc);
+            return Some(match ctx {
+                Some((cw, cs, c4)) => self.arena.coerce(out, cw, cs, c4, loc),
+                None => out,
+            });
+        }
         let d0 = self.diags.len();
         let ts = self.peek_self_shape(tree_idx, t_node);
         if self.diags.len() > d0 {
@@ -1552,15 +1628,12 @@ impl<'a> ExprBinder<'a> {
         }
 
         // Concatenation `{a, b, ...}`: operands are strictly self-determined per IEEE 1800 §11.6.1.
+        // Unbased unsized fill literals (`'0`, `'1`, `'x`, `'z`) have self-determined width 1 per §5.7.1.
         let mut elems = Vec::with_capacity(kids.len());
         let mut total_w = 0u32;
         let mut four = false;
         let mut all_const = true;
         for &k in kids {
-            if self.is_unbased_literal(tree_idx, k) {
-                self.err(loc, "unsized unbased literal is illegal inside concatenation");
-                return None;
-            }
             if self.try_zero_replication(tree_idx, k)? {
                 continue;
             }
@@ -1768,10 +1841,6 @@ impl<'a> ExprBinder<'a> {
             return Some(());
         }
         for &k in &kids {
-            if self.is_unbased_literal(tree_idx, k) {
-                self.err(loc, "unsized unbased literal is illegal inside concatenation");
-                return None;
-            }
             if self.try_zero_replication(tree_idx, k)? {
                 continue;
             }
@@ -3204,7 +3273,42 @@ impl<'a> ExprBinder<'a> {
             self.err(loc, "untyped assignment pattern requires an explicit type prefix or assignment context");
             return None;
         };
-        let raw_entries = parse_assign_pattern_entries(self.tree(tree_idx), node);
+        let raw_items = parse_assign_pattern_items(self.tree(tree_idx), node);
+        let mut raw_entries: Vec<(Option<String>, Option<NodeId>, NodeId)> = Vec::new();
+        for item in raw_items {
+            match item {
+                RawPatternItem::Entry { key_text, key_node, val } => {
+                    raw_entries.push((key_text, key_node, val));
+                }
+                RawPatternItem::Replicate { count, items } => {
+                    let count_expr = self.bind_self(tree_idx, count)?;
+                    let Some(cnt_cv) = self.arena.get(count_expr).cval.clone() else {
+                        self.err(loc, "assignment pattern replication count must be a constant expression");
+                        return None;
+                    };
+                    let Some(rep) = cval_nonneg_u32(&cnt_cv, MAX_ARRAY_ELEMS) else {
+                        self.err(
+                            loc,
+                            "assignment pattern replication count is negative, unknown, or exceeds maximum limit",
+                        );
+                        return None;
+                    };
+                    let Some(added) = (rep as usize)
+                        .checked_mul(items.len())
+                        .filter(|&n| raw_entries.len() + n <= MAX_ARRAY_ELEMS as usize)
+                    else {
+                        self.err(loc, "assignment pattern replication exceeds maximum element count");
+                        return None;
+                    };
+                    raw_entries.reserve(added);
+                    for _ in 0..rep {
+                        for &it in &items {
+                            raw_entries.push((None, None, it));
+                        }
+                    }
+                }
+            }
+        }
         if raw_entries.is_empty() {
             self.err(loc, "empty assignment pattern '{}' is illegal");
             return None;
@@ -3214,12 +3318,15 @@ impl<'a> ExprBinder<'a> {
                 self.validate_struct_pattern_keys(
                     &raw_entries,
                     fields.len(),
-                    |n| fields.iter().any(|f| f.name == n),
+                    |n| {
+                        fields.iter().any(|f| f.name == n)
+                            || struct_type_key_matches_any(n, fields.iter().map(|f| &f.ty))
+                    },
                     loc,
                 )?;
                 let mut bound_fields: Vec<ExprId> = Vec::with_capacity(fields.len());
                 for (idx, pf) in fields.iter().enumerate() {
-                    let val_node = find_pattern_entry(&raw_entries, idx, &pf.name);
+                    let val_node = find_struct_pattern_entry(&raw_entries, idx, &pf.name, &pf.ty);
                     let Some(vn) = val_node else {
                         self.err(loc, format!("missing member '{}' in struct assignment pattern", pf.name));
                         return None;
@@ -3239,7 +3346,7 @@ impl<'a> ExprBinder<'a> {
             RtlType::PackedUnion { width, signed, four_state, fields, .. } => {
                 if raw_entries.len() == 1 && raw_entries[0].0.as_deref() == Some("default") {
                     let bit_ty = RtlType::Integral { width: 1, signed: false, four_state: *four_state };
-                    let b = self.bind_assigned(tree_idx, raw_entries[0].1, &bit_ty)?;
+                    let b = self.bind_assigned(tree_idx, raw_entries[0].2, &bit_ty)?;
                     let cval = self
                         .arena
                         .get(b)
@@ -3266,7 +3373,7 @@ impl<'a> ExprBinder<'a> {
                     self.err(loc, "invalid or unknown member in packed union assignment pattern");
                     return None;
                 };
-                let bound = self.bind_assigned(tree_idx, raw_entries[0].1, &pf.ty)?;
+                let bound = self.bind_assigned(tree_idx, raw_entries[0].2, &pf.ty)?;
                 let coerced = self.arena.coerce(bound, *width, *signed, *four_state, loc);
                 let cval = self.arena.get(coerced).cval.clone();
                 Some(self.arena.alloc(ExprKind::Concat(vec![coerced]), target_ty.clone(), cval, loc))
@@ -3275,12 +3382,15 @@ impl<'a> ExprBinder<'a> {
                 self.validate_struct_pattern_keys(
                     &raw_entries,
                     fields.len(),
-                    |n| fields.iter().any(|(fnm, _)| fnm == n),
+                    |n| {
+                        fields.iter().any(|(fnm, _)| fnm == n)
+                            || struct_type_key_matches_any(n, fields.iter().map(|(_, t)| t))
+                    },
                     loc,
                 )?;
                 let mut out = Vec::with_capacity(fields.len());
                 for (idx, (fname, fty)) in fields.iter().enumerate() {
-                    let Some(vn) = find_pattern_entry(&raw_entries, idx, fname) else {
+                    let Some(vn) = find_struct_pattern_entry(&raw_entries, idx, fname, fty) else {
                         self.err(loc, format!("missing member '{fname}' in unpacked struct assignment pattern"));
                         return None;
                     };
@@ -3295,13 +3405,9 @@ impl<'a> ExprBinder<'a> {
                     return None;
                 };
                 let cnt = cnt_u32 as usize;
-                self.validate_array_pattern_keys(&raw_entries, cnt, loc)?;
+                let resolved = self.resolve_array_pattern_entries(tree_idx, &raw_entries, *left, *right, cnt, loc)?;
                 let mut parts = Vec::with_capacity(cnt);
-                for idx in 0..cnt {
-                    let Some(vn) = find_pattern_entry(&raw_entries, idx, "") else {
-                        self.err(loc, "insufficient elements in packed array assignment pattern");
-                        return None;
-                    };
+                for vn in resolved {
                     parts.push(self.bind_assigned(tree_idx, vn, elem)?);
                 }
                 let all_const = parts.iter().all(|&e| self.arena.get(e).cval.is_some());
@@ -3321,18 +3427,14 @@ impl<'a> ExprBinder<'a> {
                     return None;
                 };
                 let cnt = cnt_u32 as usize;
-                self.validate_array_pattern_keys(&raw_entries, cnt, loc)?;
+                let resolved = self.resolve_array_pattern_entries(tree_idx, &raw_entries, left, right, cnt, loc)?;
                 let sub_ty = if dims.len() > 1 {
                     RtlType::UnpackedArray { elem: elem.clone(), dims: dims[1..].to_vec() }
                 } else {
                     (**elem).clone()
                 };
                 let mut out = Vec::with_capacity(cnt);
-                for idx in 0..cnt {
-                    let Some(vn) = find_pattern_entry(&raw_entries, idx, "") else {
-                        self.err(loc, "insufficient elements in unpacked array assignment pattern");
-                        return None;
-                    };
+                for vn in resolved {
                     out.push((None, self.bind_assigned(tree_idx, vn, &sub_ty)?));
                 }
                 Some(self.arena.alloc(ExprKind::AssignPattern(out), target_ty.clone(), None, loc))
@@ -3341,7 +3443,7 @@ impl<'a> ExprBinder<'a> {
                 let w = ty.bit_width().unwrap_or(1);
                 let bit_ty = RtlType::Integral { width: 1, signed: false, four_state: ty.is_four_state() };
                 if raw_entries.len() == 1 && raw_entries[0].0.as_deref() == Some("default") {
-                    let b = self.bind_assigned(tree_idx, raw_entries[0].1, &bit_ty)?;
+                    let b = self.bind_assigned(tree_idx, raw_entries[0].2, &bit_ty)?;
                     let cval = self
                         .arena
                         .get(b)
@@ -3354,7 +3456,7 @@ impl<'a> ExprBinder<'a> {
                     self.err(loc, "integral assignment pattern exceeds maximum element count");
                     return None;
                 }
-                if raw_entries.iter().any(|(k, _)| k.is_some()) {
+                if raw_entries.iter().any(|(k, _, _)| k.is_some()) {
                     self.err(loc, "named keys are illegal in integral assignment pattern");
                     return None;
                 }
@@ -3369,7 +3471,7 @@ impl<'a> ExprBinder<'a> {
                     return None;
                 }
                 let mut parts = Vec::with_capacity(raw_entries.len());
-                for (_, vn) in &raw_entries {
+                for (_, _, vn) in &raw_entries {
                     parts.push(self.bind_assigned(tree_idx, *vn, &bit_ty)?);
                 }
                 let all_const = parts.iter().all(|&e| self.arena.get(e).cval.is_some());
@@ -3391,25 +3493,25 @@ impl<'a> ExprBinder<'a> {
 
     fn validate_struct_pattern_keys(
         &mut self,
-        entries: &[(Option<String>, NodeId)],
+        entries: &[(Option<String>, Option<NodeId>, NodeId)],
         field_count: usize,
         mut has_field: impl FnMut(&str) -> bool,
         loc: Loc,
     ) -> Option<()> {
-        let any_pos = entries.iter().any(|(k, _)| k.is_none());
-        let any_named = entries.iter().any(|(k, _)| k.as_deref().is_some_and(|s| s != "default"));
+        let any_pos = entries.iter().any(|(k, _, _)| k.is_none());
+        let any_named = entries.iter().any(|(k, _, _)| k.as_deref().is_some_and(|s| s != "default"));
         if any_pos && any_named {
             self.err(loc, "cannot mix positional and named elements in struct assignment pattern");
             return None;
         }
-        if any_pos && entries.iter().all(|(k, _)| k.is_none()) && entries.len() > field_count {
+        if any_pos && entries.iter().all(|(k, _, _)| k.is_none()) && entries.len() > field_count {
             self.err(
                 loc,
                 format!("excess elements in struct assignment pattern: expected {field_count}, got {}", entries.len()),
             );
             return None;
         }
-        for (k_opt, _) in entries {
+        for (k_opt, _, _) in entries {
             if let Some(k) = k_opt {
                 if k != "default" && !has_field(k) {
                     self.err(loc, format!("unknown member '{k}' in struct assignment pattern"));
@@ -3420,28 +3522,83 @@ impl<'a> ExprBinder<'a> {
         Some(())
     }
 
-    fn validate_array_pattern_keys(
+    fn resolve_array_pattern_entries(
         &mut self,
-        entries: &[(Option<String>, NodeId)],
+        tree_idx: usize,
+        entries: &[(Option<String>, Option<NodeId>, NodeId)],
+        left: i128,
+        right: i128,
         elem_count: usize,
         loc: Loc,
-    ) -> Option<()> {
-        for (k_opt, _) in entries {
-            if let Some(k) = k_opt {
-                if k != "default" {
-                    self.err(loc, format!("unsupported key '{k}' in array assignment pattern"));
-                    return None;
-                }
-            }
+    ) -> Option<Vec<NodeId>> {
+        let any_pos = entries.iter().any(|(k, _, _)| k.is_none());
+        let any_keyed = entries.iter().any(|(k, _, _)| k.as_deref().is_some_and(|s| s != "default"));
+        if any_pos && any_keyed {
+            self.err(loc, "cannot mix positional and indexed elements in array assignment pattern");
+            return None;
         }
-        if entries.iter().all(|(k, _)| k.is_none()) && entries.len() > elem_count {
+        if any_pos && entries.iter().all(|(k, _, _)| k.is_none()) && entries.len() > elem_count {
             self.err(
                 loc,
                 format!("excess elements in array assignment pattern: expected {elem_count}, got {}", entries.len()),
             );
             return None;
         }
-        Some(())
+        let default_node = entries.iter().find(|(k, _, _)| k.as_deref() == Some("default")).map(|(_, _, n)| *n);
+        if !any_keyed {
+            let mut out = Vec::with_capacity(elem_count);
+            for idx in 0..elem_count {
+                let vn = if entries.iter().all(|(k, _, _)| k.is_none()) {
+                    entries.get(idx).map(|(_, _, n)| *n)
+                } else {
+                    None
+                }
+                .or(default_node);
+                let Some(vn) = vn else {
+                    self.err(loc, "insufficient elements in array assignment pattern");
+                    return None;
+                };
+                out.push(vn);
+            }
+            return Some(out);
+        }
+        let lo = left.min(right);
+        let hi = left.max(right);
+        let mut slots: Vec<Option<NodeId>> = vec![default_node; elem_count];
+        for (k_opt, k_node, vn) in entries {
+            let Some(k) = k_opt else { continue };
+            if k == "default" {
+                continue;
+            }
+            let sv_idx = if let Some(kn) = *k_node {
+                let ke = self.bind_self(tree_idx, kn)?;
+                let Some(cv) = self.arena.get(ke).cval.clone().filter(|c| c.known()) else {
+                    self.err(loc, format!("array assignment pattern index '{k}' must be a known constant expression"));
+                    return None;
+                };
+                cv.i()
+            } else if let Ok(v) = k.parse::<i128>() {
+                v
+            } else {
+                self.err(loc, format!("unsupported key '{k}' in array assignment pattern"));
+                return None;
+            };
+            if sv_idx < lo || sv_idx > hi {
+                self.err(loc, format!("array assignment pattern index {sv_idx} out of bounds [{left}:{right}]"));
+                return None;
+            }
+            let pos = (left - sv_idx).unsigned_abs() as usize;
+            slots[pos] = Some(*vn);
+        }
+        let mut out = Vec::with_capacity(elem_count);
+        for s in slots {
+            let Some(vn) = s else {
+                self.err(loc, "insufficient elements in array assignment pattern");
+                return None;
+            };
+            out.push(vn);
+        }
+        Some(out)
     }
 }
 
@@ -3970,11 +4127,36 @@ fn eval_bit_sysfunc(func: SysFunc, cv: &CVal) -> CVal {
     }
 }
 
-fn parse_assign_pattern_entries(t: &Tree, pat: NodeId) -> Vec<(Option<String>, NodeId)> {
+enum RawPatternItem {
+    Entry { key_text: Option<String>, key_node: Option<NodeId>, val: NodeId },
+    Replicate { count: NodeId, items: Vec<NodeId> },
+}
+
+fn parse_assign_pattern_items(t: &Tree, pat: NodeId) -> Vec<RawPatternItem> {
     let mut out = Vec::new();
     let mut pending_nodes: Vec<NodeId> = Vec::new();
     let mut has_colon = false;
     let mut key_tok: Option<String> = None;
+    let mut key_node: Option<NodeId> = None;
+    let flush = |pending: &mut Vec<NodeId>,
+                 has_colon: &mut bool,
+                 key_tok: &mut Option<String>,
+                 key_node: &mut Option<NodeId>,
+                 out: &mut Vec<RawPatternItem>| {
+        if !*has_colon && pending.len() == 2 && t.kind(pending[1]) == SyntaxKind::ConcatExpr {
+            let count = pending[0];
+            let items: Vec<NodeId> = t.children(pending[1]).filter(|&c| t.kind(c) != SyntaxKind::Attribute).collect();
+            out.push(RawPatternItem::Replicate { count, items });
+        } else if let Some(vn) = pending.pop() {
+            let kt = if *has_colon { key_tok.take() } else { None };
+            let kn = if *has_colon { key_node.take() } else { None };
+            out.push(RawPatternItem::Entry { key_text: kt, key_node: kn, val: vn });
+        }
+        pending.clear();
+        *has_colon = false;
+        *key_tok = None;
+        *key_node = None;
+    };
     for ch in &t.node(pat).children {
         match *ch {
             sv_syntax::Child::Token(ti) => {
@@ -3988,19 +4170,25 @@ fn parse_assign_pattern_entries(t: &Tree, pat: NodeId) -> Vec<(Option<String>, N
                         has_colon = true;
                         if let Some(kn) = pending_nodes.pop() {
                             key_tok = Some(t.bare_text(kn).trim().to_string());
+                            key_node = Some(kn);
                         }
                     }
                     "," | "}" => {
-                        if let Some(vn) = pending_nodes.pop() {
-                            let k = if has_colon { key_tok.take() } else { None };
-                            out.push((k, vn));
-                        }
-                        pending_nodes.clear();
-                        has_colon = false;
-                        key_tok = None;
+                        flush(&mut pending_nodes, &mut has_colon, &mut key_tok, &mut key_node, &mut out);
                     }
                     "default" => {
                         key_tok = Some("default".into());
+                    }
+                    kw @ ("int" | "integer" | "byte" | "shortint" | "longint" | "bit" | "logic" | "reg")
+                        if key_tok.is_none() && pending_nodes.is_empty() =>
+                    {
+                        key_tok = Some(kw.into());
+                    }
+                    sign @ ("signed" | "unsigned") if !has_colon => {
+                        if let Some(kt) = key_tok.as_mut() {
+                            kt.push(' ');
+                            kt.push_str(sign);
+                        }
                     }
                     _ => {}
                 }
@@ -4012,23 +4200,63 @@ fn parse_assign_pattern_entries(t: &Tree, pat: NodeId) -> Vec<(Option<String>, N
             }
         }
     }
-    if let Some(vn) = pending_nodes.pop() {
-        let k = if has_colon { key_tok.take() } else { None };
-        out.push((k, vn));
-    }
+    flush(&mut pending_nodes, &mut has_colon, &mut key_tok, &mut key_node, &mut out);
     out
 }
 
-fn find_pattern_entry(entries: &[(Option<String>, NodeId)], pos: usize, field_name: &str) -> Option<NodeId> {
+fn struct_type_key_matches(key: &str, ty: &RtlType) -> bool {
+    match ty {
+        RtlType::Integral { width, signed, four_state } => match key {
+            "bit" | "bit unsigned" => *width == 1 && !*signed && !*four_state,
+            "bit signed" => *width == 1 && *signed && !*four_state,
+            "logic" | "reg" | "logic unsigned" | "reg unsigned" => *width == 1 && !*signed && *four_state,
+            "logic signed" | "reg signed" => *width == 1 && *signed && *four_state,
+            "byte" | "byte signed" => *width == 8 && *signed && !*four_state,
+            "byte unsigned" => *width == 8 && !*signed && !*four_state,
+            "shortint" | "shortint signed" => *width == 16 && *signed && !*four_state,
+            "shortint unsigned" => *width == 16 && !*signed && !*four_state,
+            "int" | "int signed" => *width == 32 && *signed && !*four_state,
+            "int unsigned" => *width == 32 && !*signed && !*four_state,
+            "integer" | "integer signed" => *width == 32 && *signed && *four_state,
+            "integer unsigned" => *width == 32 && !*signed && *four_state,
+            "longint" | "longint signed" => *width == 64 && *signed && !*four_state,
+            "longint unsigned" => *width == 64 && !*signed && !*four_state,
+            _ => false,
+        },
+        RtlType::PackedStruct { name: Some(n), .. }
+        | RtlType::PackedUnion { name: Some(n), .. }
+        | RtlType::Enum { name: Some(n), .. }
+        | RtlType::UnpackedStruct { name: Some(n), .. } => n == key || n.rsplit("::").next() == Some(key),
+        _ => false,
+    }
+}
+
+fn struct_type_key_matches_any<'a>(key: &str, mut tys: impl Iterator<Item = &'a RtlType>) -> bool {
+    tys.any(|t| struct_type_key_matches(key, t))
+}
+
+fn find_struct_pattern_entry(
+    entries: &[(Option<String>, Option<NodeId>, NodeId)],
+    pos: usize,
+    field_name: &str,
+    field_ty: &RtlType,
+) -> Option<NodeId> {
     if !field_name.is_empty() {
-        if let Some((_, n)) = entries.iter().find(|(k, _)| k.as_deref() == Some(field_name)) {
+        if let Some((_, _, n)) = entries.iter().rev().find(|(k, _, _)| k.as_deref() == Some(field_name)) {
             return Some(*n);
         }
     }
-    if entries.iter().all(|(k, _)| k.is_none()) {
-        if let Some((_, n)) = entries.get(pos) {
+    if entries.iter().all(|(k, _, _)| k.is_none()) {
+        if let Some((_, _, n)) = entries.get(pos) {
             return Some(*n);
         }
     }
-    entries.iter().find(|(k, _)| k.as_deref() == Some("default")).map(|(_, n)| *n)
+    if let Some((_, _, n)) = entries
+        .iter()
+        .rev()
+        .find(|(k, _, _)| k.as_deref().is_some_and(|kt| kt != "default" && struct_type_key_matches(kt, field_ty)))
+    {
+        return Some(*n);
+    }
+    entries.iter().rev().find(|(k, _, _)| k.as_deref() == Some("default")).map(|(_, _, n)| *n)
 }

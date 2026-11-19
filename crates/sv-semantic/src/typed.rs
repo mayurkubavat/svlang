@@ -134,7 +134,7 @@ fn method_arity(s: Shape, m: &str) -> Option<(u32, u32)> {
 /// Member names of a struct or union type string
 /// (`struct{int a;logic b;}m.s$1`).
 fn struct_members(ty: &str) -> Option<Vec<String>> {
-    if !(ty.starts_with("struct") || ty.starts_with("union")) {
+    if !(ty.starts_with("struct") || ty.starts_with("union")) || ty.contains("<error>") {
         return None;
     }
     let open = ty.find('{')?;
@@ -189,8 +189,8 @@ struct Ctx<'a> {
     by_name: HashMap<(usize, &'a str), Vec<usize>>,
     /// Scope opened by each declaration node.
     opener: HashMap<(usize, NodeId), usize>,
-    /// Typedefs by path (`m.e_t`).
-    typedefs: HashMap<String, usize>,
+    /// Typedefs by path (`m.e_t`), `None` when more than one scope defines that path.
+    typedefs: HashMap<String, Option<usize>>,
     /// Class and package scopes by name (when the name is unique).
     classes: HashMap<String, Option<usize>>,
     packages: HashMap<String, Option<usize>>,
@@ -210,13 +210,14 @@ struct Ctx<'a> {
 pub fn check(trees: &[Tree], scopes: &Scopes) -> Vec<Diag> {
     let (types, _) = crate::symbol_info(trees, scopes);
     let mut by_name: HashMap<(usize, &str), Vec<usize>> = HashMap::default();
-    let mut typedefs = HashMap::default();
+    let mut typedefs: HashMap<String, Option<usize>> = HashMap::default();
     let mut members: HashMap<usize, Vec<&str>> = HashMap::default();
     for (i, s) in scopes.symbols.iter().enumerate() {
         members.entry(s.scope).or_default().push(s.name.as_str());
         by_name.entry((s.scope, s.name.as_str())).or_default().push(i);
         if s.kind == SymKind::Typedef {
-            typedefs.insert(format!("{}.{}", scopes.scopes[s.scope].path, s.name), i);
+            let key = format!("{}.{}", scopes.scopes[s.scope].path, s.name);
+            typedefs.entry(key).and_modify(|e| *e = None).or_insert(Some(i));
         }
     }
     let mut opener = HashMap::default();
@@ -468,7 +469,9 @@ impl<'a> Ctx<'a> {
                 .or_else(|| self.typedefs.get(&format!("$unit.{ty}")))
                 .or_else(|| self.typedefs.get(&ty.replace("::", ".")));
             match found {
-                Some(&d) => ty = self.types.get(d)?.clone()?,
+                Some(Some(d)) => ty = self.types.get(*d)?.clone()?,
+                // Ambiguous across duplicate packages/scopes: stay conservative.
+                Some(None) => return None,
                 None => break,
             }
         }

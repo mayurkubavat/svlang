@@ -43,6 +43,9 @@ def main():
     if argv and argv[0] == '--model':
         COL = 'model'
         argv.pop(0)
+    max_differ = None
+    while argv and argv[0].startswith('--max-differ='):
+        max_differ = int(argv.pop(0).split('=', 1)[1])
     if argv and argv[0].startswith('--show='):
         show = int(argv.pop(0)[7:])
     if argv[:1] == ['--repo']:
@@ -72,7 +75,10 @@ def main():
                 for k, r, o in diffs[:show]:
                     print(f'  {k}: slang {r}, ours {o}')
     print(f'compiles={len(cases)} differ={bad_cases} classes={classes} identical={good}')
+    if max_differ is not None and bad_cases > max_differ:
+        return 1
+    return 0
 
 
 if __name__ == '__main__':
-    main()
+    sys.exit(main())

@@ -396,11 +396,40 @@ impl Ctx<'_> {
                     }
                 }
             }
-            DataType if toks(t, n).first() == Some(&"struct") && toks(t, n).contains(&"packed") => {
+            DataType if matches!(toks(t, n).first(), Some(&"struct" | &"union")) && toks(t, n).contains(&"packed") => {
+                let tk = toks(t, n);
+                let is_union = tk.first() == Some(&"union");
+                let check_equal_widths = is_union && !tk.contains(&"tagged") && !tk.contains(&"soft");
+                let mut first_w: Option<u64> = None;
+                let mut reported_mismatch = false;
+                let kind_word = if is_union { "union" } else { "struct" };
                 for m in t.children(n).filter(|&c| t.kind(c) == DataDecl) {
+                    let mw = if check_equal_widths {
+                        t.child(m, DataType).and_then(|dt| literal_width(t, dt))
+                    } else {
+                        None
+                    };
                     for d in t.children(m).filter(|&c| t.kind(c) == Declarator) {
                         if toks(t, d).contains(&"=") {
-                            err(d, format!("packed struct member '{}' cannot have a default", name_of(t, d)));
+                            err(d, format!("packed {kind_word} member '{}' cannot have a default", name_of(t, d)));
+                        }
+                        if check_equal_widths && !reported_mismatch && t.child(d, Dim).is_none() {
+                            if let Some(w) = mw {
+                                match first_w {
+                                    None => first_w = Some(w),
+                                    Some(fw) if fw != w => {
+                                        err(
+                                            d,
+                                            format!(
+                                                "member '{}' of width {w} does not match packed union width {fw}",
+                                                name_of(t, d)
+                                            ),
+                                        );
+                                        reported_mismatch = true;
+                                    }
+                                    _ => {}
+                                }
+                            }
                         }
                     }
                 }

@@ -843,6 +843,27 @@ impl<'b, 't> Elab<'b, 't> {
         }
     }
 
+    fn format_elab_task_msg(b: &Builder, c: NodeRef) -> String {
+        let Some(al) = b.child(c, CallExpr).and_then(|ce| b.child(ce, ArgList)).or_else(|| b.child(c, ArgList)) else {
+            return String::new();
+        };
+        let args: Vec<NodeRef> = b
+            .children(al)
+            .into_iter()
+            .filter(|a| b.kind(*a) == Arg)
+            .filter_map(|a| b.children(a).into_iter().next())
+            .collect();
+        for a in args {
+            let toks = b.toks_of(a);
+            if let [lit] = toks.as_slice() {
+                if lit.starts_with('"') && lit.ends_with('"') && lit.len() >= 2 {
+                    return lit[1..lit.len() - 1].to_string();
+                }
+            }
+        }
+        String::new()
+    }
+
     fn reset(&mut self) {
         self.defparams.clear();
         self.envs = vec![Rc::new(HashMap::default())];
@@ -1279,13 +1300,105 @@ impl<'b, 't> Elab<'b, 't> {
         }
         for d in decls {
             let Some((name, _)) = b.name_of(d) else { continue };
-            let rty = if let Some(bd) = env.get(&name) {
-                b.rtl_data_type(bd.node, bd.scope, &bd.env, Some(name.clone()), 0)
+            let (actual_dt, actual_scope, actual_env) = if let Some(bd) = env.get(&name) {
+                (Some((bd.node, bd.scope, bd.env.clone())), bd.scope, bd.env.clone())
             } else if let Some(def_dt) = b.child(d, DataType).or_else(|| b.child(p, DataType)) {
-                b.rtl_data_type(def_dt, scope, &env, Some(name.clone()), 0)
+                (Some((def_dt, scope, env.clone())), scope, env.clone())
             } else {
-                RtlType::Integral { width: 1, signed: false, four_state: true }
+                (None, scope, env.clone())
             };
+            let rty = match &actual_dt {
+                Some((dt_node, dt_scope, dt_env)) => {
+                    b.rtl_data_type(*dt_node, *dt_scope, dt_env, Some(name.clone()), 0)
+                }
+                None => RtlType::Integral { width: 1, signed: false, four_state: true },
+            };
+            // IEEE 1800-2023 §6.20.3: enforce type parameter restriction (`type enum/struct/union/class/interface class`).
+            let d_own = b.own_tokens(d);
+            let p_own = b.own_tokens(p);
+            let restr = ["interface", "enum", "struct", "union", "class"].into_iter().find(|k| {
+                d_own.contains(k)
+                    || (d == p && p_own.contains(k))
+                    || (!d_own.iter().any(|x| ["enum", "struct", "union", "class", "interface"].contains(x))
+                        && p_own.contains(k))
+            });
+            if let (Some(rk), Some((dt_node, _, _))) = (restr, &actual_dt) {
+                let ts_str = b.ts(*dt_node, actual_scope, &actual_env, true, 0);
+                let is_iface_cls = rk == "interface" && (d_own.contains(&"class") || p_own.contains(&"class"));
+                let ok = match rk {
+                    "enum" => matches!(rty, RtlType::Enum { .. }) || ts_str.starts_with("enum"),
+                    "struct" => {
+                        matches!(rty, RtlType::PackedStruct { .. } | RtlType::UnpackedStruct { .. })
+                            || ts_str.starts_with("struct")
+                    }
+                    "union" => matches!(rty, RtlType::PackedUnion { .. }) || ts_str.starts_with("union"),
+                    "interface" if is_iface_cls => {
+                        !matches!(
+                            rty,
+                            RtlType::Integral { .. }
+                                | RtlType::Enum { .. }
+                                | RtlType::PackedStruct { .. }
+                                | RtlType::PackedUnion { .. }
+                                | RtlType::PackedArray { .. }
+                                | RtlType::UnpackedStruct { .. }
+                                | RtlType::UnpackedArray { .. }
+                        ) && !matches!(
+                            ts_str.as_str(),
+                            "int"
+                                | "integer"
+                                | "logic"
+                                | "bit"
+                                | "reg"
+                                | "byte"
+                                | "shortint"
+                                | "longint"
+                                | "string"
+                                | "real"
+                                | "shortreal"
+                                | "realtime"
+                                | "time"
+                                | "void"
+                        )
+                    }
+                    "class" => {
+                        !matches!(
+                            rty,
+                            RtlType::Integral { .. }
+                                | RtlType::Enum { .. }
+                                | RtlType::PackedStruct { .. }
+                                | RtlType::PackedUnion { .. }
+                                | RtlType::PackedArray { .. }
+                                | RtlType::UnpackedStruct { .. }
+                                | RtlType::UnpackedArray { .. }
+                        ) && !matches!(
+                            ts_str.as_str(),
+                            "int"
+                                | "integer"
+                                | "logic"
+                                | "bit"
+                                | "reg"
+                                | "byte"
+                                | "shortint"
+                                | "longint"
+                                | "string"
+                                | "real"
+                                | "shortreal"
+                                | "realtime"
+                                | "time"
+                                | "void"
+                        )
+                    }
+                    _ => true,
+                };
+                if !ok && self.checked.insert(d) {
+                    let label = if is_iface_cls { "interface class" } else { rk };
+                    self.diags.push(crate::names::Diag {
+                        tree: d.tree,
+                        node: d.node,
+                        message: format!("type parameter '{name}' requires a {label} type"),
+                    });
+                }
+            }
             self.design.instances[inst_id.0 as usize].type_params.push((name, rty));
         }
         *b.inst.borrow_mut() = Vals::default();
@@ -1762,6 +1875,24 @@ impl<'b, 't> Elab<'b, 't> {
                 LetDecl => self.push_item(ElabItemKind::LetDecl, c, vals),
                 GateInst => self.push_item(ElabItemKind::GateInst, c, vals),
                 NetAlias => self.push_item(ElabItemKind::NetAlias, c, vals),
+                ElabTask => {
+                    if self.uninst == 0 {
+                        let toks = b.toks_of(c);
+                        let first = toks.first().copied().unwrap_or("");
+                        if matches!(first, "$error" | "$fatal") && self.checked.insert(c) {
+                            let detail = Self::format_elab_task_msg(b, c);
+                            self.diags.push(crate::names::Diag {
+                                tree: c.tree,
+                                node: c.node,
+                                message: if detail.is_empty() {
+                                    format!("{first} encountered")
+                                } else {
+                                    format!("{first} encountered: {detail}")
+                                },
+                            });
+                        }
+                    }
+                }
                 GenerateRegion => self.walk(&b.children(c), path, scope, over, body_params, vals, depth, construct),
                 Instantiation => self.instantiation(c, path, scope, vals, depth),
                 LoopGenerate => {

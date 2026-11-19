@@ -87,8 +87,13 @@ def run(case):
 def main():
     argv = sys.argv[1:]
     show = 20
-    while argv and argv[0].startswith('--show'):
-        show = int(argv.pop(0).split('=')[1])
+    max_missing = int(os.environ['EXPR_MAX_MISSING']) if os.environ.get('EXPR_MAX_MISSING') else None
+    while argv and (argv[0].startswith('--show') or argv[0].startswith('--max-missing=')):
+        arg = argv.pop(0)
+        if arg.startswith('--max-missing='):
+            max_missing = int(arg.split('=', 1)[1])
+        else:
+            show = int(arg.split('=')[1])
     todo = cases(argv)
     with concurrent.futures.ThreadPoolExecutor(os.cpu_count() or 4) as pool:
         results = list(pool.map(run, todo))
@@ -120,6 +125,9 @@ def main():
     for key, n in pattern.most_common(show):
         print(f'{n:6} {key[0]}: slang "{key[1]}" typer "{key[2]}"  e.g. {sample[key]}')
     print(f'compiles={len(todo)} matched={ok} wrong={nwrong} missing={nmiss} extra={nextra}')
+    if max_missing is not None and nmiss > max_missing:
+        print(f'FAIL: missing expressions {nmiss} exceed budget {max_missing}')
+        return 1
     return 1 if nwrong else 0
 
 

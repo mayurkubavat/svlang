@@ -114,6 +114,7 @@ enum InputUnit {
 pub struct Driver {
     dialect: Dialect,
     single_unit: bool,
+    separate_units: bool,
     include_dirs: Vec<PathBuf>,
     defines: Vec<(String, Option<String>)>,
     tops: Vec<String>,
@@ -134,6 +135,7 @@ impl Driver {
         Self {
             dialect: Dialect::Any,
             single_unit: false,
+            separate_units: false,
             include_dirs: Vec::new(),
             defines: Vec::new(),
             tops: Vec::new(),
@@ -153,6 +155,13 @@ impl Driver {
     /// matching `slang --single-unit`.
     pub fn single_unit(mut self, enabled: bool) -> Self {
         self.single_unit = enabled;
+        self
+    }
+
+    /// Compiles each file input with an isolated preprocessor state (`--separate-units`,
+    /// IEEE 1800-2023 §3.12.1 separate compilation units).
+    pub fn separate_units(mut self, enabled: bool) -> Self {
+        self.separate_units = enabled;
         self
     }
 
@@ -204,9 +213,12 @@ impl Driver {
         if raw.iter().any(|a| a == "--single-unit") {
             self.single_unit = true;
         }
+        if raw.iter().any(|a| a == "--separate-units") {
+            self.separate_units = true;
+        }
         let cwd = std::env::current_dir().unwrap_or_else(|_| ".".into());
         let list = FileList::read_args(
-            raw.iter().map(String::as_str).filter(|&a| a != "--single-unit"),
+            raw.iter().map(String::as_str).filter(|&a| a != "--single-unit" && a != "--separate-units"),
             &cwd,
             self.dialect,
             &source::ProcessEnv,
@@ -300,6 +312,8 @@ impl Driver {
             }
             if self.single_unit {
                 vec![syntax::parse_unit(&paths, opts.clone())]
+            } else if self.separate_units {
+                syntax::parse_files_isolated(&paths, opts.clone())
             } else {
                 syntax::parse_files(&paths, opts.clone())
             }
@@ -315,10 +329,18 @@ impl Driver {
                                 return Err(Error(format!("could not read the sources: {}", f.display())));
                             }
                         }
-                        out.push(syntax::parse_output(pp.run_file(f)));
+                        if self.separate_units {
+                            out.push(syntax::parse_file(f, opts.clone()));
+                        } else {
+                            out.push(syntax::parse_output(pp.run_file(f)));
+                        }
                     }
                     InputUnit::Memory { name, text } => {
-                        out.push(syntax::parse_output(pp.run_source(text, name)));
+                        if self.separate_units {
+                            out.push(syntax::parse_source(text, name, opts.clone()));
+                        } else {
+                            out.push(syntax::parse_output(pp.run_source(text, name)));
+                        }
                     }
                 }
             }

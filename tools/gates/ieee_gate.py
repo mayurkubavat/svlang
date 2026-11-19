@@ -83,8 +83,23 @@ def run(root, f):
 
 
 def main():
-    argv = [x for x in sys.argv[1:] if not x.startswith('--')]
-    gaps = '--gaps' in sys.argv
+    raw = sys.argv[1:]
+    argv = []
+    gaps = False
+    max_gaps_arg = int(os.environ['IEEE_MAX_GAPS']) if os.environ.get('IEEE_MAX_GAPS') else None
+    i = 0
+    while i < len(raw):
+        x = raw[i]
+        if x == '--gaps':
+            gaps = True
+        elif x.startswith('--max-gaps='):
+            max_gaps_arg = int(x.split('=', 1)[1])
+        elif x == '--max-gaps' and i + 1 < len(raw):
+            i += 1
+            max_gaps_arg = int(raw[i])
+        elif not x.startswith('--'):
+            argv.append(x)
+        i += 1
     root, sel = argv[0], (argv[1] if len(argv) > 1 else '')
     import glob
     files = [f for f in sorted(glob.glob(os.path.join(root, 'tests', '**', '*.sv'), recursive=True)) if sel in f]
@@ -108,13 +123,20 @@ def main():
     print(f'{"total":<45} {tot["legal_native"]:>9}/{tot["legal_slang"]}/{tot["legal"]:<12} '
           f'{tot["should_fail_native"]:>9}/{tot["should_fail_slang"]}/{tot["should_fail"]:<12}')
     print(f'runtime-only should_fail tests (no front end can reject): {tot["runtime"]}')
-    false_errors = [r for r in rows if r[2] == 'legal' and r[3]]
+    both_reject_legal = [r for r in rows if r[2] == 'legal' and r[3] and r[4]]
+    if both_reject_legal:
+        print(f'preprocess-only / upstream-invalid legal tests (both Slang and native reject): {len(both_reject_legal)}')
+    false_errors = [r for r in rows if r[2] == 'legal' and r[3] and not r[4]]
     for r in false_errors:
         print('NATIVE FALSE ERROR', r[0])
+    gap_rows = [r for r in rows if r[2] == 'should_fail' and r[4] and not r[3]]
+    print(f'should_fail gaps (only Slang rejects): {len(gap_rows)}')
     if gaps:
-        for r in rows:
-            if r[2] == 'should_fail' and r[4] and not r[3]:
-                print('GAP', r[0], '|', r[5][:100])
+        for r in gap_rows:
+            print('GAP', r[0], '|', r[5][:100])
+    if max_gaps_arg is not None and len(gap_rows) > max_gaps_arg:
+        print(f'FAIL: should_fail gaps {len(gap_rows)} exceed budget {max_gaps_arg}')
+        return 1
     return 1 if false_errors else 0
 
 

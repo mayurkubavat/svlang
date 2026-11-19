@@ -421,15 +421,20 @@ impl<'a> DesignLowerer<'a> {
 
             match &sym.kind {
                 SymbolKind::Param { .. } | SymbolKind::Genvar => {
-                    let Some(cv) = sym.cval.clone() else {
-                        match self.const_aggregate_param(sid) {
-                            Some(slot) => {
-                                std::rc::Rc::make_mut(&mut self.sym_slots).insert(sid, slot);
-                            }
-                            None => self
-                                .builder
-                                .err(sym.loc, format!("parameter '{}' has no constant value", sym.full_path)),
+                    if !sym.ty.is_packed() {
+                        if let Some(slot) = self.const_aggregate_param(sid) {
+                            std::rc::Rc::make_mut(&mut self.sym_slots).insert(sid, slot);
+                            return;
                         }
+                        if let Some(cv) = sym.cval.as_ref().and_then(|c| slice_cval_to_const_slot(&sym.ty, c)) {
+                            std::rc::Rc::make_mut(&mut self.sym_slots).insert(sid, cv);
+                            return;
+                        }
+                        self.builder.err(sym.loc, format!("parameter '{}' has no constant value", sym.full_path));
+                        return;
+                    }
+                    let Some(cv) = sym.cval.clone() else {
+                        self.builder.err(sym.loc, format!("parameter '{}' has no constant value", sym.full_path));
                         return;
                     };
                     std::rc::Rc::make_mut(&mut self.sym_slots).insert(sid, ObjSlot::Const(cv, sym.ty.is_four_state()));
@@ -2987,6 +2992,55 @@ fn prescan_proc_node(
             clocked_writers,
         );
     }
+}
+
+fn slice_cval_to_const_slot(ty: &RtlType, cv: &CVal) -> Option<ObjSlot> {
+    fn extract(ty: &RtlType, cv: &CVal, hi_off: &mut u32) -> Option<ObjSlot> {
+        if let Some((w, s, four)) = ty.integral_shape() {
+            let lo = hi_off.checked_sub(w)?;
+            *hi_off = lo;
+            let part = cv.slice(lo, w, s);
+            let part = if four { part } else { part.two_state() };
+            return Some(ObjSlot::Const(part, four));
+        }
+        match ty {
+            RtlType::UnpackedArray { elem, dims } if !dims.is_empty() => {
+                let (left, right) = dims[0];
+                let min_b = left.min(right);
+                let max_b = left.max(right);
+                let cnt = usize::try_from((max_b - min_b).unsigned_abs().checked_add(1)?).ok()?;
+                let sub_ty = if dims.len() > 1 {
+                    RtlType::UnpackedArray { elem: elem.clone(), dims: dims[1..].to_vec() }
+                } else {
+                    (**elem).clone()
+                };
+                // First SV index (`left`) occupies the MSB end of `cv`, whereas `ObjSlot::Elems`
+                // stores elements in ascending index order (`min_b..=max_b`).
+                let mut sv_order = Vec::with_capacity(cnt);
+                for _ in 0..cnt {
+                    sv_order.push(extract(&sub_ty, cv, hi_off)?);
+                }
+                if left > right {
+                    sv_order.reverse();
+                }
+                Some(ObjSlot::Elems { left, right, elems: sv_order })
+            }
+            RtlType::UnpackedStruct { fields, .. } => {
+                let mut out = Vec::with_capacity(fields.len());
+                for (fname, fty) in fields {
+                    out.push((fname.clone(), extract(fty, cv, hi_off)?));
+                }
+                Some(ObjSlot::Struct(out))
+            }
+            _ => None,
+        }
+    }
+    let total = ty.total_bits()?;
+    if cv.w < total {
+        return None;
+    }
+    let mut cursor = total;
+    extract(ty, cv, &mut cursor)
 }
 
 trait SymbolNetInitExt {

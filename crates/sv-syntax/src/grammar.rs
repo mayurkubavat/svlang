@@ -923,10 +923,23 @@ pub(crate) fn data_type(p: &mut Parser) {
             }
         }
         "struct" | "union" => {
+            let is_union = p.at("union");
             p.bump();
-            p.eat("tagged");
-            p.eat("soft");
-            p.eat("packed");
+            let has_tagged = p.eat("tagged");
+            let has_soft = if p.at("soft") {
+                if !is_union {
+                    p.error("`soft` is only allowed on a packed union, not a `struct`".into());
+                } else if has_tagged {
+                    p.error("`tagged` and `soft` cannot both be specified on a union".into());
+                }
+                p.bump();
+                true
+            } else {
+                false
+            };
+            if !p.eat("packed") && has_soft && is_union {
+                p.error("`soft` union must also be declared `packed`".into());
+            }
             if p.at_any(&["signed", "unsigned"]) {
                 p.bump();
             }
@@ -1090,6 +1103,11 @@ pub(crate) fn param_decl(p: &mut Parser) {
     if p.eat("type") {
         loop {
             let d = p.start();
+            if p.at_any(&["enum", "struct", "union", "class", "interface"]) {
+                // IEEE 1800-2023 §6.20.3 type restriction: `parameter type struct T = ...;`
+                p.bump();
+                p.eat("class");
+            }
             name_token(p);
             if p.eat("=") {
                 data_type(p);

@@ -183,14 +183,48 @@ fn parents(t: &Tree) -> Vec<u32> {
 /// share a name; `$unit` is checked per file.
 fn redeclarations(trees: &[Tree], s: &Scopes, out: &mut Vec<Diag>) {
     let mut seen: HashMap<(usize, usize, &str), Vec<usize>> = HashMap::default();
+    let mut root_pkgs: HashMap<&str, Vec<usize>> = HashMap::default();
+    let mut root_same_file_defs: HashMap<(usize, u32, &str), Vec<usize>> = HashMap::default();
+    let mut parents_cache: HashMap<usize, Vec<u32>> = HashMap::default();
     for (i, sym) in s.symbols.iter().enumerate() {
-        if sym.scope == ROOT || sym.name.is_empty() {
+        if sym.name.is_empty() {
+            continue;
+        }
+        if sym.scope == ROOT {
+            if sym.kind == SymKind::Package {
+                root_pkgs.entry(sym.name.as_str()).or_default().push(i);
+            } else if matches!(sym.kind, SymKind::Module | SymKind::Interface | SymKind::Program) {
+                let t = &trees[sym.tree];
+                if toks(t, sym.node).first() != Some(&"extern") {
+                    let par = parents_cache.entry(sym.tree).or_insert_with(|| {
+                        let mut p = vec![u32::MAX; t.nodes.len()];
+                        for n in t.preorder() {
+                            for k in t.children(n) {
+                                p[k.0 as usize] = n.0;
+                            }
+                        }
+                        p
+                    });
+                    let enclosing = par.get(sym.node.0 as usize).copied().unwrap_or(u32::MAX);
+                    root_same_file_defs.entry((sym.tree, enclosing, sym.name.as_str())).or_default().push(i);
+                }
+            }
             continue;
         }
         let file = if sym.scope == UNIT { sym.tree } else { 0 };
         seen.entry((sym.scope, file, sym.name.as_str())).or_default().push(i);
     }
     let mut dups: Vec<usize> = Vec::new();
+    for ids in root_pkgs.values() {
+        if ids.len() > 1 {
+            dups.extend_from_slice(&ids[1..]);
+        }
+    }
+    for ids in root_same_file_defs.values() {
+        if ids.len() > 1 {
+            dups.extend_from_slice(&ids[1..]);
+        }
+    }
     for ids in seen.values() {
         if ids.len() < 2 {
             continue;

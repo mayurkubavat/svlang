@@ -37,7 +37,7 @@ commands:
 
 compile arguments (as a simulator takes them):
   FILE...  -f LIST  -F LIST  +incdir+DIR  +define+NAME[=VALUE]
-  -y DIR  -v FILE  -top MODULE  -G NAME=VALUE  --single-unit
+  -y DIR  -v FILE  -top MODULE  -G NAME=VALUE  --single-unit  --separate-units
 
 options:
   --json                  check: print the diagnostics as a JSON array

@@ -5,7 +5,7 @@
 //! (names, types, constant evaluation, elaboration from `-top`, class,
 //! assertion and UDP rules); see `svlang::semantic::semantic_diags`.
 //!
-//!     dv-build [--dialect any|vcs|xcelium] [--dump] [--cst] [--symbols] [--types] [--values] [--hier] [--netlist] [--blast-memories N] [--allow-four-state-ops] [--skip-initial-checks] [--isunknown-is-false] [--quiet] <options, e.g. -f top.f FILE...>
+//!     dv-build [--dialect any|vcs|xcelium] [--single-unit|--separate-units] [--dump] [--cst] [--symbols] [--types] [--values] [--hier] [--netlist] [--blast-memories N] [--allow-four-state-ops] [--skip-initial-checks] [--isunknown-is-false] [--quiet] <options, e.g. -f top.f FILE...>
 //!
 //! Diagnostics go to stdout as `file:line:col: error: message`, then a
 //! summary line `errors N`. --dump also prints the design: one line per
@@ -48,6 +48,8 @@ fn main() -> ExitCode {
     let mut allow_four_state_ops = false;
     let mut skip_initial_checks = false;
     let mut isunknown_is_false = false;
+    let mut single_unit = false;
+    let mut separate_units = false;
     let mut args = Vec::new();
     let mut it = std::env::args().skip(1);
     while let Some(a) = it.next() {
@@ -61,6 +63,8 @@ fn main() -> ExitCode {
             "--allow-four-state-ops" => allow_four_state_ops = true,
             "--skip-initial-checks" => skip_initial_checks = true,
             "--isunknown-is-false" => isunknown_is_false = true,
+            "--single-unit" => single_unit = true,
+            "--separate-units" => separate_units = true,
             "--blast-memories" => {
                 let Some(val_s) = it.next() else {
                     eprintln!("error: --blast-memories expects a maximum depth integer");
@@ -95,7 +99,7 @@ fn main() -> ExitCode {
             }
             "-h" | "--help" => {
                 println!(
-                    "usage: dv-build [--dialect any|vcs|xcelium] [--dump] [--cst] [--symbols] [--types] [--values] [--hier] [--netlist] [--blast-memories N] [--allow-four-state-ops] [--skip-initial-checks] [--isunknown-is-false] [--quiet] <options> FILE..."
+                    "usage: dv-build [--dialect any|vcs|xcelium] [--single-unit|--separate-units] [--dump] [--cst] [--symbols] [--types] [--values] [--hier] [--netlist] [--blast-memories N] [--allow-four-state-ops] [--skip-initial-checks] [--isunknown-is-false] [--quiet] <options> FILE..."
                 );
                 return ExitCode::SUCCESS;
             }
@@ -138,7 +142,13 @@ fn main() -> ExitCode {
         }
     }
     let paths: Vec<_> = list.sources.iter().map(|s| s.value.clone()).collect();
-    let mut trees = svlang::syntax::parse_files(&paths, opts.clone());
+    let mut trees = if single_unit {
+        vec![svlang::syntax::parse_unit(&paths, opts.clone())]
+    } else if separate_units {
+        svlang::syntax::parse_files_isolated(&paths, opts.clone())
+    } else {
+        svlang::syntax::parse_files(&paths, opts.clone())
+    };
     // -v files and -y directories resolve what the sources instantiate.
     svlang::semantic::library::add_library_trees(&mut trees, &list, &opts);
     let tops: Vec<String> = list.top.iter().map(|t| t.value.clone()).collect();

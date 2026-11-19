@@ -68,6 +68,13 @@ pub fn parse_files(paths: &[impl AsRef<Path>], opts: Options) -> Vec<Tree> {
     paths.iter().map(|p| parse_output(pp.run_file(p.as_ref()))).collect()
 }
 
+/// Parses each file as a strictly isolated IEEE 1800 §3.12.1 compilation unit
+/// (`--separate-units`): macros and directives in one file do not carry into
+/// subsequent files.
+pub fn parse_files_isolated(paths: &[impl AsRef<Path>], opts: Options) -> Vec<Tree> {
+    paths.iter().map(|p| parse_file(p.as_ref(), opts.clone())).collect()
+}
+
 /// Parses files in order as one compilation unit and one tree (slang's
 /// `--single-unit`): `$unit` declarations are shared too.
 pub fn parse_unit(paths: &[impl AsRef<Path>], opts: Options) -> Tree {

@@ -233,6 +233,32 @@ impl RtlType {
         self.bit_width().is_some()
     }
 
+    /// Total bit count of any fixed-size packed or unpacked data type (IEEE 1800-2023 §20.6.2 `$bits`).
+    pub fn total_bits(&self) -> Option<u32> {
+        if let Some(w) = self.bit_width() {
+            return Some(w);
+        }
+        match self {
+            RtlType::UnpackedArray { elem, dims } => {
+                let mut bits = elem.total_bits()?;
+                for &(l, r) in dims {
+                    let span = (l - r).unsigned_abs().checked_add(1)?;
+                    let cnt = u32::try_from(span).ok()?;
+                    bits = bits.checked_mul(cnt).filter(|&b| b <= crate::types::MAX_BIT_WIDTH)?;
+                }
+                Some(bits)
+            }
+            RtlType::UnpackedStruct { fields, .. } => {
+                let mut sum = 0u32;
+                for (_, fty) in fields {
+                    sum = sum.checked_add(fty.total_bits()?).filter(|&b| b <= crate::types::MAX_BIT_WIDTH)?;
+                }
+                Some(sum)
+            }
+            _ => None,
+        }
+    }
+
     /// Looks up a field in a `PackedStruct` or `PackedUnion`.
     pub fn packed_field(&self, name: &str) -> Option<&PackedField> {
         match self {
@@ -1215,6 +1241,8 @@ impl Builder<'_> {
         // `struct` / `union` (packed or unpacked)
         if matches!(own.first(), Some(&"struct" | &"union")) {
             let is_union = own.first() == Some(&"union");
+            let is_tagged = own.contains(&"tagged");
+            let is_soft = own.contains(&"soft");
             let is_packed = own.contains(&"packed");
             let signed = own.contains(&"signed");
             if is_packed {
@@ -1236,6 +1264,15 @@ impl Builder<'_> {
                                     "unpacked member '{fname}' inside packed struct or union"
                                 ));
                             };
+                            if is_union && !is_tagged && !is_soft {
+                                if let Some(&(_, _, first_w)) = raw_members.first() {
+                                    if w != first_w {
+                                        return RtlType::NonSynthesizable(format!(
+                                            "member '{fname}' of width {w} does not match packed union width {first_w}"
+                                        ));
+                                    }
+                                }
+                            }
                             raw_members.push((fname, fty, w));
                         }
                     }

@@ -845,7 +845,15 @@ impl<'t> Builder<'t> {
                     return v.clone();
                 }
                 let toks = self.toks_of(e);
+                let is_time = self
+                    .tree(e)
+                    .token_bounds(e.node)
+                    .is_some_and(|(i, _)| self.tree(e).tokens[i as usize].kind == sv_syntax::TokenKind::TimeLiteral);
                 let v = match toks.as_slice() {
+                    [lit] if is_time => self.time_value(e, lit).and_then(|f| {
+                        let i = f.round();
+                        (i.abs() < 1e38).then(|| CVal::new(64, false, i as i128))
+                    }),
                     [lit] if lit.starts_with('"') => string_value(lit),
                     _ => literal(&toks),
                 };
@@ -984,12 +992,19 @@ impl<'t> Builder<'t> {
                     "$bits" => {
                         let a = *args.first()?;
                         let w = match self.kind(a) {
-                            DataType => self.int_shape(a, scope, env, depth + 1)?.0,
+                            DataType => self
+                                .int_shape(a, scope, env, depth + 1)
+                                .map(|(w, _)| w)
+                                .or_else(|| self.rtl_data_type(a, scope, env, None, depth + 1).total_bits())?,
                             // A type name (typedef, type parameter) or a value.
-                            NameExpr | ScopedExpr => match self.int_shape(a, scope, env, depth + 1) {
-                                Some((w, _)) => w,
-                                None => self.value_bits(a, scope, env, depth + 1)?,
-                            },
+                            NameExpr | ScopedExpr => self
+                                .int_shape(a, scope, env, depth + 1)
+                                .map(|(w, _)| w)
+                                .or_else(|| {
+                                    self.lookup_type(a, scope)
+                                        .and_then(|_| self.rtl_data_type(a, scope, env, None, depth + 1).total_bits())
+                                })
+                                .or_else(|| self.value_bits(a, scope, env, depth + 1))?,
                             _ => self.value_bits(a, scope, env, depth + 1)?,
                         };
                         Some(CVal::int(w as i128))
@@ -1023,14 +1038,14 @@ impl<'t> Builder<'t> {
                 }
                 Some(total)
             }
-            NameExpr | MemberExpr => self.signal_type(e)?.bit_width(),
+            NameExpr | MemberExpr | SelectExpr => self.signal_type(e, scope, env, depth + 1)?.total_bits(),
             _ => None,
         }
     }
 
-    /// The type of a signal of the instance being elaborated, or of a member of one.
-    fn signal_type(&self, e: NodeRef) -> Option<RtlType> {
-        if self.sig_off.get() > 0 {
+    /// The type of a signal of the instance being elaborated, or of a member/element of one.
+    fn signal_type(&self, e: NodeRef, scope: usize, env: &Env, depth: usize) -> Option<RtlType> {
+        if self.sig_off.get() > 0 || depth > 64 {
             return None;
         }
         match self.kind(e) {
@@ -1054,9 +1069,60 @@ impl<'t> Builder<'t> {
                 }
             }
             MemberExpr => {
-                let base = self.signal_type(*self.children(e).first()?)?;
+                let base = self.signal_type(*self.children(e).first()?, scope, env, depth + 1)?;
                 let member = *self.own_tokens(e).last()?;
-                Some(base.packed_field(member)?.ty.clone())
+                if let Some(pf) = base.packed_field(member) {
+                    return Some(pf.ty.clone());
+                }
+                if let RtlType::UnpackedStruct { fields, .. } = &base {
+                    return fields.iter().find(|(n, _)| n == member).map(|(_, t)| t.clone());
+                }
+                None
+            }
+            SelectExpr => {
+                let kids = self.children(e);
+                let base = self.signal_type(*kids.first()?, scope, env, depth + 1)?;
+                let own = self.own_tokens(e);
+                let has_colon = own.iter().any(|t| matches!(*t, ":" | "+:" | "-:"));
+                match base {
+                    RtlType::UnpackedArray { elem, dims } if !dims.is_empty() => {
+                        if has_colon {
+                            let (hi, lo) = (*kids.get(1)?, *kids.get(2)?);
+                            let (hv, lv) =
+                                (self.eval(hi, scope, env, depth + 1)?.i(), self.eval(lo, scope, env, depth + 1)?.i());
+                            let mut new_dims = dims;
+                            new_dims[0] = if own.contains(&"+:") {
+                                (hv, hv + lv - 1)
+                            } else if own.contains(&"-:") {
+                                (hv, hv - lv + 1)
+                            } else {
+                                (hv, lv)
+                            };
+                            Some(RtlType::UnpackedArray { elem, dims: new_dims })
+                        } else if dims.len() > 1 {
+                            Some(RtlType::UnpackedArray { elem, dims: dims[1..].to_vec() })
+                        } else {
+                            Some(*elem)
+                        }
+                    }
+                    RtlType::PackedArray { elem, .. } if !has_colon => Some(*elem),
+                    other if other.is_packed() => {
+                        let four_state = other.is_four_state();
+                        if !has_colon {
+                            return Some(RtlType::Integral { width: 1, signed: false, four_state });
+                        }
+                        let (hi, lo) = (*kids.get(1)?, *kids.get(2)?);
+                        let (hv, lv) =
+                            (self.eval(hi, scope, env, depth + 1)?.i(), self.eval(lo, scope, env, depth + 1)?.i());
+                        let width = if own.contains(&"+:") || own.contains(&"-:") {
+                            u32::try_from(lv).ok().filter(|&w| w >= 1)?
+                        } else {
+                            u32::try_from((hv - lv).unsigned_abs().checked_add(1)?).ok()?
+                        };
+                        Some(RtlType::Integral { width, signed: false, four_state })
+                    }
+                    _ => None,
+                }
             }
             _ => None,
         }

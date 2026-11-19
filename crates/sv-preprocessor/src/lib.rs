@@ -172,9 +172,9 @@ pub struct Preprocessor {
     sources: Vec<Arc<str>>,
     /// `begin_keywords versions in force, innermost last.
     keyword_versions: Vec<sv_lexer::KeywordVersion>,
-    /// Inside a module, interface, program or package (some directives
-    /// are not allowed there).
-    in_design_element: bool,
+    /// Nesting depth inside module, interface, program or package bodies
+    /// (some directives are not allowed there).
+    design_element_depth: u32,
     /// Text of the last token handed out, for `extern module` and
     /// `interface class`.
     last_text: Arc<str>,
@@ -300,7 +300,7 @@ impl Preprocessor {
             paths: Vec::new(),
             sources: Vec::new(),
             keyword_versions: Vec::new(),
-            in_design_element: false,
+            design_element_depth: 0,
             last_text: empty(),
             just_opened: false,
             line_starts: HashMap::new(),
@@ -554,7 +554,7 @@ impl Preprocessor {
                     self.rest_of_line();
                 }
                 "resetall" | "nounconnected_drive" | "default_nettype" | "unconnected_drive"
-                    if self.in_design_element =>
+                    if self.design_element_depth > 0 =>
                 {
                     self.diag(t.origin, format!("`{name} inside a design element"));
                     self.directive_args(&t, name);
@@ -583,19 +583,23 @@ impl Preprocessor {
         }
     }
 
-    /// Module, interface, program and package bodies, at the outer level
-    /// only (nested modules are rare and only make this more lenient).
+    /// Module, interface, program and package bodies, tracking nesting depth
+    /// so closing an inner nested module does not re-enable file-level directives.
     fn track_design_element(&mut self, t: &T) {
         let just_opened = std::mem::take(&mut self.just_opened);
         match &*t.text {
             "module" | "macromodule" | "program" | "package" | "interface"
-                if !self.in_design_element && !matches!(&*self.last_text, "extern" | "virtual") =>
+                if !matches!(&*self.last_text, "extern" | "virtual" | "type") =>
             {
-                self.in_design_element = true;
+                self.design_element_depth += 1;
                 self.just_opened = true;
             }
-            "class" if just_opened && &*self.last_text == "interface" => self.in_design_element = false,
-            "endmodule" | "endprogram" | "endpackage" | "endinterface" => self.in_design_element = false,
+            "class" if just_opened && &*self.last_text == "interface" => {
+                self.design_element_depth = self.design_element_depth.saturating_sub(1);
+            }
+            "endmodule" | "endprogram" | "endpackage" | "endinterface" => {
+                self.design_element_depth = self.design_element_depth.saturating_sub(1);
+            }
             _ => {}
         }
     }
@@ -732,8 +736,16 @@ impl Preprocessor {
             return false;
         };
         if &*first.text != "(" {
+            if !matches!(first.kind, Kind::Identifier | Kind::Keyword) {
+                self.diag(
+                    first.origin,
+                    format!("expected macro name after conditional directive, found '{}'", first.text),
+                );
+                return false;
+            }
             return self.is_defined(&first.text);
         }
+        let open_origin = first.origin;
         // Gather to the matching ')' and evaluate.
         let mut toks = vec![first];
         let mut depth = 1;
@@ -746,16 +758,27 @@ impl Preprocessor {
             }
             toks.push(t);
         }
+        if depth > 0 {
+            self.diag(open_origin, "unterminated '(' in conditional directive expression".into());
+            return false;
+        }
         let mut i = 0;
-        self.cond_expr(&toks, &mut i)
+        let mut ok = true;
+        let v = self.cond_expr(&toks, &mut i, open_origin, &mut ok);
+        if ok && i != toks.len() {
+            self.diag(toks[i].origin, format!("unexpected '{}' in conditional directive expression", toks[i].text));
+            return false;
+        }
+        ok && v
     }
 
-    fn cond_expr(&self, t: &[T], i: &mut usize) -> bool {
-        let mut v = self.cond_and(t, i);
-        while *i < t.len() && matches!(&*t[*i].text, "||" | "->" | "<->") {
+    fn cond_expr(&mut self, t: &[T], i: &mut usize, fallback: Origin, ok: &mut bool) -> bool {
+        let mut v = self.cond_and(t, i, fallback, ok);
+        while *ok && *i < t.len() && matches!(&*t[*i].text, "||" | "->" | "<->") {
             let op = t[*i].text.clone();
+            let op_origin = t[*i].origin;
             *i += 1;
-            let r = self.cond_and(t, i);
+            let r = self.cond_and(t, i, op_origin, ok);
             v = match &*op {
                 "||" => v || r,
                 "->" => !v || r,
@@ -765,29 +788,63 @@ impl Preprocessor {
         v
     }
 
-    fn cond_and(&self, t: &[T], i: &mut usize) -> bool {
-        let mut v = self.cond_unary(t, i);
-        while *i < t.len() && &*t[*i].text == "&&" {
+    fn cond_and(&mut self, t: &[T], i: &mut usize, fallback: Origin, ok: &mut bool) -> bool {
+        let mut v = self.cond_unary(t, i, fallback, ok);
+        while *ok && *i < t.len() && &*t[*i].text == "&&" {
+            let op_origin = t[*i].origin;
             *i += 1;
-            let r = self.cond_unary(t, i);
+            let r = self.cond_unary(t, i, op_origin, ok);
             v = v && r;
         }
         v
     }
 
-    fn cond_unary(&self, t: &[T], i: &mut usize) -> bool {
-        let Some(tok) = t.get(*i) else { return false };
+    fn cond_unary(&mut self, t: &[T], i: &mut usize, fallback: Origin, ok: &mut bool) -> bool {
+        let Some(tok) = t.get(*i) else {
+            if *ok {
+                self.diag(fallback, "expected macro name or '(' in conditional directive expression".into());
+                *ok = false;
+            }
+            return false;
+        };
+        let tok_origin = tok.origin;
+        let tok_kind = tok.kind;
+        let tok_text = tok.text.clone();
         *i += 1;
-        match &*tok.text {
-            "!" => !self.cond_unary(t, i),
+        match &*tok_text {
+            "!" => !self.cond_unary(t, i, tok_origin, ok),
             "(" => {
-                let v = self.cond_expr(t, i);
-                if t.get(*i).is_some_and(|x| &*x.text == ")") {
-                    *i += 1;
+                let v = self.cond_expr(t, i, tok_origin, ok);
+                if *ok {
+                    if t.get(*i).is_some_and(|x| &*x.text == ")") {
+                        *i += 1;
+                    } else {
+                        self.diag(tok_origin, "expected ')' in conditional directive expression".into());
+                        *ok = false;
+                    }
                 }
                 v
             }
-            name => self.is_defined(name),
+            ")" | "&&" | "||" | "->" | "<->" => {
+                if *ok {
+                    self.diag(tok_origin, format!("unexpected '{tok_text}' in conditional directive expression"));
+                    *ok = false;
+                }
+                false
+            }
+            name => {
+                if !matches!(tok_kind, Kind::Identifier | Kind::Keyword) {
+                    if *ok {
+                        self.diag(
+                            tok_origin,
+                            format!("expected macro name in conditional directive expression, found '{name}'"),
+                        );
+                        *ok = false;
+                    }
+                    return false;
+                }
+                self.is_defined(name)
+            }
         }
     }
 
