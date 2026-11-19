@@ -7,6 +7,7 @@ use crate::{Check, Rule, Severity};
 mod direct_mirror_set_without_write;
 mod missing_backdoor_access_path_definition;
 mod ral_address_collision;
+mod ral_field_bit_overlap;
 mod ral_orphan_register;
 mod reg_block_never_locked;
 
@@ -21,6 +22,7 @@ pub(crate) fn rules() -> Vec<Rule> {
         },
         Rule { id: "RAL-COL-001", name: "RalAddressCollision", category: "UVM", severity: Severity::Error, profiles: METHODOLOGY, guidelines: &[], experimental: false, native: false, about: "Detects duplicate/overlapping address offsets mapped in uvm_reg_block address maps. Address collisions cause silent register overwriting and hardware aliasing bugs.", check: Check::Syntax(ral_address_collision::ral_address_collision),
         },
+        Rule { id: "RAL-FLD-001", name: "RalFieldBitOverlap", category: "UVM", severity: Severity::Warning, profiles: METHODOLOGY, guidelines: &[], experimental: false, native: true, about: "Detects overlapping [lsb_pos : lsb_pos + size - 1] bit ranges across uvm_reg_field::configure() calls within the same uvm_reg::build() method.", check: Check::Syntax(ral_field_bit_overlap::ral_field_bit_overlap) },
         Rule { id: "RAL-MAP-001", name: "RalOrphanRegister", category: "UVM", severity: Severity::Error, profiles: METHODOLOGY, guidelines: &[], experimental: false, native: false, about: "Detects instantiated uvm_reg instances inside uvm_reg_block that are never mapped via default_map.add_reg(). Orphan registers cause frontdoor access failures and verify phantom memory.", check: Check::Syntax(ral_orphan_register::ral_orphan_register),
         },
     ]

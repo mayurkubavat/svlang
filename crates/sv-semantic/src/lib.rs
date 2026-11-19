@@ -677,6 +677,8 @@ struct Scope {
     typedefs: crate::fx::FxMap<String, NodeRef>,
     /// `import p::*` (None) and `import p::x` (Some).
     imports: Vec<(String, Option<String>)>,
+    /// `export *::*` (None, None), `export p::*` (Some(p), None), `export p::x` (Some(p), Some(x)).
+    exports: Vec<(Option<String>, Option<String>)>,
     /// Type parameters of a class, with their default type.
     type_params: crate::fx::FxMap<String, Option<NodeRef>>,
     /// Variables and subroutines of a package or the unit.
@@ -870,6 +872,7 @@ impl<'t> Builder<'t> {
             classes: Default::default(),
             typedefs: Default::default(),
             imports: Vec::new(),
+            exports: Vec::new(),
             type_params: Default::default(),
             values: Default::default(),
             consts: Default::default(),
@@ -1030,6 +1033,7 @@ impl<'t> Builder<'t> {
             classes: Default::default(),
             typedefs: Default::default(),
             imports: Vec::new(),
+            exports: Vec::new(),
             type_params: Default::default(),
             values: Default::default(),
             consts: Default::default(),
@@ -1098,6 +1102,7 @@ impl<'t> Builder<'t> {
                     }
                 }
                 ImportDecl => self.collect_import(c, scope),
+                ExportDecl => self.collect_export(c, scope),
                 ParamDecl if self.designs && self.own_tokens(c).contains(&"type") => self.collect_type_params(c, scope),
                 ParamDecl => self.collect_consts(c, scope),
                 FunctionDecl | TaskDecl => {
@@ -1221,6 +1226,25 @@ impl<'t> Builder<'t> {
             if toks[i + 1] == "::" {
                 let item = if toks[i + 2] == "*" { None } else { Some(toks[i + 2].to_string()) };
                 self.scopes[scope].imports.push((toks[i].to_string(), item));
+                i += 3;
+            } else {
+                i += 1;
+            }
+            if i < toks.len() && toks[i] == "," {
+                i += 1;
+            }
+        }
+    }
+
+    fn collect_export(&mut self, r: NodeRef, scope: usize) {
+        let toks: Vec<&str> = self.tokens(r).iter().map(|&t| self.text(r.tree, t)).collect();
+        // export *::*, a::*, b::x;
+        let mut i = 1;
+        while i + 2 < toks.len() {
+            if toks[i + 1] == "::" {
+                let pkg = if toks[i] == "*" { None } else { Some(toks[i].to_string()) };
+                let item = if toks[i + 2] == "*" { None } else { Some(toks[i + 2].to_string()) };
+                self.scopes[scope].exports.push((pkg, item));
                 i += 3;
             } else {
                 i += 1;
@@ -1814,12 +1838,42 @@ impl<'t> Builder<'t> {
             }
             if let Some(&p) = self.packages.get(pkg) {
                 if p != s {
-                    let ps = &self.scopes[p];
-                    if let Some(&c) = ps.classes.get(name) {
-                        return Some(Found::Class(c));
+                    if let Some(f) = self.lookup_pkg_public(p, name, depth + 1) {
+                        return Some(f);
                     }
-                    if let Some(&t) = ps.typedefs.get(name) {
-                        return Some(Found::Typedef(t, p));
+                }
+            }
+        }
+        None
+    }
+
+    pub(crate) fn lookup_pkg_public(&self, p: usize, name: &str, depth: usize) -> Option<Found> {
+        if depth > 32 {
+            return None;
+        }
+        let ps = &self.scopes[p];
+        if let Some(&c) = ps.classes.get(name) {
+            return Some(Found::Class(c));
+        }
+        if let Some(&t) = ps.typedefs.get(name) {
+            return Some(Found::Typedef(t, p));
+        }
+        for (exp_pkg, exp_item) in &ps.exports {
+            if exp_item.as_deref().is_some_and(|i| i != name) {
+                continue;
+            }
+            for (imp_pkg, imp_item) in &ps.imports {
+                if exp_pkg.as_deref().is_some_and(|ep| ep != imp_pkg) {
+                    continue;
+                }
+                if imp_item.as_deref().is_some_and(|i| i != name) {
+                    continue;
+                }
+                if let Some(&src) = self.packages.get(imp_pkg) {
+                    if src != p {
+                        if let Some(f) = self.lookup_pkg_public(src, name, depth + 1) {
+                            return Some(f);
+                        }
                     }
                 }
             }
@@ -2499,7 +2553,7 @@ impl<'t> Builder<'t> {
 }
 
 /// One instance's declared signals, for [`Builder::sig_scopes`].
-#[derive(Default)]
+#[derive(Clone, Default)]
 struct SigScope {
     types: fx::FxMap<String, elab_ir::RtlType>,
     prefix: String,

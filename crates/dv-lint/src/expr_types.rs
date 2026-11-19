@@ -280,6 +280,9 @@ impl<'a, 't> Typer<'a, 't> {
                     let (w, _, f) = inner.integral?;
                     return Some(ranged((n.max(0) as u32).checked_mul(w)?, false, f));
                 }
+                if let Some(t) = self.unpacked_concat_target(e) {
+                    return Some(t);
+                }
                 let mut w = 0u32;
                 let mut f = false;
                 for k in ks {
@@ -296,6 +299,31 @@ impl<'a, 't> Typer<'a, 't> {
             CallExpr => self.call_type(e),
             _ => None,
         }
+    }
+
+    fn unpacked_concat_target(&mut self, e: NodeId) -> Option<ETy> {
+        let c = self.c;
+        let p = c.parent(e)?;
+        let ks = kids(c, p);
+        let l = match c.kind(p) {
+            BinaryExpr if matches!(op_of(c, p), "=" | "<=") && is_assign(c, p) && ks.get(1) == Some(&e) => {
+                self.final_type(ks[0])?
+            }
+            Declarator if ks.last() == Some(&e) => {
+                let dd = c.parent(p)?;
+                if !matches!(c.kind(dd), DataDecl | ParamDecl) {
+                    return None;
+                }
+                self.o.decl_type(c.index(), c.tree.child(dd, DataType), Some(p))
+            }
+            ReturnStmt => {
+                let f = crate::support::slang_ast::ancestors(c, p).find(|&x| c.kind(x) == FunctionDecl)?;
+                let dt = c.tree.child(f, ReturnType).and_then(|r| c.tree.child(r, DataType))?;
+                self.o.data_type(c.index(), dt)
+            }
+            _ => return None,
+        };
+        l.text.contains("$[").then_some(l)
     }
 
     fn decl_info(&mut self, d: crate::support::slang_ast::Decl) -> Option<ETy> {
@@ -430,6 +458,7 @@ impl<'a, 't> Typer<'a, 't> {
                         return Some(ETy {
                             text: format!("{kw}[{a}:{b}]"),
                             integral: Some((w, false, f)),
+                            four_state: f,
                             src: None,
                             aggregate: false,
                         });
@@ -456,10 +485,11 @@ impl<'a, 't> Typer<'a, 't> {
             MemberExpr => crate::support::handles::expr_decl(c, base),
             _ => None,
         };
-        let integral = d.and_then(|d| d.dtype).and_then(|dt| self.o.data_type(c.index(), dt).integral);
+        let dt_info = d.and_then(|d| d.dtype).map(|dt| self.o.data_type(c.index(), dt));
+        let four_state = dt_info.as_ref().is_some_and(|t| t.four_state);
         // Only the outermost unpacked dimension is selected away here.
-        let integral = if text.contains("$[") { None } else { integral };
-        ETy { text, integral, src: None, aggregate: false }
+        let integral = if text.contains("$[") { None } else { dt_info.and_then(|t| t.integral) };
+        ETy { text, integral, four_state, src: None, aggregate: false }
     }
 
     /// `x[i]` of a multi-dimensional packed array: the element's vector.
@@ -480,6 +510,7 @@ impl<'a, 't> Typer<'a, 't> {
         Some(ETy {
             text: format!("{head}{rest}"),
             integral: Some((bw / n.max(1), false, f)),
+            four_state: f,
             src: None,
             aggregate: false,
         })
@@ -492,16 +523,16 @@ impl<'a, 't> Typer<'a, 't> {
         let inner = *ks.get(1)?;
         let x = self.self_type(inner);
         match c.kind(target) {
-            Literal => {
-                let (w, _, _) = self.o.eval(c.index(), target)?;
-                let (_, s, f) = x?.integral?;
-                Some(ranged(w as u32, s, f))
-            }
             NameExpr if matches!(c.tree.bare_text(target).as_str(), "signed" | "unsigned") => {
                 let (w, _, f) = x?.integral?;
                 Some(ranged(w, c.tree.bare_text(target) == "signed", f))
             }
             NameExpr if c.tree.bare_text(target) == "const" => x,
+            _ if self.o.eval(c.index(), target).is_some_and(|(w, _, _)| w > 0) => {
+                let (w, _, _) = self.o.eval(c.index(), target)?;
+                let (_, s, f) = x?.integral?;
+                Some(ranged(w as u32, s, f))
+            }
             NameExpr | DataType | ScopedExpr => Some(self.o.data_type(c.index(), target)),
             _ => None,
         }
@@ -1310,17 +1341,53 @@ pub(crate) fn slang_kind(c: &Cst, e: NodeId) -> Option<&'static str> {
     })
 }
 
+/// Whether `n` inside `decl` sits in a generate branch that `rep` did not elaborate.
+fn skipped_in_instance(c: &Cst, o: &TypeOracle, rep: usize, ti: usize, decl: NodeId, n: NodeId) -> bool {
+    for a in std::iter::once(n).chain(crate::support::slang_ast::ancestors(c, n)).take_while(|&a| a != decl) {
+        let Some(p) = c.parent(a) else { continue };
+        let is_branch = match c.kind(p) {
+            IfGenerate => kids(c, p).get(1) == Some(&a),
+            ElseClause => kids(c, p).first() == Some(&a),
+            LoopGenerate => kids(c, p).last() == Some(&a) && !is_expr(c.kind(a)),
+            CaseGenerate => kids(c, p).first() != Some(&a) && !is_expr(c.kind(a)),
+            _ => false,
+        };
+        if is_branch && o.instance_copies(rep, ti, a) == 0 {
+            return true;
+        }
+    }
+    false
+}
+
+type DumpRow = (u32, u32, u32, &'static str, u32, bool, bool, String);
+type ExprSite = (NodeId, u32, u32, u32, &'static str);
+
 /// One line per typed expression, as tools/oracles/exprdump.cpp prints slang's:
 /// `<file>:<line>:<col> <kind> <bits> <s|u> <4|2> <type>`, sorted.
 pub fn expr_dump(files: Vec<String>, trees: &[svlang::syntax::Tree]) -> Vec<String> {
-    let o = TypeOracle::new(trees);
+    let mut o = TypeOracle::new(trees);
+    o.elaborate(&crate::tops());
+    let o = o;
+    let mut inst_reps: HashMap<(usize, NodeId), Vec<usize>> = HashMap::default();
+    let mut seen_keys = svlang::semantic::fx::FxSet::default();
+    for idx in 0..o.instance_count() {
+        if seen_keys.insert(o.instance_key(idx)) {
+            inst_reps.entry(o.instance_decl(idx)).or_default().push(idx);
+        }
+    }
     let mut locator = svlang::semantic::Locator::new(files);
-    let mut rows = Vec::new();
+    let mut rows: Vec<DumpRow> = Vec::new();
+    let push_row = |rows: &mut Vec<DumpRow>, file: u32, line: u32, col: u32, kind: &'static str, x: ETy| {
+        let (w, s, f) = x.integral.unwrap_or((0, false, x.four_state));
+        rows.push((file, line, col, kind, w, s, f, x.text));
+    };
     for (i, t) in trees.iter().enumerate() {
         let mut cst = Cst::new(t, i, locator);
         cst.all = trees;
         {
-            let mut ty = Typer::new(&cst, &o);
+            let mut plain: Vec<ExprSite> = Vec::new();
+            let mut by_inst: HashMap<NodeId, Vec<ExprSite>> = HashMap::default();
+            let mut by_spec: HashMap<(usize, usize), Vec<ExprSite>> = HashMap::default();
             for n in 0..t.nodes.len() {
                 let n = NodeId(n as u32);
                 if !is_expr(cst.kind(n)) {
@@ -1332,18 +1399,69 @@ pub fn expr_dump(files: Vec<String>, trees: &[svlang::syntax::Tree]) -> Vec<Stri
                 if l.expansion.is_some() {
                     continue;
                 }
-                let Some(x) = ty.final_type(n) else {
-                    if std::env::var_os("DV_EXPR_WHY").is_some() {
-                        let chain: Vec<String> = crate::support::slang_ast::ancestors(&cst, n)
-                            .map(|a| format!("{:?}", cst.kind(a)))
-                            .collect();
-                        eprintln!("{}:{} {} untyped: {}", l.line, l.column, cst.tree.bare_text(n), chain.join(" < "));
+                if let Some((g, k)) = o.specs_at(i, n) {
+                    if k > 0 {
+                        by_spec.entry((g, k)).or_default().push((n, l.file, l.line, l.column, kind));
+                        continue;
                     }
+                }
+                let enc_mod = crate::support::slang_ast::ancestors(&cst, n)
+                    .find(|&a| matches!(cst.kind(a), ModuleDecl | InterfaceDecl | ProgramDecl));
+                if let Some(decl) = enc_mod.filter(|&d| inst_reps.contains_key(&(i, d))) {
+                    by_inst.entry(decl).or_default().push((n, l.file, l.line, l.column, kind));
                     continue;
-                };
-                let (w, s, f) = x.integral.unwrap_or((0, false, false));
-                rows.push((l.file, l.line, l.column, kind, w, s, f, x.text));
+                }
+                plain.push((n, l.file, l.line, l.column, kind));
             }
+            {
+                let mut ty = Typer::new(&cst, &o);
+                for (n, file, line, col, kind) in plain {
+                    let Some(x) = ty.final_type(n) else {
+                        if std::env::var_os("DV_EXPR_WHY").is_some() {
+                            let chain: Vec<String> = crate::support::slang_ast::ancestors(&cst, n)
+                                .map(|a| format!("{:?}", cst.kind(a)))
+                                .collect();
+                            eprintln!("{line}:{col} {} untyped: {}", cst.tree.bare_text(n), chain.join(" < "));
+                        }
+                        continue;
+                    };
+                    push_row(&mut rows, file, line, col, kind, x);
+                }
+            }
+            let mut inst_decls: Vec<_> = by_inst.into_iter().collect();
+            inst_decls.sort_by_key(|(d, _)| d.0);
+            for (decl, nodes) in inst_decls {
+                for &rep in &inst_reps[&(i, decl)] {
+                    o.set_instance(Some(rep));
+                    let mut ty = Typer::new(&cst, &o);
+                    for &(n, file, line, col, kind) in &nodes {
+                        if skipped_in_instance(&cst, &o, rep, i, decl, n) {
+                            continue;
+                        }
+                        if let Some(x) = ty.final_type(n) {
+                            push_row(&mut rows, file, line, col, kind, x);
+                        }
+                    }
+                }
+            }
+            o.set_instance(None);
+            let mut spec_groups: Vec<_> = by_spec.into_iter().collect();
+            spec_groups.sort_by_key(|(gk, _)| *gk);
+            for ((g, k), nodes) in spec_groups {
+                for spec in 0..k {
+                    o.set_spec(Some((g, spec)));
+                    let mut ty = Typer::new(&cst, &o);
+                    for &(n, file, line, col, kind) in &nodes {
+                        if null_compare_fails(&cst, &mut ty, n) {
+                            continue;
+                        }
+                        if let Some(x) = ty.final_type(n) {
+                            push_row(&mut rows, file, line, col, kind, x);
+                        }
+                    }
+                }
+            }
+            o.set_spec(None);
         }
         locator = cst.into_locator();
     }

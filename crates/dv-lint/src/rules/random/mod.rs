@@ -10,13 +10,16 @@ mod constraint_calling_non_pure_function;
 mod constraint_implication_multi_bit;
 mod constraint_inside_inverted_range;
 mod cyclic_solve_before;
+mod dangling_disable_soft;
 mod dist_wide_range_colon_eq;
 mod empty_randomize_with;
+mod foreach_unconstrained_array_size;
 mod global_rng_in_class;
 mod hardcoded_bounds;
 mod inline_shadow_no_local;
 mod non_invertible_constraint_op;
 mod non_rand_field_constrained;
+mod rand_mode_in_randomize_callback;
 mod randc_in_dynamic_container;
 mod randc_memory_explosion;
 mod randc_state_exhaustion;
@@ -24,10 +27,12 @@ mod randomize_in_constructor;
 mod randomize_inside_assert;
 mod randomize_missing_super;
 mod redundant_constraint;
+mod relational_constraint_cycle;
 mod static_constraint;
 mod unallocated_rand_object_array;
 mod unchecked_randomize;
 mod unconstrained_rand_variable;
+mod unique_pigeonhole_overflow;
 mod unrelated_solve_before;
 mod unrestored_rand_mode;
 mod zero_weight_distribution;
@@ -86,5 +91,10 @@ pub(crate) fn rules() -> Vec<Rule> {
         },
         Rule { id: "SV-TST-001", name: "ConstantReseed", category: "Advisory", severity: Severity::Info, profiles: ADVISORY, guidelines: &[], experimental: false, native: false, about: "Flags srandom() or set_randstate() with a constant in components, sequences and other non-test classes; every seed of the regression then runs the same stimulus. Advisory: off by default.", check: Check::Syntax(constant_reseed::constant_reseed) },
         Rule { id: "SV-RND-040", name: "HardcodedBounds", category: "Advisory", severity: Severity::Warning, profiles: ADVISORY, guidelines: &[], experimental: false, native: true, about: "Flags non-soft literal constant bounds on rand properties in base classes (virtual classes or classes extended in the design), which prevent derived classes from widening stimulus ranges without constraint_mode(0). Advisory: off by default.", check: Check::Mixed(hardcoded_bounds::hardcoded_bounds) },
+        Rule { id: "SV-RND-041", name: "RelationalConstraintCycle", category: "Randomization", severity: Severity::Error, profiles: SOUNDNESS, guidelines: &[], experimental: false, native: true, about: "Flags unconditional constraint blocks whose relational ordering predicates (<, <=, >, >=, ==) form a strict cycle across two or more variables (such as a < b && b < a), which is guaranteed unsatisfiable.", check: Check::Syntax(relational_constraint_cycle::relational_constraint_cycle) },
+        Rule { id: "SV-RND-042", name: "ForeachUnconstrainedArraySize", category: "Randomization", severity: Severity::Warning, profiles: SOUNDNESS, guidelines: &[], experimental: false, native: true, about: "Flags foreach loops in constraints over a rand dynamic array or queue whose .size() is never constrained in the class hierarchy and never pre-allocated in new() or pre_randomize().", check: Check::Syntax(foreach_unconstrained_array_size::foreach_unconstrained_array_size) },
+        Rule { id: "SV-RND-043", name: "DanglingDisableSoft", category: "Randomization", severity: Severity::Warning, profiles: SOUNDNESS, guidelines: &[], experimental: false, native: true, about: "Flags 'disable soft <var>' directives in constraint blocks when neither the class nor any base class declares a soft constraint referencing <var>.", check: Check::Syntax(dangling_disable_soft::dangling_disable_soft) },
+        Rule { id: "SV-RND-044", name: "UniquePigeonholeOverflow", category: "Randomization", severity: Severity::Error, profiles: SOUNDNESS, guidelines: &[], experimental: false, native: true, about: "Flags 'unique { arr }' constraints on fixed-size unpacked arrays whose element count exceeds the cardinality of the element integral type (pigeonhole overflow), making randomize() unsatisfiable.", check: Check::Syntax(unique_pigeonhole_overflow::unique_pigeonhole_overflow) },
+        Rule { id: "SV-RND-045", name: "RandModeInRandomizeCallback", category: "Randomization", severity: Severity::Warning, profiles: SOUNDNESS, guidelines: &[], experimental: false, native: true, about: "Flags mutating .rand_mode() or .constraint_mode() calls inside post_randomize(), where solver execution has already finished and mode mutations silently leak into subsequent randomize() calls.", check: Check::Syntax(rand_mode_in_randomize_callback::rand_mode_in_randomize_callback) },
     ]
 }

@@ -15,10 +15,42 @@ use std::collections::{HashMap, HashSet};
 
 use crate::Finding;
 
-const SAME_LINE: [&str; 6] =
-    ["uvmcheck:waive", "uvmcheck:disable", "uvmcheck-disable", "lint:waive", "lint:off", "uvmcheck: waive"];
-const NEXT_LINE: [&str; 4] =
-    ["uvmcheck-disable-next-line", "uvmcheck:waive-next-line", "uvmcheck:disable-next-line", "uvmcheck: waive"];
+const SAME_LINE: [&str; 8] = [
+    "uvmcheck:waive",
+    "uvmcheck:disable",
+    "uvmcheck-disable",
+    "lint:waive",
+    "lint:off",
+    "uvmcheck: waive",
+    "verissimo_lint: waive_line",
+    "verissimo_lint:waive_line",
+];
+const NEXT_LINE: [&str; 6] = [
+    "uvmcheck-disable-next-line",
+    "uvmcheck:waive-next-line",
+    "uvmcheck:disable-next-line",
+    "uvmcheck: waive",
+    "verissimo_lint: waive_line",
+    "verissimo_lint:waive_line",
+];
+const BLOCK_OFF: [&str; 6] = [
+    "uvmcheck:off",
+    "uvmcheck: off",
+    "uvmcheck-off",
+    "verissimo_lint: waive_start",
+    "verissimo_lint:waive_start",
+    "lint:waive-start",
+];
+const BLOCK_ON: [&str; 8] = [
+    "uvmcheck:on",
+    "uvmcheck: on",
+    "uvmcheck-on",
+    "verissimo_lint: waive_stop",
+    "verissimo_lint:waive_stop",
+    "lint:waive-stop",
+    "lint:on",
+    "lint: on",
+];
 
 /// The quoted pattern after a keyword, if any; Err holds what an
 /// unterminated one had read (a backslash keeps the character after it).
@@ -97,11 +129,140 @@ pub(crate) struct Used {
 
 pub(crate) static USED: std::sync::Mutex<Option<Used>> = std::sync::Mutex::new(None);
 
+#[derive(Clone, Debug)]
+struct BlockSpan {
+    start_line: u32,
+    end_line: u32,
+    rules: Vec<String>,
+    rest: String,
+}
+
+fn comment_tail<'a>(line: &'a str, kw: &str) -> Option<&'a str> {
+    let pos = line.find(kw)?;
+    let prefix = &line[..pos];
+    let after_delim =
+        prefix.rfind("//").map(|i| &prefix[i + 2..]).or_else(|| prefix.rfind("/*").map(|i| &prefix[i + 2..]))?;
+    if !after_delim.chars().all(|c| c.is_whitespace() || c == '*') {
+        return None;
+    }
+    let rest = &line[pos + kw.len()..];
+    if rest.starts_with('-') || rest.starts_with(':') {
+        return None;
+    }
+    Some(rest)
+}
+
+fn parse_blocks(lines: &[String]) -> (Vec<BlockSpan>, Vec<(u32, String)>) {
+    let has_lint_on =
+        lines.iter().any(|l| comment_tail(l, "lint:on").is_some() || comment_tail(l, "lint: on").is_some());
+    // Active open blocks: (start_line, rules, rest_text, strict_unclosed)
+    let mut open: Vec<(u32, Vec<String>, String, bool)> = Vec::new();
+    let mut spans = Vec::new();
+    let total = lines.len() as u32;
+    for (idx, line) in lines.iter().enumerate() {
+        let lno = idx as u32 + 1;
+        if let Some(rest) = BLOCK_ON.iter().find_map(|kw| comment_tail(line, kw)) {
+            let close_ids: Vec<&str> = rule_ids(rest).collect();
+            let close_all = close_ids.is_empty() || close_ids.contains(&"*");
+            let mut still_open = Vec::new();
+            for (sline, mut rlist, srest, strict) in open.drain(..) {
+                if close_all {
+                    spans.push(BlockSpan { start_line: sline, end_line: lno, rules: rlist, rest: srest });
+                } else {
+                    let (closed, rem): (Vec<String>, Vec<String>) =
+                        rlist.drain(..).partition(|r| r != "*" && close_ids.contains(&r.as_str()));
+                    if !closed.is_empty() {
+                        spans.push(BlockSpan { start_line: sline, end_line: lno, rules: closed, rest: srest.clone() });
+                    }
+                    if !rem.is_empty() {
+                        still_open.push((sline, rem, srest, strict));
+                    }
+                }
+            }
+            open = still_open;
+            continue;
+        }
+        if let Some(rest) = BLOCK_OFF.iter().find_map(|kw| comment_tail(line, kw)) {
+            let mut ids: Vec<String> = rule_ids(rest).map(str::to_string).collect();
+            if ids.is_empty() {
+                ids.push("*".to_string());
+            }
+            open.push((lno, ids, rest.to_string(), true));
+            continue;
+        }
+        if has_lint_on {
+            if let Some(rest) = comment_tail(line, "lint:off").or_else(|| comment_tail(line, "lint: off")) {
+                let mut ids: Vec<String> = rule_ids(rest).map(str::to_string).collect();
+                if ids.is_empty() {
+                    ids.push("*".to_string());
+                }
+                open.push((lno, ids, rest.to_string(), false));
+            }
+        }
+    }
+    let mut unclosed = Vec::new();
+    for (sline, rlist, srest, strict) in open {
+        if strict {
+            unclosed.push((sline, rlist.join(", ")));
+            spans.push(BlockSpan { start_line: sline, end_line: total.max(sline), rules: rlist, rest: srest });
+        }
+    }
+    (spans, unclosed)
+}
+
+/// Returns `(line_number, rule_list)` for every strict block waiver (`uvmcheck:off`,
+/// `verissimo_lint: waive_start`, etc.) in `src` that is never closed before EOF.
+pub(crate) fn find_unclosed_blocks(src: &str) -> Vec<(u32, String)> {
+    let lines: Vec<String> = src.lines().map(str::to_string).collect();
+    parse_blocks(&lines).1
+}
+
+fn waives_in_blocks(
+    spans: &[BlockSpan],
+    f: &Finding,
+    line: u32,
+    compiled: &mut Compiled,
+    bad: &mut Bad,
+) -> Option<u32> {
+    if f.rule == "SV-WVR-001" {
+        return None;
+    }
+    for sp in spans {
+        if line < sp.start_line || line > sp.end_line {
+            continue;
+        }
+        if !sp.rules.iter().any(|r| r == "*" || r == f.rule) {
+            continue;
+        }
+        match message_pattern(&sp.rest) {
+            Err(open) => {
+                bad.push((sp.start_line, open, "unterminated message regex".into()));
+                return None;
+            }
+            Ok(Some(p)) if !p.is_empty() => {
+                let re = compiled.entry(p.clone()).or_insert_with(|| crate::pattern::Pattern::new(&p, false));
+                match re {
+                    Ok(re) if re.is_match_anywhere(&f.message) => return Some(sp.start_line),
+                    Ok(_) => continue,
+                    Err(e) => {
+                        bad.push((sp.start_line, p, e.clone()));
+                        continue;
+                    }
+                }
+            }
+            _ => return Some(sp.start_line),
+        }
+    }
+    None
+}
+
+type FileWaiverData = (Vec<String>, Vec<BlockSpan>);
+
 /// Drops findings an inline comment waives; returns how many.
 pub(crate) fn apply(findings: &mut Vec<Finding>, files: &[String]) -> usize {
     let before = findings.len();
     let mut used = Used::default();
-    let mut texts: HashMap<String, Option<Vec<String>>> = HashMap::new();
+    let mut texts: HashMap<String, Option<FileWaiverData>> = HashMap::new();
     let mut compiled = Compiled::new();
     // Unusable patterns, by file: each comment and pattern reported once.
     let mut bad_at: Vec<(String, u32, String, String)> = Vec::new();
@@ -110,12 +271,14 @@ pub(crate) fn apply(findings: &mut Vec<Finding>, files: &[String]) -> usize {
         if path.is_empty() || line == 0 {
             return true;
         }
-        let lines = texts.entry(path.to_string()).or_insert_with(|| {
-            svlang::syntax::overlay::read(std::path::Path::new(path))
-                .ok()
-                .map(|t| t.lines().map(str::to_string).collect())
+        let cached = texts.entry(path.to_string()).or_insert_with(|| {
+            svlang::syntax::overlay::read(std::path::Path::new(path)).ok().map(|t| {
+                let ls: Vec<String> = t.lines().map(str::to_string).collect();
+                let (spans, _) = parse_blocks(&ls);
+                (ls, spans)
+            })
         });
-        let Some(lines) = lines else { return true };
+        let Some((lines, spans)) = cached else { return true };
         let at = |l: u32| lines.get(l as usize - 1).map(String::as_str).unwrap_or("");
         let mut bad = Bad::new();
         let by = if waives(at(line), f, line, true, &mut compiled, &mut bad) {
@@ -123,7 +286,7 @@ pub(crate) fn apply(findings: &mut Vec<Finding>, files: &[String]) -> usize {
         } else if line > 1 && waives(at(line - 1), f, line - 1, false, &mut compiled, &mut bad) {
             Some(line - 1)
         } else {
-            None
+            waives_in_blocks(spans, f, line, &mut compiled, &mut bad)
         };
         for (l, p, e) in bad {
             if !bad_at.iter().any(|(bf, bl, bp, _)| bf == path && *bl == l && *bp == p) {
@@ -175,13 +338,21 @@ pub type Unused = (String, u32, String);
 /// nothing while naming a rule that ran (`active`) or `*`, as uvmcheck's
 /// waiver hygiene finds them (a keyword inside a `//` or `/*` comment).
 pub(crate) fn unused_comments(files: &[String], active: &HashSet<&str>) -> (usize, Vec<Unused>) {
-    const KEYWORDS: [&str; 8] = [
+    const KEYWORDS: [&str; 16] = [
         "uvmcheck-disable-next-line",
         "uvmcheck:waive-next-line",
         "uvmcheck:disable-next-line",
         "uvmcheck:waive",
         "uvmcheck:disable",
         "uvmcheck-disable",
+        "uvmcheck:off",
+        "uvmcheck: off",
+        "uvmcheck-off",
+        "verissimo_lint: waive_start",
+        "verissimo_lint:waive_start",
+        "verissimo_lint: waive_line",
+        "verissimo_lint:waive_line",
+        "lint:waive-start",
         "lint:waive",
         "lint:off",
     ];
@@ -270,5 +441,23 @@ mod tests {
     fn finds_rule_ids_as_uvmcheck_does() {
         let ids: Vec<&str> = rule_ids(" SV-STY-002 -- x, UVM-NAM-101.a and * not sv-sty-1 or A-B-").collect();
         assert_eq!(ids, ["SV-STY-002", "UVM-NAM-101.a", "*"]);
+    }
+
+    #[test]
+    fn parses_closed_and_unclosed_block_waivers() {
+        let lines: Vec<String> = [
+            "// uvmcheck:off SV-STY-002",
+            "int a;",
+            "// uvmcheck:on SV-STY-002",
+            "// verissimo_lint: waive_start SV-DED-001",
+            "int b;",
+        ]
+        .into_iter()
+        .map(str::to_string)
+        .collect();
+        let (spans, unclosed) = parse_blocks(&lines);
+        assert_eq!(spans.len(), 2);
+        assert_eq!((spans[0].start_line, spans[0].end_line), (1, 3));
+        assert_eq!(unclosed, vec![(4, "SV-DED-001".to_string())]);
     }
 }

@@ -23,6 +23,10 @@ pub(crate) struct ApiPack {
     pub accellera_classes: HashSet<String>,
     /// (class, member) tagged `accellera`.
     pub accellera_members: HashSet<(String, String)>,
+    /// Classes tagged `contrib`.
+    pub contrib_classes: HashSet<String>,
+    /// (class, member) tagged `contrib`.
+    pub contrib_members: HashSet<(String, String)>,
     /// Macros the release compiles only as deprecated API.
     pub deprecated_macros: HashSet<String>,
     /// Classes and (class, method) it compiles only as deprecated API.
@@ -193,6 +197,8 @@ fn parse(text: &str) -> Option<ApiPack> {
         version,
         accellera_classes: HashSet::new(),
         accellera_members: HashSet::new(),
+        contrib_classes: HashSet::new(),
+        contrib_members: HashSet::new(),
         deprecated_macros: HashSet::new(),
         deprecated_classes: HashSet::new(),
         deprecated_members: HashSet::new(),
@@ -203,10 +209,14 @@ fn parse(text: &str) -> Option<ApiPack> {
             .to_string(),
     };
     let tag = |j: &Json| j.get("tag").and_then(Json::str) == Some("accellera");
+    let contrib = |j: &Json| j.get("tag").and_then(Json::str) == Some("contrib");
     let dep = |j: &Json| matches!(j.get("deprecated"), Some(Json::Bool(true)));
     for (name, info) in root.get("classes").map_or(&[][..], Json::entries) {
         if tag(info) {
             p.accellera_classes.insert(name.clone());
+        }
+        if contrib(info) {
+            p.contrib_classes.insert(name.clone());
         }
         if dep(info) {
             p.deprecated_classes.insert(name.clone());
@@ -214,6 +224,9 @@ fn parse(text: &str) -> Option<ApiPack> {
         for (m, mi) in info.get("members").map_or(&[][..], Json::entries) {
             if tag(mi) {
                 p.accellera_members.insert((name.clone(), m.clone()));
+            }
+            if contrib(mi) {
+                p.contrib_members.insert((name.clone(), m.clone()));
             }
             if dep(mi) {
                 p.deprecated_members.insert((name.clone(), m.clone()));

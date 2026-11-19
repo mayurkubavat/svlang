@@ -24,6 +24,7 @@ mod space_keyword_paren;
 mod todo_comment_tracker;
 mod trailing_whitespace;
 mod typedef_name_suffix;
+mod unclosed_block_waiver;
 mod uvm_class_type_suffix;
 mod uvm_component_naming_convention;
 mod uvm_create_string_mismatch;
@@ -77,5 +78,6 @@ pub(crate) fn rules() -> Vec<Rule> {
         },
         Rule { id: "UVM-TLM-003", name: "UvmTlmPortSuffix", category: "Style", severity: Severity::Warning, profiles: STYLE, guidelines: &[], experimental: false, native: false, about: "Enforces standard UVM TLM port suffix naming conventions (_ap for analysis ports, _imp for imps, _export for exports, _port for ports, _fifo for TLM FIFOs).", check: Check::Syntax(uvm_tlm_port_suffix::tlm_port_suffix),
         },
+        Rule { id: "SV-WVR-001", name: "UnclosedBlockWaiver", category: "Maintainability", severity: Severity::Warning, profiles: SOUNDNESS, guidelines: &[], experimental: false, native: true, about: "Flags scoped block waiver comments (uvmcheck:off, verissimo_lint: waive_start) that are never closed with a matching on/waive_stop directive before the end of the file.", check: Check::Syntax(unclosed_block_waiver::unclosed_block_waiver) },
     ]
 }

@@ -20,7 +20,7 @@ pub fn vector(w: u32, s: bool, four: bool) -> TypeInfo {
     let base = if four { "logic" } else { "bit" };
     let sign = if s { " signed" } else { "" };
     let text = if w <= 1 { format!("{base}{sign}") } else { format!("{base}{sign}[{}:0]", w - 1) };
-    TypeInfo { text, integral: Some((w.max(1), s, four)), src: None, aggregate: false }
+    TypeInfo { text, integral: Some((w.max(1), s, four)), four_state: four, src: None, aggregate: false }
 }
 
 /// A vector with an explicit range, as literals and casts print (`bit[0:0]`).
@@ -30,6 +30,7 @@ pub fn ranged(w: u32, s: bool, four: bool) -> TypeInfo {
     TypeInfo {
         text: format!("{base}{sign}[{}:0]", w.max(1) - 1),
         integral: Some((w.max(1), s, four)),
+        four_state: four,
         src: None,
         aggregate: false,
     }
@@ -105,8 +106,11 @@ pub fn is_unbased_unsized_tok(tok: &str) -> bool {
 
 /// Self-determined type of an integer, unbased-unsized, string, real, or time literal token.
 pub fn literal_type(text: &str) -> Option<TypeInfo> {
-    if let Some(body) = text.strip_prefix('"') {
-        let body = body.strip_suffix('"').unwrap_or(body);
+    if let Some(body) = text
+        .strip_prefix("\"\"\"")
+        .and_then(|s| s.strip_suffix("\"\"\""))
+        .or_else(|| text.strip_prefix('"').map(|s| s.strip_suffix('"').unwrap_or(s)))
+    {
         let mut n = 0u32;
         let mut it = body.chars();
         while let Some(ch) = it.next() {

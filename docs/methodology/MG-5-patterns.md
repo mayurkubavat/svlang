@@ -34,7 +34,7 @@ Enforced by: `RAL-ADP-001`, `RAL-WIRE-001`, `UVM-OBS-002`, `UVM-PAT-001`, `UVM-T
 
 A ladder of $cast or get_type_name() comparisons must be edited for every new type. Virtual methods, factory overrides and callbacks let new behaviour be added without touching the base.
 
-Enforced by: `SV-DSN-001`, `SV-DSN-006`, `SV-DSN-007`, `SV-DSN-009`, `SV-LSP-001`, `SV-OCP-001`, `SV-OOP-001`, `SV-OOP-009`, `SV-OOP-015`, `SV-RDB-004`, `UVM-PAT-003`
+Enforced by: `SV-DSN-001`, `SV-DSN-006`, `SV-DSN-007`, `SV-DSN-009`, `SV-LSP-001`, `SV-OCP-001`, `SV-OOP-001`, `SV-OOP-009`, `SV-OOP-015`, `SV-OOP-016`, `SV-RDB-004`, `UVM-PAT-003`
 
 ## MG-5.3 (Should)
 

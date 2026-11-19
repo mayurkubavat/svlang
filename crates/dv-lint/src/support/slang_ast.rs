@@ -66,7 +66,7 @@ pub(crate) fn last_name(c: &Cst, decl: NodeId) -> String {
 
 /// A class's own routines (functions, tasks, prototypes) by last name, in
 /// item order: what [`callee_decl`] scans along the class chain.
-fn class_routines(c: &Cst, cls: NodeId) -> Arc<Vec<(String, NodeId)>> {
+pub(crate) fn class_routines(c: &Cst, cls: NodeId) -> Arc<Vec<(String, NodeId)>> {
     let all = crate::shared::get("class_routines", c.tree_key(), || {
         Mutex::new(HashMap::<NodeId, Arc<Vec<(String, NodeId)>>>::default())
     });
@@ -884,8 +884,18 @@ fn index_items(c: &Cst, scope: NodeId, m: &mut ItemIndex) {
                 for k in kids(c, d) {
                     if matches!(c.kind(k), PortList | ParamList) {
                         index_items(c, k, m);
+                        let mut prev_dt: Option<NodeId> = None;
                         for p in c.tree.children(k).filter(|&p| c.kind(p) == Port) {
-                            index_declarators(c, p, false, m);
+                            if let Some(dt) = c.tree.child(p, DataType) {
+                                prev_dt = Some(dt);
+                            } else if c.toks(p).next().is_some() {
+                                prev_dt = None;
+                            }
+                            for dec in c.tree.children(p).filter(|&dec| c.kind(dec) == Declarator) {
+                                if let Some(x) = c.tree.child(dec, Name) {
+                                    m.entry(c.tree.bare_text(x)).or_insert((false, prev_dt, dec));
+                                }
+                            }
                         }
                     }
                 }
@@ -896,9 +906,15 @@ fn index_items(c: &Cst, scope: NodeId, m: &mut ItemIndex) {
 }
 
 fn in_ports(c: &Cst, list: NodeId, name: &str, kind: DeclKind) -> Option<Decl> {
+    let mut prev_dt: Option<NodeId> = None;
     for p in c.tree.children(list).filter(|&p| c.kind(p) == Port) {
+        if let Some(dt) = c.tree.child(p, DataType) {
+            prev_dt = Some(dt);
+        } else if c.toks(p).next().is_some() {
+            prev_dt = None;
+        }
         if let Some(x) = declarators_named(c, p, name) {
-            return Some(Decl { kind, dtype: c.tree.child(p, DataType), node: x });
+            return Some(Decl { kind, dtype: prev_dt, node: x });
         }
     }
     None

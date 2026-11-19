@@ -8,18 +8,26 @@ mod assignment_in_expression;
 mod bit_select_out_of_bounds;
 mod case_without_default;
 mod casex_prohibited;
+mod combinational_clock_gate;
 mod equality_with_xz;
+mod fsm_deadlock_state;
+mod fsm_unreachable_state;
 mod identical_branches;
+mod inferred_latch_in_comb;
 mod integer_division_to_real;
 mod intra_assignment_delay;
 mod mismatched_field_in_copy_compare;
+mod missing_return_path;
 mod missing_timescale_in_module;
+mod mixed_reset_polarity;
 mod modifying_loop_index_inside_for;
 mod non_blocking_in_function;
 mod non_exhaustive_enum_case;
 mod non_short_circuit_logical;
 mod off_by_one_queue_index;
 mod part_select_reversed;
+mod partial_reset_in_always_ff;
+mod port_width_mismatch;
 mod procedural_assignment_as_sub_expression;
 mod real_equality;
 mod repeated_else_if_condition;
@@ -29,7 +37,10 @@ mod streaming_concatenation_size_mismatch;
 mod suspicious_argument_order;
 mod tautological_check_compare;
 mod timescale_precision_mismatch;
+mod uninitialized_local_read;
 mod unsized_literal_in_concat;
+mod unsynchronized_cdc_crossing;
+mod unwritten_output_argument;
 
 /// Every rule of this category.
 pub(crate) fn rules() -> Vec<Rule> {
@@ -81,5 +92,16 @@ pub(crate) fn rules() -> Vec<Rule> {
         },
         Rule { id: "SV-TIM-002", name: "MissingTimescaleInModule", category: "Correctness", severity: Severity::Warning, profiles: SOUNDNESS, guidelines: &[], experimental: false, native: false, about: "Flags files and modules containing procedural delays (#) that lack an explicit `timescale or timeunit declaration.", check: Check::Syntax(missing_timescale_in_module::missing_timescale),
         },
+        Rule { id: "SV-CDC-001", name: "UnsynchronizedCdcCrossing", category: "Correctness", severity: Severity::Warning, profiles: SOUNDNESS, guidelines: &[], experimental: false, native: true, about: "Flags multi-bit buses and unsynchronized or combinationally gated signals driven in one clock domain and sampled directly in another clock domain.", check: Check::Syntax(unsynchronized_cdc_crossing::unsynchronized_cdc_crossing) },
+        Rule { id: "SV-DAT-001", name: "MissingReturnPath", category: "Correctness", severity: Severity::Warning, profiles: SOUNDNESS, guidelines: &[], experimental: false, native: true, about: "Flags non-void functions where a control-flow path reaches the end of the function without executing a return statement or assigning the function return variable.", check: Check::Syntax(missing_return_path::missing_return_path) },
+        Rule { id: "SV-DAT-002", name: "UninitializedLocalRead", category: "Correctness", severity: Severity::Warning, profiles: SOUNDNESS, guidelines: &[], experimental: false, native: true, about: "Flags automatic local scalar and handle variables in tasks and functions that are read before any write on all reaching paths.", check: Check::Syntax(uninitialized_local_read::uninitialized_local_read) },
+        Rule { id: "SV-DAT-003", name: "UnwrittenOutputArgument", category: "Correctness", severity: Severity::Warning, profiles: SOUNDNESS, guidelines: &[], experimental: false, native: true, about: "Flags output arguments of concrete non-virtual tasks and functions that are never assigned anywhere in the body.", check: Check::Syntax(unwritten_output_argument::unwritten_output_argument) },
+        Rule { id: "SV-FSM-002", name: "FsmUnreachableState", category: "Correctness", severity: Severity::Warning, profiles: SOUNDNESS, guidelines: &[], experimental: false, native: true, about: "Flags declared FSM enum states that are neither entered on reset nor targeted by any state transition.", check: Check::Syntax(fsm_unreachable_state::fsm_unreachable_state) },
+        Rule { id: "SV-FSM-003", name: "FsmDeadlockState", category: "Correctness", severity: Severity::Warning, profiles: SOUNDNESS, guidelines: &[], experimental: false, native: true, about: "Flags non-reset, non-terminal FSM enum states whose case arm has no outgoing transition to any other state.", check: Check::Syntax(fsm_deadlock_state::fsm_deadlock_state) },
+        Rule { id: "SV-RTL-001", name: "MixedResetPolarity", category: "Correctness", severity: Severity::Warning, profiles: SOUNDNESS, guidelines: &[], experimental: false, native: true, about: "Flags modules whose sequential blocks mix posedge and negedge sensitivity on the same reset signal.", check: Check::Syntax(mixed_reset_polarity::mixed_reset_polarity) },
+        Rule { id: "SV-RTL-002", name: "PartialResetInAlwaysFf", category: "Correctness", severity: Severity::Warning, profiles: SOUNDNESS, guidelines: &[], experimental: false, native: true, about: "Flags asynchronous-reset always_ff blocks that reset some assigned registers in the reset branch while leaving other registers in the same block unreset.", check: Check::Syntax(partial_reset_in_always_ff::partial_reset_in_always_ff) },
+        Rule { id: "SV-RTL-003", name: "CombinationalClockOrResetGate", category: "Correctness", severity: Severity::Warning, profiles: SOUNDNESS, guidelines: &[], experimental: false, native: true, about: "Flags always_ff blocks clocked by a locally driven combinational expression rather than a primary clock or integrated clock-gating cell.", check: Check::Syntax(combinational_clock_gate::combinational_clock_gate) },
+        Rule { id: "SV-RTL-004", name: "PortWidthMismatch", category: "Correctness", severity: Severity::Warning, profiles: SOUNDNESS, guidelines: &[], experimental: false, native: true, about: "Flags module and interface instance port connections whose elaborated packed bit-width differs from the formal port's bit-width.", check: Check::Syntax(port_width_mismatch::port_width_mismatch) },
+        Rule { id: "SV-RTL-005", name: "InferredLatchInComb", category: "Correctness", severity: Severity::Warning, profiles: SOUNDNESS, guidelines: &[], experimental: false, native: true, about: "Flags signals or bit-slices driven inside always_comb that are not assigned on every symbolic execution path, inferring unintended level-sensitive latches.", check: Check::Syntax(inferred_latch_in_comb::inferred_latch_in_comb) },
     ]
 }

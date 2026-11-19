@@ -14,6 +14,8 @@ pub struct TypeInfo {
     pub text: String,
     /// An integral type (packed): its width, signedness and four states.
     pub integral: Option<(u32, bool, bool)>,
+    /// Whether the type holds 4-state (`x`/`z`) values (including unpacked arrays/structs).
+    pub four_state: bool,
     /// The data type it was declared with, to look into (struct members).
     pub src: Option<(usize, sv_syntax::NodeId)>,
     /// An enum, struct or union (also through typedefs): binary operators
@@ -25,7 +27,7 @@ impl TypeInfo {
     /// A type with only its printed form: not integral, not an aggregate, no
     /// declaration to look into.
     pub fn other(text: impl Into<String>) -> TypeInfo {
-        TypeInfo { text: text.into(), integral: None, src: None, aggregate: false }
+        TypeInfo { text: text.into(), integral: None, four_state: false, src: None, aggregate: false }
     }
 }
 
@@ -139,6 +141,11 @@ impl<'t> TypeOracle<'t> {
             Some((i, _)) => self.instances[i].vals.clone(),
             None => Default::default(),
         };
+        *self.b.sig_scopes.borrow_mut() = match at {
+            Some((i, _)) => vec![self.instances[i].sig_scope.clone()],
+            None => Vec::new(),
+        };
+        self.b.const_cache.borrow_mut().clear();
         self.decls.borrow_mut().clear();
         self.values.borrow_mut().clear();
         self.consts.borrow_mut().clear();
@@ -213,6 +220,18 @@ impl<'t> TypeOracle<'t> {
         let scope = self.scope_of(tree, at);
         let env = self.env_of(scope);
         let r = |n| NodeRef { tree, node: n };
+        if let Some(d) = dt {
+            let toks = self.b.toks_of(r(d));
+            if let ["type", "(", ident, ")"] = toks.as_slice() {
+                let unpacked =
+                    item.is_some_and(|i| self.b.trees[tree].children(i).any(|c| self.b.trees[tree].kind(c) == Dim));
+                if !unpacked {
+                    if let Some(resolved) = self.type_operator_target(scope, ident) {
+                        return resolved;
+                    }
+                }
+            }
+        }
         let text = self.b.type_string(dt.map(r), item.map(r), scope, &env, false);
         let unpacked = item.is_some_and(|i| self.b.trees[tree].children(i).any(|c| self.b.trees[tree].kind(c) == Dim));
         let integral = match (dt, unpacked) {
@@ -220,8 +239,33 @@ impl<'t> TypeOracle<'t> {
             (Some(d), _) => self.shape(r(d), scope, &env),
             (None, _) => Some((1, false, true)),
         };
+        let four_state = integral.map_or_else(|| dt.is_none_or(|d| self.four_state(r(d), scope, &env, 0)), |x| x.2);
         let aggregate = dt.is_some_and(|d| self.aggregate(r(d), 0));
-        TypeInfo { text, integral, src: dt.filter(|_| !unpacked).map(|d| (tree, d)), aggregate }
+        TypeInfo { text, integral, four_state, src: dt.filter(|_| !unpacked).map(|d| (tree, d)), aggregate }
+    }
+
+    fn type_operator_target(&self, scope: usize, ident: &str) -> Option<TypeInfo> {
+        let b = &self.b;
+        let mut cur = Some(scope);
+        while let Some(s) = cur {
+            let sc = &b.scopes[s];
+            if let Some(Member::Var { decl, item }) = sc.values.get(ident) {
+                return Some(self.decl_type(item.tree, b.child(*decl, DataType).map(|d| d.node), Some(item.node)));
+            }
+            if let Some(&(dt, v)) = sc.consts.get(ident) {
+                let item = v.and_then(|vn| b.parent_node(vn).filter(|&p| b.trees[vn.tree].kind(p) == Declarator));
+                return match (dt, v) {
+                    (Some(d), _) => Some(self.decl_type(d.tree, Some(d.node), item)),
+                    (None, Some(vn)) => Some(self.value_type(vn.tree, vn.node)),
+                    _ => None,
+                };
+            }
+            if let Some(&td) = sc.typedefs.get(ident) {
+                return Some(self.decl_type(td.tree, Some(td.node), None));
+            }
+            cur = sc.parent;
+        }
+        None
     }
 
     /// A data type written in an expression (`T'(x)`, a type parameter).
@@ -245,7 +289,8 @@ impl<'t> TypeOracle<'t> {
         let r = NodeRef { tree, node: v };
         let text = self.b.value_type(r, scope, &env);
         let integral = self.b.eval(r, scope, &env, 0).map(|c| (c.w.max(1), c.s, true));
-        TypeInfo { text, integral, src: None, aggregate: false }
+        let four_state = integral.is_some_and(|x| x.2);
+        TypeInfo { text, integral, four_state, src: None, aggregate: false }
     }
 
     /// The type of an enum member named at `at`: the enum, printed whole.
@@ -278,7 +323,9 @@ impl<'t> TypeOracle<'t> {
     fn enum_type(&self, t: crate::NodeRef, s: usize, env: &Env) -> Option<TypeInfo> {
         let text = self.b.typedef_target(t, s, env);
         let dt = self.b.child(t, DataType)?;
-        Some(TypeInfo { text, integral: self.shape(dt, s, env), src: Some((dt.tree, dt.node)), aggregate: true })
+        let integral = self.shape(dt, s, env);
+        let four_state = integral.is_some_and(|x| x.2);
+        Some(TypeInfo { text, integral, four_state, src: Some((dt.tree, dt.node)), aggregate: true })
     }
 
     /// The type of `pkg::name`: a package variable, parameter or enum member.
@@ -303,8 +350,9 @@ impl<'t> TypeOracle<'t> {
             let typed = dt.is_some_and(|d| {
                 !b.toks_of(d).iter().all(|t| matches!(*t, "signed" | "unsigned")) || b.child(d, Dim).is_some()
             });
+            let item = v.and_then(|vn| b.parent_node(vn).filter(|&p| b.trees[vn.tree].kind(p) == Declarator));
             return match (typed, dt, v) {
-                (true, Some(d), _) => Some(self.decl_type(d.tree, Some(d.node), None)),
+                (true, Some(d), _) => Some(self.decl_type(d.tree, Some(d.node), item)),
                 (_, _, Some(v)) => Some(self.value_type(v.tree, v.node)),
                 _ => None,
             };
@@ -313,7 +361,9 @@ impl<'t> TypeOracle<'t> {
         let env = Env::default();
         let text = b.typedef_target(t, s, &env);
         let dt = b.child(t, DataType)?;
-        Some(TypeInfo { text, integral: self.shape(dt, s, &env), src: Some((dt.tree, dt.node)), aggregate: true })
+        let integral = self.shape(dt, s, &env);
+        let four_state = integral.is_some_and(|x| x.2);
+        Some(TypeInfo { text, integral, four_state, src: Some((dt.tree, dt.node)), aggregate: true })
     }
 
     /// The type with its typedefs resolved, for matching (IEEE 1800 6.22.1):

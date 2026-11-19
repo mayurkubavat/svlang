@@ -13,19 +13,23 @@ mod component_name_mismatch;
 mod component_null_parent_in_create;
 mod config_db_cross_component_resolver;
 mod config_db_get_unchecked;
+mod contrib_only_api;
 mod deprecated_uvm_api;
 mod deprecated_uvm_macro;
 mod direct_do_method_call;
 mod direct_ral_mirror_tampering;
 mod empty_sequence_body;
 mod global_factory_override_pollution;
+mod incompatible_factory_override;
 mod info_at_none_verbosity;
 mod low_verbosity_debug_report;
+mod mismatched_super_phase_call;
 mod objection_control_flow_mismatch;
 mod objection_in_non_run_phase;
 mod objection_without_description;
 mod observer_state_mutation_in_write;
 mod orphan_subsequence_objection_hang;
+mod p_sequencer_type_mismatch;
 mod parameterized_class_factory_registration;
 mod phase_objection_mismatch;
 mod prohibited_display_in_uvm;
@@ -200,5 +204,9 @@ pub(crate) fn rules() -> Vec<Rule> {
         },
         Rule { id: "UVM-VSEQ-001", name: "VirtualSequencerWiringChecker", category: "UVM", severity: Severity::Warning, profiles: METHODOLOGY, guidelines: &["MG-5.1"], experimental: false, native: false, about: "Statically verifies that sub-sequencer handles declared within a virtual sequencer are fully wired and assigned in connect_phase across the verification environment.", check: Check::Model(virtual_sequencer_wiring_checker::virtual_sequencer_wiring_checker),
         },
+        Rule { id: "UVM-API-004", name: "ContribOnlyApi", category: "Portability", severity: Severity::Info, profiles: SOUNDNESS | SECURITY, guidelines: &[], experimental: false, native: true, about: "Flags calls to, and classes extending, experimental contributed UVM APIs tagged @uvm-contrib in the compiled UVM library that IEEE 1800.2 does not standardize.", check: Check::Mixed(contrib_only_api::contrib_only_api) },
+        Rule { id: "UVM-FAC-006", name: "IncompatibleFactoryOverride", category: "UVM", severity: Severity::Warning, profiles: METHODOLOGY, guidelines: &["MG-4.5"], experimental: false, native: true, about: "Flags type-based UVM factory overrides (set_type_override_by_type, set_inst_override_by_type, type_id::set_type_override) where the override class does not extend the requested base class.", check: Check::Mixed(incompatible_factory_override::incompatible_factory_override) },
+        Rule { id: "UVM-PHS-012", name: "MismatchedSuperPhaseCall", category: "UVM", severity: Severity::Warning, profiles: METHODOLOGY, guidelines: &[], experimental: false, native: true, about: "Flags overridden UVM component phase methods that invoke super.<other_phase>(phase) instead of super.<same_phase>(phase).", check: Check::Model(mismatched_super_phase_call::mismatched_super_phase_call) },
+        Rule { id: "UVM-SEQ-017", name: "PSequencerTypeMismatch", category: "UVM", severity: Severity::Warning, profiles: METHODOLOGY, guidelines: &[], experimental: false, native: true, about: "Flags sequence .start(seqr) calls where the target sequencer's static class type is incompatible with the p_sequencer type declared by the sequence.", check: Check::Mixed(p_sequencer_type_mismatch::p_sequencer_type_mismatch) },
     ]
 }

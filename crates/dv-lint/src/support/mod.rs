@@ -2,7 +2,9 @@
 //! named for what it reads or computes; rules import what they need.
 
 pub(crate) mod ast;
+pub(crate) mod call_graph;
 pub(crate) mod calls;
+pub(crate) mod cfg_dataflow;
 pub(crate) mod check_failures;
 pub(crate) mod class_docs;
 pub(crate) mod class_fields;
@@ -12,6 +14,7 @@ pub(crate) mod class_metrics;
 pub(crate) mod class_roles;
 pub(crate) mod config_db_calls;
 pub(crate) mod connect_phase;
+pub(crate) mod constraint_ir;
 pub(crate) mod constraints;
 pub(crate) mod copies;
 pub(crate) mod cross_labels;
@@ -33,6 +36,7 @@ pub(crate) mod real_types;
 pub(crate) mod routine_bodies;
 pub(crate) mod routine_metrics;
 pub(crate) mod routine_owner;
+pub(crate) mod rtl_fsm_cdc;
 pub(crate) mod sema_facts;
 pub(crate) mod slang_ast;
 pub(crate) mod source_layout;

@@ -17,8 +17,10 @@ mod missing_super_new;
 mod mutable_object_getter_leak;
 mod non_virtual_interface_in_class;
 mod non_virtual_method_override;
+mod override_default_arg_mismatch;
 mod static_member_in_uvm_component;
 mod super_new_not_first_statement;
+mod transitive_virtual_call_in_new;
 mod unchecked_dynamic_cast;
 mod variable_shadowing;
 mod virtual_call_in_constructor;
@@ -64,5 +66,7 @@ pub(crate) fn rules() -> Vec<Rule> {
         },
         Rule { id: "SV-SHD-002", name: "ForeachLoopVariableShadowing", category: "OOP", severity: Severity::Warning, profiles: METHODOLOGY, guidelines: &[], experimental: false, native: false, about: "Flags loop index variables in 'foreach (arr[i])' loops that shadow an existing class property or routine local variable.", check: Check::Syntax(foreach_loop_variable_shadowing::foreach_shadowing),
         },
+        Rule { id: "SV-OOP-016", name: "OverrideDefaultArgMismatch", category: "OOP", severity: Severity::Warning, profiles: METHODOLOGY, guidelines: &["MG-5.2"], experimental: false, native: true, about: "Flags virtual method overrides in derived classes that change or omit a default argument value declared on the base virtual method (IEEE 1800 § 8.20).", check: Check::Syntax(override_default_arg_mismatch::override_default_arg_mismatch) },
+        Rule { id: "SV-OOP-017", name: "TransitiveVirtualCallInNew", category: "OOP", severity: Severity::Warning, profiles: METHODOLOGY, guidelines: &[], experimental: false, native: true, about: "Flags class constructors that call a non-virtual helper method on 'this' which transitively invokes a virtual method before derived class members are initialized.", check: Check::Model(transitive_virtual_call_in_new::transitive_virtual_call_in_new) },
     ]
 }

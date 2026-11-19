@@ -20,10 +20,10 @@ const MOCK: &str = "class uvm_object; function new(string name = \"\"); endfunct
 #[test]
 fn rules_have_unique_ids() {
     let r = rules();
-    assert_eq!(r.len(), 391);
+    assert_eq!(r.len(), 417);
     let mut ids: Vec<_> = r.iter().map(|r| r.id).collect();
     ids.dedup();
-    assert_eq!(ids.len(), 391);
+    assert_eq!(ids.len(), 417);
 }
 
 #[test]
@@ -1160,4 +1160,45 @@ fn hardcoded_bounds_in_base_class_fixtures() {
     let (d_good, trees_good) = dv_model::load_with_trees(&good_args).unwrap();
     let (_, found_good) = dv_lint::lint_all(&d_good, &trees_good, |r| r == "SV-RND-040");
     assert!(found_good.is_empty(), "{found_good:?}");
+}
+
+#[test]
+fn all_native_rule_fixtures_pass() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let rules_dir = root.join("testdata/rules");
+    let inc_common = format!("+incdir+{}", root.join("testdata/common").display());
+    let native_ids: std::collections::HashSet<&str> =
+        dv_lint::rules().iter().filter(|r| r.native).map(|r| r.id).collect();
+    let mut tested = 0usize;
+    for cat in std::fs::read_dir(&rules_dir).unwrap() {
+        let cat_path = cat.unwrap().path();
+        if !cat_path.is_dir() {
+            continue;
+        }
+        for entry in std::fs::read_dir(&cat_path).unwrap() {
+            let dir = entry.unwrap().path();
+            let Some(rid) = dir.file_name().and_then(|s| s.to_str()) else { continue };
+            if !native_ids.contains(rid) || !dir.join("expect.json").is_file() {
+                continue;
+            }
+            tested += 1;
+            let json = std::fs::read_to_string(dir.join("expect.json")).unwrap();
+            let want: Vec<u32> = expected(&json).into_iter().filter(|(r, _)| r == rid).map(|(_, l)| l).collect();
+
+            let bad_args = [inc_common.clone(), dir.join("bad.sv").display().to_string()];
+            let (d_bad, trees_bad) = dv_model::load_with_trees(&bad_args).unwrap();
+            let (files_bad, found_bad) = dv_lint::lint_all(&d_bad, &trees_bad, |r| r == rid);
+            let mut got_bad: Vec<u32> = found_bad.iter().map(|f| f.position_in(&files_bad).1).collect();
+            got_bad.sort_unstable();
+            let mut sorted_want = want.clone();
+            sorted_want.sort_unstable();
+            assert_eq!(got_bad, sorted_want, "mismatch in {rid}/bad.sv: {found_bad:?}");
+
+            let good_args = [inc_common.clone(), dir.join("good.sv").display().to_string()];
+            let (d_good, trees_good) = dv_model::load_with_trees(&good_args).unwrap();
+            let (_, found_good) = dv_lint::lint_all(&d_good, &trees_good, |r| r == rid);
+            assert!(found_good.is_empty(), "unexpected finding in {rid}/good.sv: {found_good:?}");
+        }
+    }
+    assert!(tested >= 27, "expected >= 27 native rule fixture suites, tested {tested}");
 }

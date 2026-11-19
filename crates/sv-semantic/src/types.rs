@@ -1580,8 +1580,10 @@ impl<'t> Builder<'t> {
                                 s.push_str(&format!("{}{n}", self.scope_path(def.scope)));
                                 continue;
                             }
-                            if let Some(next) = b.env.get(*n).cloned() {
-                                b = next;
+                            if b.scope == def.scope {
+                                if let Some(next) = b.env.get(*n).cloned() {
+                                    b = next;
+                                }
                             }
                         }
                         self.ts(b.node, b.scope, &b.env, false, depth + 1)
@@ -1995,7 +1997,10 @@ pub(crate) fn is_expr(k: SyntaxKind) -> bool {
 /// A string literal as an integral value: 8 bits a character, the first
 /// one highest (IEEE 1800 5.9).
 fn string_value(lit: &str) -> Option<CVal> {
-    let body = lit.strip_prefix('"')?.strip_suffix('"')?;
+    let body = lit
+        .strip_prefix("\"\"\"")
+        .and_then(|s| s.strip_suffix("\"\"\""))
+        .or_else(|| lit.strip_prefix('"').and_then(|s| s.strip_suffix('"')))?;
     let mut bytes = Vec::new();
     let mut it = body.bytes();
     while let Some(c) = it.next() {

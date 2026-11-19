@@ -9,6 +9,7 @@ mod concurrent_assert_in_function;
 mod disable_iff_complex_expression;
 mod disable_iff_reset;
 mod immediate_assert_in_combinatorial_logic;
+mod implication_in_cover_property;
 mod mixed_clock_edges_in_property;
 mod multi_clock_concurrent_assertion_domain;
 mod non_consecutive_repetition_zero_bound;
@@ -46,5 +47,6 @@ pub(crate) fn rules() -> Vec<Rule> {
         Rule { id: "SVA-RST-001", name: "DisableIffReset", category: "SVA", severity: Severity::Warning, profiles: SOUNDNESS, guidelines: &[], experimental: false, native: false, about: "Concurrent assertions and property declarations must include a 'disable iff (!rst_n)' clause to gate checking during power-on reset and warm resets, avoiding false-failure storms.", check: Check::Syntax(disable_iff_reset::disable_iff_reset) },
         Rule { id: "SVA-VAC-001", name: "SvaVacuousAntecedent", category: "SVA", severity: Severity::Error, profiles: SOUNDNESS, guidelines: &[], experimental: false, native: false, about: "Detects constant-false antecedents in assertion implications (0 |-> ...). False antecedents cause vacuous passes, giving a false 100% pass metric while never verifying DUT behavior.", check: Check::Syntax(sva_vacuous_antecedent::vacuous_antecedent),
         },
+        Rule { id: "SV-SVA-007", name: "ImplicationInCoverProperty", category: "SVA", severity: Severity::Warning, profiles: SOUNDNESS, guidelines: &[], experimental: false, native: true, about: "Flags cover property statements that use implication ('|->' or '|=>'), which succeed vacuously whenever the antecedent is false instead of covering sequence completion.", check: Check::Syntax(implication_in_cover_property::implication_in_cover_property) },
     ]
 }

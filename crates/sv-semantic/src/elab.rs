@@ -223,6 +223,7 @@ pub(crate) struct InstLog {
     pub vals: Vals,
     pub env: Env,
     pub copies: HashMap<NodeRef, usize>,
+    pub sig_scope: crate::SigScope,
 }
 
 impl<'b, 't> Elab<'b, 't> {
@@ -1193,7 +1194,13 @@ impl<'b, 't> Elab<'b, 't> {
         self.reached.insert(decl);
         let logged = self.bound == 0;
         if logged {
-            self.inst_log.push(InstLog { decl, vals: Vals::default(), env: self.env(), copies: HashMap::default() });
+            self.inst_log.push(InstLog {
+                decl,
+                vals: Vals::default(),
+                env: self.env(),
+                copies: HashMap::default(),
+                sig_scope: Default::default(),
+            });
             self.inst_stack.push(self.inst_log.len() - 1);
         }
         let pushed_design = self.uninst == 0;
@@ -1296,11 +1303,15 @@ impl<'b, 't> Elab<'b, 't> {
             self.finalize_non_ansi_ports(scope, &vals);
         }
         self.check_selects(decl, scope, &vals);
-        if logged {
-            if let Some(i) = self.inst_stack.pop() {
+        let logged_idx = if logged {
+            let idx = self.inst_stack.pop();
+            if let Some(i) = idx {
                 self.inst_log[i].vals = vals.clone();
             }
-        }
+            idx
+        } else {
+            None
+        };
         // Instances bound into this one: keep `design_stack` active so bound children attach under `inst_id`!
         let matches_inst_path =
             |rel: &str, container: Option<NodeRef>, stack: &[InstanceId], insts: &[DesignInstance]| {
@@ -1350,7 +1361,11 @@ impl<'b, 't> Elab<'b, 't> {
             self.non_ansi_stack.pop();
             self.gen_stack.pop();
             self.design_stack.pop();
-            self.b.sig_scopes.borrow_mut().pop();
+            if let Some(ss) = self.b.sig_scopes.borrow_mut().pop() {
+                if let Some(i) = logged_idx {
+                    self.inst_log[i].sig_scope = ss;
+                }
+            }
         }
     }
 

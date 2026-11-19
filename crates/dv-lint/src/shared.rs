@@ -120,3 +120,23 @@ pub(crate) fn sema_checks(c: &crate::syntax::Cst) -> Arc<svlang::semantic::SemaC
 pub(crate) fn elaboration(c: &crate::syntax::Cst) -> Arc<svlang::semantic::Elaborated> {
     get("elaboration", c.compile_key(), || svlang::semantic::elaborate_full(c.all, &crate::tops()))
 }
+
+/// Word-level RTL netlist lowering per elaborated top module, cached once per compile.
+pub(crate) fn netlist_facts(c: &crate::syntax::Cst) -> Arc<Vec<(svlang::InstanceId, svlang::netlist::LowerOutcome)>> {
+    get("netlist_facts", c.compile_key(), || {
+        let elab = elaboration(c);
+        elab.design
+            .tops
+            .iter()
+            .map(|&tid| {
+                let top_name = elab.design.instances[tid.0 as usize].name.clone();
+                let cfg = svlang::netlist::LowerConfig {
+                    top: Some(top_name),
+                    allow_four_state_ops: true,
+                    ..svlang::netlist::LowerConfig::default()
+                };
+                (tid, svlang::netlist::lower_design(c.all, &elab.design, &cfg))
+            })
+            .collect()
+    })
+}
