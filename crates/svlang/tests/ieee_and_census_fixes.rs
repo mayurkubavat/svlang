@@ -21,26 +21,7 @@ fn lrm_conformance_files_elaborate_through_native_svlang() {
         let name = path.file_name().unwrap().to_str().unwrap();
         let comp = Driver::new().add_file(&path).compile().expect("LRM file must compile");
         let (diags, _elab) = comp.check();
-        match name {
-            // Checker and UDP instantiation in module hierarchy are scheduled for Phase 3;
-            // verify they parse cleanly and only report the known unelaborated-target diagnostic.
-            "ch17_checkers.sv" => {
-                assert!(
-                    diags.iter().all(|d| d.stage == DiagnosticStage::Semantic && d.message.contains("req_ack_chk")),
-                    "unexpected diags in {name}: {diags:?}"
-                );
-            }
-            "ch28_31_gates_udp_specify.sv" => {
-                assert!(
-                    diags.iter().all(|d| d.stage == DiagnosticStage::Semantic
-                        && (d.message.contains("ch29_mux") || d.message.contains("ch29_dff"))),
-                    "unexpected diags in {name}: {diags:?}"
-                );
-            }
-            _ => {
-                assert!(diags.is_empty(), "expected 0 diagnostics on LRM file {name}, got {diags:?}");
-            }
-        }
+        assert!(diags.is_empty(), "expected 0 diagnostics on LRM file {name}, got {diags:?}");
     }
 }
 
@@ -427,4 +408,295 @@ endmodule
         matches!(comp_bad.lower_netlist(&LowerConfig::default()), LowerOutcome::Unsupported(_)),
         "non-constant case in initial block must report Unsupported"
     );
+}
+
+#[test]
+fn phase3_streaming_concatenations_pack_unpack_and_const_eval() {
+    let src = r#"
+module top (
+    output logic [7:0]  rev_bits,
+    output logic [15:0] swap_bytes,
+    output logic [15:0] wide_left_aligned,
+    output logic [7:0]  roundtrip_3bit,
+    output logic [3:0]  unp_hi,
+    output logic [3:0]  unp_lo,
+    output logic [7:0]  proc_hi,
+    output logic [7:0]  proc_lo
+);
+    typedef logic [15:0] u16_t;
+    localparam [7:0]  in_a = 8'b11_101_001;
+    localparam [7:0]  in_b = 8'hAB;
+    localparam [7:0]  P_BITS = {<< {8'b0011_0101}};
+    localparam [7:0]  P_NIB  = {<< 4 {8'hAB}};
+    localparam [15:0] P_WIDE = {>> {8'hAB}};
+    localparam [15:0] P_CAST = u16_t'({<< byte {16'hABCD}});
+    localparam [7:0]  P_3BIT = {<< 3 {8'b11_101_001}};
+
+    static_check: assert final (
+        P_BITS == 8'hAC && P_NIB == 8'hBA && P_WIDE == 16'hAB00 && P_CAST == 16'hCDAB && P_3BIT == 8'd55
+    );
+
+    assign rev_bits = {<< {in_a}};
+    assign swap_bytes = {<< byte {in_a, in_b}};
+    assign wide_left_aligned = {>> {in_a}};
+
+    // Non-divisor slice size `3`: `{<< 3 {y}} = {<< 3 {x}}` must invert back to `x`!
+    wire [7:0] packed_3 = {<< 3 {in_a}};
+    assign {<< 3 {roundtrip_3bit}} = packed_3;
+
+    // Continuous LHS nibble-reversed unpack
+    assign {<< 4 {unp_hi, unp_lo}} = in_b;
+
+    // Procedural unpacked-array & streaming LHS/RHS
+    logic [7:0] arr [0:1];
+    always_comb begin
+        arr = {>> {in_a, in_b}};
+        {<< 8 {proc_hi, proc_lo}} = {>> {arr with [0:1]}};
+    end
+endmodule
+"#;
+    let comp = Compilation::from_source("phase3_stream.sv", src);
+    assert!(comp.diagnostics().is_empty(), "diags: {:?}", comp.diagnostics());
+    let nl = match comp.lower_netlist(&LowerConfig::default()) {
+        LowerOutcome::Lowered(nl) => nl,
+        other => panic!("expected Lowered for streaming concatenations, got {other:?}"),
+    };
+    fn eval_node_cval(nl: &svlang::Netlist, vid: svlang::netlist::ValueId) -> svlang::CVal {
+        let vn = nl.value(vid);
+        match &vn.kind {
+            svlang::netlist::ValueKind::Const(cv) => cv.clone(),
+            svlang::netlist::ValueKind::Op { op: svlang::netlist::NetOp::Slice { hi, lo }, args } => {
+                let inner = eval_node_cval(nl, args[0]);
+                inner.slice(*lo, (*hi - *lo) + 1, vn.signed)
+            }
+            svlang::netlist::ValueKind::Op { op: svlang::netlist::NetOp::Concat, args } => {
+                let mut it = args.iter().map(|&a| eval_node_cval(nl, a));
+                let first = it.next().unwrap();
+                it.fold(first, |acc, v| svlang::CVal::concat(&acc, &v))
+            }
+            other => panic!("unexpected non-const node {other:?}"),
+        }
+    }
+    let get_const_out = |name: &str| -> i128 {
+        let out = nl.outputs.iter().find(|o| o.name == name).unwrap();
+        eval_node_cval(&nl, out.value).i()
+    };
+    assert_eq!(get_const_out("rev_bits"), 0b1001_0111);
+    assert_eq!(get_const_out("swap_bytes"), 0xABE9);
+    assert_eq!(get_const_out("wide_left_aligned"), 0xE900);
+    assert_eq!(get_const_out("roundtrip_3bit"), 0b11_101_001);
+    assert_eq!(get_const_out("unp_hi"), 0xB);
+    assert_eq!(get_const_out("unp_lo"), 0xA);
+    assert_eq!(get_const_out("proc_hi"), 0xAB);
+    assert_eq!(get_const_out("proc_lo"), 0xE9);
+
+    // Negative: wider stream assigned to narrower target without cast, and mismatched bitstream cast width
+    let bad = r#"
+module bad_stream (input logic [15:0] x, output logic [7:0] y);
+    typedef logic [15:0] u16_t;
+    assign y = {>> {x}};
+    wire [15:0] z = u16_t'({>> {8'h12}});
+endmodule
+"#;
+    let comp_bad = Compilation::from_source("bad_stream.sv", bad);
+    assert!(!matches!(comp_bad.lower_netlist(&LowerConfig::default()), LowerOutcome::Lowered(_)));
+}
+
+#[test]
+fn phase3_checkers_ch17_and_free_rand_variables_lower() {
+    let lrm_chk = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata/conformance/lrm/ch17_checkers.sv");
+    let comp_lrm = Driver::new().add_file(&lrm_chk).compile().expect("ch17_checkers.sv must compile");
+    let (diags, _) = comp_lrm.check();
+    assert!(diags.is_empty(), "ch17_checkers.sv diags: {diags:?}");
+    match comp_lrm.lower_netlist(&LowerConfig::default()) {
+        LowerOutcome::Lowered(nl) => {
+            assert!(nl.states.iter().any(|s| s.name == "ch17_checkers.u_chk.seen"), "states: {:?}", nl.states);
+            assert!(nl.property_names.iter().any(|n| n.contains("u_chk.a_ack")), "props: {:?}", nl.property_names);
+        }
+        other => panic!("expected Lowered on ch17_checkers.sv, got {other:?}"),
+    }
+
+    // Package checker, rand / const rand free checker vars, $anyseq/$anyconst, untyped & sequence ports, procedural & bound checkers
+    let src = r#"
+package chk_pkg;
+    checker shadow_chk (
+        logic [3:0] din,
+        untyped valid_expr,
+        event clk = $inferred_clock,
+        logic rst = $inferred_disable
+    );
+        default clocking @clk; endclocking
+        default disable iff (rst);
+        rand bit [3:0] free_seq;
+        const rand bit [3:0] free_const;
+        bit [3:0] sampled_d;
+        always_ff @clk sampled_d <= din;
+        a_match: assert property (valid_expr |-> ##1 (sampled_d == $past(din) && free_const == $past(free_const)));
+        c_free: cover property (free_seq == 4'hA);
+    endchecker
+endpackage
+
+module dut (
+    input  logic       clk,
+    input  logic       rst,
+    input  logic       vld,
+    input  logic [3:0] data,
+    output logic [3:0] any_out
+);
+    import chk_pkg::*;
+    default clocking @(posedge clk); endclocking
+    default disable iff (rst);
+
+    assign any_out = $anyseq ^ $anyconst;
+
+    shadow_chk u_struct (data, vld && (data != 4'h0));
+    always_ff @(posedge clk) begin
+        shadow_chk u_proc (data, vld);
+    end
+endmodule
+
+bind dut chk_pkg::shadow_chk u_bound (data, vld);
+"#;
+    let comp = Compilation::from_source("phase3_checker.sv", src);
+    assert!(comp.diagnostics().is_empty(), "checker diags: {:?}", comp.diagnostics());
+    let nl = match comp.lower_netlist(&LowerConfig::default()) {
+        LowerOutcome::Lowered(nl) => nl,
+        other => panic!("expected Lowered for checker with rand/const rand/bind/procedural instances, got {other:?}"),
+    };
+    let has_free =
+        |sig: &str, fk: svlang::netlist::FreeKind| nl.undriven.iter().any(|u| u.signal == sig && u.free == fk);
+    assert!(has_free("dut.u_struct.free_seq", svlang::netlist::FreeKind::AnySeq));
+    assert!(has_free("dut.u_struct.free_const", svlang::netlist::FreeKind::AnyConst));
+    assert!(has_free("dut.u_bound.free_const", svlang::netlist::FreeKind::AnyConst));
+    assert!(nl.property_names.iter().any(|p| p.contains("u_struct.a_match")));
+    assert!(nl.property_names.iter().any(|p| p.contains("u_proc.a_match")));
+    assert!(nl.property_names.iter().any(|p| p.contains("u_bound.a_match")));
+}
+
+#[test]
+fn phase3_udps_gates_and_specify_ch28_31_lower_and_validate() {
+    let lrm_udp =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata/conformance/lrm/ch28_31_gates_udp_specify.sv");
+    let comp_lrm = Driver::new().add_file(&lrm_udp).compile().expect("ch28_31_gates_udp_specify.sv must compile");
+    let (diags, _) = comp_lrm.check();
+    assert!(diags.is_empty(), "ch28_31_gates_udp_specify.sv diags: {diags:?}");
+    let LowerOutcome::Lowered(nl) = comp_lrm.lower_netlist(&LowerConfig::default()) else {
+        panic!("expected Lowered on ch28_31_gates_udp_specify.sv");
+    };
+    assert!(nl.states.iter().any(|s| s.name.contains("f1.q")), "expected sequential UDP state f1.q");
+    assert_eq!(nl.outputs.len(), 2, "expected outputs y and q");
+
+    // Negative specify block checks: parallel `=>` width mismatch and wire notifier
+    let bad_spec = r#"
+module bad_spec (input wire [3:0] a, input wire clk, output wire [7:0] y);
+    wire bad_notif;
+    assign y = {4'b0, a};
+    specify
+        (a => y) = 1;
+        $setup(a, posedge clk, 1, bad_notif);
+    endspecify
+endmodule
+"#;
+    let comp_bad = Compilation::from_source("bad_spec.sv", bad_spec);
+    let msgs: Vec<String> = comp_bad.diagnostics().iter().map(|d| d.message.clone()).collect();
+    assert!(msgs.iter().any(|m| m.contains("parallel specify path '=>'")), "msgs: {msgs:?}");
+    assert!(msgs.iter().any(|m| m.contains("must be a variable")), "msgs: {msgs:?}");
+}
+
+#[test]
+fn phase3_config_nettype_and_interconnect_elaboration() {
+    let cfg_src = r#"
+module impl_fast (input logic a, output logic y);
+    assign y = a;
+endmodule
+
+module impl_inv (input logic a, output logic y);
+    assign y = ~a;
+endmodule
+
+module top_mod (output logic y1, output logic y2);
+    localparam logic a = 1'b1;
+    impl_fast u1 (.a(a), .y(y1));
+    impl_fast u2 (.a(a), .y(y2));
+endmodule
+
+config inv_u2_cfg;
+    design work.top_mod;
+    default liblist work;
+    instance top_mod.u2 use work.impl_inv;
+endconfig
+"#;
+    let comp =
+        Driver::new().add_source("cfg.sv", cfg_src).top("inv_u2_cfg").compile().expect("config source must compile");
+    let (diags, _) = comp.check();
+    assert!(diags.is_empty(), "config diags: {diags:?}");
+    let LowerOutcome::Lowered(nl) = comp.lower_netlist(&LowerConfig::default()) else {
+        panic!("expected Lowered with config instance rebinding");
+    };
+    let out_const = |nl: &svlang::Netlist, name: &str| -> i128 {
+        let out = nl.outputs.iter().find(|o| o.name == name).unwrap();
+        match &nl.value(out.value).kind {
+            svlang::netlist::ValueKind::Const(cv) => cv.i(),
+            svlang::netlist::ValueKind::Op { op: svlang::netlist::NetOp::Not, args } => match &nl.value(args[0]).kind {
+                svlang::netlist::ValueKind::Const(cv) => (!cv.i()) & ((1i128 << cv.w) - 1),
+                other => panic!("expected Const under Not for {name}, got {other:?}"),
+            },
+            other => panic!("expected Const for {name}, got {other:?}"),
+        }
+    };
+    assert_eq!(out_const(&nl, "y1"), 1);
+    assert_eq!(out_const(&nl, "y2"), 0);
+
+    // User-defined `nettype` with valid resolution function + typeless `interconnect` bus
+    let nt_src = r#"
+module sender (output logic [3:0] p);
+    assign p = 4'hC;
+endmodule
+
+module receiver (input logic [3:0] p, output logic [3:0] out_p);
+    assign out_p = p;
+endmodule
+
+module nt_top (output logic [7:0] q, output logic [3:0] ic_out);
+    localparam logic [7:0] d = 8'h5A;
+    typedef logic [7:0] byte_v_t;
+    function automatic byte_v_t resolve_or (input byte_v_t drivers []);
+        byte_v_t acc = '0;
+        foreach (drivers[i]) acc |= drivers[i];
+        return acc;
+    endfunction
+    nettype byte_v_t wor_byte_nt with resolve_or;
+
+    wor_byte_nt n_bus;
+    assign n_bus = d;
+    assign q = n_bus;
+
+    interconnect [3:0] ic_bus;
+    sender u_s (.p(ic_bus));
+    receiver u_r (.p(ic_bus), .out_p(ic_out));
+endmodule
+"#;
+    let comp_nt = Compilation::from_source("nt_ic.sv", nt_src);
+    assert!(comp_nt.diagnostics().is_empty(), "nettype/interconnect diags: {:?}", comp_nt.diagnostics());
+    let LowerOutcome::Lowered(nl_nt) = comp_nt.lower_netlist(&LowerConfig::default()) else {
+        panic!("expected Lowered for nettype + interconnect");
+    };
+    assert_eq!(out_const(&nl_nt, "q"), 0x5A);
+    assert_eq!(out_const(&nl_nt, "ic_out"), 0xC);
+
+    // Negative: `interconnect logic bad;` and `interconnect` read in `assign`, plus invalid `nettype` resolve fn
+    let bad_nt = r#"
+module bad_nt_ic (output logic y);
+    function void bad_res(input int x); endfunction
+    nettype int my_nt with bad_res;
+    interconnect logic bad_decl;
+    interconnect ic_sig;
+    assign y = ic_sig;
+endmodule
+"#;
+    let comp_bad = Compilation::from_source("bad_nt_ic.sv", bad_nt);
+    let msgs: Vec<String> = comp_bad.diagnostics().iter().map(|d| d.message.clone()).collect();
+    assert!(msgs.iter().any(|m| m.contains("cannot be void")), "msgs: {msgs:?}");
+    assert!(msgs.iter().any(|m| m.contains("explicit data type")), "msgs: {msgs:?}");
+    assert!(msgs.iter().any(|m| m.contains("interconnect net 'ic_sig'")), "msgs: {msgs:?}");
 }

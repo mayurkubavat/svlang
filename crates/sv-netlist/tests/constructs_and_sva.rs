@@ -1334,3 +1334,91 @@ fn shared_loop_index_written_by_two_blocks() {
     expect_lowered(lower_src(&src("")));
     assert!(matches!(lower_src(&src(", output logic o")), LowerOutcome::Error(_)));
 }
+
+#[test]
+fn phase3_dynamic_sim_streaming_udp_gates_and_checkers() {
+    let src = r#"
+primitive mux_udp (out, sel, a, b);
+    output out;
+    input sel, a, b;
+    table
+        0 0 ? : 0;
+        0 1 ? : 1;
+        1 ? 0 : 0;
+        1 ? 1 : 1;
+    endtable
+endprimitive
+
+primitive dff_udp (q, clk, d);
+    output reg q;
+    input clk, d;
+    initial q = 0;
+    table
+        (01) 0 : ? : 0;
+        (01) 1 : ? : 1;
+        (0?) ? : ? : -;
+        ?   (??) : ? : -;
+    endtable
+endprimitive
+
+checker delay_chk (logic req, logic ack, event clk = $inferred_clock);
+    default clocking @clk; endclocking
+    bit q_req;
+    always_ff @clk q_req <= req;
+    a_ok: assert property (q_req |-> ack);
+endchecker
+
+module top (
+    input  logic       clk,
+    input  logic       sel,
+    input  logic       din,
+    input  logic [7:0] s_in,
+    output logic       mux_y,
+    output logic       dff_q,
+    output logic       tri_y,
+    output logic       pull_hi,
+    output logic [3:0] arr_and,
+    output logic [7:0] rt_3bit,
+    output logic [3:0] unp_hi,
+    output logic [3:0] unp_lo
+);
+    default clocking @(posedge clk); endclocking
+    wire float_hi;
+    pullup (float_hi);
+    assign pull_hi = float_hi;
+
+    dff_udp u_dff (dff_q, clk, din);
+    mux_udp u_mux (mux_y, sel, din, dff_q);
+    bufif1  u_tri (tri_y, din, sel);
+    and     u_arr [3:0] (arr_and, s_in[3:0], s_in[7:4]);
+
+    wire [7:0] p3 = {<< 3 {s_in}};
+    assign {<< 3 {rt_3bit}} = p3;
+    always_comb begin
+        {<< 4 {unp_hi, unp_lo}} = s_in;
+    end
+
+    delay_chk u_chk (din, dff_q);
+endmodule
+"#;
+    let nl = expect_lowered(lower_src(src));
+    let mut sim = NetlistSim::new(&nl);
+    sim.set_u("sel", 0);
+    sim.set_u("din", 1);
+    sim.set_u("s_in", 0xA5);
+    assert_eq!(sim.out_i("pull_hi"), 1);
+    assert_eq!(sim.out_i("dff_q"), 0, "initial q = 0 on sequential UDP");
+    assert_eq!(sim.out_i("mux_y"), 1, "sel=0 selects din=1");
+    assert_eq!(sim.out_cval("tri_y").bit_state(0), sv_semantic::BitState::Z, "bufif1 disabled drives 1'bz");
+    assert_eq!(sim.out_i("arr_and"), 0xA & 0x5);
+    assert_eq!(sim.out_i("rt_3bit"), 0xA5, "3-bit streaming pack + unpack is exact identity");
+    assert_eq!(sim.out_i("unp_hi"), 0x5);
+    assert_eq!(sim.out_i("unp_lo"), 0xA);
+
+    // Clock posedge loads din=1 into dff_udp!
+    sim.tick_posedge("clk");
+    assert_eq!(sim.out_i("dff_q"), 1);
+    sim.set_u("sel", 1);
+    assert_eq!(sim.out_i("tri_y"), 1, "bufif1 enabled drives din=1");
+    assert_eq!(sim.out_i("mux_y"), 1, "sel=1 selects dff_q=1");
+}

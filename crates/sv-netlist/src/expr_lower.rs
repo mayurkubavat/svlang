@@ -1,5 +1,6 @@
 //! Lowering of bound [`ExprArena`] trees into word-level [`NetBuilder`] nodes.
 
+use sv_semantic::expr::StreamingLhs;
 use sv_semantic::fx::FxMap;
 use sv_semantic::{
     BinaryOp, CVal, ExprArena, ExprId, ExprKind, InsideItem, InstanceId, Loc, LocalId, RtlType, SymbolId, SysFunc,
@@ -8,7 +9,7 @@ use sv_semantic::{
 use sv_syntax::NodeId;
 
 use crate::builder::{BuildKind, NetBuilder};
-use crate::ir::{ClockSpec, Edge, LowerConfig, MemId, NetOp, SampledNode, ValueId};
+use crate::ir::{ClockSpec, Edge, FreeKind, LowerConfig, MemId, NetOp, SampledNode, UndrivenSlice, ValueId};
 
 /// Static storage shape allocated for an elaborated [`SymbolId`].
 #[derive(Clone, Debug)]
@@ -45,6 +46,107 @@ impl ObjVal {
             _ => None,
         }
     }
+}
+
+/// Flattens a packed or fixed-size unpacked [`ObjVal`] into a single packed [`ValueId`] (MSB-first).
+pub(crate) fn pack_obj_val(builder: &mut NetBuilder, val: &ObjVal, loc: Loc) -> Option<ValueId> {
+    match val {
+        ObjVal::Packed(v) => Some(*v),
+        ObjVal::Struct(fields) => {
+            let mut parts = Vec::with_capacity(fields.len());
+            let mut total_w = 0u32;
+            let mut four = false;
+            for (_, fval) in fields {
+                let pv = pack_obj_val(builder, fval, loc)?;
+                let (pw, _, p4) = builder.node_shape(pv);
+                total_w = total_w.checked_add(pw)?;
+                four |= p4;
+                parts.push(pv);
+            }
+            if parts.is_empty() {
+                return None;
+            }
+            Some(builder.alloc_op(NetOp::Concat, parts, total_w, false, four, loc))
+        }
+        ObjVal::Elems { left, right, elems } => {
+            if elems.is_empty() {
+                return None;
+            }
+            let mut parts = Vec::with_capacity(elems.len());
+            let mut total_w = 0u32;
+            let mut four = false;
+            if *left <= *right {
+                for ev in elems {
+                    let pv = pack_obj_val(builder, ev, loc)?;
+                    let (pw, _, p4) = builder.node_shape(pv);
+                    total_w = total_w.checked_add(pw)?;
+                    four |= p4;
+                    parts.push(pv);
+                }
+            } else {
+                for ev in elems.iter().rev() {
+                    let pv = pack_obj_val(builder, ev, loc)?;
+                    let (pw, _, p4) = builder.node_shape(pv);
+                    total_w = total_w.checked_add(pw)?;
+                    four |= p4;
+                    parts.push(pv);
+                }
+            }
+            Some(builder.alloc_op(NetOp::Concat, parts, total_w, false, four, loc))
+        }
+        ObjVal::Memory(_) => {
+            builder.unsup(loc, "streaming concatenation directly over unblasted memory array is not supported");
+            None
+        }
+    }
+}
+
+/// Prepares an RHS [`ObjVal`] for unpacking into [`StreamingLhs`] (IEEE 1800-2023 §11.4.14.3):
+/// flattens fixed-size aggregates, checks `rhs_w >= lhs.total_width`, takes the leftmost
+/// `lhs.total_width` bits when wider, and reverses MSB-chunked `block`-bit slices for `{<< block {...}}`.
+pub(crate) fn prepare_streaming_unpack_rhs(
+    builder: &mut NetBuilder,
+    rhs_val: &ObjVal,
+    lhs: &StreamingLhs,
+    loc: Loc,
+) -> Option<ValueId> {
+    let packed = pack_obj_val(builder, rhs_val, loc)?;
+    let (rhs_w, _, four) = builder.node_shape(packed);
+    if rhs_w < lhs.total_width {
+        builder
+            .err(loc, format!("cannot unpack {rhs_w}-bit value into wider {}-bit streaming target", lhs.total_width));
+        return None;
+    }
+    let consumed = if rhs_w > lhs.total_width {
+        builder.alloc_op(
+            NetOp::Slice { hi: rhs_w - 1, lo: rhs_w - lhs.total_width },
+            vec![packed],
+            lhs.total_width,
+            false,
+            four,
+            loc,
+        )
+    } else {
+        packed
+    };
+    let Some(block) = lhs.reverse_block else {
+        return Some(consumed);
+    };
+    if block >= lhs.total_width {
+        return Some(consumed);
+    }
+    // Inverse of LSB-chunked `{<< block {...}}`: slice `consumed` from MSB down in `block`-bit
+    // chunks (with any smaller remainder at the LSB) and reverse chunk order.
+    let mut chunks = Vec::new();
+    let mut hi_rem = lhs.total_width;
+    while hi_rem > 0 {
+        let w = block.min(hi_rem);
+        let lo = hi_rem - w;
+        chunks.push(builder.alloc_op(NetOp::Slice { hi: hi_rem - 1, lo }, vec![consumed], w, false, four, loc));
+        hi_rem = lo;
+    }
+    chunks.reverse();
+    Some(builder.alloc_op(NetOp::Concat, chunks, lhs.total_width, false, four, loc))
 }
 
 /// Callback interface allowing [`ExprLowerer`] to inline user-defined `function` calls
@@ -489,6 +591,15 @@ impl<'a, F: FuncInliner> ExprLowerer<'a, F> {
                 )))
             }
             ExprKind::SysCall { func, args } => {
+                if matches!(func, SysFunc::AnySeq | SysFunc::AnyConst) {
+                    let (w, s, four) = expr.ty.integral_shape().unwrap_or((1, false, false));
+                    let free = if *func == SysFunc::AnySeq { FreeKind::AnySeq } else { FreeKind::AnyConst };
+                    let uid = builder.undriven.len();
+                    let name = format!("${}_{uid}", free.as_str());
+                    let uval = builder.alloc_raw(w, s, four, BuildKind::Undriven(uid), Some(name.clone()), loc);
+                    builder.undriven.push(UndrivenSlice { signal: name, hi: w - 1, lo: 0, value: uval, loc, free });
+                    return Some(ObjVal::Packed(uval));
+                }
                 let a0 = self.lower_packed(builder, *args.first()?)?;
                 match func {
                     SysFunc::CountOnes => {

@@ -420,10 +420,13 @@ impl Builder<'_> {
         }
     }
 
-    /// `{a, b}` and `{n{a, b}}`.
+    /// `{a, b}`, `{n{a, b}}`, and streaming `{<< [slice] {...}}` / `{>> [slice] {...}}`.
     pub(crate) fn eval_concat(&self, e: NodeRef, scope: usize, env: &Env, depth: usize) -> Option<CVal> {
         let kids = self.children(e);
         let own = self.own_tokens(e);
+        if own.iter().any(|t| matches!(*t, "<<" | ">>")) {
+            return self.eval_streaming_concat(e, &kids, &own, scope, env, depth);
+        }
         if kids.len() == 2 && !own.contains(&",") && self.kind(kids[1]) == ConcatExpr {
             let n = self.eval(kids[0], scope, env, depth + 1)?.i();
             let inner = self.eval_concat(kids[1], scope, env, depth + 1)?;
@@ -461,11 +464,102 @@ impl Builder<'_> {
     /// `{0{a}}`: no bits, inside a larger concatenation.
     fn zero_replication(&self, e: NodeRef, scope: usize, env: &Env, depth: usize) -> bool {
         let kids = self.children(e);
+        let own = self.own_tokens(e);
         self.kind(e) == ConcatExpr
             && kids.len() == 2
-            && !self.own_tokens(e).contains(&",")
+            && !own.iter().any(|t| matches!(*t, "," | "<<" | ">>"))
             && self.kind(kids[1]) == ConcatExpr
             && self.eval(kids[0], scope, env, depth + 1).is_some_and(|n| n.known() && n.i() == 0)
+    }
+
+    /// Evaluates a constant streaming concatenation `{>> [slice] {...}}` or `{<< [slice] {...}}`.
+    fn eval_streaming_concat(
+        &self,
+        e: NodeRef,
+        kids: &[NodeRef],
+        own: &[&str],
+        scope: usize,
+        env: &Env,
+        depth: usize,
+    ) -> Option<CVal> {
+        let reverse = own.contains(&"<<");
+        let t = self.tree(e);
+        let mut braces = 0u32;
+        let mut size_node = None;
+        let mut item_nodes = Vec::new();
+        let mut after_with = false;
+        for c in &t.node(e.node).children {
+            match *c {
+                sv_syntax::Child::Token(i) => match &*t.tokens[i as usize].text {
+                    "{" => braces += 1,
+                    "with" if braces >= 2 => after_with = true,
+                    "," if braces >= 2 => after_with = false,
+                    _ => {}
+                },
+                sv_syntax::Child::Node(n) => {
+                    let nr = NodeRef { tree: e.tree, node: n };
+                    if braces < 2 {
+                        if kids.contains(&nr) {
+                            size_node = Some(nr);
+                        }
+                    } else if after_with {
+                        // `with [...]` on unpacked operands is not constant-folded here.
+                        return None;
+                    } else if kids.contains(&nr) {
+                        item_nodes.push(nr);
+                    }
+                }
+            }
+        }
+        let block: u32 = match size_node {
+            None => 1,
+            Some(sz) => {
+                if self.kind(sz) == DataType {
+                    self.rtl_data_type(sz, scope, env, None, depth + 1).total_bits().filter(|&b| b >= 1)?
+                } else if let Some(cv) = self.eval(sz, scope, env, depth + 1) {
+                    if !cv.known() || cv.i() <= 0 || cv.i() > i128::from(crate::types::MAX_BIT_WIDTH) {
+                        self.invalid.set(true);
+                        return None;
+                    }
+                    cv.i() as u32
+                } else {
+                    self.rtl_data_type(sz, scope, env, None, depth + 1).total_bits().filter(|&b| b >= 1)?
+                }
+            }
+        };
+        if item_nodes.is_empty() {
+            return None;
+        }
+        let mut stream: Option<CVal> = None;
+        for k in item_nodes {
+            let x = self.eval(k, scope, env, depth + 1)?;
+            if stream
+                .as_ref()
+                .is_some_and(|a| a.w.checked_add(x.w).filter(|&w| w <= crate::types::MAX_BIT_WIDTH).is_none())
+            {
+                return None;
+            }
+            stream = Some(match stream {
+                Some(a) => CVal::concat(&a, &x),
+                None => x.cast(x.w, false),
+            });
+        }
+        let stream = stream?;
+        if !reverse || block >= stream.w {
+            return Some(stream);
+        }
+        let mut out: Option<CVal> = None;
+        let mut lo = 0u32;
+        while lo < stream.w {
+            let w = block.min(stream.w - lo);
+            let chunk = stream.slice(lo, w, false);
+            out = Some(match out {
+                Some(acc) => CVal::concat(&acc, &chunk),
+                None => chunk,
+            });
+            lo += w;
+        }
+        out
     }
 
     /// `arr[i]` of a constant unpacked array parameter (`'{...}`).

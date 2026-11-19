@@ -514,7 +514,15 @@ impl Compilation {
         if !out.iter().any(|d| d.severity == Severity::Error) {
             for top in &self.tops {
                 let root = format!("$root instance {top} ");
-                if !elab.hierarchy.iter().any(|line| line.starts_with(&root)) {
+                let is_cfg_top = !elab.hierarchy.is_empty()
+                    && self.trees.iter().any(|t| {
+                        t.preorder().into_iter().any(|n| {
+                            t.kind(n) == sv_syntax::SyntaxKind::ConfigDecl
+                                && t.child(n, sv_syntax::SyntaxKind::Name)
+                                    .is_some_and(|nm| t.bare_text(nm).trim() == top)
+                        })
+                    });
+                if !is_cfg_top && !elab.hierarchy.iter().any(|line| line.starts_with(&root)) {
                     out.push(Diagnostic {
                         file: String::new(),
                         line: 0,

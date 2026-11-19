@@ -151,6 +151,45 @@ pub enum SysFunc {
     Right,
     /// `$increment(x [, dim])`
     Increment,
+    /// `$anyseq` / `$anyseq()` unconstrained per-cycle formal value.
+    AnySeq,
+    /// `$anyconst` / `$anyconst()` unconstrained constant formal value.
+    AnyConst,
+}
+
+/// Bound LHS streaming concatenation (`{>> [slice] {...}}` or `{<< [slice] {...}}`) for unpacking.
+#[derive(Clone, Debug)]
+pub struct StreamingLhs {
+    /// Flattened packed LHS target expressions in declaration (MSB-to-LSB) order.
+    pub parts: Vec<ExprId>,
+    /// Total bit width across all `parts`.
+    pub total_width: u32,
+    /// `Some(block)` when `{<< block {...}}` requires MSB-chunked reversal before unpacking.
+    pub reverse_block: Option<u32>,
+    /// Whether any target is 4-state.
+    pub four_state: bool,
+    /// Source location of the LHS streaming concatenation.
+    pub loc: Loc,
+}
+
+/// Parsed `stream_expression [with [range]]` entry inside `{<< [slice] { ... }}`.
+type StreamEntry = (NodeId, Option<(&'static str, Vec<NodeId>)>);
+
+/// Returns `true` when `node` (stripping outer parentheses) is a `{<< ...}` or `{>> ...}` streaming concatenation.
+pub fn is_streaming_concat_node(t: &Tree, mut node: NodeId) -> bool {
+    while t.kind(node) == SyntaxKind::ParenExpr {
+        let Some(inner) = t.children(node).find(|&c| t.kind(c) != SyntaxKind::Attribute) else {
+            return false;
+        };
+        node = inner;
+    }
+    if t.kind(node) != SyntaxKind::ConcatExpr {
+        return false;
+    }
+    t.node(node).children.iter().any(|c| match *c {
+        sv_syntax::Child::Token(i) => matches!(&*t.tokens[i as usize].text, "<<" | ">>"),
+        _ => false,
+    })
 }
 
 /// Sampled-value functions preserved for formal consumers (`$past`, `$rose`, `$fell`, `$stable`, `$changed`, `$sampled`).
@@ -659,6 +698,9 @@ impl<'a> ExprBinder<'a> {
         if self.tree(tree_idx).kind(node) == SyntaxKind::AssignPattern {
             return self.bind_assign_pattern(tree_idx, node, Some(lhs_ty));
         }
+        if is_streaming_concat_node(self.tree(tree_idx), node) {
+            return self.bind_streaming_assigned(tree_idx, node, lhs_ty, false, loc);
+        }
         if self.tree(tree_idx).kind(node) == SyntaxKind::CondExpr
             && (lhs_ty.integral_shape().is_none() || Self::has_untyped_assign_pattern(self.tree(tree_idx), node))
         {
@@ -947,6 +989,32 @@ impl<'a> ExprBinder<'a> {
         // 0. Pre-bound expression substitution (SVA formal argument or `let` parameter).
         if let Some(&sub_id) = self.expr_substs.get(ident) {
             return Some(self.apply_ctx(sub_id, ctx, ctx.is_some(), loc));
+        }
+
+        // 0b. Untyped formal port on an elaborated `checker` instance (`checker c(q);`).
+        if self.design.instance(self.inst_id).is_checker {
+            if let Some((_, ub)) =
+                self.design.instance(self.inst_id).checker_untyped.iter().find(|(n, _)| n == ident).cloned()
+            {
+                if !(ub.parent_inst == self.inst_id && ub.tree == tree_idx && ub.node == node) {
+                    let sub_opt = {
+                        let mut parent_binder = ExprBinder::new(
+                            self.trees,
+                            self.design,
+                            ub.parent_inst,
+                            &ub.scope_prefix,
+                            &ub.gen_consts,
+                            self.arena,
+                        );
+                        parent_binder.extra_tree = self.extra_tree;
+                        let out = parent_binder.bind_node(ub.tree, ub.node, ctx);
+                        self.diags.extend(parent_binder.diags);
+                        out
+                    };
+                    let sub_id = sub_opt?;
+                    return Some(self.apply_ctx(sub_id, ctx, ctx.is_some(), loc));
+                }
+            }
         }
 
         // 1. Procedural local variable (`for` loop variable or subroutine local/arg).
@@ -1672,10 +1740,11 @@ impl<'a> ExprBinder<'a> {
     }
 
     /// A streaming concatenation of packed values used as a value: `{>>{a, b}}` is the
-    /// items in order, `{<<N{a, b}}` is that cut into `N`-bit blocks from the right and
-    /// the blocks put in the opposite order (`{<<{a}}` reverses the bits, `{<<8{a}}` the
-    /// bytes). Unpacked items, a type as the block size, `with` ranges and a target of a
-    /// different width are not handled.
+    /// IEEE 1800-2023 §11.4.14 streaming concatenation: `{>> {a, b}}` packs items MSB-first,
+    /// while `{<< slice_size {a, b}}` cuts that stream into `slice_size`-bit blocks from the
+    /// right (LSB) and reverses block order (`{<<{a}}` reverses bits, `{<< 8 {a}}` / `{<< byte {a}}`
+    /// reverses bytes). Supports type/typedef slice sizes, fixed-size unpacked arrays/structs,
+    /// and fixed `with [...]` array slice selections.
     fn bind_streaming(
         &mut self,
         tree_idx: usize,
@@ -1684,46 +1753,368 @@ impl<'a> ExprBinder<'a> {
         ctx: Option<(u32, bool, bool)>,
         loc: Loc,
     ) -> Option<ExprId> {
+        let id = self.bind_streaming_raw(tree_idx, node, kids, loc)?;
+        Some(self.apply_ctx(id, ctx, ctx.is_some(), loc))
+    }
+
+    fn resolve_streaming_block_size(&mut self, tree_idx: usize, size_node: Option<NodeId>, loc: Loc) -> Option<u32> {
+        let Some(n) = size_node else {
+            return Some(1);
+        };
         let t = self.tree(tree_idx);
-        let own = Self::own_toks(t, node);
-        let reverse = own.contains(&"<<");
-        // An expression before the inner `{` is the block size.
-        let mut braces = 0;
-        let mut size_node = None;
-        for c in &t.node(node).children {
-            match *c {
-                sv_syntax::Child::Token(i) if &*t.tokens[i as usize].text == "{" => braces += 1,
-                sv_syntax::Child::Node(n) if braces < 2 && kids.contains(&n) => size_node = Some(n),
-                _ => {}
+        if t.kind(n) == SyntaxKind::DataType {
+            let dt = self.resolve_subroutine_dtype(tree_idx, Some(n), None, Some(self.inst_id), self.scope_prefix);
+            if let Some(bits) = dt.and_then(|d| d.total_bits()).filter(|&b| (1..=MAX_BIT_WIDTH).contains(&b)) {
+                return Some(bits);
+            }
+            self.err(loc, "streaming slice size type must be a fixed-size bit-stream type");
+            return None;
+        }
+        if let Some(dt) = self.resolve_cast_data_type(tree_idx, n) {
+            if let Some(bits) = dt.total_bits().filter(|&b| (1..=MAX_BIT_WIDTH).contains(&b)) {
+                return Some(bits);
+            }
+            self.err(loc, "streaming slice size type must be a fixed-size bit-stream type");
+            return None;
+        }
+        let e = self.bind_self(tree_idx, n)?;
+        match self.arena.get(e).cval.as_ref().and_then(|c| cval_pos_u32(c, MAX_BIT_WIDTH)) {
+            Some(b) => Some(b),
+            None => {
+                self.err(loc, "streaming block size must be a positive constant or fixed-size type");
+                None
             }
         }
-        let unsupported = |this: &mut Self, what: &str| {
-            this.unsup(loc, format!("streaming concatenation {what} is not supported in RTL netlist lowering"));
-            None
+    }
+
+    /// Parses comma-separated `stream_expression [with [range]]` entries inside `{<< [sz] { ... }}`.
+    fn parse_stream_entries(t: &Tree, node: NodeId, kids: &[NodeId]) -> (Option<NodeId>, Vec<StreamEntry>) {
+        let mut braces = 0u32;
+        let mut size_node = None;
+        let mut entries: Vec<StreamEntry> = Vec::new();
+        let mut cur_expr: Option<NodeId> = None;
+        let mut in_with = false;
+        let mut with_op: &'static str = "";
+        let mut with_nodes: Vec<NodeId> = Vec::new();
+        let flush = |cur_expr: &mut Option<NodeId>,
+                     in_with: &mut bool,
+                     with_op: &mut &'static str,
+                     with_nodes: &mut Vec<NodeId>,
+                     entries: &mut Vec<StreamEntry>| {
+            if let Some(en) = cur_expr.take() {
+                let w = if *in_with { Some((*with_op, std::mem::take(with_nodes))) } else { None };
+                entries.push((en, w));
+            }
+            *in_with = false;
+            *with_op = "";
+            with_nodes.clear();
         };
-        let block = match size_node {
-            None => 1u32,
-            Some(n) => {
-                if t.kind(n) == SyntaxKind::DataType {
-                    return unsupported(self, "with a type as its block size");
-                }
-                let e = self.bind_self(tree_idx, n)?;
-                match self.arena.get(e).cval.as_ref().and_then(|c| cval_pos_u32(c, MAX_BIT_WIDTH)) {
-                    Some(b) => b,
-                    None => {
-                        self.err(loc, "streaming block size must be a positive constant");
-                        return None;
+        for c in &t.node(node).children {
+            match *c {
+                sv_syntax::Child::Token(i) => match &*t.tokens[i as usize].text {
+                    "{" => braces += 1,
+                    "}" if braces == 2 => {
+                        flush(&mut cur_expr, &mut in_with, &mut with_op, &mut with_nodes, &mut entries);
+                        braces = braces.saturating_sub(1);
+                    }
+                    "," if braces >= 2 => {
+                        flush(&mut cur_expr, &mut in_with, &mut with_op, &mut with_nodes, &mut entries);
+                    }
+                    "with" if braces >= 2 => {
+                        in_with = true;
+                    }
+                    ":" if braces >= 2 && in_with => with_op = ":",
+                    "+:" if braces >= 2 && in_with => with_op = "+:",
+                    "-:" if braces >= 2 && in_with => with_op = "-:",
+                    _ => {}
+                },
+                sv_syntax::Child::Node(n) => {
+                    if braces < 2 {
+                        if kids.contains(&n) {
+                            size_node = Some(n);
+                        }
+                    } else if in_with {
+                        with_nodes.push(n);
+                    } else if cur_expr.is_none() {
+                        // `arr with [0:1]` is parsed as `SelectExpr(CallExpr(arr, WithClause), 0, 1)`.
+                        if t.kind(n) == SyntaxKind::SelectExpr {
+                            if let Some(first_c) = t.children(n).find(|&c| t.kind(c) != SyntaxKind::Attribute) {
+                                if t.kind(first_c) == SyntaxKind::CallExpr
+                                    && t.child(first_c, SyntaxKind::WithClause).is_some()
+                                    && t.child(first_c, SyntaxKind::ArgList).is_none()
+                                {
+                                    let wc = t.child(first_c, SyntaxKind::WithClause).unwrap();
+                                    if let Some(base_n) =
+                                        t.children(first_c).find(|&c| c != wc && t.kind(c) != SyntaxKind::Attribute)
+                                    {
+                                        cur_expr = Some(base_n);
+                                        in_with = true;
+                                        for sch in &t.node(n).children {
+                                            match *sch {
+                                                sv_syntax::Child::Token(si) => match &*t.tokens[si as usize].text {
+                                                    ":" => with_op = ":",
+                                                    "+:" => with_op = "+:",
+                                                    "-:" => with_op = "-:",
+                                                    _ => {}
+                                                },
+                                                sv_syntax::Child::Node(sn)
+                                                    if sn != first_c && t.kind(sn) != SyntaxKind::Attribute =>
+                                                {
+                                                    with_nodes.push(sn);
+                                                }
+                                                _ => {}
+                                            }
+                                        }
+                                        continue;
+                                    }
+                                }
+                            }
+                        }
+                        if t.kind(n) == SyntaxKind::CallExpr
+                            && t.child(n, SyntaxKind::WithClause).is_some()
+                            && t.child(n, SyntaxKind::ArgList).is_none()
+                        {
+                            let wc = t.child(n, SyntaxKind::WithClause).unwrap();
+                            if let Some(base_n) = t.children(n).find(|&c| c != wc && t.kind(c) != SyntaxKind::Attribute)
+                            {
+                                cur_expr = Some(base_n);
+                                in_with = true;
+                                for wch in &t.node(wc).children {
+                                    match *wch {
+                                        sv_syntax::Child::Token(wi) => match &*t.tokens[wi as usize].text {
+                                            ":" => with_op = ":",
+                                            "+:" => with_op = "+:",
+                                            "-:" => with_op = "-:",
+                                            _ => {}
+                                        },
+                                        sv_syntax::Child::Node(wn) if t.kind(wn) != SyntaxKind::Attribute => {
+                                            with_nodes.push(wn);
+                                        }
+                                        _ => {}
+                                    }
+                                }
+                            } else {
+                                cur_expr = Some(n);
+                            }
+                        } else {
+                            cur_expr = Some(n);
+                        }
                     }
                 }
             }
+        }
+        flush(&mut cur_expr, &mut in_with, &mut with_op, &mut with_nodes, &mut entries);
+        (size_node, entries)
+    }
+
+    /// Flattens a packed or fixed-size unpacked (`UnpackedArray` / `UnpackedStruct`) expression into a packed bit-stream.
+    fn pack_bitstream_expr(&mut self, eid: ExprId, loc: Loc) -> Option<ExprId> {
+        let ty = self.arena.get(eid).ty.clone();
+        if ty.integral_shape().is_some() {
+            return Some(eid);
+        }
+        match ty {
+            RtlType::UnpackedArray { elem, dims } if !dims.is_empty() => {
+                let (left, right) = dims[0];
+                let step: i128 = if left <= right { 1 } else { -1 };
+                let count = left.abs_diff(right).checked_add(1).and_then(|n| u32::try_from(n).ok())?;
+                if count == 0 || count > MAX_ARRAY_ELEMS {
+                    self.err(loc, "streaming unpacked array dimension exceeds maximum element limit");
+                    return None;
+                }
+                let sub_ty = if dims.len() == 1 {
+                    (*elem).clone()
+                } else {
+                    RtlType::UnpackedArray { elem, dims: dims[1..].to_vec() }
+                };
+                let mut parts = Vec::with_capacity(count as usize);
+                let mut total_w = 0u32;
+                let mut four = false;
+                let mut all_const = true;
+                let mut idx = left;
+                for _ in 0..count {
+                    let idx_eid = self.arena.alloc_const(CVal::new(32, true, idx), false, loc);
+                    let elem_eid = self.arena.alloc(
+                        ExprKind::ArrayIndex { base: eid, index: idx_eid, dim: (left, right) },
+                        sub_ty.clone(),
+                        None,
+                        loc,
+                    );
+                    let packed_elem = self.pack_bitstream_expr(elem_eid, loc)?;
+                    let (ew, _, e4) = self.arena.get(packed_elem).ty.integral_shape()?;
+                    total_w = total_w.checked_add(ew).filter(|&w| w <= MAX_BIT_WIDTH)?;
+                    four |= e4;
+                    all_const &= self.arena.get(packed_elem).cval.is_some();
+                    parts.push(packed_elem);
+                    idx += step;
+                }
+                let cval = if all_const {
+                    let mut it = parts.iter().map(|&p| self.arena.get(p).cval.clone());
+                    let first = it.next()??;
+                    it.try_fold(first, |acc, v| Some(CVal::concat(&acc, &v?)))
+                } else {
+                    None
+                };
+                Some(self.arena.alloc(
+                    ExprKind::Concat(parts),
+                    RtlType::Integral { width: total_w, signed: false, four_state: four },
+                    cval,
+                    loc,
+                ))
+            }
+            RtlType::UnpackedStruct { is_union: false, fields, .. } if !fields.is_empty() => {
+                let mut parts = Vec::with_capacity(fields.len());
+                let mut total_w = 0u32;
+                let mut four = false;
+                let mut all_const = true;
+                for (fname, fty) in fields {
+                    let f_eid = self.arena.alloc(
+                        ExprKind::Member { base: eid, field: fname, packed_slice: None },
+                        fty,
+                        None,
+                        loc,
+                    );
+                    let packed_f = self.pack_bitstream_expr(f_eid, loc)?;
+                    let (fw, _, f4) = self.arena.get(packed_f).ty.integral_shape()?;
+                    total_w = total_w.checked_add(fw).filter(|&w| w <= MAX_BIT_WIDTH)?;
+                    four |= f4;
+                    all_const &= self.arena.get(packed_f).cval.is_some();
+                    parts.push(packed_f);
+                }
+                let cval = if all_const {
+                    let mut it = parts.iter().map(|&p| self.arena.get(p).cval.clone());
+                    let first = it.next()??;
+                    it.try_fold(first, |acc, v| Some(CVal::concat(&acc, &v?)))
+                } else {
+                    None
+                };
+                Some(self.arena.alloc(
+                    ExprKind::Concat(parts),
+                    RtlType::Integral { width: total_w, signed: false, four_state: four },
+                    cval,
+                    loc,
+                ))
+            }
+            _ => {
+                self.unsup(loc, "streaming concatenation of dynamically-sized or union value is not supported in RTL netlist lowering");
+                None
+            }
+        }
+    }
+
+    fn bind_stream_item_with_range(
+        &mut self,
+        tree_idx: usize,
+        base_eid: ExprId,
+        op: &str,
+        wnodes: &[NodeId],
+        loc: Loc,
+    ) -> Option<ExprId> {
+        let base_ty = self.arena.get(base_eid).ty.clone();
+        let RtlType::UnpackedArray { elem, dims } = base_ty else {
+            self.unsup(loc, "streaming 'with [...]' selection requires an unpacked array operand");
+            return None;
         };
-        let mut elems = Vec::new();
+        if dims.is_empty() {
+            return None;
+        }
+        let (left, right) = dims[0];
+        let eval_const_i128 = |this: &mut Self, n: NodeId| -> Option<i128> {
+            let e = this.bind_self(tree_idx, n)?;
+            let cv = this.arena.get(e).cval.as_ref()?;
+            cv.known().then(|| cv.i())
+        };
+        let (sel_l, sel_r) = match (op, wnodes) {
+            ("", &[idx_n]) => {
+                let Some(idx) = eval_const_i128(self, idx_n) else {
+                    self.unsup(loc, "streaming 'with [...]' selection with non-constant bounds is not supported in RTL netlist lowering");
+                    return None;
+                };
+                (idx, idx)
+            }
+            (":", &[a, b]) => {
+                let (Some(av), Some(bv)) = (eval_const_i128(self, a), eval_const_i128(self, b)) else {
+                    self.unsup(loc, "streaming 'with [...]' selection with non-constant bounds is not supported in RTL netlist lowering");
+                    return None;
+                };
+                (av, bv)
+            }
+            ("+:" | "-:", &[a, b]) => {
+                let (Some(av), Some(wv)) = (eval_const_i128(self, a), eval_const_i128(self, b)) else {
+                    self.unsup(loc, "streaming 'with [...]' selection with non-constant bounds is not supported in RTL netlist lowering");
+                    return None;
+                };
+                if wv <= 0 {
+                    self.err(loc, "streaming 'with' slice width must be positive");
+                    return None;
+                }
+                if op == "+:" {
+                    (av, av + wv - 1)
+                } else {
+                    (av, av - wv + 1)
+                }
+            }
+            _ => {
+                self.err(loc, "malformed 'with [...]' range in streaming concatenation");
+                return None;
+            }
+        };
+        let lo_b = left.min(right);
+        let hi_b = left.max(right);
+        if sel_l < lo_b || sel_l > hi_b || sel_r < lo_b || sel_r > hi_b {
+            self.err(loc, "streaming 'with [...]' range is out of bounds for unpacked array");
+            return None;
+        }
+        let step: i128 = if sel_l <= sel_r { 1 } else { -1 };
+        let count = sel_l.abs_diff(sel_r).checked_add(1).and_then(|n| u32::try_from(n).ok())?;
+        let sub_ty =
+            if dims.len() == 1 { (*elem).clone() } else { RtlType::UnpackedArray { elem, dims: dims[1..].to_vec() } };
+        let mut parts = Vec::with_capacity(count as usize);
+        let mut total_w = 0u32;
+        let mut four = false;
+        let mut idx = sel_l;
+        for _ in 0..count {
+            let idx_eid = self.arena.alloc_const(CVal::new(32, true, idx), false, loc);
+            let elem_eid = self.arena.alloc(
+                ExprKind::ArrayIndex { base: base_eid, index: idx_eid, dim: (left, right) },
+                sub_ty.clone(),
+                None,
+                loc,
+            );
+            let packed_elem = self.pack_bitstream_expr(elem_eid, loc)?;
+            let (ew, _, e4) = self.arena.get(packed_elem).ty.integral_shape()?;
+            total_w = total_w.checked_add(ew).filter(|&w| w <= MAX_BIT_WIDTH)?;
+            four |= e4;
+            parts.push(packed_elem);
+            idx += step;
+        }
+        Some(self.arena.alloc(
+            ExprKind::Concat(parts),
+            RtlType::Integral { width: total_w, signed: false, four_state: four },
+            None,
+            loc,
+        ))
+    }
+
+    fn bind_streaming_raw(&mut self, tree_idx: usize, node: NodeId, kids: &[NodeId], loc: Loc) -> Option<ExprId> {
+        let t = self.tree(tree_idx);
+        let own = Self::own_toks(t, node);
+        let reverse = own.contains(&"<<");
+        let (size_node, entries) = Self::parse_stream_entries(t, node, kids);
+        let block = self.resolve_streaming_block_size(tree_idx, size_node, loc)?;
+        if entries.is_empty() {
+            self.err(loc, "empty concatenation '{}' is illegal");
+            return None;
+        }
+        let mut elems = Vec::with_capacity(entries.len());
         let (mut width, mut four) = (0u32, false);
-        for &k in kids.iter().filter(|&&k| Some(k) != size_node) {
-            let e = self.bind_self(tree_idx, k)?;
-            let Some((ew, _, e4)) = self.arena.get(e).ty.integral_shape() else {
-                return unsupported(self, "of an unpacked value");
+        for (item_node, with_spec) in entries {
+            let raw_e = self.bind_self(tree_idx, item_node)?;
+            let e = match with_spec {
+                Some((op, wnodes)) => self.bind_stream_item_with_range(tree_idx, raw_e, op, &wnodes, loc)?,
+                None => self.pack_bitstream_expr(raw_e, loc)?,
             };
+            let (ew, _, e4) = self.arena.get(e).ty.integral_shape()?;
             let Some(next) = width.checked_add(ew).filter(|&w| w <= MAX_BIT_WIDTH) else {
                 self.err(loc, "concatenation bit width exceeds maximum limit");
                 return None;
@@ -1731,13 +2122,6 @@ impl<'a> ExprBinder<'a> {
             width = next;
             four |= e4;
             elems.push(e);
-        }
-        if elems.is_empty() {
-            self.err(loc, "empty concatenation '{}' is illegal");
-            return None;
-        }
-        if ctx.is_some_and(|(cw, _, _)| cw != width) {
-            return unsupported(self, "assigned to a target of a different width");
         }
         let fold = |this: &Self, parts: &[ExprId]| -> Option<CVal> {
             let mut vals = parts.iter().map(|&e| this.arena.get(e).cval.clone());
@@ -1748,7 +2132,7 @@ impl<'a> ExprBinder<'a> {
         let cval = fold(self, &elems);
         let stream = self.arena.alloc(ExprKind::Concat(elems), ty.clone(), cval, loc);
         if !reverse || block >= width {
-            return Some(self.apply_ctx(stream, ctx, ctx.is_some(), loc));
+            return Some(stream);
         }
         // Blocks from the right; the rightmost becomes the leftmost.
         let stream_cval = self.arena.get(stream).cval.clone();
@@ -1772,8 +2156,189 @@ impl<'a> ExprBinder<'a> {
             lo += w;
         }
         let cval = fold(self, &blocks);
-        let id = self.arena.alloc(ExprKind::Concat(blocks), ty, cval, loc);
-        Some(self.apply_ctx(id, ctx, ctx.is_some(), loc))
+        Some(self.arena.alloc(ExprKind::Concat(blocks), ty, cval, loc))
+    }
+
+    /// Unpacks a packed bit-stream expression `packed_eid` (`[total_bits-1:0]`) from `[hi_cursor-1 : hi_cursor-ty_bits]`
+    /// into target `ty` (packed integral/struct/enum or fixed-size `UnpackedArray`/`UnpackedStruct`).
+    fn unpack_bitstream_into_type(
+        &mut self,
+        packed_eid: ExprId,
+        total_bits: u32,
+        hi_cursor: &mut u32,
+        ty: &RtlType,
+        loc: Loc,
+    ) -> Option<ExprId> {
+        if let Some((w, s, f4)) = ty.integral_shape() {
+            let lo = hi_cursor.checked_sub(w)?;
+            let hi = *hi_cursor - 1;
+            *hi_cursor = lo;
+            let base_cval = self.arena.get(packed_eid).cval.clone();
+            let src_f4 = self.arena.get(packed_eid).ty.is_four_state();
+            let sliced = if lo == 0 && w == total_bits {
+                packed_eid
+            } else {
+                let cv = base_cval.map(|c| c.slice(lo, w, false));
+                self.arena.alloc(
+                    ExprKind::PartSelect {
+                        base: packed_eid,
+                        msb: i128::from(hi),
+                        lsb: i128::from(lo),
+                        bounds: (i128::from(total_bits - 1), 0),
+                        elem_width: 1,
+                    },
+                    RtlType::Integral { width: w, signed: false, four_state: src_f4 },
+                    cv,
+                    loc,
+                )
+            };
+            let coerced = self.arena.coerce(sliced, w, s, f4, loc);
+            self.arena.exprs[coerced.0 as usize].ty = ty.clone();
+            return Some(coerced);
+        }
+        match ty {
+            RtlType::UnpackedArray { elem, dims } if !dims.is_empty() => {
+                let (left, right) = dims[0];
+                let count = left.abs_diff(right).checked_add(1).and_then(|n| u32::try_from(n).ok())?;
+                let sub_ty = if dims.len() == 1 {
+                    (**elem).clone()
+                } else {
+                    RtlType::UnpackedArray { elem: elem.clone(), dims: dims[1..].to_vec() }
+                };
+                let mut items = Vec::with_capacity(count as usize);
+                for _ in 0..count {
+                    let sub = self.unpack_bitstream_into_type(packed_eid, total_bits, hi_cursor, &sub_ty, loc)?;
+                    items.push((None, sub));
+                }
+                Some(self.arena.alloc(ExprKind::AssignPattern(items), ty.clone(), None, loc))
+            }
+            RtlType::UnpackedStruct { is_union: false, fields, .. } if !fields.is_empty() => {
+                let mut items = Vec::with_capacity(fields.len());
+                for (fname, fty) in fields {
+                    let sub = self.unpack_bitstream_into_type(packed_eid, total_bits, hi_cursor, fty, loc)?;
+                    items.push((Some(fname.clone()), sub));
+                }
+                Some(self.arena.alloc(ExprKind::AssignPattern(items), ty.clone(), None, loc))
+            }
+            _ => {
+                self.err(loc, "streaming concatenation target must be a fixed-size bit-stream type");
+                None
+            }
+        }
+    }
+
+    fn bind_streaming_assigned(
+        &mut self,
+        tree_idx: usize,
+        mut node: NodeId,
+        target_ty: &RtlType,
+        exact_cast: bool,
+        loc: Loc,
+    ) -> Option<ExprId> {
+        while self.tree(tree_idx).kind(node) == SyntaxKind::ParenExpr {
+            let inner = Self::expr_kids(self.tree(tree_idx), node).into_iter().next()?;
+            node = inner;
+        }
+        let kids = Self::expr_kids(self.tree(tree_idx), node);
+        let stream_eid = self.bind_streaming_raw(tree_idx, node, &kids, loc)?;
+        let (sw, _, s4) = self.arena.get(stream_eid).ty.integral_shape()?;
+        let Some(target_bits) = target_ty.total_bits() else {
+            self.err(loc, "streaming concatenation target must be a fixed-size bit-stream type");
+            return None;
+        };
+        if exact_cast && sw != target_bits {
+            self.err(
+                loc,
+                format!("bit-stream cast requires matching bit widths ({sw}-bit stream vs {target_bits}-bit target)"),
+            );
+            return None;
+        }
+        if sw > target_bits {
+            self.err(loc, format!("stream of {sw} bits is wider than its {target_bits}-bit target"));
+            return None;
+        }
+        let aligned = if sw < target_bits {
+            // IEEE 1800-2023 §11.4.14.2: left-align stream and right-pad with zeros.
+            let pad_w = target_bits - sw;
+            let zero_cv = CVal::new(pad_w, false, 0);
+            let zero_eid = self.arena.alloc_const(zero_cv.clone(), s4, loc);
+            let cval = self.arena.get(stream_eid).cval.as_ref().map(|sc| CVal::concat(sc, &zero_cv));
+            self.arena.alloc(
+                ExprKind::Concat(vec![stream_eid, zero_eid]),
+                RtlType::Integral { width: target_bits, signed: false, four_state: s4 },
+                cval,
+                loc,
+            )
+        } else {
+            stream_eid
+        };
+        let mut hi_cursor = target_bits;
+        self.unpack_bitstream_into_type(aligned, target_bits, &mut hi_cursor, target_ty, loc)
+    }
+
+    /// Binds an LHS streaming concatenation (`{>> {a, b}} = rhs` or `{<< slice_size {a, b}} = rhs`).
+    pub fn bind_streaming_lhs(&mut self, tree_idx: usize, mut node: NodeId) -> Option<StreamingLhs> {
+        while self.tree(tree_idx).kind(node) == SyntaxKind::ParenExpr {
+            let inner = Self::expr_kids(self.tree(tree_idx), node).into_iter().next()?;
+            node = inner;
+        }
+        let t = self.tree(tree_idx);
+        let loc = self.loc_of(tree_idx, node);
+        let own = Self::own_toks(t, node);
+        let reverse = own.contains(&"<<");
+        let kids = Self::expr_kids(t, node);
+        let (size_node, entries) = Self::parse_stream_entries(t, node, &kids);
+        let block = self.resolve_streaming_block_size(tree_idx, size_node, loc)?;
+        if entries.is_empty() {
+            self.err(loc, "empty concatenation '{}' is illegal");
+            return None;
+        }
+        let mut parts = Vec::new();
+        let mut total_width = 0u32;
+        let mut four_state = false;
+        for (item_node, with_spec) in entries {
+            let raw_lhs = self.bind_self(tree_idx, item_node)?;
+            let expanded = match with_spec {
+                Some((op, wnodes)) => {
+                    let sliced = self.bind_stream_item_with_range(tree_idx, raw_lhs, op, &wnodes, loc)?;
+                    match &self.arena.get(sliced).kind {
+                        ExprKind::Concat(sub) => sub.clone(),
+                        _ => vec![sliced],
+                    }
+                }
+                None => {
+                    let packed = self.pack_bitstream_expr(raw_lhs, loc)?;
+                    Self::collect_flattened_lhs_leaves(self.arena, packed)
+                }
+            };
+            for p in expanded {
+                let Some((pw, _, p4)) = self.arena.get(p).ty.integral_shape() else {
+                    self.err(loc, "LHS streaming concatenation target must resolve to integral/packed elements");
+                    return None;
+                };
+                let Some(next) = total_width.checked_add(pw).filter(|&w| w <= MAX_BIT_WIDTH) else {
+                    self.err(loc, "LHS streaming concatenation bit width exceeds maximum limit");
+                    return None;
+                };
+                total_width = next;
+                four_state |= p4;
+                parts.push(p);
+            }
+        }
+        Some(StreamingLhs { parts, total_width, reverse_block: reverse.then_some(block), four_state, loc })
+    }
+
+    fn collect_flattened_lhs_leaves(arena: &ExprArena, eid: ExprId) -> Vec<ExprId> {
+        match &arena.get(eid).kind {
+            ExprKind::Concat(sub) => {
+                let mut out = Vec::new();
+                for &s in sub {
+                    out.extend(Self::collect_flattened_lhs_leaves(arena, s));
+                }
+                out
+            }
+            _ => vec![eid],
+        }
     }
 
     /// Checks whether `k` is a replication `{0{inner}}`. When `k` is a replication with count `0`,
@@ -1818,11 +2383,8 @@ impl<'a> ExprBinder<'a> {
         let own = Self::own_toks(t, concat_node);
         let kids = Self::expr_kids(t, concat_node);
         if own.iter().any(|tok| matches!(*tok, "<<" | ">>")) {
-            self.unsup(
-                loc,
-                "streaming concatenation '{<< ...}' / '{>> ...}' is not yet supported in RTL netlist lowering",
-            );
-            return None;
+            self.bind_self(tree_idx, concat_node)?;
+            return Some(());
         }
         if kids.is_empty() {
             self.err(loc, "empty concatenation '{}' is illegal");
@@ -2288,7 +2850,11 @@ impl<'a> ExprBinder<'a> {
                 self.err(loc, format!("cast to non-synthesizable type '{reason}'"));
                 return None;
             }
-            let bound = self.bind_assigned(tree_idx, inner_node, &target_ty)?;
+            let bound = if is_streaming_concat_node(self.tree(tree_idx), inner_node) {
+                self.bind_streaming_assigned(tree_idx, inner_node, &target_ty, true, loc)?
+            } else {
+                self.bind_assigned(tree_idx, inner_node, &target_ty)?
+            };
             // Preserve named `Enum` / `PackedStruct` type wrapper on the cast result!
             let cval = self.arena.get(bound).cval.clone();
             let out = if self.arena.get(bound).ty != target_ty && target_ty.is_packed() {
@@ -2301,6 +2867,11 @@ impl<'a> ExprBinder<'a> {
                 bound
             };
             return Some(self.apply_ctx(out, ctx, ctx.is_some(), loc));
+        }
+
+        if is_streaming_concat_node(self.tree(tree_idx), inner_node) {
+            self.err(loc, "streaming concatenation cast target must be a bit-stream type name");
+            return None;
         }
 
         // Otherwise evaluate `target_node` as a constant width expression `N'(x)`.
@@ -3159,6 +3730,21 @@ impl<'a> ExprBinder<'a> {
                 let id = self.arena.alloc_const(CVal::new(32, true, v), true, loc);
                 Some(self.apply_ctx(id, ctx, ctx.is_some(), loc))
             }
+            "$anyseq" | "$anyconst" => {
+                if !slots.is_empty() {
+                    self.err(loc, format!("{name} expects 0 arguments, got {}", slots.len()));
+                    return None;
+                }
+                let (w, s, _) = ctx.unwrap_or((1, false, false));
+                let func = if name == "$anyseq" { SysFunc::AnySeq } else { SysFunc::AnyConst };
+                let id = self.arena.alloc(
+                    ExprKind::SysCall { func, args: Vec::new() },
+                    RtlType::Integral { width: w.max(1), signed: s, four_state: false },
+                    None,
+                    loc,
+                );
+                Some(self.apply_ctx(id, ctx, ctx.is_some(), loc))
+            }
             "$countones" | "$onehot" | "$onehot0" | "$isunknown" => {
                 if slots.len() != 1 {
                     self.err(loc, format!("{name} expects 1 argument, got {}", slots.len()));
@@ -3252,13 +3838,6 @@ impl<'a> ExprBinder<'a> {
                     loc,
                 );
                 Some(self.apply_ctx(id, ctx, ctx.is_some(), loc))
-            }
-            "$anyseq" | "$anyconst" => {
-                let w = ctx.map_or(1, |c| c.0);
-                let s = ctx.is_some_and(|c| c.1);
-                self.unsup(loc, format!("formal intrinsic '{name}' requires consumer harness or free input"));
-                let _ = (w, s);
-                None
             }
             _ => {
                 self.unsup(loc, format!("unsupported system function '{name}' in RTL expression"));
@@ -3622,7 +4201,18 @@ pub fn enclosing_package(t: &Tree, node: NodeId) -> Option<String> {
     let (first, _) = t.token_bounds(node)?;
     t.children(t.root).filter(|&c| t.kind(c) == SyntaxKind::PackageDecl).find_map(|p| {
         let (lo, hi) = t.token_bounds(p)?;
-        (lo <= first && first <= hi).then(|| t.child(p, SyntaxKind::Name).map(|n| t.bare_text(n).trim().to_string()))?
+        if !(lo <= first && first <= hi) {
+            return None;
+        }
+        // Items inside a `checker` declared in a package resolve against the elaborated checker instance.
+        let in_checker = t
+            .children(p)
+            .filter(|&c| t.kind(c) == SyntaxKind::CheckerDecl)
+            .any(|chk| t.token_bounds(chk).is_some_and(|(clo, chi)| clo <= first && first <= chi));
+        if in_checker {
+            return None;
+        }
+        t.child(p, SyntaxKind::Name).map(|n| t.bare_text(n).trim().to_string())
     })
 }
 

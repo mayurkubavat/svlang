@@ -45,7 +45,6 @@ EXPECTED_FAIL = {
     "overlap_drivers.sv": "overlapping drivers",
     "reset_typo.sv": "undeclared",
     "reversed_select.sv": "part-select [0:3] is reversed",
-    "udp_instance.sv": "user-defined primitive 'udp_mux' is not supported",
     "unknown_module.sv": "unknown module 'not_defined'",
     "unknown_param.sv": "parameter 'Depth' does not exist in 'unknown_param_leaf'",
     "unknown_port.sv": "port 'enable' does not exist in 'unknown_port_leaf'",

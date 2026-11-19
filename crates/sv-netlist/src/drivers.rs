@@ -85,6 +85,8 @@ pub(crate) struct SignalSlot {
     pub(crate) drivers: Vec<BitSliceDriver>,
     /// `(* anyseq *)` / `(* anyconst *)` on the declaration: how its undriven bits are free.
     pub(crate) free: FreeKind,
+    /// Optional weak pull resistor (`Some(true)` for `pullup`, `Some(false)` for `pulldown`).
+    pub(crate) pull: Option<bool>,
 }
 
 impl SignalSlot {
@@ -269,6 +271,11 @@ fn resolve_one_signal(slot: &SignalSlot, builder: &mut NetBuilder, read: &FxSet<
         if let Some(init_cv) = &slot.init {
             // Initialized variable with no runtime reassignment (`logic [3:0] cfg = 4'd9;`).
             let c = builder.alloc_const(init_cv.cast(slot.width, slot.signed), slot.four_state, slot.loc);
+            builder.bind_placeholder(slot.placeholder, c);
+        } else if let Some(pull_high) = slot.pull {
+            let fill = if pull_high { sv_semantic::Int::from(-1) } else { sv_semantic::Int::from(0) };
+            let c =
+                builder.alloc_const(sv_semantic::CVal::new(slot.width, slot.signed, fill), slot.four_state, slot.loc);
             builder.bind_placeholder(slot.placeholder, c);
         } else {
             let uid = builder.undriven.len();

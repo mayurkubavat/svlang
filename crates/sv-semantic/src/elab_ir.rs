@@ -326,8 +326,106 @@ pub enum ElabItemKind {
     ModportDecl,
     /// Built-in gate instantiation (`and`, `or`, `not`, `xor`, `buf`, ...).
     GateInst,
+    /// User-defined primitive (`primitive ... endprimitive`) instantiation.
+    UdpInst,
     /// `alias a = b;`
     NetAlias,
+}
+
+/// Bound event argument on an elaborated `checker` instance (`event clk = $inferred_clock`).
+#[derive(Clone, Debug)]
+pub struct CheckerEventBinding {
+    /// Enclosing parent instance where the event expression resolves.
+    pub parent_inst: InstanceId,
+    /// Lexical generate-block prefix in `parent_inst`.
+    pub scope_prefix: String,
+    /// Active generate constants in `parent_inst` at the instantiation site.
+    pub gen_consts: Vec<(String, CVal)>,
+    /// CST tree index.
+    pub tree: usize,
+    /// CST node ID (`TimingControl` when `is_timing_control`, else `EventExpr` / expression).
+    pub node: NodeId,
+    /// `true` when `node` is a `TimingControl` (`@(posedge clk)`).
+    pub is_timing_control: bool,
+}
+
+/// Bound `untyped`, `sequence`, or `property` formal port on an elaborated `checker` instance.
+#[derive(Clone, Debug)]
+pub struct CheckerUntypedBinding {
+    /// Enclosing parent instance where the actual argument resolves.
+    pub parent_inst: InstanceId,
+    /// Lexical generate-block prefix in `parent_inst`.
+    pub scope_prefix: String,
+    /// Active generate constants in `parent_inst` at the instantiation site.
+    pub gen_consts: Vec<(String, CVal)>,
+    /// CST tree index of the actual/default expression.
+    pub tree: usize,
+    /// CST node ID of the actual/default expression.
+    pub node: NodeId,
+}
+
+/// Input or current-state symbol in a UDP truth-table row (IEEE 1800-2023 Table 29-1).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum UdpInputSym {
+    /// `'0'`
+    Level0,
+    /// `'1'`
+    Level1,
+    /// `'x'` or `'X'`
+    LevelX,
+    /// `'?'` (`0`, `1`, or `x`)
+    LevelAny,
+    /// `'b'` or `'B'` (`0` or `1`)
+    LevelBit,
+    /// `(ab)` edge transition from level set `a` (`b'0'`, `b'1'`, `b'x'`, `b'?'`, `b'b'`) to `b`.
+    Edge(u8, u8),
+    /// `'*'` any value change (`(??)`).
+    EdgeAny,
+    /// `'p'` potential positive edge (`(01)`, `(0x)`, `(x1)`).
+    EdgePotPos,
+    /// `'n'` potential negative edge (`(10)`, `(1x)`, `(x0)`).
+    EdgePotNeg,
+}
+
+/// Output symbol in a UDP truth-table row.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum UdpOutSym {
+    /// `'0'`
+    Zero,
+    /// `'1'`
+    One,
+    /// `'x'` or `'X'`
+    X,
+    /// `'-'` hold previous state (sequential UDP only).
+    NoChange,
+}
+
+/// One row of a `primitive` `table ... endtable`.
+#[derive(Clone, Debug)]
+pub struct UdpRow {
+    /// One symbol per UDP input port.
+    pub inputs: Vec<UdpInputSym>,
+    /// Current-state symbol for sequential UDPs (`None` for combinational UDPs).
+    pub state: Option<UdpInputSym>,
+    /// Next-state / combinational output symbol.
+    pub output: UdpOutSym,
+}
+
+/// Parsed user-defined primitive (`primitive ... endprimitive`, IEEE 1800-2023 Clause 29).
+#[derive(Clone, Debug)]
+pub struct UdpDef {
+    /// Primitive name.
+    pub name: String,
+    /// Port names in header order (`ports[0]` is the single `output` port; `ports[1..]` are `input`s).
+    pub ports: Vec<String>,
+    /// `true` when the output is declared `reg` (sequential UDP).
+    pub is_sequential: bool,
+    /// Optional `initial` value on sequential output (`Some(b'0')`, `Some(b'1')`, `Some(b'x')`).
+    pub init: Option<u8>,
+    /// Parsed `table ... endtable` rows in top-to-bottom order.
+    pub rows: Vec<UdpRow>,
+    /// Source location of the `primitive` declaration.
+    pub loc: Loc,
 }
 
 /// An active module or taken-generate-block item inside an elaborated [`Instance`].
@@ -415,8 +513,14 @@ pub struct Instance {
     pub definition: String,
     /// `true` when `definition` is an `interface`.
     pub is_interface: bool,
+    /// `true` when `definition` is a `checker` (IEEE 1800-2023 Clause 17).
+    pub is_checker: bool,
     /// `true` when instantiated via a SystemVerilog `bind` directive.
     pub is_bound: bool,
+    /// Bound `event` formal ports on a `checker` instance (`event clk = $inferred_clock`).
+    pub checker_events: Vec<(String, CheckerEventBinding)>,
+    /// Bound `untyped`, `sequence`, or `property` formal ports on a `checker` instance.
+    pub checker_untyped: Vec<(String, CheckerUntypedBinding)>,
     /// Definition CST `(tree, node)`.
     pub def_node: (usize, NodeId),
     /// Elaborated value parameters in declaration order.
@@ -559,6 +663,8 @@ pub struct ElaboratedDesign {
     pub packages: BTreeMap<String, PackageScope>,
     /// Compilation-unit `$unit` scope (constants, typedefs, subroutines, imports).
     pub unit_scope: PackageScope,
+    /// User-defined primitive (`primitive ... endprimitive`) definitions keyed by name.
+    pub udps: FxMap<String, UdpDef>,
     /// Fast lookup from full instance path (`"top.u0"`) to [`InstanceId`].
     pub(crate) inst_by_path: FxMap<String, InstanceId>,
     /// Fast lookup from full symbol path (`"top.u0.sig"`) to [`SymbolId`].

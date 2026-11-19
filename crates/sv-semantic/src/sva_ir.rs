@@ -469,7 +469,23 @@ impl<'a> SvaBinder<'a> {
             self.err(loc, "missing property specification in concurrent assertion");
             return None;
         };
-        let substs = FxMap::default();
+        let mut substs = FxMap::default();
+        if self.design.instance(inst_id).is_checker {
+            let untyped = self.design.instance(inst_id).checker_untyped.clone();
+            for (pname, ub) in untyped {
+                let empty_sub = FxMap::default();
+                let act = self.bind_actual_arg(
+                    ub.tree,
+                    ub.node,
+                    ub.parent_inst,
+                    &ub.scope_prefix,
+                    &ub.gen_consts,
+                    &empty_sub,
+                    0,
+                )?;
+                substs.insert(pname, act);
+            }
+        }
         let (explicit_clk, explicit_dis, mut expr) =
             self.bind_property_spec(tree_idx, prop_spec, inst_id, scope_prefix, gen_consts, &substs, 0)?;
 
@@ -1683,6 +1699,19 @@ impl<'a> SvaBinder<'a> {
         ))
     }
 
+    /// Resolves a `TimingControl` (`@(posedge clk)`, `@cb`, or checker `@clk` event port) into an [`SvaClock`].
+    pub fn resolve_timing_control_clock(
+        &mut self,
+        tree_idx: usize,
+        tc: NodeId,
+        inst_id: InstanceId,
+        scope_prefix: &str,
+        gen_consts: &[(String, CVal)],
+    ) -> Option<SvaClock> {
+        let substs = FxMap::default();
+        self.bind_clock_timing(tree_idx, tc, inst_id, scope_prefix, gen_consts, &substs, 0)
+    }
+
     #[allow(clippy::too_many_arguments)]
     fn bind_clock_timing(
         &mut self,
@@ -1721,6 +1750,12 @@ impl<'a> SvaBinder<'a> {
             if edge == SvaEdge::AnyEdge && t.kind(sig_node) == SyntaxKind::NameExpr {
                 let cb_name = t.bare_text(sig_node).trim().to_string();
                 let saved_diags = self.diags.len();
+                if let Some(ev_clk) = self.resolve_checker_event(inst_id, &cb_name, clk_depth + 1) {
+                    return Some(ev_clk);
+                }
+                if self.diags.len() > saved_diags {
+                    return None;
+                }
                 if let Some(cb_clk) =
                     self.resolve_named_clocking(inst_id, scope_prefix, gen_consts, &cb_name, clk_depth + 1)
                 {
@@ -1742,6 +1777,12 @@ impl<'a> SvaBinder<'a> {
         if let Some(ne) = t.child(tc, SyntaxKind::NameExpr) {
             let name = t.bare_text(ne).trim().to_string();
             let saved_diags = self.diags.len();
+            if let Some(ev_clk) = self.resolve_checker_event(inst_id, &name, clk_depth + 1) {
+                return Some(ev_clk);
+            }
+            if self.diags.len() > saved_diags {
+                return None;
+            }
             if let Some(cb_clk) = self.resolve_named_clocking(inst_id, scope_prefix, gen_consts, &name, clk_depth + 1) {
                 return Some(cb_clk);
             }
@@ -1753,6 +1794,84 @@ impl<'a> SvaBinder<'a> {
         }
         self.err(loc, "invalid SVA clocking event");
         None
+    }
+
+    fn resolve_checker_event(&mut self, inst_id: InstanceId, name: &str, clk_depth: usize) -> Option<SvaClock> {
+        let inst = self.design.instance(inst_id);
+        if !inst.is_checker {
+            return None;
+        }
+        let (_, eb) = inst.checker_events.iter().find(|(n, _)| n == name)?.clone();
+        let empty_sub = FxMap::default();
+        if eb.is_timing_control {
+            return self.bind_clock_timing(
+                eb.tree,
+                eb.node,
+                eb.parent_inst,
+                &eb.scope_prefix,
+                &eb.gen_consts,
+                &empty_sub,
+                clk_depth,
+            );
+        }
+        let t = self.tree(eb.tree);
+        if t.kind(eb.node) == SyntaxKind::EventExpr {
+            let inner_ev = t.child(eb.node, SyntaxKind::EventExpr).unwrap_or(eb.node);
+            let own = Self::own_toks(t, inner_ev);
+            let edge = if own.contains(&"posedge") {
+                SvaEdge::Posedge
+            } else if own.contains(&"negedge") {
+                SvaEdge::Negedge
+            } else {
+                SvaEdge::AnyEdge
+            };
+            let kids = Self::expr_kids(t, inner_ev);
+            let sig_node = *kids.first()?;
+            if edge == SvaEdge::AnyEdge && t.kind(sig_node) == SyntaxKind::NameExpr {
+                let sub_name = t.bare_text(sig_node).trim().to_string();
+                if let Some(sub_clk) = self.resolve_checker_event(eb.parent_inst, &sub_name, clk_depth + 1) {
+                    return Some(sub_clk);
+                }
+                if let Some(cb_clk) = self.resolve_named_clocking(
+                    eb.parent_inst,
+                    &eb.scope_prefix,
+                    &eb.gen_consts,
+                    &sub_name,
+                    clk_depth + 1,
+                ) {
+                    return Some(cb_clk);
+                }
+            }
+            let signal =
+                self.bind_self_expr(eb.tree, sig_node, eb.parent_inst, &eb.scope_prefix, &eb.gen_consts, &empty_sub)?;
+            let iff = if let Some(&iff_node) = kids.get(1) {
+                Some(self.bind_bool_expr(
+                    eb.tree,
+                    iff_node,
+                    eb.parent_inst,
+                    &eb.scope_prefix,
+                    &eb.gen_consts,
+                    &empty_sub,
+                )?)
+            } else {
+                None
+            };
+            return Some(SvaClock { edge, signal, iff });
+        }
+        if t.kind(eb.node) == SyntaxKind::NameExpr {
+            let sub_name = t.bare_text(eb.node).trim().to_string();
+            if let Some(sub_clk) = self.resolve_checker_event(eb.parent_inst, &sub_name, clk_depth + 1) {
+                return Some(sub_clk);
+            }
+            if let Some(cb_clk) =
+                self.resolve_named_clocking(eb.parent_inst, &eb.scope_prefix, &eb.gen_consts, &sub_name, clk_depth + 1)
+            {
+                return Some(cb_clk);
+            }
+        }
+        let signal =
+            self.bind_self_expr(eb.tree, eb.node, eb.parent_inst, &eb.scope_prefix, &eb.gen_consts, &empty_sub)?;
+        Some(SvaClock { edge: SvaEdge::AnyEdge, signal, iff: None })
     }
 
     fn eval_delay_timing(

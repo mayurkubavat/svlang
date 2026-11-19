@@ -1067,7 +1067,7 @@ impl<'t> Builder<'t> {
                     self.collect_scope(c, s);
                 }
                 ClassDecl => self.collect_class(c, scope),
-                ModuleDecl | InterfaceDecl | ProgramDecl if self.designs => {
+                ModuleDecl | InterfaceDecl | ProgramDecl | CheckerDecl if self.designs => {
                     let Some((name, _)) = self.name_of(c) else {
                         continue;
                     };
@@ -1092,7 +1092,7 @@ impl<'t> Builder<'t> {
                 {
                     self.collect_block_consts(c, scope)
                 }
-                TypedefDecl => {
+                TypedefDecl | NetTypeDecl => {
                     if let Some((name, _)) = self.name_of(c) {
                         self.scopes[scope].typedefs.insert(name, c);
                     }

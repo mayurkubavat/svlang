@@ -97,6 +97,8 @@ struct Ctx<'a> {
     reals: HashMap<String, bool>,
     /// Class declarations by name.
     classes: HashMap<String, Vec<(usize, NodeId)>>,
+    /// Typeless `interconnect` net/port names by `(tree, module_or_iface_node, name)`.
+    interconnects: crate::fx::FxSet<(usize, NodeId, String)>,
 }
 
 /// Runs the type checks over every tree of a compile, resolving names in
@@ -127,10 +129,27 @@ pub fn check(trees: &[Tree], scopes: &Scopes) -> Vec<Diag> {
     let mut classes: HashMap<String, Vec<(usize, NodeId)>> = HashMap::default();
     let mut enums: HashMap<String, bool> = HashMap::default();
     let mut reals: HashMap<String, bool> = HashMap::default();
+    let mut interconnects: crate::fx::FxSet<(usize, NodeId, String)> = Default::default();
     for (ix, t) in trees.iter().enumerate() {
+        let parent = parents(t);
         for n in t.preorder() {
             if t.kind(n) == ClassDecl {
                 classes.entry(name_of(t, n)).or_default().push((ix, n));
+            }
+            if matches!(t.kind(n), DataDecl | Port) && toks(t, n).contains(&"interconnect") {
+                let mut cur = up(&parent, n);
+                while let Some(anc) = cur {
+                    if matches!(t.kind(anc), ModuleDecl | InterfaceDecl) {
+                        for d in t.children(n).filter(|&c| t.kind(c) == Declarator) {
+                            let nm = name_of(t, d);
+                            if !nm.is_empty() {
+                                interconnects.insert((ix, anc, nm));
+                            }
+                        }
+                        break;
+                    }
+                    cur = up(&parent, anc);
+                }
             }
             if t.kind(n) != TypedefDecl {
                 continue;
@@ -143,7 +162,7 @@ pub fn check(trees: &[Tree], scopes: &Scopes) -> Vec<Diag> {
             *reals.entry(name).or_insert(true) &= REAL_TYPES.contains(&first) && !dims;
         }
     }
-    let cx = Ctx { trees, scopes, values, opener, enums, reals, classes };
+    let cx = Ctx { trees, scopes, values, opener, enums, reals, classes, interconnects };
     let mut out = Vec::new();
     for (ix, t) in trees.iter().enumerate() {
         let parent = parents(t);
@@ -270,6 +289,10 @@ impl Ctx<'_> {
                     .name_decl(ix, t, o, parent)
                     .filter(|d| !d.array)
                     .and_then(|d| d.dtype.and_then(|dt| literal_width(&self.trees[d.tree], dt))),
+                Literal => {
+                    let s = t.bare_text(o);
+                    s.split_once('\'').and_then(|(sz, _)| sz.trim().parse::<u64>().ok()).filter(|&w| w > 0)
+                }
                 _ => None,
             };
             let Some(w) = w else { return };
@@ -519,6 +542,14 @@ impl Ctx<'_> {
                 self.randc(t, n, &mut err);
                 self.pure_constraints(t, n, &mut err);
             }
+            NetTypeDecl => self.check_nettype_decl(ix, t, n, parent, &mut err),
+            DataDecl | Port if toks(t, n).contains(&"interconnect") => {
+                self.check_interconnect_decl(t, n, &mut err);
+            }
+            NameExpr => self.check_interconnect_use(ix, t, n, parent, &mut err),
+            SpecparamDecl => self.constant_context(ix, t, n, parent, &mut err),
+            PathDecl => self.check_specify_path(ix, t, n, parent, &mut err),
+            TimingCheck => self.check_timing_check(ix, t, n, parent, &mut err),
             _ => {}
         }
     }
@@ -962,6 +993,272 @@ impl Ctx<'_> {
                         }
                     }
                     _ => {}
+                }
+            }
+        }
+    }
+
+    /// IEEE 1800-2023 §6.6.7: `nettype data_type id [with resolve_func];`.
+    fn check_nettype_decl(&self, ix: usize, t: &Tree, n: NodeId, parent: &[u32], err: &mut impl FnMut(NodeId, String)) {
+        let nt_name = name_of(t, n);
+        if let Some(dt) = t.child(n, DataType) {
+            if let Some(ft) = first_tok(t, dt) {
+                if matches!(ft, "string" | "chandle" | "event" | "virtual") {
+                    err(dt, format!("invalid data type '{ft}' for nettype '{nt_name}'"));
+                    return;
+                }
+            }
+            // Unpacked dimensions on nettype must not be dynamic/queue/associative.
+            for d in t.children(dt).filter(|&c| t.kind(c) == Dim) {
+                let inner: Vec<&str> = toks(t, d).into_iter().filter(|&x| !matches!(x, "[" | "]")).collect();
+                if inner.is_empty() || inner.contains(&"$") || inner == ["*"] || t.child(d, DataType).is_some() {
+                    err(d, format!("nettype '{nt_name}' cannot use dynamically-sized array dimensions"));
+                    return;
+                }
+            }
+        }
+        if toks(t, n).contains(&"with") {
+            let Some(fn_node) = t.children(n).find(|&c| !matches!(t.kind(c), Attribute | DataType | Name)) else {
+                return;
+            };
+            if t.kind(fn_node) != NameExpr {
+                return;
+            }
+            let fn_name = t.bare_text(fn_node);
+            let fn_clean = fn_name.trim().strip_prefix('\\').unwrap_or(fn_name.trim());
+            // Check enclosing scopes for resolution function.
+            let mut cur_anc = up(parent, n);
+            let mut enclosing_scope = UNIT;
+            let mut has_wildcard_import = false;
+            while let Some(anc) = cur_anc {
+                for imp in t.children(anc).filter(|&c| t.kind(c) == ImportDecl) {
+                    if t.token_range(imp).iter().any(|&ti| &*t.tokens[ti as usize].text == "*") {
+                        has_wildcard_import = true;
+                    }
+                }
+                if let Some(&sc) = self.opener.get(&(ix, anc)) {
+                    enclosing_scope = sc;
+                    break;
+                }
+                cur_anc = up(parent, anc);
+            }
+            for imp in t.children(t.root).filter(|&c| t.kind(c) == ImportDecl) {
+                if t.token_range(imp).iter().any(|&ti| &*t.tokens[ti as usize].text == "*") {
+                    has_wildcard_import = true;
+                }
+            }
+            let mut found_sym = None;
+            let mut sc_opt = Some(enclosing_scope);
+            while let Some(sc) = sc_opt {
+                if let Some(sym) = self.scopes.symbols.iter().find(|s| s.scope == sc && s.name == fn_clean) {
+                    found_sym = Some(sym);
+                    break;
+                }
+                sc_opt = self.scopes.scopes[sc].parent;
+            }
+            if found_sym.is_none() {
+                found_sym = self.scopes.symbols.iter().find(|s| s.scope == UNIT && s.name == fn_clean);
+            }
+            match found_sym {
+                Some(sym) if sym.kind != SymKind::Function => {
+                    err(fn_node, format!("resolution function '{fn_clean}' of nettype '{nt_name}' must be a function"));
+                }
+                Some(sym) => {
+                    let ft = &self.trees[sym.tree];
+                    if ft.kind(sym.node) == FunctionDecl {
+                        if ft.child(sym.node, ReturnType).and_then(|rt| first_tok(ft, rt)) == Some("void") {
+                            err(
+                                fn_node,
+                                format!("resolution function '{fn_clean}' of nettype '{nt_name}' cannot be void"),
+                            );
+                        }
+                        if let Some(pl) = ft.child(sym.node, Header).and_then(|h| ft.child(h, PortList)) {
+                            let ports: Vec<NodeId> = ft.children(pl).filter(|&p| ft.kind(p) == Port).collect();
+                            if ports.len() != 1 {
+                                err(
+                                    fn_node,
+                                    format!(
+                                        "resolution function '{fn_clean}' of nettype '{nt_name}' must take exactly 1 dynamic-array argument"
+                                    ),
+                                );
+                            } else if let Some(decl_n) = ft.child(ports[0], Declarator) {
+                                let dims: Vec<NodeId> = ft.children(decl_n).filter(|&d| ft.kind(d) == Dim).collect();
+                                let has_dyn = dims.iter().any(|&d| {
+                                    toks(ft, d).into_iter().filter(|&x| !matches!(x, "[" | "]")).count() == 0
+                                });
+                                if !has_dyn {
+                                    err(
+                                        fn_node,
+                                        format!(
+                                            "argument of resolution function '{fn_clean}' for nettype '{nt_name}' must be a 1-D dynamic array 'T []'"
+                                        ),
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
+                None if !has_wildcard_import => {
+                    let any_global_fn =
+                        self.scopes.symbols.iter().any(|s| s.kind == SymKind::Function && s.name == fn_clean);
+                    if !any_global_fn {
+                        err(fn_node, format!("undeclared resolution function '{fn_clean}' in nettype '{nt_name}'"));
+                    }
+                }
+                None => {}
+            }
+        }
+    }
+
+    /// IEEE 1800-2023 §6.6.8: `interconnect` nets/ports cannot declare an explicit data type or `var`.
+    fn check_interconnect_decl(&self, t: &Tree, n: NodeId, err: &mut impl FnMut(NodeId, String)) {
+        let tk = toks(t, n);
+        if tk.contains(&"var") {
+            err(n, "interconnect net or port cannot be declared 'var'".into());
+            return;
+        }
+        if let Some(dt) = t.child(n, DataType) {
+            let dt_own = toks(t, dt);
+            let only_signing = dt_own.iter().all(|&x| matches!(x, "signed" | "unsigned"));
+            let has_named_or_kw_type =
+                !only_signing || t.children(dt).any(|c| t.kind(c) != Dim && t.kind(c) != Attribute);
+            if has_named_or_kw_type {
+                err(dt, "interconnect net or port cannot have an explicit data type".into());
+            }
+        }
+    }
+
+    /// IEEE 1800-2023 §6.6.8: `interconnect` nets may only appear in port connections and `alias` statements.
+    fn check_interconnect_use(
+        &self,
+        ix: usize,
+        t: &Tree,
+        n: NodeId,
+        parent: &[u32],
+        err: &mut impl FnMut(NodeId, String),
+    ) {
+        if self.interconnects.is_empty() {
+            return;
+        }
+        if let Some(p) = up(parent, n) {
+            if matches!(t.kind(p), MemberExpr | ScopedExpr) && t.children(p).next() != Some(n) {
+                return;
+            }
+        }
+        let raw = t.bare_text(n);
+        let ident = raw.trim().strip_prefix('\\').unwrap_or(raw.trim());
+        let mut cur = up(parent, n);
+        let mut in_expr_stmt_or_assign = false;
+        let mut mod_anc = None;
+        while let Some(anc) = cur {
+            match t.kind(anc) {
+                Instantiation | GateInst | NetAlias | BindDirective | SpecifyBlock | Attribute => return,
+                ContinuousAssign | ProceduralBlock => in_expr_stmt_or_assign = true,
+                ModuleDecl | InterfaceDecl => {
+                    mod_anc = Some(anc);
+                    break;
+                }
+                FunctionDecl | TaskDecl => return,
+                _ => {}
+            }
+            cur = up(parent, anc);
+        }
+        if in_expr_stmt_or_assign {
+            if let Some(ma) = mod_anc {
+                if self.interconnects.contains(&(ix, ma, ident.to_string())) {
+                    err(
+                        n,
+                        format!("interconnect net '{ident}' cannot be used in continuous or procedural expressions"),
+                    );
+                }
+            }
+        }
+    }
+
+    /// IEEE 1800-2023 §30.4: parallel module path `(src => dst)` requires equal bit widths.
+    fn check_specify_path(&self, ix: usize, t: &Tree, n: NodeId, parent: &[u32], err: &mut impl FnMut(NodeId, String)) {
+        let Some(ps) = t.child(n, PathSpec) else { return };
+        let ps_toks = toks(t, ps);
+        let is_parallel = ps_toks.contains(&"=>")
+            || (ps_toks.contains(&"+=") && ps_toks.contains(&">"))
+            || (ps_toks.contains(&"-=") && ps_toks.contains(&">"));
+        if !is_parallel {
+            return;
+        }
+        // Extract terminals before `=>` and after `=>` (when simple 1-to-1 parallel path).
+        let mut before = Vec::new();
+        let mut after = Vec::new();
+        let mut seen_arrow = false;
+        for ch in &t.node(ps).children {
+            match *ch {
+                Child::Token(i) => {
+                    if matches!(&*t.tokens[i as usize].text, "=>" | "*>" | ">") {
+                        seen_arrow = true;
+                    }
+                }
+                Child::Node(c) if t.kind(c) != Attribute => {
+                    if seen_arrow {
+                        after.push(c);
+                    } else {
+                        before.push(c);
+                    }
+                }
+                _ => {}
+            }
+        }
+        if let ([src], [dst]) = (before.as_slice(), after.as_slice()) {
+            let term_width = |nd: NodeId| -> Option<u64> {
+                if t.kind(nd) == NameExpr {
+                    let d = self.name_decl(ix, t, nd, parent).filter(|d| !d.array)?;
+                    let Some(dt) = d.dtype else { return Some(1) };
+                    let dt_tree = &self.trees[d.tree];
+                    if let Some(w) = literal_width(dt_tree, dt) {
+                        return Some(w);
+                    }
+                    // Implicit type with packed dimensions (`input wire [3:0] a`).
+                    let own = toks(dt_tree, dt);
+                    if own.iter().all(|&x| matches!(x, "signed" | "unsigned")) {
+                        let mut w = 1u64;
+                        for dm in dt_tree.children(dt) {
+                            if dt_tree.kind(dm) != Dim {
+                                return None;
+                            }
+                            let (a, b) = literal_range(dt_tree, dm)?;
+                            w = w.checked_mul(a.abs_diff(b) + 1)?;
+                        }
+                        return Some(w);
+                    }
+                    None
+                } else {
+                    None
+                }
+            };
+            if let (Some(sw), Some(dw)) = (term_width(*src), term_width(*dst)) {
+                if sw != dw {
+                    err(ps, format!("parallel specify path '=>' requires matching terminal widths ({sw} vs {dw})"));
+                }
+            }
+        }
+    }
+
+    /// IEEE 1800-2023 Clause 31: timing check notifier must be a variable (not a net or parameter).
+    fn check_timing_check(&self, ix: usize, t: &Tree, n: NodeId, parent: &[u32], err: &mut impl FnMut(NodeId, String)) {
+        let Some(chk_name) = first_tok(t, n) else { return };
+        let notifier_idx = match chk_name {
+            "$period" => Some(2usize),
+            "$setup" | "$hold" | "$recovery" | "$removal" | "$width" | "$skew" => Some(3usize),
+            "$timeskew" => Some(3usize),
+            "$setuphold" | "$recrem" | "$fullskew" => Some(5usize),
+            _ => None,
+        };
+        let Some(nidx) = notifier_idx else { return };
+        let args: Vec<NodeId> = t.children(n).filter(|&c| t.kind(c) == TimingCheckArg).collect();
+        let Some(&narg) = args.get(nidx) else { return };
+        let Some(ne) = t.children(narg).find(|&c| t.kind(c) != Attribute) else { return };
+        if t.kind(ne) == NameExpr {
+            if let Some(d) = self.name_decl(ix, t, ne, parent) {
+                if matches!(d.kind, SymKind::Net | SymKind::Parameter | SymKind::Specparam) {
+                    err(ne, format!("timing check notifier '{}' in {chk_name} must be a variable", t.bare_text(ne)));
                 }
             }
         }

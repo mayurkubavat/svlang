@@ -1,6 +1,7 @@
 //! Symbolic procedural execution for `always_ff`, `always_comb`, `always_latch`,
 //! `always @(...)`, and `always @*` blocks (IEEE 1800-2023 Clauses 9, 10, 12).
 
+use sv_semantic::expr::is_streaming_concat_node;
 use sv_semantic::fx::FxMap;
 use sv_semantic::{
     BinaryOp, CVal, ElabItem, ExprArena, ExprBinder, ExprId, ExprKind, InstanceId, Int, Loc, LocalBinding, LocalId,
@@ -13,7 +14,8 @@ use crate::drivers::DriverKind;
 use crate::expr_lower::{
     addr_bits as proc_addr_bits, coerce_two_state_en, compute_packed_slice_offset as proc_packed_offset,
     compute_unpacked_index_bounds as proc_unpacked_bounds, extract_lsb_bit0, lower_dynamic_packed_slice,
-    make_oob_obj_val, mux_obj_val, replace_const_packed_slice, rmw_dynamic_packed_slice, ExprLowerer, ObjSlot, ObjVal,
+    make_oob_obj_val, mux_obj_val, prepare_streaming_unpack_rhs, replace_const_packed_slice, rmw_dynamic_packed_slice,
+    ExprLowerer, ObjSlot, ObjVal,
 };
 use crate::ir::{AsyncReset, Check, CheckKind, ClockSpec, Edge, MemWritePort, NetOp, State, StateId, ValueId};
 use crate::lower::{own_first_tok, subtree_preorder, DesignLowerer};
@@ -454,6 +456,41 @@ impl<'a> DesignLowerer<'a> {
 
         let events: Vec<NodeId> = t.children(tc).filter(|&c| t.kind(c) == SyntaxKind::EventExpr).collect();
         if events.is_empty() {
+            // Bare `@clk` or `@cb` (e.g. checker `event clk = $inferred_clock` or named clocking block).
+            let mut arena = ExprArena::new();
+            let resolved = {
+                let mut sb = sv_semantic::SvaBinder::new(self.trees, self.design, &mut arena);
+                let out = sb.resolve_timing_control_clock(item.tree, tc, inst_id, &item.scope_prefix, &item.gen_consts);
+                self.flush_expr_diags(sb.diags);
+                out
+            };
+            if let Some(sva_clk) = resolved {
+                let edge = match sva_clk.edge {
+                    sv_semantic::SvaEdge::Posedge => Edge::Posedge,
+                    sv_semantic::SvaEdge::Negedge => Edge::Negedge,
+                    sv_semantic::SvaEdge::AnyEdge => {
+                        self.builder
+                            .err(item.loc, "clocked procedural block event must specify 'posedge' or 'negedge'");
+                        return;
+                    }
+                };
+                if let Some(sig_val) = self.eval_comb_expr(&arena, sva_clk.signal).and_then(|o| o.as_packed()) {
+                    let lsb_sig = extract_lsb_bit0(&mut self.builder, sig_val, item.loc);
+                    let clk = ClockSpec { signal: lsb_sig, edge };
+                    let mut ctx = ProcCtx::new(
+                        &mut self.builder,
+                        inst_id,
+                        item.scope_prefix.clone(),
+                        item.gen_consts.clone(),
+                        ProcKind::Clocked,
+                        Some(clk),
+                        item.loc,
+                    );
+                    self.exec_stmt(item.tree, body, &mut ctx);
+                    self.finalize_clocked_states(&ctx.slot_writes, None, clk);
+                }
+                return;
+            }
             self.builder.err(item.loc, "missing clock event in sensitivity list");
             return;
         }
@@ -462,6 +499,38 @@ impl<'a> DesignLowerer<'a> {
             let inner = t.child(ev, SyntaxKind::EventExpr).unwrap_or(ev);
             let edge_opt = event_edge(t, inner);
             let Some(edge) = edge_opt else {
+                // `@(clk)` where `clk` is a checker `event` port or `clocking` block.
+                if parsed_events.is_empty() {
+                    let mut arena = ExprArena::new();
+                    let resolved = {
+                        let mut sb = sv_semantic::SvaBinder::new(self.trees, self.design, &mut arena);
+                        let out = sb.resolve_timing_control_clock(
+                            item.tree,
+                            tc,
+                            inst_id,
+                            &item.scope_prefix,
+                            &item.gen_consts,
+                        );
+                        self.flush_expr_diags(sb.diags);
+                        out
+                    };
+                    if let Some(sva_clk) = resolved {
+                        if let Some(resolved_edge) = match sva_clk.edge {
+                            sv_semantic::SvaEdge::Posedge => Some(Edge::Posedge),
+                            sv_semantic::SvaEdge::Negedge => Some(Edge::Negedge),
+                            sv_semantic::SvaEdge::AnyEdge => None,
+                        } {
+                            if let Some(sig_val) =
+                                self.eval_comb_expr(&arena, sva_clk.signal).and_then(|o| o.as_packed())
+                            {
+                                let lsb_sig = extract_lsb_bit0(&mut self.builder, sig_val, item.loc);
+                                parsed_events.push((resolved_edge, lsb_sig, None, item.loc));
+                                continue;
+                            }
+                            return;
+                        }
+                    }
+                }
                 self.builder.err(item.loc, "clocked procedural block event must specify 'posedge' or 'negedge'");
                 return;
             };
@@ -809,7 +878,7 @@ impl<'a> DesignLowerer<'a> {
         let t = &self.trees[tree_idx];
         if ctx.in_initial {
             match t.kind(stmt) {
-                SyntaxKind::EmptyStmt | SyntaxKind::ImportDecl | SyntaxKind::EndLabel => {}
+                SyntaxKind::EmptyStmt | SyntaxKind::ImportDecl | SyntaxKind::EndLabel | SyntaxKind::Instantiation => {}
                 SyntaxKind::AssertStmt => self.exec_initial_assert(tree_idx, stmt, ctx),
                 // Reached only in a block that writes nothing (`exec_initial_block`), where
                 // the time a check runs at does not change the netlist.
@@ -857,7 +926,7 @@ impl<'a> DesignLowerer<'a> {
             return;
         }
         match t.kind(stmt) {
-            SyntaxKind::EmptyStmt | SyntaxKind::ImportDecl | SyntaxKind::EndLabel => {}
+            SyntaxKind::EmptyStmt | SyntaxKind::ImportDecl | SyntaxKind::EndLabel | SyntaxKind::Instantiation => {}
             SyntaxKind::ConcurrentAssert => {
                 let loc = self.stmt_loc(tree_idx, stmt, ctx);
                 let reach = ctx.effective_reach(&mut self.builder, loc);
@@ -1738,6 +1807,48 @@ impl<'a> DesignLowerer<'a> {
             return;
         }
         self.check_modport_lhs_legality(ctx.inst_id, tree_idx, lhs_node, &ctx.scope_prefix, loc);
+
+        if is_streaming_concat_node(&self.trees[tree_idx], lhs_node) {
+            if op != "=" && op != "<=" {
+                self.builder.err(loc, "compound assignment on streaming concatenation LHS is illegal");
+                return;
+            }
+            let Some(rn) = rhs_node else { return };
+            let mut arena = ExprArena::new();
+            let stream_lhs_opt = {
+                let mut binder = self.make_proc_binder(ctx, &mut arena);
+                let out = binder.bind_streaming_lhs(tree_idx, lhs_node);
+                self.flush_expr_diags(binder.diags);
+                out
+            };
+            let Some(stream_lhs) = stream_lhs_opt else { return };
+            let Some(rhs_eid) = self.bind_in_proc(tree_idx, rn, ctx, &mut arena, false) else { return };
+            if self.reject_tristate_z(&arena, rhs_eid) {
+                return;
+            }
+            let Some(rhs_val) = self.lower_in_proc(&arena, rhs_eid, ctx) else { return };
+            let Some(rv) = prepare_streaming_unpack_rhs(&mut self.builder, &rhs_val, &stream_lhs, loc) else {
+                return;
+            };
+            if ctx.in_initial && self.builder.const_cval(rv).is_none() {
+                self.builder.unsup(loc, "non-constant initial assignment is not supported");
+                return;
+            }
+            let (total_w, _, four) = self.builder.node_shape(rv);
+            let mut hi_cursor = total_w;
+            for part_eid in stream_lhs.parts {
+                let pw = arena.get(part_eid).ty.bit_width().unwrap_or(1);
+                if hi_cursor < pw {
+                    break;
+                }
+                let lo = hi_cursor - pw;
+                let slice =
+                    self.builder.alloc_op(NetOp::Slice { hi: hi_cursor - 1, lo }, vec![rv], pw, false, four, loc);
+                self.apply_bound_lhs_write(&arena, part_eid, ObjVal::Packed(slice), is_nba, ctx, loc);
+                hi_cursor = lo;
+            }
+            return;
+        }
 
         let mut arena = ExprArena::new();
         let Some(lhs_eid) = self.bind_in_proc(tree_idx, lhs_node, ctx, &mut arena, false) else { return };

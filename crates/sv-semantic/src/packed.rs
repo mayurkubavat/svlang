@@ -444,6 +444,11 @@ impl Builder<'_> {
         let sub = |k: NodeRef| self.eval_ctx(k, cw, cs, scope, env, depth + 1);
         let out = match (self.kind(e), own.first().copied()) {
             (ParenExpr, _) => sub(*kids.first()?)?,
+            (ConcatExpr, _) if own.iter().any(|t| matches!(*t, "<<" | ">>")) => {
+                // IEEE 1800-2023 §11.4.14.2: a narrower stream assigned to a wider target
+                // is left-aligned and padded with zeros on the right.
+                CVal::concat(&v, &CVal::new(w - v.w, false, 0))
+            }
             (BinaryExpr, Some(op @ ("+" | "-" | "*" | "/" | "%" | "&" | "|" | "^" | "~^" | "^~"))) => {
                 types::binary_op(op, sub(*kids.first()?)?, sub(*kids.get(1)?)?)?
             }

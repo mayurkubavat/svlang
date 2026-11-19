@@ -1,4 +1,4 @@
-// A user-defined primitive is not lowered; its instance must be reported.
+// Combinational user-defined primitive (`primitive ... endprimitive`) lowered to a 4-state mux netlist.
 primitive udp_mux (output o, input a, input b, input s);
     table
         0 ? 0 : 0;

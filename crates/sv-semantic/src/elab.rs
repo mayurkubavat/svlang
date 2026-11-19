@@ -16,8 +16,9 @@ use super::packed::Ty;
 use super::types::CVal;
 use super::*;
 use crate::elab_ir::{
-    ElabItem, ElabItemKind, ElaboratedDesign, Instance as DesignInstance, InstanceId, PackageScope, PortConn, PortDir,
-    RtlType, Symbol as DesignSymbol, SymbolId, SymbolKind,
+    CheckerEventBinding, CheckerUntypedBinding, ElabItem, ElabItemKind, ElaboratedDesign, Instance as DesignInstance,
+    InstanceId, PackageScope, PortConn, PortDir, RtlType, Symbol as DesignSymbol, SymbolId, SymbolKind, UdpDef,
+    UdpInputSym, UdpOutSym, UdpRow,
 };
 
 /// Instances deeper than this are not elaborated (recursive designs).
@@ -132,6 +133,18 @@ struct Def {
     scope: usize,
 }
 
+#[derive(Clone, Debug)]
+struct ConfigSpec {
+    name: String,
+    decl: NodeRef,
+    /// `(lib_opt, cell_name, rule_node)` from `design [lib.]cell ...;`
+    design_tops: Vec<(Option<String>, String, NodeRef)>,
+    /// `instance <path> use [lib.]<cell>` -> `(bound_cell, rule_node)`
+    inst_uses: HashMap<String, (String, NodeRef)>,
+    /// `cell [lib.]<src> use [lib.]<cell>` -> `(bound_cell, rule_node)`
+    cell_uses: HashMap<String, (String, NodeRef)>,
+}
+
 struct NonAnsiPortEntry {
     dir: PortDir,
     dir_dt: Option<NodeRef>,
@@ -166,6 +179,11 @@ struct NonAnsiPorts {
 pub(crate) struct Elab<'b, 't> {
     b: &'b Builder<'t>,
     defs: HashMap<String, Def>,
+    checkers: HashMap<String, Def>,
+    configs: HashMap<String, ConfigSpec>,
+    covergroups: HashSet<String>,
+    nettypes: HashSet<String>,
+    proc_clock_ctx: Option<(usize, NodeId)>,
     binds: Vec<Bind>,
     defparams: Vec<Vec<(Vec<String>, Over)>>,
     envs: Vec<Env>,
@@ -210,13 +228,60 @@ pub(crate) struct InstLog {
 impl<'b, 't> Elab<'b, 't> {
     pub fn new(b: &'b Builder<'t>) -> Self {
         let mut defs = HashMap::default();
+        let mut checkers = HashMap::default();
+        let mut configs = HashMap::default();
+        let mut covergroups = HashSet::default();
+        let mut nettypes = HashSet::default();
         for (ti, t) in b.trees.iter().enumerate() {
+            let mut cur_pkg: Option<(String, u32)> = None;
             for n in t.preorder() {
-                if matches!(t.kind(n), ModuleDecl | InterfaceDecl | ProgramDecl) {
-                    let r = NodeRef { tree: ti, node: n };
-                    let Some((name, _)) = b.name_of(r) else { continue };
-                    let Some(&scope) = b.node_scope.get(&r) else { continue };
-                    defs.entry(name).or_insert(Def { decl: r, scope });
+                if let Some((_, hi)) = cur_pkg {
+                    if t.token_bounds(n).is_some_and(|(lo, _)| lo > hi) {
+                        cur_pkg = None;
+                    }
+                }
+                match t.kind(n) {
+                    PackageDecl => {
+                        let r = NodeRef { tree: ti, node: n };
+                        if let (Some((pname, _)), Some((_, hi))) = (b.name_of(r), t.token_bounds(n)) {
+                            cur_pkg = Some((pname, hi));
+                        }
+                    }
+                    ModuleDecl | InterfaceDecl | ProgramDecl => {
+                        let r = NodeRef { tree: ti, node: n };
+                        let Some((name, _)) = b.name_of(r) else { continue };
+                        let Some(&scope) = b.node_scope.get(&r) else { continue };
+                        defs.entry(name).or_insert(Def { decl: r, scope });
+                    }
+                    CheckerDecl => {
+                        let r = NodeRef { tree: ti, node: n };
+                        let Some((name, _)) = b.name_of(r) else { continue };
+                        let Some(&scope) = b.node_scope.get(&r) else { continue };
+                        if let Some((pkg, _)) = &cur_pkg {
+                            checkers.entry(format!("{pkg}::{name}")).or_insert(Def { decl: r, scope });
+                        } else {
+                            checkers.entry(name).or_insert(Def { decl: r, scope });
+                        }
+                    }
+                    CovergroupDecl => {
+                        let r = NodeRef { tree: ti, node: n };
+                        if let Some((name, _)) = b.name_of(r) {
+                            covergroups.insert(name);
+                        }
+                    }
+                    NetTypeDecl => {
+                        let r = NodeRef { tree: ti, node: n };
+                        if let Some((name, _)) = b.name_of(r) {
+                            nettypes.insert(name);
+                        }
+                    }
+                    ConfigDecl => {
+                        let r = NodeRef { tree: ti, node: n };
+                        if let Some(cfg) = Self::parse_config_decl(b, r) {
+                            configs.entry(cfg.name.clone()).or_insert(cfg);
+                        }
+                    }
+                    _ => {}
                 }
             }
         }
@@ -258,6 +323,11 @@ impl<'b, 't> Elab<'b, 't> {
         Elab {
             b,
             defs,
+            checkers,
+            configs,
+            covergroups,
+            nettypes,
+            proc_clock_ctx: None,
             binds,
             defparams: Vec::new(),
             envs: vec![Rc::new(HashMap::default())],
@@ -525,7 +595,7 @@ impl<'b, 't> Elab<'b, 't> {
                     }
                 }
             }
-            TypedefDecl => {
+            TypedefDecl | NetTypeDecl => {
                 let alias = b.name_of(item).map(|x| x.0);
                 if let Some(dt) = b.child(item, DataType) {
                     let rty = b.rtl_type(Some(dt), Some(item), scope_idx, empty, 0);
@@ -729,7 +799,18 @@ impl<'b, 't> Elab<'b, 't> {
     /// Modules no design unit instantiates (and that need no parameter value).
     pub fn tops(&self) -> Vec<String> {
         if !self.top.is_empty() {
-            let mut tops: Vec<String> = self.top.iter().filter(|t| self.defs.contains_key(*t)).cloned().collect();
+            let mut tops: Vec<String> = Vec::new();
+            for t in &self.top {
+                if self.defs.contains_key(t) {
+                    tops.push(t.clone());
+                } else if let Some(cfg) = self.configs.get(t) {
+                    for (_, cell, _) in &cfg.design_tops {
+                        if self.defs.contains_key(cell) {
+                            tops.push(cell.clone());
+                        }
+                    }
+                }
+            }
             tops.sort();
             tops.dedup();
             return tops;
@@ -850,12 +931,11 @@ impl<'b, 't> Elab<'b, 't> {
         if !self.design.tops.is_empty() {
             let inst_defs: HashSet<&str> = self.design.instances.iter().map(|i| i.definition.as_str()).collect();
             for (target, list, bd, _) in &self.binds {
+                let target_exists =
+                    self.defs.contains_key(target.as_str()) || self.checkers.contains_key(target.as_str());
                 match list {
                     None => {
-                        if !self.matched_binds.contains(bd)
-                            && !self.defs.contains_key(target.as_str())
-                            && self.checked.insert(*bd)
-                        {
+                        if !self.matched_binds.contains(bd) && !target_exists && self.checked.insert(*bd) {
                             self.diags.push(crate::names::Diag {
                                 tree: bd.tree,
                                 node: bd.node,
@@ -864,7 +944,7 @@ impl<'b, 't> Elab<'b, 't> {
                         }
                     }
                     Some(items) => {
-                        if !self.defs.contains_key(target.as_str()) && self.checked.insert(*bd) {
+                        if !target_exists && self.checked.insert(*bd) {
                             self.diags.push(crate::names::Diag {
                                 tree: bd.tree,
                                 node: bd.node,
@@ -938,6 +1018,8 @@ impl<'b, 't> Elab<'b, 't> {
 
     fn run_once(&mut self) {
         self.collect_packages_and_unit();
+        self.collect_udps();
+        self.validate_configs();
         let tops = self.tops();
         for top in &tops {
             self.interface_ports(top);
@@ -1134,7 +1216,10 @@ impl<'b, 't> Elab<'b, 't> {
                 path: path.to_string(),
                 definition: def.to_string(),
                 is_interface,
+                is_checker: false,
                 is_bound: self.bound > 0,
+                checker_events: Vec::new(),
+                checker_untyped: Vec::new(),
                 def_node: (decl.tree, decl.node),
                 params: Vec::new(),
                 type_params: Vec::new(),
@@ -1607,7 +1692,10 @@ impl<'b, 't> Elab<'b, 't> {
             let explicit_dt = cur_dt
                 .and_then(|dn| b.toks_of(dn).first().copied())
                 .is_some_and(|f| !matches!(f, "[" | "signed" | "unsigned"));
+            let is_user_nettype =
+                cur_dt.and_then(|dn| b.own_tokens(dn).last().copied()).is_some_and(|nm| self.nettypes.contains(nm));
             let is_net = explicit_net
+                || is_user_nettype
                 || !(explicit_var
                     || dir == PortDir::Ref
                     || !ty.is_packed()
@@ -1713,6 +1801,12 @@ impl<'b, 't> Elab<'b, 't> {
 
         let env = self.env();
         let net_kw = own.iter().find(|t| NET_KEYWORDS.contains(t)).copied();
+        let user_nt = dt.and_then(|dn| b.own_tokens(dn).last().copied()).filter(|nm| self.nettypes.contains(*nm));
+        let is_cg_var =
+            dt.and_then(|dn| b.own_tokens(dn).last().copied()).is_some_and(|nm| self.covergroups.contains(nm));
+        if is_cg_var {
+            return;
+        }
         for d in b.children(c).into_iter().filter(|d| b.kind(*d) == Declarator) {
             let Some((name, _)) = b.name_of(d) else { continue };
             if gen_prefix.is_empty()
@@ -1729,9 +1823,10 @@ impl<'b, 't> Elab<'b, 't> {
             *b.inst.borrow_mut() = Vals::default();
             let init = b.children(d).into_iter().find(|k| !matches!(b.kind(*k), Name | Dim));
             let cval = init.and_then(|iv| self.eval_init(iv, dt, &ty, scope, vals));
-            let kind = match net_kw {
-                Some(nk) => SymbolKind::Net { net_type: nk.to_string() },
-                None => SymbolKind::Var,
+            let kind = match (net_kw, user_nt) {
+                (Some(nk), _) => SymbolKind::Net { net_type: nk.to_string() },
+                (None, Some(unt)) => SymbolKind::Net { net_type: unt.to_string() },
+                (None, None) => SymbolKind::Var,
             };
             self.add_symbol(&name, &gen_prefix, kind, ty, pbounds, d, init, cval);
         }
@@ -1924,7 +2019,7 @@ impl<'b, 't> Elab<'b, 't> {
                     let overridable = body_params && own.contains(&"parameter");
                     self.params(c, b.child(c, DataType), overridable, path, scope, over, vals);
                 }
-                TypedefDecl => {
+                TypedefDecl | NetTypeDecl => {
                     let alias = b.name_of(c).map(|x| x.0);
                     self.record_enums_in(c, scope, vals, alias.clone());
                     if let Some(tname) = alias {
@@ -1937,7 +2032,10 @@ impl<'b, 't> Elab<'b, 't> {
                     self.record_modport(c);
                     self.push_item(ElabItemKind::ModportDecl, c, vals);
                 }
-                ProceduralBlock => self.push_item(ElabItemKind::ProceduralBlock, c, vals),
+                ProceduralBlock => {
+                    self.push_item(ElabItemKind::ProceduralBlock, c, vals);
+                    self.elaborate_procedural_checkers(c, path, scope, vals, depth);
+                }
                 ContinuousAssign => self.push_item(ElabItemKind::ContinuousAssign, c, vals),
                 AssertStmt => self.push_item(ElabItemKind::AssertStmt, c, vals),
                 ConcurrentAssert => self.push_item(ElabItemKind::ConcurrentAssert, c, vals),
@@ -2274,46 +2372,95 @@ impl<'b, 't> Elab<'b, 't> {
         let Some(al) = b.child(inst_node, ArgList) else { return Vec::new() };
         let scope_prefix = self.cur_gen_prefix();
         let gen_consts = vals.active_consts();
+        let inst_loc = self.loc_of(al);
+        let t = b.tree(al);
         let mut out = Vec::new();
-        for (idx, a) in b.children(al).into_iter().filter(|a| b.kind(*a) == Arg).enumerate() {
-            let own = b.own_tokens(a);
-            let expr = b.children(a).into_iter().find(|x| b.kind(*x) != Attribute).map(|x| (x.tree, x.node));
-            let loc = self.loc_of(a);
-            if own.starts_with(&[".", "*"]) {
-                out.push(PortConn {
-                    port_name: None,
-                    arg_index: idx,
-                    expr: None,
-                    implicit_named: false,
-                    wildcard: true,
-                    scope_prefix: scope_prefix.clone(),
-                    gen_consts: gen_consts.clone(),
-                    loc,
-                });
-            } else if own.first() == Some(&".") {
-                let pname = own.get(1).map(|s| s.strip_prefix('\\').unwrap_or(s).to_string());
-                let has_parens = own.contains(&"(");
-                out.push(PortConn {
-                    port_name: pname,
-                    arg_index: idx,
-                    expr,
-                    implicit_named: !has_parens && expr.is_none(),
-                    wildcard: false,
-                    scope_prefix: scope_prefix.clone(),
-                    gen_consts: gen_consts.clone(),
-                    loc,
-                });
-            } else {
-                out.push(PortConn {
-                    port_name: None,
-                    arg_index: idx,
-                    expr,
-                    implicit_named: false,
-                    wildcard: false,
-                    scope_prefix: scope_prefix.clone(),
-                    gen_consts: gen_consts.clone(),
-                    loc,
-                });
+        let mut need_arg = true;
+        let mut saw_comma = false;
+        for ch in &t.node(al.node).children {
+            match *ch {
+                sv_syntax::Child::Token(ti) => match &*t.tokens[ti as usize].text {
+                    "(" => need_arg = true,
+                    "," => {
+                        saw_comma = true;
+                        if need_arg {
+                            let idx = out.len();
+                            out.push(PortConn {
+                                port_name: None,
+                                arg_index: idx,
+                                expr: None,
+                                implicit_named: false,
+                                wildcard: false,
+                                scope_prefix: scope_prefix.clone(),
+                                gen_consts: gen_consts.clone(),
+                                loc: inst_loc,
+                            });
+                        }
+                        need_arg = true;
+                    }
+                    ")" => {
+                        if need_arg && saw_comma {
+                            let idx = out.len();
+                            out.push(PortConn {
+                                port_name: None,
+                                arg_index: idx,
+                                expr: None,
+                                implicit_named: false,
+                                wildcard: false,
+                                scope_prefix: scope_prefix.clone(),
+                                gen_consts: gen_consts.clone(),
+                                loc: inst_loc,
+                            });
+                        }
+                        need_arg = false;
+                    }
+                    _ => {}
+                },
+                sv_syntax::Child::Node(n) if t.kind(n) == Arg => {
+                    need_arg = false;
+                    let a = NodeRef { tree: al.tree, node: n };
+                    let idx = out.len();
+                    let own = b.own_tokens(a);
+                    let expr = b.children(a).into_iter().find(|x| b.kind(*x) != Attribute).map(|x| (x.tree, x.node));
+                    let loc = self.loc_of(a);
+                    if own.starts_with(&[".", "*"]) {
+                        out.push(PortConn {
+                            port_name: None,
+                            arg_index: idx,
+                            expr: None,
+                            implicit_named: false,
+                            wildcard: true,
+                            scope_prefix: scope_prefix.clone(),
+                            gen_consts: gen_consts.clone(),
+                            loc,
+                        });
+                    } else if own.first() == Some(&".") {
+                        let pname = own.get(1).map(|s| s.strip_prefix('\\').unwrap_or(s).to_string());
+                        let has_parens = own.contains(&"(");
+                        out.push(PortConn {
+                            port_name: pname,
+                            arg_index: idx,
+                            expr,
+                            implicit_named: !has_parens && expr.is_none(),
+                            wildcard: false,
+                            scope_prefix: scope_prefix.clone(),
+                            gen_consts: gen_consts.clone(),
+                            loc,
+                        });
+                    } else {
+                        out.push(PortConn {
+                            port_name: None,
+                            arg_index: idx,
+                            expr,
+                            implicit_named: false,
+                            wildcard: false,
+                            scope_prefix: scope_prefix.clone(),
+                            gen_consts: gen_consts.clone(),
+                            loc,
+                        });
+                    }
+                }
+                _ => {}
             }
         }
         out
@@ -2326,25 +2473,28 @@ impl<'b, 't> Elab<'b, 't> {
         }
         let b = self.b;
         let Some(dt) = b.child(c, DataType) else { return };
-        let Some(def) = b.toks_of(dt).first().map(|s| s.to_string()) else { return };
+        let def_lookup: String = b.toks_of(dt).into_iter().take_while(|&t| t != "#").collect();
+        if def_lookup.is_empty() {
+            return;
+        }
+        if self.design.udps.contains_key(&def_lookup) {
+            self.instantiate_udp(c, &def_lookup, vals);
+            return;
+        }
+        if let Some((chk_key, chk_decl, chk_scope)) = self.resolve_checker(&def_lookup, scope) {
+            self.instantiate_checker(c, &chk_key, chk_decl, chk_scope, path, scope, vals, depth);
+            return;
+        }
+        let def = self.resolve_configured_cell(path, &def_lookup);
         let Some(d) = self.defs.get(&def) else {
             // Nothing is elaborated for the instance, so say so: a design that silently
             // loses an instance is not the design that was read.
             if self.checked.insert(c) {
-                let other = b.trees.iter().find_map(|t| {
-                    t.preorder().into_iter().find_map(|n| match t.kind(n) {
-                        UdpDecl | CheckerDecl if t.child(n, Name).is_some_and(|nm| t.bare_text(nm) == def) => {
-                            Some(t.kind(n))
-                        }
-                        _ => None,
-                    })
+                self.diags.push(crate::names::Diag {
+                    tree: c.tree,
+                    node: dt.node,
+                    message: format!("unknown module '{def_lookup}'"),
                 });
-                let message = match other {
-                    Some(UdpDecl) => format!("instance of user-defined primitive '{def}' is not supported"),
-                    Some(_) => format!("instance of checker '{def}' is not supported"),
-                    None => format!("unknown module '{def}'"),
-                };
-                self.diags.push(crate::names::Diag { tree: c.tree, node: dt.node, message });
             }
             return;
         };
@@ -2436,7 +2586,10 @@ impl<'b, 't> Elab<'b, 't> {
                         }
                     }
                 }
-                self.out.push(format!("{path} instance {n} : {def}"));
+                let env = Rc::new(types.clone());
+                let child_path = format!("{path}.{n}");
+                let actual_def = self.resolve_configured_instance(&child_path, &def);
+                self.out.push(format!("{path} instance {n} : {actual_def}"));
                 let mut over = over.clone();
                 let mut pend = Vec::new();
                 for (segs, v) in self.defparams.last().into_iter().flatten() {
@@ -2469,10 +2622,8 @@ impl<'b, 't> Elab<'b, 't> {
                         }
                     }
                 }
-                let env = Rc::new(types.clone());
-                let child_path = format!("{path}.{n}");
-                self.instance(&def, &n, &child_path, &over, pend, env, port_conns.clone(), loc, depth + 1);
-                self.check_port_names(inst, &def, &child_path, &port_conns);
+                self.instance(&actual_def, &n, &child_path, &over, pend, env, port_conns.clone(), loc, depth + 1);
+                self.check_port_names(inst, &actual_def, &child_path, &port_conns);
             }
         }
     }
@@ -2641,6 +2792,855 @@ impl<'b, 't> Elab<'b, 't> {
             }
         }
         out
+    }
+
+    // ---- IEEE 1800-2023 Ch. 33 Configurations (`config ... endconfig`) ----
+
+    fn parse_config_decl(b: &Builder<'t>, cfg_node: NodeRef) -> Option<ConfigSpec> {
+        let (name, _) = b.name_of(cfg_node)?;
+        let mut spec = ConfigSpec {
+            name,
+            decl: cfg_node,
+            design_tops: Vec::new(),
+            inst_uses: HashMap::default(),
+            cell_uses: HashMap::default(),
+        };
+        for r in b.children(cfg_node) {
+            if b.kind(r) != ConfigRule {
+                continue;
+            }
+            let toks: Vec<&str> = b.toks_of(r).into_iter().filter(|&t| t != ";").collect();
+            match toks.first().copied() {
+                Some("design") => {
+                    let mut i = 1;
+                    while i < toks.len() {
+                        if i + 2 < toks.len() && toks[i + 1] == "." {
+                            spec.design_tops.push((Some(toks[i].to_string()), toks[i + 2].to_string(), r));
+                            i += 3;
+                        } else {
+                            spec.design_tops.push((None, toks[i].to_string(), r));
+                            i += 1;
+                        }
+                    }
+                }
+                Some("instance") => {
+                    if let Some(use_pos) = toks.iter().position(|&t| t == "use") {
+                        let inst_path = toks[1..use_pos].concat();
+                        if let Some(bound_cell) = Self::extract_config_use_cell(&toks[use_pos + 1..]) {
+                            spec.inst_uses.insert(inst_path, (bound_cell, r));
+                        }
+                    }
+                }
+                Some("cell") => {
+                    if let Some(use_pos) = toks.iter().position(|&t| t == "use") {
+                        let cell_toks = &toks[1..use_pos];
+                        let src_cell = cell_toks.last().copied().unwrap_or("");
+                        if !src_cell.is_empty() {
+                            if let Some(bound_cell) = Self::extract_config_use_cell(&toks[use_pos + 1..]) {
+                                spec.cell_uses.insert(src_cell.to_string(), (bound_cell, r));
+                            }
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        Some(spec)
+    }
+
+    fn extract_config_use_cell(after_use: &[&str]) -> Option<String> {
+        let end = after_use.iter().position(|&t| matches!(t, ":" | "#")).unwrap_or(after_use.len());
+        let slice = &after_use[..end];
+        match slice {
+            [cell] => Some((*cell).to_string()),
+            [_lib, ".", cell] => Some((*cell).to_string()),
+            _ => None,
+        }
+    }
+
+    fn validate_configs(&mut self) {
+        let cfgs: Vec<ConfigSpec> = self.configs.values().cloned().collect();
+        for cfg in cfgs {
+            if cfg.design_tops.is_empty() && self.checked.insert(cfg.decl) {
+                self.diags.push(crate::names::Diag {
+                    tree: cfg.decl.tree,
+                    node: cfg.decl.node,
+                    message: format!("config '{}' is missing a 'design' statement", cfg.name),
+                });
+            }
+            for (_, cell, r) in &cfg.design_tops {
+                if !self.defs.contains_key(cell) && self.checked.insert(*r) {
+                    self.diags.push(crate::names::Diag {
+                        tree: r.tree,
+                        node: r.node,
+                        message: format!("unknown design unit '{cell}' in config '{}'", cfg.name),
+                    });
+                }
+            }
+            for (ipath, (bound_cell, r)) in &cfg.inst_uses {
+                if !self.defs.contains_key(bound_cell) && self.checked.insert(*r) {
+                    self.diags.push(crate::names::Diag {
+                        tree: r.tree,
+                        node: r.node,
+                        message: format!("unknown cell '{bound_cell}' in config '{}'", cfg.name),
+                    });
+                    continue;
+                }
+                if !cfg.design_tops.is_empty() {
+                    let root = ipath.split('.').next().unwrap_or("");
+                    if !cfg.design_tops.iter().any(|(_, c, _)| c == root) && self.checked.insert(*r) {
+                        self.diags.push(crate::names::Diag {
+                            tree: r.tree,
+                            node: r.node,
+                            message: format!(
+                                "instance path '{ipath}' in config '{}' does not start at a configured design top",
+                                cfg.name
+                            ),
+                        });
+                    }
+                }
+            }
+            for (bound_cell, r) in cfg.cell_uses.values() {
+                if !self.defs.contains_key(bound_cell) && self.checked.insert(*r) {
+                    self.diags.push(crate::names::Diag {
+                        tree: r.tree,
+                        node: r.node,
+                        message: format!("unknown cell '{bound_cell}' in config '{}'", cfg.name),
+                    });
+                }
+            }
+        }
+    }
+
+    fn active_config_for(&self, root_path: &str) -> Option<&ConfigSpec> {
+        let top_root = root_path.split('.').next().unwrap_or(root_path);
+        for t in &self.top {
+            if let Some(cfg) = self.configs.get(t) {
+                if cfg.design_tops.iter().any(|(_, c, _)| c == top_root) {
+                    return Some(cfg);
+                }
+            }
+        }
+        if self.top.is_empty() && self.configs.len() == 1 {
+            let cfg = self.configs.values().next()?;
+            if cfg.design_tops.iter().any(|(_, c, _)| c == top_root) {
+                return Some(cfg);
+            }
+        }
+        None
+    }
+
+    fn resolve_configured_cell(&self, parent_path: &str, cell: &str) -> String {
+        if let Some(cfg) = self.active_config_for(parent_path) {
+            if let Some((bound, _)) = cfg.cell_uses.get(cell) {
+                if self.defs.contains_key(bound) {
+                    return bound.clone();
+                }
+            }
+        }
+        cell.to_string()
+    }
+
+    fn resolve_configured_instance(&self, child_path: &str, default_def: &str) -> String {
+        if let Some(cfg) = self.active_config_for(child_path) {
+            if let Some((bound, _)) = cfg.inst_uses.get(child_path) {
+                if self.defs.contains_key(bound) {
+                    return bound.clone();
+                }
+            }
+        }
+        default_def.to_string()
+    }
+
+    // ---- IEEE 1800-2023 Ch. 29 User-Defined Primitives (`primitive ... endprimitive`) ----
+
+    fn collect_udps(&mut self) {
+        for (ti, t) in self.b.trees.iter().enumerate() {
+            for n in t.preorder() {
+                if t.kind(n) != UdpDecl {
+                    continue;
+                }
+                let r = NodeRef { tree: ti, node: n };
+                let Some((name, _)) = self.b.name_of(r) else { continue };
+                let loc = self.loc_of(r);
+                if let Some(udp) = Self::parse_udp_def(t, n, name.clone(), loc) {
+                    self.design.udps.entry(name).or_insert(udp);
+                }
+            }
+        }
+    }
+
+    fn parse_udp_def(t: &Tree, n: NodeId, name: String, loc: crate::Loc) -> Option<UdpDef> {
+        let toks_of =
+            |nd: NodeId| -> Vec<&str> { t.token_range(nd).into_iter().map(|i| &*t.tokens[i as usize].text).collect() };
+        let header = t.child(n, ParenList).map(toks_of).unwrap_or_default();
+        let ansi = header.iter().any(|&x| matches!(x, "input" | "output"));
+        let mut ports: Vec<String> = Vec::new();
+        let mut is_sequential = false;
+        let mut init: Option<u8> = None;
+        let parse_init_lit = |s: &str| -> Option<u8> {
+            match s.trim().to_ascii_lowercase().as_str() {
+                "0" | "1'b0" | "'b0" | "1'h0" | "'0" => Some(b'0'),
+                "1" | "1'b1" | "'b1" | "1'h1" | "'1" => Some(b'1'),
+                "1'bx" | "'bx" | "1'hx" | "'x" | "x" => Some(b'x'),
+                _ => None,
+            }
+        };
+        if ansi {
+            let mut in_val = false;
+            let mut val_buf = String::new();
+            let mut cur_out = false;
+            for &x in &header {
+                if in_val {
+                    if matches!(x, "," | ")") {
+                        if cur_out {
+                            init = parse_init_lit(&val_buf);
+                        }
+                        val_buf.clear();
+                        in_val = false;
+                    } else {
+                        val_buf.push_str(x);
+                        continue;
+                    }
+                }
+                match x {
+                    "(" | ")" | "," => {}
+                    "output" => cur_out = true,
+                    "input" => cur_out = false,
+                    "reg" => {
+                        if cur_out {
+                            is_sequential = true;
+                        }
+                    }
+                    "=" => {
+                        in_val = true;
+                        val_buf.clear();
+                    }
+                    ident if ident.starts_with(|c: char| c.is_ascii_alphabetic() || c == '_' || c == '\\') => {
+                        ports.push(ident.strip_prefix('\\').unwrap_or(ident).to_string());
+                    }
+                    _ => {}
+                }
+            }
+        } else {
+            for &x in &header {
+                if !matches!(x, "(" | ")" | "," | "*" | ".*") {
+                    ports.push(x.strip_prefix('\\').unwrap_or(x).to_string());
+                }
+            }
+        }
+        let mut table_node = None;
+        for c in t.children(n) {
+            match t.kind(c) {
+                UdpPortDecl => {
+                    let tk = toks_of(c);
+                    if tk.contains(&"reg") {
+                        is_sequential = true;
+                    }
+                    if tk.contains(&"output") && tk.contains(&"=") {
+                        let rhs: String =
+                            tk.iter().copied().skip_while(|&x| x != "=").skip(1).take_while(|&x| x != ";").collect();
+                        init = parse_init_lit(&rhs);
+                    }
+                    if ports.is_empty() {
+                        let mut after_eq = false;
+                        for &x in &tk {
+                            match x {
+                                "input" | "output" | "reg" | ";" => {}
+                                "," => after_eq = false,
+                                "=" => after_eq = true,
+                                nm if !after_eq && nm.starts_with(|ch: char| ch.is_ascii_alphabetic() || ch == '_') => {
+                                    let clean = nm.strip_prefix('\\').unwrap_or(nm).to_string();
+                                    if !ports.contains(&clean) {
+                                        ports.push(clean);
+                                    }
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+                }
+                UdpInitial => {
+                    let tk = toks_of(c);
+                    let rhs: String =
+                        tk.iter().copied().skip_while(|&x| x != "=").skip(1).take_while(|&x| x != ";").collect();
+                    init = parse_init_lit(&rhs);
+                }
+                UdpTable => table_node = Some(c),
+                _ => {}
+            }
+        }
+        if ports.len() < 2 {
+            return None;
+        }
+        let num_inputs = ports.len() - 1;
+        let mut rows = Vec::new();
+        if let Some(tb) = table_node {
+            let body: String = toks_of(tb).into_iter().filter(|&x| x != "table" && x != "endtable").collect();
+            for row_str in body.trim().split(';').filter(|r| !r.is_empty()) {
+                let parts: Vec<&str> = row_str.split(':').collect();
+                let want = if is_sequential { 3 } else { 2 };
+                if parts.len() != want {
+                    continue;
+                }
+                let Some(inputs) = Self::parse_udp_row_inputs(parts[0], num_inputs) else { continue };
+                let state = if is_sequential {
+                    let sb = parts[1].as_bytes();
+                    if sb.len() != 1 {
+                        continue;
+                    }
+                    Some(Self::parse_udp_single_sym(sb[0])?)
+                } else {
+                    None
+                };
+                let ob = parts[want - 1].as_bytes();
+                if ob.len() != 1 {
+                    continue;
+                }
+                let output = match ob[0].to_ascii_lowercase() {
+                    b'0' => UdpOutSym::Zero,
+                    b'1' => UdpOutSym::One,
+                    b'x' => UdpOutSym::X,
+                    b'-' if is_sequential => UdpOutSym::NoChange,
+                    _ => continue,
+                };
+                rows.push(UdpRow { inputs, state, output });
+            }
+        }
+        Some(UdpDef { name, ports, is_sequential, init, rows, loc })
+    }
+
+    fn parse_udp_single_sym(c: u8) -> Option<UdpInputSym> {
+        Some(match c.to_ascii_lowercase() {
+            b'0' => UdpInputSym::Level0,
+            b'1' => UdpInputSym::Level1,
+            b'x' => UdpInputSym::LevelX,
+            b'?' => UdpInputSym::LevelAny,
+            b'b' => UdpInputSym::LevelBit,
+            b'r' => UdpInputSym::Edge(b'0', b'1'),
+            b'f' => UdpInputSym::Edge(b'1', b'0'),
+            b'p' => UdpInputSym::EdgePotPos,
+            b'n' => UdpInputSym::EdgePotNeg,
+            b'*' => UdpInputSym::EdgeAny,
+            _ => return None,
+        })
+    }
+
+    fn parse_udp_row_inputs(s: &str, expected: usize) -> Option<Vec<UdpInputSym>> {
+        let b = s.as_bytes();
+        let mut out = Vec::with_capacity(expected);
+        let mut i = 0;
+        while i < b.len() {
+            if b[i] == b'(' {
+                let (&a, &d, &b')') = (b.get(i + 1)?, b.get(i + 2)?, b.get(i + 3)?) else { return None };
+                out.push(UdpInputSym::Edge(a.to_ascii_lowercase(), d.to_ascii_lowercase()));
+                i += 4;
+            } else {
+                out.push(Self::parse_udp_single_sym(b[i])?);
+                i += 1;
+            }
+        }
+        (out.len() == expected).then_some(out)
+    }
+
+    fn instantiate_udp(&mut self, c: NodeRef, udp_name: &str, vals: &Vals) {
+        let Some(udp_ports) = self.design.udps.get(udp_name).map(|u| u.ports.clone()) else { return };
+        let b = self.b;
+        for inst in b.children(c) {
+            if b.kind(inst) != Instance {
+                continue;
+            }
+            let conns = self.extract_port_conns(inst, vals);
+            let any_named = conns.iter().any(|cn| cn.port_name.is_some() || cn.wildcard);
+            if any_named {
+                for cn in &conns {
+                    if let Some(pn) = &cn.port_name {
+                        if !udp_ports.iter().any(|p| p == pn) && self.checked.insert(inst) {
+                            self.diags.push(crate::names::Diag {
+                                tree: inst.tree,
+                                node: inst.node,
+                                message: format!("port '{pn}' does not exist in primitive '{udp_name}'"),
+                            });
+                        }
+                    }
+                }
+            } else if conns.len() != udp_ports.len() && self.checked.insert(inst) {
+                self.diags.push(crate::names::Diag {
+                    tree: inst.tree,
+                    node: inst.node,
+                    message: format!(
+                        "wrong number of port connections for primitive '{udp_name}' ({} given, expected {})",
+                        conns.len(),
+                        udp_ports.len()
+                    ),
+                });
+                continue;
+            } else {
+                // Input ports (`1..`) cannot be left blank on a UDP instance; output port (`0`) may be blank `(, clk, d)`.
+                for cn in conns.iter().skip(1) {
+                    if cn.expr.is_none() && self.checked.insert(inst) {
+                        self.diags.push(crate::names::Diag {
+                            tree: inst.tree,
+                            node: inst.node,
+                            message: format!("input port of primitive '{udp_name}' cannot be unconnected"),
+                        });
+                        break;
+                    }
+                }
+            }
+        }
+        self.push_item(ElabItemKind::UdpInst, c, vals);
+    }
+
+    // ---- IEEE 1800-2023 Ch. 17 Checkers (`checker ... endchecker`) ----
+
+    fn resolve_checker(&self, def_lookup: &str, scope: usize) -> Option<(String, NodeRef, usize)> {
+        if let Some(d) = self.checkers.get(def_lookup) {
+            return Some((def_lookup.to_string(), d.decl, d.scope));
+        }
+        if !def_lookup.contains("::") {
+            let mut cur = Some(scope);
+            while let Some(sc) = cur {
+                for (pkg, item) in &self.b.scopes[sc].imports {
+                    if item.as_deref() == Some(def_lookup) || item.is_none() {
+                        let key = format!("{pkg}::{def_lookup}");
+                        if let Some(d) = self.checkers.get(&key) {
+                            return Some((key, d.decl, d.scope));
+                        }
+                    }
+                }
+                cur = self.b.scopes[sc].parent;
+            }
+        }
+        None
+    }
+
+    fn elaborate_procedural_checkers(
+        &mut self,
+        proc_node: NodeRef,
+        path: &str,
+        scope: usize,
+        vals: &Vals,
+        depth: usize,
+    ) {
+        if self.uninst > 0 {
+            return;
+        }
+        let t = &self.b.trees[proc_node.tree];
+        // Find outermost procedural clock (`always_ff @(posedge clk) ...`) if present.
+        let mut proc_tc: Option<(usize, NodeId)> = None;
+        for ch in t.children(proc_node.node) {
+            if t.kind(ch) == TimedStmt {
+                if let Some(tc) = t.child(ch, TimingControl) {
+                    proc_tc = Some((proc_node.tree, tc));
+                }
+            }
+        }
+        let saved_tc = self.proc_clock_ctx;
+        if proc_tc.is_some() {
+            self.proc_clock_ctx = proc_tc;
+        }
+        let mut stack: Vec<NodeId> = t.children(proc_node.node).collect();
+        stack.reverse();
+        while let Some(n) = stack.pop() {
+            if t.kind(n) == Instantiation {
+                let ir = NodeRef { tree: proc_node.tree, node: n };
+                if let Some(dt) = self.b.child(ir, DataType) {
+                    let def_lookup: String = self.b.toks_of(dt).into_iter().take_while(|&tk| tk != "#").collect();
+                    if let Some((chk_key, chk_decl, chk_scope)) = self.resolve_checker(&def_lookup, scope) {
+                        self.instantiate_checker(ir, &chk_key, chk_decl, chk_scope, path, scope, vals, depth);
+                    }
+                }
+                continue;
+            }
+            let mut kids: Vec<NodeId> = t.children(n).collect();
+            kids.reverse();
+            stack.extend(kids);
+        }
+        self.proc_clock_ctx = saved_tc;
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn instantiate_checker(
+        &mut self,
+        c: NodeRef,
+        chk_key: &str,
+        chk_decl: NodeRef,
+        chk_scope: usize,
+        path: &str,
+        scope: usize,
+        vals: &Vals,
+        depth: usize,
+    ) {
+        if depth > MAX_DEPTH {
+            return;
+        }
+        let b = self.b;
+        let def_short = chk_key.rsplit("::").next().unwrap_or(chk_key);
+        for inst in b.children(c) {
+            if b.kind(inst) != Instance {
+                continue;
+            }
+            let Some((name, _)) = b.name_of(inst) else { continue };
+            let dims: Vec<NodeRef> = b.children(inst).into_iter().filter(|k| b.kind(*k) == Dim).collect();
+            let mut names = vec![name];
+            for dim in dims {
+                *b.inst.borrow_mut() = vals.clone();
+                let Some((l, r)) = b.dim_range(dim, scope, &self.env()) else { return };
+                if l.abs_diff(r) > MAX_ITER as u128 {
+                    return;
+                }
+                let idx: Vec<i128> = if l >= r { (r..=l).collect() } else { (l..=r).collect() };
+                names = names.iter().flat_map(|n| idx.iter().map(move |i| format!("{n}[{i}]"))).collect();
+            }
+            let port_conns = self.extract_port_conns(inst, vals);
+            let loc = self.loc_of(inst);
+            for n in names {
+                let child_path = format!("{path}.{n}");
+                self.checker_instance_body(
+                    def_short,
+                    chk_decl,
+                    chk_scope,
+                    &n,
+                    &child_path,
+                    port_conns.clone(),
+                    loc,
+                    depth + 1,
+                );
+                self.check_port_names(inst, def_short, &child_path, &port_conns);
+            }
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn checker_instance_body(
+        &mut self,
+        def: &str,
+        decl: NodeRef,
+        scope: usize,
+        leaf_name: &str,
+        path: &str,
+        port_conns: Vec<PortConn>,
+        loc: crate::Loc,
+        depth: usize,
+    ) {
+        self.reached.insert(decl);
+        let parent = self.design_stack.last().copied();
+        let rel_path = match parent {
+            Some(pid) => {
+                let ppath = &self.design.instances[pid.0 as usize].path;
+                path.strip_prefix(&format!("{ppath}.")).unwrap_or(leaf_name).to_string()
+            }
+            None => leaf_name.to_string(),
+        };
+        let mut chk_imports = Vec::new();
+        {
+            let dt = &self.b.trees[decl.tree];
+            if let Some((first, _)) = dt.token_bounds(decl.node) {
+                for p in dt.children(dt.root).filter(|&c| dt.kind(c) == PackageDecl) {
+                    if dt.token_bounds(p).is_some_and(|(lo, hi)| lo <= first && first <= hi) {
+                        if let Some(nm) = dt.child(p, Name) {
+                            chk_imports.push((String::new(), dt.bare_text(nm).trim().to_string(), None));
+                        }
+                    }
+                }
+            }
+        }
+        let inst_id = InstanceId(self.design.instances.len() as u32);
+        self.design.instances.push(DesignInstance {
+            id: inst_id,
+            parent,
+            name: leaf_name.to_string(),
+            rel_path,
+            path: path.to_string(),
+            definition: def.to_string(),
+            is_interface: false,
+            is_checker: true,
+            is_bound: self.bound > 0,
+            checker_events: Vec::new(),
+            checker_untyped: Vec::new(),
+            def_node: (decl.tree, decl.node),
+            params: Vec::new(),
+            type_params: Vec::new(),
+            typedefs: Vec::new(),
+            imports: chk_imports,
+            ports: Vec::new(),
+            port_conns: port_conns.clone(),
+            symbols: Vec::new(),
+            enum_consts: Vec::new(),
+            modports: Vec::new(),
+            items: Vec::new(),
+            subroutines: Vec::new(),
+            children: Vec::new(),
+            loc,
+            sym_by_rel: HashMap::default(),
+        });
+        self.design.inst_by_path.insert(path.to_string(), inst_id);
+        match parent {
+            Some(pid) => self.design.instances[pid.0 as usize].children.push(inst_id),
+            None => self.design.tops.push(inst_id),
+        }
+        self.design_stack.push(inst_id);
+        self.gen_stack.push(String::new());
+        self.b.sig_scopes.borrow_mut().push(Default::default());
+        self.non_ansi_stack.push(NonAnsiPorts::default());
+
+        let mut vals = Vals::default();
+        if let Some(pid) = parent {
+            self.collect_checker_ports(decl, scope, &vals, pid, inst_id, &port_conns);
+        }
+        let body: Vec<NodeRef> = self.b.children(decl);
+        let empty_over = Overrides::default();
+        let saved_out = std::mem::take(&mut self.out);
+        self.items(&body, path, scope, &empty_over, false, &mut vals, depth);
+        self.out = saved_out;
+        self.check_selects(decl, scope, &vals);
+        self.check_variable_drivers();
+
+        self.non_ansi_stack.pop();
+        self.gen_stack.pop();
+        self.design_stack.pop();
+        self.b.sig_scopes.borrow_mut().pop();
+    }
+
+    fn find_parent_inferred_clock(&self, parent_id: InstanceId) -> Option<(usize, NodeId, bool)> {
+        if let Some((tr, tc)) = self.proc_clock_ctx {
+            return Some((tr, tc, true));
+        }
+        let pinst = &self.design.instances[parent_id.0 as usize];
+        for item in &pinst.items {
+            if item.kind == ElabItemKind::ClockingDecl {
+                let t = &self.b.trees[item.tree];
+                let own: Vec<&str> = t
+                    .node(item.node)
+                    .children
+                    .iter()
+                    .filter_map(|c| match *c {
+                        sv_syntax::Child::Token(i) => Some(&*t.tokens[i as usize].text),
+                        _ => None,
+                    })
+                    .collect();
+                if own.contains(&"default") {
+                    if let Some(tc) = t.child(item.node, TimingControl) {
+                        return Some((item.tree, tc, true));
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    fn find_parent_inferred_disable(&self, parent_id: InstanceId) -> Option<(usize, NodeId)> {
+        let pinst = &self.design.instances[parent_id.0 as usize];
+        for item in &pinst.items {
+            if item.kind == ElabItemKind::DefaultDisable {
+                let t = &self.b.trees[item.tree];
+                if let Some(e) = t.children(item.node).find(|&c| t.kind(c) != Attribute) {
+                    return Some((item.tree, e));
+                }
+            }
+        }
+        None
+    }
+
+    fn collect_checker_ports(
+        &mut self,
+        decl: NodeRef,
+        scope: usize,
+        vals: &Vals,
+        parent_id: InstanceId,
+        inst_id: InstanceId,
+        conns: &[PortConn],
+    ) {
+        let b = self.b;
+        let Some(pl) = b.child(decl, Header).and_then(|h| b.child(h, PortList)) else { return };
+        let ports: Vec<NodeRef> = b.children(pl).into_iter().filter(|p| b.kind(*p) == Port).collect();
+        let env = self.env();
+        let mut dir = PortDir::Input;
+        let mut cur_dt: Option<NodeRef> = None;
+        let mut cur_special: Option<&str> = None; // "event" | "untyped" | "sequence" | "property"
+        for (port_idx, p) in ports.into_iter().enumerate() {
+            self.record_enums_in(p, scope, vals, None);
+            let own = b.own_tokens(p);
+            let dt = b.child(p, DataType);
+            let Some(d) = b.child(p, Declarator) else { continue };
+            let Some((pname, _)) = b.name_of(d) else { continue };
+
+            let new_dir = own.iter().find_map(|&t| parse_port_dir(t));
+            let special_kw =
+                own.iter().copied().find(|&t| matches!(t, "untyped" | "sequence" | "property" | "event")).or_else(
+                    || {
+                        dt.and_then(|dn| b.own_tokens(dn).first().copied())
+                            .filter(|&t| matches!(t, "untyped" | "sequence" | "property" | "event"))
+                    },
+                );
+            let bare_untyped =
+                new_dir.is_none() && dt.is_none() && special_kw.is_none() && cur_dt.is_none() && cur_special.is_none();
+            if new_dir.is_some() || dt.is_some() || special_kw.is_some() {
+                if let Some(nd) = new_dir {
+                    dir = nd;
+                }
+                cur_dt = dt;
+                cur_special = special_kw;
+            } else if bare_untyped {
+                cur_special = Some("untyped");
+            }
+
+            let init = b.children(d).into_iter().find(|c| !matches!(b.kind(*c), Name | Dim));
+            let conn_opt = conns
+                .iter()
+                .find(|c| c.port_name.as_deref() == Some(pname.as_str()))
+                .or_else(|| conns.iter().find(|c| c.port_name.is_none() && !c.wildcard && c.arg_index == port_idx))
+                .or_else(|| conns.iter().find(|c| c.wildcard))
+                .cloned();
+            let call_scope_prefix = conn_opt.as_ref().map(|c| c.scope_prefix.clone()).unwrap_or_default();
+            let call_gen_consts = conn_opt.as_ref().map(|c| c.gen_consts.clone()).unwrap_or_default();
+
+            if cur_special == Some("event") {
+                if let Some(sid) = self.add_symbol(
+                    &pname,
+                    "",
+                    SymbolKind::Port { dir: PortDir::Input, is_net: false },
+                    RtlType::Event,
+                    None,
+                    d,
+                    init,
+                    None,
+                ) {
+                    self.design.instances[inst_id.0 as usize].ports.push(sid);
+                }
+                let ev_target = if let Some(conn) = &conn_opt {
+                    if let Some((tr, nd)) = conn.expr {
+                        let txt = b.trees[tr].bare_text(nd);
+                        if txt.trim() == "$inferred_clock" {
+                            self.find_parent_inferred_clock(parent_id).map(|(itr, ind, itc)| CheckerEventBinding {
+                                parent_inst: parent_id,
+                                scope_prefix: call_scope_prefix.clone(),
+                                gen_consts: call_gen_consts.clone(),
+                                tree: itr,
+                                node: ind,
+                                is_timing_control: itc,
+                            })
+                        } else {
+                            Some(CheckerEventBinding {
+                                parent_inst: parent_id,
+                                scope_prefix: call_scope_prefix.clone(),
+                                gen_consts: call_gen_consts.clone(),
+                                tree: tr,
+                                node: nd,
+                                is_timing_control: false,
+                            })
+                        }
+                    } else {
+                        None
+                    }
+                } else if let Some(iv) = init {
+                    let txt = b.trees[iv.tree].bare_text(iv.node);
+                    if txt.trim() == "$inferred_clock" {
+                        self.find_parent_inferred_clock(parent_id).map(|(itr, ind, itc)| CheckerEventBinding {
+                            parent_inst: parent_id,
+                            scope_prefix: call_scope_prefix.clone(),
+                            gen_consts: call_gen_consts.clone(),
+                            tree: itr,
+                            node: ind,
+                            is_timing_control: itc,
+                        })
+                    } else {
+                        Some(CheckerEventBinding {
+                            parent_inst: inst_id,
+                            scope_prefix: String::new(),
+                            gen_consts: Vec::new(),
+                            tree: iv.tree,
+                            node: iv.node,
+                            is_timing_control: false,
+                        })
+                    }
+                } else {
+                    None
+                };
+                if let Some(eb) = ev_target {
+                    self.design.instances[inst_id.0 as usize].checker_events.push((pname, eb));
+                }
+                continue;
+            }
+
+            if matches!(cur_special, Some("untyped" | "sequence" | "property")) {
+                if let Some(sid) = self.add_symbol(
+                    &pname,
+                    "",
+                    SymbolKind::Port { dir: PortDir::Input, is_net: false },
+                    RtlType::Event,
+                    None,
+                    d,
+                    init,
+                    None,
+                ) {
+                    self.design.instances[inst_id.0 as usize].ports.push(sid);
+                }
+                let actual = if let Some(conn) = &conn_opt {
+                    if let Some((tr, nd)) = conn.expr {
+                        Some(CheckerUntypedBinding {
+                            parent_inst: parent_id,
+                            scope_prefix: call_scope_prefix,
+                            gen_consts: call_gen_consts,
+                            tree: tr,
+                            node: nd,
+                        })
+                    } else if conn.implicit_named || conn.wildcard {
+                        Some(CheckerUntypedBinding {
+                            parent_inst: parent_id,
+                            scope_prefix: call_scope_prefix,
+                            gen_consts: call_gen_consts,
+                            tree: d.tree,
+                            node: b.child(d, Name).unwrap_or(d).node,
+                        })
+                    } else {
+                        init.map(|iv| CheckerUntypedBinding {
+                            parent_inst: inst_id,
+                            scope_prefix: String::new(),
+                            gen_consts: Vec::new(),
+                            tree: iv.tree,
+                            node: iv.node,
+                        })
+                    }
+                } else {
+                    init.map(|iv| CheckerUntypedBinding {
+                        parent_inst: inst_id,
+                        scope_prefix: String::new(),
+                        gen_consts: Vec::new(),
+                        tree: iv.tree,
+                        node: iv.node,
+                    })
+                };
+                if let Some(ub) = actual {
+                    self.design.instances[inst_id.0 as usize].checker_untyped.push((pname, ub));
+                }
+                continue;
+            }
+
+            *b.inst.borrow_mut() = vals.clone();
+            let ty = b.rtl_type(cur_dt, Some(d), scope, &env, 0);
+            let pbounds = b.packed_1d_bounds(cur_dt, scope, &env, 0);
+            *b.inst.borrow_mut() = Vals::default();
+            let mut eff_init = init;
+            let mut eff_cval = init.and_then(|iv| self.eval_init(iv, cur_dt, &ty, scope, vals));
+            if let Some(iv) = init {
+                if b.trees[iv.tree].bare_text(iv.node).trim() == "$inferred_disable" {
+                    if let Some((dtr, dnd)) = self.find_parent_inferred_disable(parent_id) {
+                        eff_init = Some(NodeRef { tree: dtr, node: dnd });
+                        eff_cval = None;
+                    } else {
+                        eff_init = None;
+                        eff_cval = Some(CVal::new(1, false, 0));
+                    }
+                }
+            }
+            if let Some(sid) =
+                self.add_symbol(&pname, "", SymbolKind::Port { dir, is_net: false }, ty, pbounds, d, eff_init, eff_cval)
+            {
+                self.design.instances[inst_id.0 as usize].ports.push(sid);
+            }
+        }
     }
 }
 

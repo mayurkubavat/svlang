@@ -1,7 +1,7 @@
 //! Hierarchy flattening, signal/memory/port slot allocation, port stitching,
 //! continuous assignments, gates, and SVA property attachment.
 
-use sv_semantic::expr::resolve_interface_port;
+use sv_semantic::expr::{is_streaming_concat_node, resolve_interface_port};
 use sv_semantic::fx::{FxMap, FxSet};
 use sv_semantic::{
     BoundProperty, CVal, ElabItemKind, ElaboratedDesign, ExprArena, ExprBinder, ExprId, ExprKind, InstanceId, Loc,
@@ -12,12 +12,12 @@ use sv_syntax::{Child, NodeId, SyntaxKind, Tree};
 use crate::builder::{BuildKind, NetBuilder};
 use crate::drivers::{resolve_all_signals, DriverKind, SignalSlot};
 use crate::expr_lower::{
-    addr_bits, compute_packed_slice_offset, compute_unpacked_index_bounds, extract_lsb_bit0, ExprLowerer, FuncInliner,
-    ObjSlot, ObjVal,
+    addr_bits, compute_packed_slice_offset, compute_unpacked_index_bounds, extract_lsb_bit0,
+    prepare_streaming_unpack_rhs, ExprLowerer, FuncInliner, ObjSlot, ObjVal,
 };
 use crate::ir::{
     ClockSpec, Edge, FreeKind, LowerConfig, LowerOutcome, MemId, Memory, NetOp, Netlist, NetlistDiag, PortInput,
-    PortOutput, TraceSignal, ValueId, ValueKind, ValueNode,
+    PortOutput, State, StateId, TraceSignal, ValueId, ValueKind, ValueNode,
 };
 
 #[derive(Clone, Debug)]
@@ -243,6 +243,7 @@ impl<'a> DesignLowerer<'a> {
             loc,
             drivers: Vec::new(),
             free: if cut.is_some() { FreeKind::Cut } else { FreeKind::Undriven },
+            pull: None,
         });
         std::rc::Rc::make_mut(&mut self.slot_placeholders).push(placeholder);
         self.builder.traces.push(TraceSignal { name, width, signed, four_state, value: placeholder, loc });
@@ -335,16 +336,40 @@ impl<'a> DesignLowerer<'a> {
         }
     }
 
-    /// `(* anyseq *)` or `(* anyconst *)` on the declaration holding `decl` (a declarator).
+    /// `(* anyseq *)` / `(* anyconst *)` on a declaration, or `rand` / `const rand` inside a `checker`.
     fn free_attr(&mut self, decl: (usize, NodeId)) -> FreeKind {
         if self.free_attrs.is_none() {
             let mut map = FxMap::default();
             for (ti, t) in self.trees.iter().enumerate() {
+                let mut chk_end: Option<u32> = None;
                 for n in t.preorder() {
+                    if let Some(hi) = chk_end {
+                        if t.token_bounds(n).is_some_and(|(lo, _)| lo > hi) {
+                            chk_end = None;
+                        }
+                    }
+                    if t.kind(n) == SyntaxKind::CheckerDecl {
+                        chk_end = t.token_bounds(n).map(|(_, hi)| hi);
+                        continue;
+                    }
                     if t.kind(n) != SyntaxKind::DataDecl {
                         continue;
                     }
                     let mut free = FreeKind::Undriven;
+                    if chk_end.is_some() {
+                        let own: Vec<&str> = t
+                            .node(n)
+                            .children
+                            .iter()
+                            .filter_map(|c| match *c {
+                                Child::Token(i) => Some(&*t.tokens[i as usize].text),
+                                _ => None,
+                            })
+                            .collect();
+                        if own.contains(&"rand") {
+                            free = if own.contains(&"const") { FreeKind::AnyConst } else { FreeKind::AnySeq };
+                        }
+                    }
                     for a in t.children(n).filter(|&c| t.kind(c) == SyntaxKind::Attribute) {
                         for spec in t.children(a) {
                             match t.bare_text(spec).split('=').next().unwrap_or("").trim() {
@@ -411,6 +436,9 @@ impl<'a> DesignLowerer<'a> {
                 return;
             }
             if matches!(sym.ty, RtlType::Event) {
+                if self.design.instance(sym.instance).is_checker && matches!(sym.kind, SymbolKind::Port { .. }) {
+                    return;
+                }
                 self.builder.unsup(sym.loc, format!("named event '{}' is not synthesizable in RTL", sym.full_path));
                 return;
             }
@@ -641,6 +669,10 @@ impl<'a> DesignLowerer<'a> {
                 }
             }
             let Some((init_tree, init_node)) = sym.init_node else { continue };
+            if matches!(sym.kind, SymbolKind::Port { dir: PortDir::Input, .. }) {
+                // Input port default value is stitched by `stitch_child_ports` when unconnected.
+                continue;
+            }
             let Some(slot) = self.sym_slots.get(&sid).cloned() else { continue };
             if sym.is_net_with_init() {
                 // `wire [3:0] w = a + b;` is an implicit continuous assignment per IEEE 1800 §10.3.1!
@@ -828,6 +860,7 @@ impl<'a> DesignLowerer<'a> {
                 ElabItemKind::ProceduralBlock => self.lower_procedural_block(inst_id, item),
                 ElabItemKind::AssertStmt => self.lower_module_immediate_assert(inst_id, item),
                 ElabItemKind::GateInst => self.lower_gate_inst(inst_id, item),
+                ElabItemKind::UdpInst => self.lower_udp_inst(inst_id, item),
                 ElabItemKind::NetAlias => self.lower_net_alias(inst_id, item),
                 _ => {}
             }
@@ -994,9 +1027,25 @@ impl<'a> DesignLowerer<'a> {
     ) {
         let gen_consts = self.collect_scope_gen_consts(child_id, scope_prefix);
         let mut arena = ExprArena::new();
-        let mut binder = ExprBinder::new(self.trees, self.design, child_id, scope_prefix, &gen_consts, &mut arena);
-        let eid_opt = binder.bind_assigned(tree_idx, node, port_ty);
-        self.flush_expr_diags(binder.diags);
+        let (mut eid_opt, mut c_diags) = {
+            let mut binder = ExprBinder::new(self.trees, self.design, child_id, scope_prefix, &gen_consts, &mut arena);
+            let out = binder.bind_assigned(tree_idx, node, port_ty);
+            (out, binder.diags)
+        };
+        if eid_opt.is_none() && self.design.instance(child_id).is_checker {
+            if let Some(parent_id) = self.design.instance(child_id).parent {
+                arena = ExprArena::new();
+                let p_consts = self.collect_scope_gen_consts(parent_id, "");
+                let mut pbinder = ExprBinder::new(self.trees, self.design, parent_id, "", &p_consts, &mut arena);
+                let peid = pbinder.bind_assigned(tree_idx, node, port_ty);
+                if peid.is_some() {
+                    c_diags.clear();
+                    self.flush_expr_diags(pbinder.diags);
+                    eid_opt = peid;
+                }
+            }
+        }
+        self.flush_expr_diags(c_diags);
         if let Some(eid) = eid_opt {
             if let Some(val) = self.eval_comb_expr(&arena, eid) {
                 self.drive_obj_slot(child_slot, val, DriverKind::InputPort, loc);
@@ -1022,6 +1071,44 @@ impl<'a> DesignLowerer<'a> {
                 ExprBinder::new(self.trees, self.design, inst_id, &item.scope_prefix, &item.gen_consts, &mut arena);
             let loc = binder.loc_of(item.tree, assign_expr);
             self.check_modport_lhs_legality(inst_id, item.tree, lhs_node, &item.scope_prefix, loc);
+            if is_streaming_concat_node(t, lhs_node) {
+                let Some(stream_lhs) = binder.bind_streaming_lhs(item.tree, lhs_node) else {
+                    self.flush_expr_diags(binder.diags);
+                    continue;
+                };
+                let Some(rhs_eid) = binder.bind_self(item.tree, rhs_node) else {
+                    self.flush_expr_diags(binder.diags);
+                    continue;
+                };
+                self.flush_expr_diags(binder.diags);
+                if self.reject_tristate_z(&arena, rhs_eid) {
+                    continue;
+                }
+                let Some(rhs_val) = self.eval_comb_expr(&arena, rhs_eid) else { continue };
+                let Some(rv) = prepare_streaming_unpack_rhs(&mut self.builder, &rhs_val, &stream_lhs, loc) else {
+                    continue;
+                };
+                let (total_w, _, four) = self.builder.node_shape(rv);
+                let mut hi_cursor = total_w;
+                for &part_eid in &stream_lhs.parts {
+                    let pw = arena.get(part_eid).ty.bit_width().unwrap_or(1);
+                    if hi_cursor < pw {
+                        break;
+                    }
+                    let lo = hi_cursor - pw;
+                    let slice =
+                        self.builder.alloc_op(NetOp::Slice { hi: hi_cursor - 1, lo }, vec![rv], pw, false, four, loc);
+                    self.drive_bound_lhs_continuous(
+                        &arena,
+                        part_eid,
+                        ObjVal::Packed(slice),
+                        DriverKind::ContinuousAssign,
+                        loc,
+                    );
+                    hi_cursor = lo;
+                }
+                continue;
+            }
             let Some(lhs_eid) = binder.bind_self(item.tree, lhs_node) else {
                 self.flush_expr_diags(binder.diags);
                 continue;
@@ -1043,24 +1130,30 @@ impl<'a> DesignLowerer<'a> {
     fn lower_gate_inst(&mut self, inst_id: InstanceId, item: &sv_semantic::ElabItem) {
         let t = &self.trees[item.tree];
         let gate_kw = own_first_tok(t, item.node).unwrap_or("");
-        if !matches!(gate_kw, "and" | "nand" | "or" | "nor" | "xor" | "xnor" | "buf" | "not") {
-            self.builder.unsup(item.loc, format!("switch/tri-state gate primitive '{gate_kw}' is not supported"));
+        if !matches!(
+            gate_kw,
+            "and"
+                | "nand"
+                | "or"
+                | "nor"
+                | "xor"
+                | "xnor"
+                | "buf"
+                | "not"
+                | "bufif0"
+                | "bufif1"
+                | "notif0"
+                | "notif1"
+                | "pullup"
+                | "pulldown"
+        ) {
+            self.builder.unsup(item.loc, format!("switch gate primitive '{gate_kw}' is not supported"));
             return;
         }
-        if t.child(item.node, SyntaxKind::TimingControl).is_some() {
-            self.builder.unsup(item.loc, "gate propagation delay is not supported");
-            return;
-        }
+        // Note: gate inertial delays `#(...)` are ignored in cycle-accurate RTL synthesis / formal lowering.
         let instances: Vec<NodeId> = t.children(item.node).filter(|&c| t.kind(c) == SyntaxKind::Instance).collect();
-        for inst_node in &instances {
-            if t.child(*inst_node, SyntaxKind::Dim).is_some() {
-                self.builder.unsup(item.loc, "gate instance array is not supported");
-                return;
-            }
-        }
-        let arg_lists: Vec<NodeId> =
-            subtree_preorder(t, item.node).into_iter().filter(|&n| t.kind(n) == SyntaxKind::ArgList).collect();
-        for al in arg_lists {
+        for inst_node in instances {
+            let Some(al) = t.child(inst_node, SyntaxKind::ArgList) else { continue };
             let args: Vec<NodeId> = t
                 .children(al)
                 .filter(|&c| t.kind(c) != SyntaxKind::Attribute)
@@ -1072,17 +1165,133 @@ impl<'a> DesignLowerer<'a> {
                     }
                 })
                 .collect();
-            if args.len() < 2 {
-                self.builder.err(item.loc, format!("gate primitive '{gate_kw}' requires at least 2 terminals"));
-                continue;
+
+            // Compute instance-array length (`1` when scalar instance).
+            let mut arr_len = 1u32;
+            if let Some(dim_node) = t.child(inst_node, SyntaxKind::Dim) {
+                let mut d_arena = ExprArena::new();
+                let mut d_binder = ExprBinder::new(
+                    self.trees,
+                    self.design,
+                    inst_id,
+                    &item.scope_prefix,
+                    &item.gen_consts,
+                    &mut d_arena,
+                );
+                let dkids: Vec<NodeId> = t.children(dim_node).filter(|&c| t.kind(c) != SyntaxKind::Attribute).collect();
+                if dkids.len() == 2 {
+                    let (Some(le), Some(re)) =
+                        (d_binder.bind_self(item.tree, dkids[0]), d_binder.bind_self(item.tree, dkids[1]))
+                    else {
+                        self.flush_expr_diags(d_binder.diags);
+                        return;
+                    };
+                    let (Some(lc), Some(rc)) = (d_arena.get(le).cval.clone(), d_arena.get(re).cval.clone()) else {
+                        self.builder.err(item.loc, "gate instance array bounds must be constant");
+                        return;
+                    };
+                    if !lc.known() || !rc.known() {
+                        self.builder.err(item.loc, "gate instance array bounds cannot contain x/z");
+                        return;
+                    }
+                    arr_len = (lc.i().abs_diff(rc.i()) + 1) as u32;
+                } else {
+                    self.builder.unsup(item.loc, "unsized gate instance array is not supported");
+                    return;
+                }
             }
+
             let mut arena = ExprArena::new();
             let mut binder =
                 ExprBinder::new(self.trees, self.design, inst_id, &item.scope_prefix, &item.gen_consts, &mut arena);
             let loc = binder.loc_of(item.tree, al);
+
+            if matches!(gate_kw, "pullup" | "pulldown") {
+                let Some(&net_node) = args.first() else { continue };
+                let Some(net_e) = binder.bind_self(item.tree, net_node) else {
+                    self.flush_expr_diags(binder.diags);
+                    continue;
+                };
+                self.flush_expr_diags(binder.diags);
+                if let Some((ObjSlot::Packed(sidx), _, _)) = self.resolve_const_lhs_slice(&arena, net_e, loc) {
+                    self.slots[sidx].pull = Some(gate_kw == "pullup");
+                }
+                continue;
+            }
+
+            if matches!(gate_kw, "bufif0" | "bufif1" | "notif0" | "notif1") {
+                if args.len() != 3 {
+                    self.builder.err(loc, format!("gate primitive '{gate_kw}' requires 3 terminals"));
+                    continue;
+                }
+                let (Some(out_e), Some(in_e), Some(en_e)) = (
+                    binder.bind_self(item.tree, args[0]),
+                    binder.bind_self(item.tree, args[1]),
+                    binder.bind_self(item.tree, args[2]),
+                ) else {
+                    self.flush_expr_diags(binder.diags);
+                    continue;
+                };
+                self.flush_expr_diags(binder.diags);
+                let (Some(in_v), Some(en_v)) = (
+                    self.eval_comb_expr(&arena, in_e).and_then(|o| o.as_packed()),
+                    self.eval_comb_expr(&arena, en_e).and_then(|o| o.as_packed()),
+                ) else {
+                    continue;
+                };
+                let slice_bit = |b: &mut NetBuilder, v: ValueId, k: u32| -> ValueId {
+                    let (w, _, f4) = b.node_shape(v);
+                    if w == 1 {
+                        v
+                    } else {
+                        let bit = k.min(w - 1);
+                        b.alloc_op(NetOp::Slice { hi: bit, lo: bit }, vec![v], 1, false, f4, loc)
+                    }
+                };
+                let mut bits_msb_first = Vec::with_capacity(arr_len as usize);
+                for k in (0..arr_len).rev() {
+                    let ib = slice_bit(&mut self.builder, in_v, k);
+                    let eb = slice_bit(&mut self.builder, en_v, k);
+                    let data_b = if matches!(gate_kw, "notif0" | "notif1") {
+                        self.builder.alloc_op(NetOp::Not, vec![ib], 1, false, true, loc)
+                    } else {
+                        ib
+                    };
+                    let cond_b = if matches!(gate_kw, "bufif0" | "notif0") {
+                        self.builder.alloc_op(NetOp::Not, vec![eb], 1, false, true, loc)
+                    } else {
+                        eb
+                    };
+                    let z1 = self.builder.alloc_const(CVal::all_z(1, false), true, loc);
+                    let tri = self.builder.alloc_op(NetOp::Mux, vec![cond_b, data_b, z1], 1, false, true, loc);
+                    bits_msb_first.push(tri);
+                }
+                let out_val = if arr_len == 1 {
+                    bits_msb_first[0]
+                } else {
+                    self.builder.alloc_op(NetOp::Concat, bits_msb_first, arr_len, false, true, loc)
+                };
+                self.drive_bound_lhs_continuous(
+                    &arena,
+                    out_e,
+                    ObjVal::Packed(out_val),
+                    DriverKind::ContinuousAssign,
+                    loc,
+                );
+                continue;
+            }
+
+            if args.len() < 2 {
+                self.builder.err(item.loc, format!("gate primitive '{gate_kw}' requires at least 2 terminals"));
+                continue;
+            }
             if matches!(gate_kw, "buf" | "not") {
                 let in_node = *args.last().expect("len >= 2");
-                let Some(in_e) = binder.bind_condition(item.tree, in_node) else {
+                let Some(in_e) = (if arr_len == 1 {
+                    binder.bind_condition(item.tree, in_node)
+                } else {
+                    binder.bind_self(item.tree, in_node)
+                }) else {
                     self.flush_expr_diags(binder.diags);
                     continue;
                 };
@@ -1097,10 +1306,11 @@ impl<'a> DesignLowerer<'a> {
                     continue;
                 }
                 let Some(in_v) = self.eval_comb_expr(&arena, in_e).and_then(|o| o.as_packed()) else { continue };
+                let in_sized = self.builder.resize_val(in_v, arr_len, false, false, loc);
                 let res_v = if gate_kw == "not" {
-                    self.builder.alloc_op(NetOp::Not, vec![in_v], 1, false, true, loc)
+                    self.builder.alloc_op(NetOp::Not, vec![in_sized], arr_len, false, true, loc)
                 } else {
-                    in_v
+                    in_sized
                 };
                 for oe in out_es {
                     self.drive_bound_lhs_continuous(
@@ -1118,7 +1328,12 @@ impl<'a> DesignLowerer<'a> {
                 };
                 let mut in_es = Vec::new();
                 for &inp in &args[1..] {
-                    if let Some(ie) = binder.bind_condition(item.tree, inp) {
+                    let ie_opt = if arr_len == 1 {
+                        binder.bind_condition(item.tree, inp)
+                    } else {
+                        binder.bind_self(item.tree, inp)
+                    };
+                    if let Some(ie) = ie_opt {
                         in_es.push(ie);
                     }
                 }
@@ -1128,7 +1343,12 @@ impl<'a> DesignLowerer<'a> {
                 }
                 let mut acc: Option<ValueId> = None;
                 for ie in in_es {
-                    let Some(iv) = self.eval_comb_expr(&arena, ie).and_then(|o| o.as_packed()) else { continue };
+                    let Some(raw_iv) = self.eval_comb_expr(&arena, ie).and_then(|o| o.as_packed()) else { continue };
+                    let iv = if arr_len > 1 && self.builder.node_shape(raw_iv).0 == 1 {
+                        self.builder.alloc_op(NetOp::Concat, vec![raw_iv; arr_len as usize], arr_len, false, true, loc)
+                    } else {
+                        self.builder.resize_val(raw_iv, arr_len, false, false, loc)
+                    };
                     acc = Some(match acc {
                         None => iv,
                         Some(prev) => {
@@ -1137,13 +1357,13 @@ impl<'a> DesignLowerer<'a> {
                                 "or" | "nor" => NetOp::Or,
                                 _ => NetOp::Xor,
                             };
-                            self.builder.alloc_op(op, vec![prev, iv], 1, false, true, loc)
+                            self.builder.alloc_op(op, vec![prev, iv], arr_len, false, true, loc)
                         }
                     });
                 }
                 if let Some(mut v) = acc {
                     if matches!(gate_kw, "nand" | "nor" | "xnor") {
-                        v = self.builder.alloc_op(NetOp::Not, vec![v], 1, false, true, loc);
+                        v = self.builder.alloc_op(NetOp::Not, vec![v], arr_len, false, true, loc);
                     }
                     self.drive_bound_lhs_continuous(
                         &arena,
@@ -1153,6 +1373,305 @@ impl<'a> DesignLowerer<'a> {
                         loc,
                     );
                 }
+            }
+        }
+    }
+
+    fn lower_udp_inst(&mut self, inst_id: InstanceId, item: &sv_semantic::ElabItem) {
+        use sv_semantic::elab_ir::{UdpInputSym, UdpOutSym};
+        let t = &self.trees[item.tree];
+        let Some(dt) = t.child(item.node, SyntaxKind::DataType) else { return };
+        let udp_name: String =
+            t.token_range(dt).into_iter().map(|i| &*t.tokens[i as usize].text).take_while(|&tk| tk != "#").collect();
+        let Some(udp) = self.design.udps.get(&udp_name).cloned() else { return };
+        let instances: Vec<NodeId> = t.children(item.node).filter(|&c| t.kind(c) == SyntaxKind::Instance).collect();
+
+        for (u_idx, inst_node) in instances.into_iter().enumerate() {
+            let Some(al) = t.child(inst_node, SyntaxKind::ArgList) else { continue };
+            // Extract positional or named arguments (preserving empty slots `(, clk, d)`!).
+            let mut port_exprs: Vec<Option<NodeId>> = vec![None; udp.ports.len()];
+            let mut pos = 0usize;
+            let mut need_arg = true;
+            for ch in &t.node(al).children {
+                match *ch {
+                    Child::Token(ti) => match &*t.tokens[ti as usize].text {
+                        "(" => need_arg = true,
+                        "," => {
+                            if need_arg {
+                                pos += 1;
+                            }
+                            need_arg = true;
+                        }
+                        _ => {}
+                    },
+                    Child::Node(an) if t.kind(an) == SyntaxKind::Arg => {
+                        need_arg = false;
+                        let own: Vec<&str> = t
+                            .node(an)
+                            .children
+                            .iter()
+                            .filter_map(|c| match *c {
+                                Child::Token(i) => Some(&*t.tokens[i as usize].text),
+                                _ => None,
+                            })
+                            .collect();
+                        let expr_n = t.children(an).find(|&c| t.kind(c) != SyntaxKind::Attribute);
+                        if own.first() == Some(&".") {
+                            if let Some(pname) = own.get(1).map(|s| s.strip_prefix('\\').unwrap_or(s)) {
+                                if let Some(pidx) = udp.ports.iter().position(|p| p == pname) {
+                                    port_exprs[pidx] = expr_n;
+                                }
+                            }
+                        } else {
+                            if pos < port_exprs.len() {
+                                port_exprs[pos] = expr_n;
+                            }
+                            pos += 1;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            let mut arena = ExprArena::new();
+            let mut binder =
+                ExprBinder::new(self.trees, self.design, inst_id, &item.scope_prefix, &item.gen_consts, &mut arena);
+            let loc = binder.loc_of(item.tree, inst_node);
+
+            let out_eid = port_exprs[0].and_then(|on| binder.bind_self(item.tree, on));
+            let mut in_eids = Vec::with_capacity(udp.ports.len() - 1);
+            let mut ok_inputs = true;
+            for inp_opt in &port_exprs[1..] {
+                let Some(in_node) = *inp_opt else {
+                    ok_inputs = false;
+                    break;
+                };
+                match binder.bind_self(item.tree, in_node) {
+                    Some(ie) => in_eids.push(ie),
+                    None => {
+                        ok_inputs = false;
+                        break;
+                    }
+                }
+            }
+            self.flush_expr_diags(binder.diags);
+            if !ok_inputs {
+                continue;
+            }
+            let mut in_vals = Vec::with_capacity(in_eids.len());
+            for ie in in_eids {
+                let Some(iv) = self.eval_comb_expr(&arena, ie).and_then(|o| o.as_packed()) else {
+                    ok_inputs = false;
+                    break;
+                };
+                in_vals.push(extract_lsb_bit0(&mut self.builder, iv, loc));
+            }
+            if !ok_inputs {
+                continue;
+            }
+
+            let level_match = |b: &mut NetBuilder, sig: ValueId, sym: UdpInputSym| -> Option<ValueId> {
+                match sym {
+                    UdpInputSym::LevelAny => Some(b.alloc_const(CVal::new(1, false, 1), false, loc)),
+                    UdpInputSym::Level0 => {
+                        let c0 = b.alloc_const(CVal::new(1, false, 0), true, loc);
+                        Some(b.alloc_op(NetOp::CaseEq, vec![sig, c0], 1, false, false, loc))
+                    }
+                    UdpInputSym::Level1 => {
+                        let c1 = b.alloc_const(CVal::new(1, false, 1), true, loc);
+                        Some(b.alloc_op(NetOp::CaseEq, vec![sig, c1], 1, false, false, loc))
+                    }
+                    UdpInputSym::LevelX => {
+                        let cx = b.alloc_const(CVal::all_x(1, false), true, loc);
+                        Some(b.alloc_op(NetOp::CaseEq, vec![sig, cx], 1, false, false, loc))
+                    }
+                    UdpInputSym::LevelBit => {
+                        let c0 = b.alloc_const(CVal::new(1, false, 0), true, loc);
+                        let c1 = b.alloc_const(CVal::new(1, false, 1), true, loc);
+                        let m0 = b.alloc_op(NetOp::CaseEq, vec![sig, c0], 1, false, false, loc);
+                        let m1 = b.alloc_op(NetOp::CaseEq, vec![sig, c1], 1, false, false, loc);
+                        Some(b.alloc_or1(m0, m1, loc))
+                    }
+                    _ => None,
+                }
+            };
+            let out_const = |b: &mut NetBuilder, o: UdpOutSym, fallback: ValueId| -> ValueId {
+                match o {
+                    UdpOutSym::Zero => b.alloc_const(CVal::new(1, false, 0), true, loc),
+                    UdpOutSym::One => b.alloc_const(CVal::new(1, false, 1), true, loc),
+                    UdpOutSym::X => b.alloc_const(CVal::all_x(1, false), true, loc),
+                    UdpOutSym::NoChange => fallback,
+                }
+            };
+
+            if !udp.is_sequential {
+                // Combinational UDP: unmatched combinations default to `1'bx` (IEEE 1800 §29.3.5).
+                let mut acc = self.builder.alloc_const(CVal::all_x(1, false), true, loc);
+                for row in udp.rows.iter().rev() {
+                    let mut cond = self.builder.alloc_const(CVal::new(1, false, 1), false, loc);
+                    let mut valid = true;
+                    for (&iv, &sym) in in_vals.iter().zip(&row.inputs) {
+                        if let Some(m) = level_match(&mut self.builder, iv, sym) {
+                            cond = self.builder.alloc_and1(cond, m, loc);
+                        } else {
+                            valid = false;
+                            break;
+                        }
+                    }
+                    if valid {
+                        let rv = out_const(&mut self.builder, row.output, acc);
+                        acc = self.builder.alloc_op(NetOp::Mux, vec![cond, rv, acc], 1, false, true, loc);
+                    }
+                }
+                if let Some(oe) = out_eid {
+                    self.drive_bound_lhs_continuous(&arena, oe, ObjVal::Packed(acc), DriverKind::ContinuousAssign, loc);
+                }
+                continue;
+            }
+
+            // Sequential UDP: check for active edge column (excluding `NoChange` '-' rows with `? (??)`).
+            let mut clk_col: Option<(usize, Edge)> = None;
+            for row in &udp.rows {
+                if row.output == UdpOutSym::NoChange {
+                    continue;
+                }
+                for (ci, &sym) in row.inputs.iter().enumerate() {
+                    let edge_opt = match sym {
+                        UdpInputSym::Edge(b'0', b'1') | UdpInputSym::EdgePotPos => Some(Edge::Posedge),
+                        UdpInputSym::Edge(b'1', b'0') | UdpInputSym::EdgePotNeg => Some(Edge::Negedge),
+                        _ => None,
+                    };
+                    if let Some(ed) = edge_opt {
+                        clk_col = Some((ci, ed));
+                        break;
+                    }
+                }
+                if clk_col.is_some() {
+                    break;
+                }
+            }
+
+            let inst_label = t
+                .child(inst_node, SyntaxKind::Name)
+                .map(|nm| t.bare_text(nm).trim().to_string())
+                .unwrap_or_else(|| format!("udp_{udp_name}_{u_idx}"));
+            let inst_path = &self.design.instance(inst_id).path;
+            let state_name = if item.scope_prefix.is_empty() {
+                format!("{inst_path}.{inst_label}.q")
+            } else {
+                format!("{inst_path}.{}.{inst_label}.q", item.scope_prefix)
+            };
+            let state_id = StateId(self.builder.states.len() as u32);
+            let out_val =
+                self.builder.alloc_raw(1, false, true, BuildKind::StateOut(state_id), Some(state_name.clone()), loc);
+            let init_cv = match udp.init {
+                Some(b'0') => Some(CVal::new(1, false, 0)),
+                Some(b'1') => Some(CVal::new(1, false, 1)),
+                Some(b'x') => Some(CVal::all_x(1, false)),
+                _ => None,
+            };
+
+            if let Some((ccol, cedge)) = clk_col {
+                // Edge-triggered sequential UDP (`State` clocked by `(in_vals[ccol], cedge)`).
+                let mut sync_next = out_val;
+                for row in udp.rows.iter().rev() {
+                    let row_is_active_edge = match row.inputs[ccol] {
+                        UdpInputSym::Edge(b'0', b'1') | UdpInputSym::EdgePotPos => cedge == Edge::Posedge,
+                        UdpInputSym::Edge(b'1', b'0') | UdpInputSym::EdgePotNeg => cedge == Edge::Negedge,
+                        UdpInputSym::EdgeAny => true,
+                        _ => false,
+                    };
+                    if !row_is_active_edge {
+                        continue;
+                    }
+                    let mut cond = self.builder.alloc_const(CVal::new(1, false, 1), false, loc);
+                    let mut valid = true;
+                    for (ci, (&iv, &sym)) in in_vals.iter().zip(&row.inputs).enumerate() {
+                        if ci == ccol {
+                            continue;
+                        }
+                        if let Some(m) = level_match(&mut self.builder, iv, sym) {
+                            cond = self.builder.alloc_and1(cond, m, loc);
+                        } else {
+                            valid = false;
+                            break;
+                        }
+                    }
+                    if let Some(st_sym) = row.state {
+                        if let Some(sm) = level_match(&mut self.builder, out_val, st_sym) {
+                            cond = self.builder.alloc_and1(cond, sm, loc);
+                        } else {
+                            valid = false;
+                        }
+                    }
+                    if valid {
+                        let rv = out_const(&mut self.builder, row.output, out_val);
+                        sync_next = self.builder.alloc_op(NetOp::Mux, vec![cond, rv, sync_next], 1, false, true, loc);
+                    }
+                }
+                let clk = ClockSpec { signal: in_vals[ccol], edge: cedge };
+                self.builder.states.push(State {
+                    id: state_id,
+                    name: state_name,
+                    width: 1,
+                    signed: false,
+                    four_state: true,
+                    clock: Some(clk),
+                    async_reset: None,
+                    latch_enable: None,
+                    init: init_cv,
+                    next: sync_next,
+                    out: out_val,
+                    loc,
+                });
+            } else {
+                // Level-sensitive sequential UDP (transparent latch).
+                let mut next_v = out_val;
+                let mut latch_en = self.builder.alloc_const(CVal::new(1, false, 0), false, loc);
+                for row in udp.rows.iter().rev() {
+                    if row.output == UdpOutSym::NoChange {
+                        continue;
+                    }
+                    let mut cond = self.builder.alloc_const(CVal::new(1, false, 1), false, loc);
+                    let mut valid = true;
+                    for (&iv, &sym) in in_vals.iter().zip(&row.inputs) {
+                        if let Some(m) = level_match(&mut self.builder, iv, sym) {
+                            cond = self.builder.alloc_and1(cond, m, loc);
+                        } else {
+                            valid = false;
+                            break;
+                        }
+                    }
+                    if let Some(st_sym) = row.state {
+                        if let Some(sm) = level_match(&mut self.builder, out_val, st_sym) {
+                            cond = self.builder.alloc_and1(cond, sm, loc);
+                        } else {
+                            valid = false;
+                        }
+                    }
+                    if valid {
+                        let rv = out_const(&mut self.builder, row.output, out_val);
+                        next_v = self.builder.alloc_op(NetOp::Mux, vec![cond, rv, next_v], 1, false, true, loc);
+                        latch_en = self.builder.alloc_or1(latch_en, cond, loc);
+                    }
+                }
+                self.builder.states.push(State {
+                    id: state_id,
+                    name: state_name,
+                    width: 1,
+                    signed: false,
+                    four_state: true,
+                    clock: None,
+                    async_reset: None,
+                    latch_enable: Some(latch_en),
+                    init: init_cv,
+                    next: next_v,
+                    out: out_val,
+                    loc,
+                });
+            }
+
+            if let Some(oe) = out_eid {
+                self.drive_bound_lhs_continuous(&arena, oe, ObjVal::Packed(out_val), DriverKind::ContinuousAssign, loc);
             }
         }
     }
@@ -2367,6 +2886,45 @@ fn prescan_eligible_memories(trees: &[Tree], design: &ElaboratedDesign, top_id: 
                         mark_aggregate_sym_uses(&arena, &mut disqualified);
                     }
                 }
+                ElabItemKind::UdpInst => {
+                    let arg_lists: Vec<NodeId> = subtree_preorder(t, item.node)
+                        .into_iter()
+                        .filter(|&n| t.kind(n) == SyntaxKind::ArgList)
+                        .collect();
+                    for al in arg_lists {
+                        let args: Vec<NodeId> = t
+                            .children(al)
+                            .filter(|&c| t.kind(c) != SyntaxKind::Attribute)
+                            .filter_map(|c| {
+                                if t.kind(c) == SyntaxKind::Arg {
+                                    t.children(c).find(|&k| t.kind(k) != SyntaxKind::Attribute)
+                                } else {
+                                    Some(c)
+                                }
+                            })
+                            .collect();
+                        let mut arena = ExprArena::new();
+                        let out_eid = {
+                            let mut binder = ExprBinder::new(
+                                trees,
+                                design,
+                                inst_id,
+                                &item.scope_prefix,
+                                &item.gen_consts,
+                                &mut arena,
+                            );
+                            let oe = args.first().and_then(|&on| binder.bind_self(item.tree, on));
+                            for &an in &args {
+                                let _ = binder.bind_self(item.tree, an);
+                            }
+                            oe
+                        };
+                        if let Some(oe) = out_eid {
+                            mark_lhs_root_syms(&arena, oe, &candidates, &mut disqualified);
+                        }
+                        mark_aggregate_sym_uses(&arena, &mut disqualified);
+                    }
+                }
                 ElabItemKind::NetAlias => {
                     let mut arena = ExprArena::new();
                     let term_eids = {
@@ -2568,6 +3126,38 @@ fn record_proc_lhs_write(
             }
         }
         SyntaxKind::ConcatExpr => {
+            if is_streaming_concat_node(t, lhs) {
+                let mut braces = 0u32;
+                let mut in_with = false;
+                for ch in &t.node(lhs).children {
+                    match *ch {
+                        Child::Token(i) => match &*t.tokens[i as usize].text {
+                            "{" => braces += 1,
+                            "," if braces >= 2 => in_with = false,
+                            "with" if braces >= 2 => in_with = true,
+                            _ => {}
+                        },
+                        Child::Node(c) if braces >= 2 && !in_with && t.kind(c) != SyntaxKind::Attribute => {
+                            record_proc_lhs_write(
+                                trees,
+                                design,
+                                inst_id,
+                                scope_prefix,
+                                locals,
+                                t,
+                                c,
+                                in_with,
+                                mode,
+                                candidates,
+                                disqualified,
+                                clocked_writers,
+                            );
+                        }
+                        _ => {}
+                    }
+                }
+                return;
+            }
             for c in t.children(lhs).filter(|&k| t.kind(k) != SyntaxKind::Attribute) {
                 record_proc_lhs_write(
                     trees,

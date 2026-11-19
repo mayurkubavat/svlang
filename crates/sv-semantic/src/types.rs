@@ -1038,6 +1038,31 @@ impl<'t> Builder<'t> {
                 }
                 Some(total)
             }
+            ConcatExpr if self.own_tokens(e).iter().any(|t| matches!(*t, "<<" | ">>")) => {
+                let t = self.tree(e);
+                let mut braces = 0u32;
+                let mut total = 0u32;
+                let mut after_with = false;
+                for c in &t.node(e.node).children {
+                    match *c {
+                        sv_syntax::Child::Token(i) => match &*t.tokens[i as usize].text {
+                            "{" => braces += 1,
+                            "with" if braces >= 2 => after_with = true,
+                            "," if braces >= 2 => after_with = false,
+                            _ => {}
+                        },
+                        sv_syntax::Child::Node(n) if braces >= 2 => {
+                            if after_with {
+                                return None;
+                            }
+                            let nr = NodeRef { tree: e.tree, node: n };
+                            total = total.checked_add(self.value_bits(nr, scope, env, depth + 1)?)?;
+                        }
+                        _ => {}
+                    }
+                }
+                Some(total)
+            }
             NameExpr | MemberExpr | SelectExpr => self.signal_type(e, scope, env, depth + 1)?.total_bits(),
             _ => None,
         }
