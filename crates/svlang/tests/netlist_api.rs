@@ -447,3 +447,129 @@ fn a_property_bound_from_text_can_read_a_memory_that_became_registers() {
     let out = nl.compile_external_properties(&elab.design, &external, &PropertyOptions::default());
     assert!(out[0].is_ok(), "{out:?}");
 }
+
+#[test]
+fn bind_directive_elaborates_into_netlist_with_sva_nfa_and_fails_closed_on_bad_targets() {
+    use svlang::netlist::{CheckKind, PropertyOptions, PropertyOutcome};
+
+    let dut_src = r#"
+module counter_dut #(parameter int W = 4) (
+    input  logic         clk,
+    input  logic         rst,
+    input  logic         req,
+    output logic [W-1:0] cnt
+);
+    logic ack_int;
+    always_ff @(posedge clk) begin
+        if (rst) begin
+            cnt     <= '0;
+            ack_int <= 1'b0;
+        end else begin
+            cnt     <= cnt + W'(req);
+            ack_int <= req;
+        end
+    end
+endmodule
+
+module top (
+    input  logic       clk,
+    input  logic       rst,
+    input  logic       req1,
+    input  logic       req2,
+    output logic [3:0] cnt1,
+    output logic [3:0] cnt2
+);
+    counter_dut #(.W(4)) u_dut1 (.clk(clk), .rst(rst), .req(req1), .cnt(cnt1));
+    counter_dut #(.W(4)) u_dut2 (.clk(clk), .rst(rst), .req(req2), .cnt(cnt2));
+
+    // Inactive generate `bind` must not instantiate anything:
+    if (0) begin : gen_off
+        bind counter_dut sva_mon #(.W(4)) u_unused (.clk(clk), .rst(rst), .req(req), .ack_int(ack_int), .cnt(cnt));
+    end
+endmodule
+"#;
+
+    let bind_src = r#"
+module sva_mon #(parameter int W = 4) (
+    input logic         clk,
+    input logic         rst,
+    input logic         req,
+    input logic         ack_int,
+    input logic [W-1:0] cnt
+);
+    default clocking @(posedge clk); endclocking
+    default disable iff (rst);
+
+    a_goto: assert property (req [->2] |=> cnt >= W'(1));
+    a_nonconsec: assert property (req |-> ack_int [=0:1] ##1 1'b1);
+    c_unb: cover property (req ##[1:$] (cnt == W'(3)));
+endmodule
+
+// Bind into all `counter_dut` instances:
+bind counter_dut sva_mon #(.W(W)) u_mon_all (.clk(clk), .rst(rst), .req(req), .ack_int(ack_int), .cnt(cnt));
+
+// Bind an extra instance specifically into `u_dut1` only:
+bind counter_dut : u_dut1 sva_mon #(.W(W)) u_mon_one (.*);
+"#;
+
+    let comp =
+        Driver::new().add_source("dut.sv", dut_src).add_source("binds.sv", bind_src).top("top").compile().unwrap();
+    assert!(comp.diagnostics().is_empty(), "diags: {:?}", comp.diagnostics());
+
+    let mut nl = match comp.lower_netlist(&LowerConfig::default()) {
+        LowerOutcome::Lowered(nl) => nl,
+        other => panic!("expected Lowered, got {other:?}"),
+    };
+    let mut opts = PropertyOptions::default();
+    opts.precondition_covers = true;
+    let outcomes = nl.compile_properties(&opts);
+    assert_eq!(outcomes.len(), 9, "expected 3 properties x 3 bound instances (2 u_mon_all + 1 u_mon_one)");
+    assert!(outcomes.iter().all(|o| matches!(o, PropertyOutcome::Compiled { .. })), "{outcomes:?}");
+
+    let check_labels: Vec<&str> = nl.checks.iter().filter_map(|c| c.label.as_deref()).collect();
+    assert!(check_labels.contains(&"top.u_dut1.u_mon_all.a_goto"), "{check_labels:?}");
+    assert!(check_labels.contains(&"top.u_dut2.u_mon_all.a_goto"), "{check_labels:?}");
+    assert!(check_labels.contains(&"top.u_dut1.u_mon_one.a_goto"), "{check_labels:?}");
+    assert!(!check_labels.iter().any(|l| l.contains("u_dut2.u_mon_one")), "{check_labels:?}");
+    assert!(!check_labels.iter().any(|l| l.contains("u_unused")), "{check_labels:?}");
+    assert!(check_labels.contains(&"top.u_dut1.u_mon_all.a_goto:precondition"), "{check_labels:?}");
+
+    // Ensure Btor2 emission succeeds cleanly on the bound + NFA-compiled netlist!
+    let mut btor_opts = svlang::btor2::Options::default();
+    btor_opts.covers = true;
+    let btor = svlang::btor2::write(&nl, &btor_opts).expect("Btor2 emission must succeed");
+    assert!(btor.btor2.contains("top.u_dut1.u_mon_all.a_goto"), "btor:\n{}", btor.btor2);
+    assert!(nl
+        .checks
+        .iter()
+        .any(|c| c.kind == CheckKind::Cover && c.label.as_deref() == Some("top.u_dut1.u_mon_all.c_unb")));
+
+    // Fail-closed check 1: typo'd target module in `bind` must report a semantic error!
+    let bad_target = Driver::new()
+        .add_source("dut.sv", dut_src)
+        .add_source("bad_bind.sv", "module m_chk; endmodule\nbind counter_dut_typo m_chk u_chk();\n")
+        .top("top")
+        .compile()
+        .unwrap();
+    assert!(
+        bad_target.diagnostics().iter().any(|d| d.message.contains("bind target 'counter_dut_typo' not found")),
+        "expected unresolved bind target error, got {:?}",
+        bad_target.diagnostics()
+    );
+
+    // Fail-closed check 2: typo'd instance name in `bind counter_dut : u_typo` must report an error!
+    let bad_inst_target = Driver::new()
+        .add_source("dut.sv", dut_src)
+        .add_source("bad_inst_bind.sv", "module m_chk; endmodule\nbind counter_dut : u_typo m_chk u_chk();\n")
+        .top("top")
+        .compile()
+        .unwrap();
+    assert!(
+        bad_inst_target
+            .diagnostics()
+            .iter()
+            .any(|d| d.message.contains("bind target instance 'u_typo' of 'counter_dut' not found")),
+        "expected unresolved bind instance error, got {:?}",
+        bad_inst_target.diagnostics()
+    );
+}

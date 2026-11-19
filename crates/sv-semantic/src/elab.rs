@@ -194,6 +194,9 @@ pub(crate) struct Elab<'b, 't> {
     gen_stack: Vec<String>,
     non_ansi_stack: Vec<NonAnsiPorts>,
     matched_cli_params: HashSet<usize>,
+    active_binds: HashSet<NodeRef>,
+    matched_binds: HashSet<NodeRef>,
+    matched_bind_items: HashSet<(NodeRef, usize)>,
 }
 
 /// One elaborated instance (see `Elab::inst_log`).
@@ -236,7 +239,7 @@ impl<'b, 't> Elab<'b, 't> {
                     .find(|(hi, d)| t.token_bounds(d.node).is_some_and(|(lo, _)| lo <= at) && at <= *hi);
                 let container = container.map(|c| c.1);
                 let r = NodeRef { tree: ti, node: n };
-                let kids = b.children(r);
+                let kids: Vec<NodeRef> = b.children(r).into_iter().filter(|k| b.kind(*k) != Attribute).collect();
                 let Some(&target) = kids.first() else { continue };
                 if b.kind(target) == DataType {
                     continue;
@@ -280,6 +283,9 @@ impl<'b, 't> Elab<'b, 't> {
             gen_stack: Vec::new(),
             non_ansi_stack: Vec::new(),
             matched_cli_params: HashSet::default(),
+            active_binds: HashSet::default(),
+            matched_binds: HashSet::default(),
+            matched_bind_items: HashSet::default(),
         }
     }
 
@@ -834,12 +840,50 @@ impl<'b, 't> Elab<'b, 't> {
         loop {
             self.run_once();
             let before = self.binds.len();
-            let reached = &self.reached;
-            self.binds.retain(|bd| bd.3.is_none_or(|c| reached.contains(&c)));
+            let active = &self.active_binds;
+            self.binds.retain(|bd| bd.3.is_none() || active.contains(&bd.2));
             if self.binds.len() == before {
-                return;
+                break;
             }
             self.reset();
+        }
+        if !self.design.tops.is_empty() {
+            let inst_defs: HashSet<&str> = self.design.instances.iter().map(|i| i.definition.as_str()).collect();
+            for (target, list, bd, _) in &self.binds {
+                match list {
+                    None => {
+                        if !self.matched_binds.contains(bd)
+                            && !self.defs.contains_key(target.as_str())
+                            && self.checked.insert(*bd)
+                        {
+                            self.diags.push(crate::names::Diag {
+                                tree: bd.tree,
+                                node: bd.node,
+                                message: format!("bind target '{target}' not found"),
+                            });
+                        }
+                    }
+                    Some(items) => {
+                        if !self.defs.contains_key(target.as_str()) && self.checked.insert(*bd) {
+                            self.diags.push(crate::names::Diag {
+                                tree: bd.tree,
+                                node: bd.node,
+                                message: format!("bind target '{target}' not found"),
+                            });
+                        } else if inst_defs.contains(target.as_str()) {
+                            for (idx, item) in items.iter().enumerate() {
+                                if !self.matched_bind_items.contains(&(*bd, idx)) && self.checked.insert(*bd) {
+                                    self.diags.push(crate::names::Diag {
+                                        tree: bd.tree,
+                                        node: bd.node,
+                                        message: format!("bind target instance '{item}' of '{target}' not found"),
+                                    });
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -887,6 +931,9 @@ impl<'b, 't> Elab<'b, 't> {
         self.gen_stack.clear();
         self.non_ansi_stack.clear();
         self.matched_cli_params.clear();
+        self.active_binds.clear();
+        self.matched_binds.clear();
+        self.matched_bind_items.clear();
     }
 
     fn run_once(&mut self) {
@@ -1170,16 +1217,44 @@ impl<'b, 't> Elab<'b, 't> {
             }
         }
         // Instances bound into this one: keep `design_stack` active so bound children attach under `inst_id`!
-        let binds: Vec<NodeRef> = self
-            .binds
-            .iter()
-            .filter(|(target, list, _, _)| match list {
-                _ if target == path || path.ends_with(&format!(".{target}")) => true,
-                None => target == def,
-                Some(l) => target == def && l.iter().any(|i| i == path || path.ends_with(&format!(".{i}"))),
-            })
-            .map(|x| x.2)
-            .collect();
+        let matches_inst_path =
+            |rel: &str, container: Option<NodeRef>, stack: &[InstanceId], insts: &[DesignInstance]| {
+                if let Some(c_decl) = container {
+                    if path == rel {
+                        return true;
+                    }
+                    stack.iter().any(|&anc_id| {
+                        let anc = &insts[anc_id.0 as usize];
+                        anc.def_node == (c_decl.tree, c_decl.node) && format!("{}.{rel}", anc.path) == path
+                    })
+                } else {
+                    path == rel || path.ends_with(&format!(".{rel}"))
+                }
+            };
+        let mut binds = Vec::new();
+        if self.uninst == 0 {
+            for (target, list, bd, container) in &self.binds {
+                let matched = match list {
+                    None if target == def => true,
+                    None => matches_inst_path(target, *container, &self.design_stack, &self.design.instances),
+                    Some(l) if target == def => {
+                        let mut any_item = false;
+                        for (idx, item) in l.iter().enumerate() {
+                            if matches_inst_path(item, *container, &self.design_stack, &self.design.instances) {
+                                self.matched_bind_items.insert((*bd, idx));
+                                any_item = true;
+                            }
+                        }
+                        any_item
+                    }
+                    Some(_) => false,
+                };
+                if matched {
+                    self.matched_binds.insert(*bd);
+                    binds.push(*bd);
+                }
+            }
+        }
         for bd in binds {
             self.bound += 1;
             self.instantiation(bd, path, scope, &vals, depth);
@@ -1894,6 +1969,11 @@ impl<'b, 't> Elab<'b, 't> {
                     }
                 }
                 GenerateRegion => self.walk(&b.children(c), path, scope, over, body_params, vals, depth, construct),
+                BindDirective => {
+                    if self.uninst == 0 {
+                        self.active_binds.insert(c);
+                    }
+                }
                 Instantiation => self.instantiation(c, path, scope, vals, depth),
                 LoopGenerate => {
                     *construct += 1;
@@ -2341,6 +2421,21 @@ impl<'b, 't> Elab<'b, 't> {
             let loc = self.loc_of(inst);
             let cur_gen = self.cur_gen_prefix();
             for n in names {
+                if self.bound > 0 {
+                    if let Some(&pid) = self.design_stack.last() {
+                        let pinst = &self.design.instances[pid.0 as usize];
+                        let dup = pinst.sym_by_rel.contains_key(&n)
+                            || pinst.children.iter().any(|&cid| self.design.instances[cid.0 as usize].rel_path == n);
+                        if dup && self.checked.insert(inst) {
+                            self.diags.push(crate::names::Diag {
+                                tree: inst.tree,
+                                node: inst.node,
+                                message: format!("redefinition of '{n}' via bind in '{path}'"),
+                            });
+                            continue;
+                        }
+                    }
+                }
                 self.out.push(format!("{path} instance {n} : {def}"));
                 let mut over = over.clone();
                 let mut pend = Vec::new();

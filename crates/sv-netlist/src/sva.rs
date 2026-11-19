@@ -6,27 +6,34 @@
 //! concurrent assertions too. What it cannot express is left alone and reported as
 //! [`PropertyOutcome::Unsupported`], naming the operator: nothing is approximated.
 //!
-//! The subset is the bounded one: every sequence in it has a longest match.
+//! The compiled subset covers both bounded sequences (lowered over `$past` history) and
+//! regular unbounded / non-consecutive sequence automata (`sva_nfa`):
 //!
 //! ```text
-//! property := seq | seq |-> seq | seq |=> seq        (weak(seq) and strong(seq) as seq)
+//! property := seq | weak(seq) | strong(seq)
+//!           | seq |-> seq | seq |=> seq
+//!           | seq |-> strong(seq) | seq |=> strong(seq)
 //!           | [seq |-> | seq |=>] b until c | [seq |-> | seq |=>] b until_with c
 //!           | [seq |-> | seq |=>] b s_until c | [seq |-> | seq |=>] b s_until_with c
-//!           | [seq |-> | seq |=>] s_eventually b
+//!           | [seq |-> | seq |=>] s_eventually [range] seq
 //! seq     also: nexttime [N] seq, eventually [M:N] seq, always [M:N] seq (and their s_ forms),
 //!           which are ##N seq, ##[M:N] seq and the conjunction of ##M seq ... ##N seq
 //! seq      := b
-//!           | seq ##N seq | seq ##[M:N] seq | ##N seq | ##[M:N] seq
-//!           | seq [*N] | seq [*M:N]
+//!           | seq ##N seq | seq ##[M:N] seq | seq ##[M:$] seq
+//!           | ##N seq | ##[M:N] seq | ##[M:$] seq
+//!           | seq [*N] | seq [*M:N] | seq [*M:$]
+//!           | b [->N] | b [->M:N] | b [->M:$]
+//!           | b [=N] | b [=M:N] | b [=M:$]
 //!           | seq or seq | seq and seq | seq intersect seq | seq within seq
 //!           | b throughout seq | first_match(seq)
 //! ```
 //!
-//! `M` and `N` are constants, and `M` may be 0. Not in the subset, and reported by name:
-//! a range that ends at `$` (with `[*]` and `[+]`), goto `[->]` and non-consecutive `[=]`
-//! repetition, a sequence with its own clock, and every property operator other than one
-//! implication at the top (`not`, property `and` and `or` over implications, `if`,
-//! `always` and `eventually` with no upper bound, `#-#`, `accept_on`, ...).
+//! `M` and `N` are constants (`M` may be `0`, except `[->0]` which is illegal per IEEE 1800
+//! §16.9.2). Not in the subset, and reported by name: `and` / `intersect` / `within` over
+//! unbounded operands, `[->]` / `[=]` over multi-cycle sequences, a sequence with its own
+//! clock, and every property operator other than one implication at the top (`not`, property
+//! `and` and `or` over implications, `if`, `always` and weak `eventually` with no upper bound,
+//! `#-#`, `accept_on`, ...).
 //!
 //! A bounded sequence has finitely many possible matches, each of a known length. The pass
 //! enumerates them as IEEE 1800-2023 annex F defines a match: for the attempt that starts at
@@ -171,7 +178,7 @@ pub enum PropertyOutcome {
 
 /// A condition over the booleans of one attempt: a constant or a node of [`Terms`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-enum Cond {
+pub(crate) enum Cond {
     False,
     True,
     Node(u32),
@@ -179,7 +186,7 @@ enum Cond {
 
 /// One node of [`Terms`]. Operands have smaller indices than the node.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-enum Term {
+pub(crate) enum Term {
     /// The value at clock tick `at`, counted from the start of the attempt.
     Leaf {
         at: u32,
@@ -192,13 +199,13 @@ enum Term {
 
 /// The conditions of one property, each built once.
 #[derive(Default)]
-struct Terms {
-    nodes: Vec<Term>,
+pub(crate) struct Terms {
+    pub(crate) nodes: Vec<Term>,
     index: HashMap<Term, u32>,
     /// Steps taken so far, to stop a property that is too large to enumerate.
     work: u32,
     /// Whether a negation was built: the booleans then have to be two-state.
-    negated: bool,
+    pub(crate) negated: bool,
 }
 
 impl Terms {
@@ -225,11 +232,11 @@ impl Terms {
         Ok(Cond::Node(i))
     }
 
-    fn leaf(&mut self, at: u32, value: ValueId) -> Result<Cond, String> {
+    pub(crate) fn leaf(&mut self, at: u32, value: ValueId) -> Result<Cond, String> {
         self.node(Term::Leaf { at, value })
     }
 
-    fn and(&mut self, a: Cond, b: Cond) -> Result<Cond, String> {
+    pub(crate) fn and(&mut self, a: Cond, b: Cond) -> Result<Cond, String> {
         match (a, b) {
             (Cond::False, _) | (_, Cond::False) => Ok(Cond::False),
             (Cond::True, x) | (x, Cond::True) => Ok(x),
@@ -273,25 +280,39 @@ fn bounds(range: &CycleRange, what: &str) -> Result<(u32, u32), String> {
     }
 }
 
-fn too_long() -> String {
+/// Checks that `range` does not have reversed constant bounds (`max < min`).
+pub(crate) fn bounds_checked(range: &CycleRange, what: &str) -> Result<(), String> {
+    if let CycleBound::Const(n) = range.max {
+        if n < range.min {
+            return Err(format!("{what} range [{}:{n}] with its bounds reversed", range.min));
+        }
+    }
+    Ok(())
+}
+
+pub(crate) fn too_long() -> String {
     format!("a property longer than {MAX_PROPERTY_SPAN} clock ticks")
 }
 
-fn too_large() -> String {
+pub(crate) fn too_large() -> String {
     format!("a property of more than {MAX_PROPERTY_TERMS} terms")
 }
 
 /// Enumerates the matches of bounded sequences, following the tight satisfaction relation of
 /// IEEE 1800-2023 annex F with a match as the ticks `start .. end` (`end` not included).
-struct Matcher<'a> {
+pub(crate) struct Matcher<'a> {
     /// The netlist value of each boolean, clock and reset expression of the property, by
     /// [`ExprId`].
     leaves: &'a [Option<ValueId>],
-    terms: Terms,
+    pub(crate) terms: Terms,
 }
 
-impl Matcher<'_> {
-    fn add(&mut self, ends: &mut Ends, end: u32, cond: Cond) -> Result<(), String> {
+impl<'a> Matcher<'a> {
+    pub(crate) fn new(leaves: &'a [Option<ValueId>]) -> Self {
+        Self { leaves, terms: Terms::default() }
+    }
+
+    pub(crate) fn add(&mut self, ends: &mut Ends, end: u32, cond: Cond) -> Result<(), String> {
         if cond == Cond::False {
             return Ok(());
         }
@@ -365,7 +386,7 @@ impl Matcher<'_> {
     }
 
     /// The matches of `s` that start at tick `start`.
-    fn matches(&mut self, s: &SeqExpr, start: u32) -> Result<Ends, String> {
+    pub(crate) fn matches(&mut self, s: &SeqExpr, start: u32) -> Result<Ends, String> {
         self.terms.step()?;
         let mut out = Ends::new();
         match s {
@@ -526,7 +547,7 @@ impl Matcher<'_> {
 /// `nexttime [N] p` is `##N p`, `eventually [M:N] p` is `##[M:N] p`, and `always [M:N] p` is
 /// `##M p and ##(M+1) p and ... and ##N p`. Weak and strong forms agree, since the bound is
 /// always reached.
-fn as_seq(p: &PropExpr) -> Result<Cow<'_, SeqExpr>, String> {
+pub(crate) fn as_seq(p: &PropExpr) -> Result<Cow<'_, SeqExpr>, String> {
     let delayed = |range: CycleRange, s: SeqExpr| SeqExpr::Delay { range, lhs: None, rhs: Box::new(s) };
     match p {
         // On an infinite trace a bounded sequence always ends, so weak and strong agree.
@@ -555,7 +576,7 @@ fn as_seq(p: &PropExpr) -> Result<Cow<'_, SeqExpr>, String> {
     }
 }
 
-fn prop_name(p: &PropExpr) -> &'static str {
+pub(crate) fn prop_name(p: &PropExpr) -> &'static str {
     match p {
         PropExpr::Seq(_) | PropExpr::Weak(_) | PropExpr::Strong(_) => "a sequence",
         PropExpr::Not(_) => "property `not`",
@@ -634,7 +655,7 @@ impl Matcher<'_> {
 
 /// What [`Netlist::sva_until`] made: a check's enable and expression, or the signal of a
 /// [`Liveness`].
-enum Monitor {
+pub(crate) enum Monitor {
     Check(ValueId, ValueId),
     Liveness(ValueId),
     /// `s_until`: the check of `until`, and the signal for its end having to come.
@@ -655,7 +676,7 @@ pub enum Compiled {
 
 /// The plan of `[seq |-> | seq |=>] b until c` (or `until_with`): a one-bit monitor that is
 /// set where the antecedent lets the `until` start and stays set up to the tick `c` holds.
-struct Until {
+pub(crate) struct Until {
     /// Where the `until` can start, as a tick of the attempt, with the condition for it
     /// and the first tick counter value at which that condition reads only sampled values.
     starts: Vec<(u32, Cond, u32)>,
@@ -699,7 +720,7 @@ fn until_parts(p: &PropExpr) -> Option<UntilParts<'_>> {
 }
 
 /// The terms `root` is made of.
-fn live_terms(nodes: &[Term], root: Cond) -> Vec<bool> {
+pub(crate) fn live_terms(nodes: &[Term], root: Cond) -> Vec<bool> {
     let mut live = vec![false; nodes.len()];
     if let Cond::Node(i) = root {
         live[i as usize] = true;
@@ -723,24 +744,26 @@ fn live_terms(nodes: &[Term], root: Cond) -> Vec<bool> {
 }
 
 /// A property as conditions over its leaves, ready to be made into a check.
-struct Plan {
-    kind: PropKind,
-    loc: Loc,
-    clock: ClockSpec,
-    terms: Vec<Term>,
+pub(crate) struct Plan {
+    pub(crate) kind: PropKind,
+    pub(crate) loc: Loc,
+    pub(crate) clock: ClockSpec,
+    pub(crate) terms: Vec<Term>,
     /// The terms the check reads.
-    live: Vec<bool>,
+    pub(crate) live: Vec<bool>,
     /// Whether the booleans have to be made two-state (a condition is negated).
-    two_state: bool,
+    pub(crate) two_state: bool,
     /// The check's enable (before the warm-up and `disable iff`) and its expression.
-    enable: Cond,
-    expr: Cond,
-    disable: Option<ValueId>,
-    span: u32,
+    pub(crate) enable: Cond,
+    pub(crate) expr: Cond,
+    pub(crate) disable: Option<ValueId>,
+    pub(crate) span: u32,
     /// First tick at which the check may fire.
-    warm: u32,
+    pub(crate) warm: u32,
     /// For `until`: the monitor to make instead of `enable` and `expr`.
-    until: Option<Until>,
+    pub(crate) until: Option<Until>,
+    /// For unbounded / `[->]` / `[=]` sequences: the finite-state automaton monitor.
+    pub(crate) automaton: Option<crate::sva_nfa::AutomatonPlan>,
 }
 
 /// A tick counter to make: its clock, the highest tick it must count to, and once made its
@@ -748,7 +771,7 @@ struct Plan {
 type TickCounter = (ClockSpec, u32, Option<(ValueId, u32)>);
 
 /// Working state of [`Netlist::lookback`], kept across calls.
-struct Lookback {
+pub(crate) struct Lookback {
     /// The answer for each value already visited.
     memo: Vec<Option<u32>>,
     /// Values whose operands are on the stack.
@@ -760,6 +783,9 @@ struct Lookback {
 /// span. `None` when `p` is not an assertion with a condition that starts its attempts
 /// (no antecedent, no procedural enable) or is an `until`.
 fn related_cover(p: &Plan, witness: bool) -> Option<Plan> {
+    if p.automaton.is_some() {
+        return crate::sva_nfa::related_automaton_cover(p, witness);
+    }
     if p.kind != PropKind::Assert || p.until.is_some() || p.enable == Cond::True {
         return None;
     }
@@ -787,6 +813,7 @@ fn related_cover(p: &Plan, witness: bool) -> Option<Plan> {
         span: p.span,
         warm: p.warm,
         until: None,
+        automaton: None,
     })
 }
 
@@ -809,7 +836,7 @@ fn related_covers(plans: &[(Plan, Option<String>)], opts: &PropertyOptions) -> V
 
 impl Netlist {
     /// How many clock ticks back `v` reads through sampled-value functions.
-    fn lookback(&self, v: ValueId, memo: &mut Lookback) -> u32 {
+    pub(crate) fn lookback(&self, v: ValueId, memo: &mut Lookback) -> u32 {
         // Iterative: a property can read through a deep cone of logic.
         let Lookback { memo, open } = memo;
         let mut stack = vec![v.0 as usize];
@@ -874,6 +901,14 @@ impl Netlist {
         let not_lowered = || "an expression that was not lowered".to_string();
         let leaf = |e: ExprId| leaves.get(e.0 as usize).copied().flatten();
         let signal = leaf(clock.signal).ok_or_else(not_lowered)?;
+        let clock_spec = ClockSpec { signal, edge };
+        let disable = match prop.disable_iff {
+            Some(d) => Some(leaf(d).ok_or_else(not_lowered)?),
+            None => None,
+        };
+        if crate::sva_nfa::prop_needs_automaton(&prop.expr) {
+            return crate::sva_nfa::plan_automaton(self, prop, leaves, reached, clock_spec, disable, opts, memo);
+        }
         let mut m = Matcher { leaves, terms: Terms::default() };
         // In procedural code under a condition: the attempt starts only when it is reached.
         let reached = match reached {
@@ -881,8 +916,7 @@ impl Netlist {
             None => Cond::True,
         };
         if let Some((antecedent, until)) = until_parts(&prop.expr) {
-            let clock = ClockSpec { signal, edge };
-            return self.plan_until(prop, antecedent, until, m, reached, clock, opts, memo);
+            return self.plan_until(prop, antecedent, until, m, reached, clock_spec, opts, memo);
         }
         let Shape { obligations, span } = m.shape(&prop.expr, reached)?;
         let mut terms = m.terms;
@@ -930,10 +964,6 @@ impl Netlist {
                 }
             }
         }
-        let disable = match prop.disable_iff {
-            Some(d) => Some(leaf(d).ok_or_else(not_lowered)?),
-            None => None,
-        };
         let mut history = 0u32;
         for (i, t) in terms.nodes.iter().enumerate() {
             if let (true, &Term::Leaf { at, value }) = (live[i], t) {
@@ -958,12 +988,13 @@ impl Netlist {
             span,
             warm,
             until: None,
+            automaton: None,
         })
     }
 
     /// The first tick counter value at which properties on `clock` may be checked
     /// ([`PropertyOptions::skip_cycles`], or the entry for this clock and edge).
-    fn skip_for(&self, clock: ClockSpec, opts: &PropertyOptions) -> u32 {
+    pub(crate) fn skip_for(&self, clock: ClockSpec, opts: &PropertyOptions) -> u32 {
         match self.value(clock.signal).kind {
             ValueKind::Input(i) => opts
                 .skip_by_clock
@@ -1080,26 +1111,27 @@ impl Netlist {
             span,
             warm,
             until: Some(Until { starts: planned, hold, release, with, strong: ends }),
+            automaton: None,
         })
     }
 
-    fn sva_value(&mut self, width: u32, four_state: bool, kind: ValueKind, loc: Loc) -> ValueId {
+    pub(crate) fn sva_value(&mut self, width: u32, four_state: bool, kind: ValueKind, loc: Loc) -> ValueId {
         let id = ValueId(self.values.len() as u32);
         self.values.push(ValueNode { id, width, signed: false, four_state, kind, name: None, loc });
         id
     }
 
-    fn sva_op(&mut self, op: NetOp, args: Vec<ValueId>, width: u32, loc: Loc) -> ValueId {
+    pub(crate) fn sva_op(&mut self, op: NetOp, args: Vec<ValueId>, width: u32, loc: Loc) -> ValueId {
         let four = args.iter().any(|a| self.value(*a).four_state);
         self.sva_value(width, four, ValueKind::Op { op, args }, loc)
     }
 
-    fn sva_const(&mut self, width: u32, v: u32, loc: Loc) -> ValueId {
+    pub(crate) fn sva_const(&mut self, width: u32, v: u32, loc: Loc) -> ValueId {
         self.sva_value(width, false, ValueKind::Const(CVal::new(width, false, i64::from(v))), loc)
     }
 
     /// `v` as one bit: true when any bit is set.
-    fn sva_bool(&mut self, v: ValueId, loc: Loc) -> ValueId {
+    pub(crate) fn sva_bool(&mut self, v: ValueId, loc: Loc) -> ValueId {
         if self.value(v).width == 1 {
             v
         } else {
@@ -1108,7 +1140,7 @@ impl Netlist {
     }
 
     /// `v` as it was `depth` ticks of `clock` ago.
-    fn sva_past(&mut self, v: ValueId, depth: u32, clock: ClockSpec, loc: Loc) -> ValueId {
+    pub(crate) fn sva_past(&mut self, v: ValueId, depth: u32, clock: ClockSpec, loc: Loc) -> ValueId {
         if depth == 0 {
             return v;
         }
@@ -1127,7 +1159,7 @@ impl Netlist {
     }
 
     /// The conjunction of `acc` and `v` (`None` is true).
-    fn sva_and(&mut self, acc: Option<ValueId>, v: ValueId, loc: Loc) -> Option<ValueId> {
+    pub(crate) fn sva_and(&mut self, acc: Option<ValueId>, v: ValueId, loc: Loc) -> Option<ValueId> {
         Some(match acc {
             None => v,
             Some(a) => self.sva_op(NetOp::LogAnd, vec![a, v], 1, loc),
@@ -1175,7 +1207,7 @@ impl Netlist {
 
     /// The condition `root` of plan `p` as a value at tick `at` of an attempt, each boolean
     /// read back to its own tick (`None` is true).
-    fn sva_cond_at(&mut self, p: &Plan, root: Cond, at: u32, loc: Loc) -> Option<ValueId> {
+    pub(crate) fn sva_cond_at(&mut self, p: &Plan, root: Cond, at: u32, loc: Loc) -> Option<ValueId> {
         let live = live_terms(&p.terms, root);
         let mut made: Vec<Option<ValueId>> = vec![None; p.terms.len()];
         for (i, term) in p.terms.iter().enumerate() {
@@ -1205,7 +1237,7 @@ impl Netlist {
     }
 
     /// `b` with an unknown value counting as false.
-    fn sva_two_state(&mut self, b: ValueId, loc: Loc) -> ValueId {
+    pub(crate) fn sva_two_state(&mut self, b: ValueId, loc: Loc) -> ValueId {
         if !self.value(b).four_state {
             return b;
         }
@@ -1297,7 +1329,7 @@ impl Netlist {
     /// signal is a watch bit that a free input may set once, at a tick an attempt waits, and
     /// that `c` (or `disable iff`) clears for good: it is true infinitely often exactly when
     /// it is never cleared.
-    fn sva_liveness(
+    pub(crate) fn sva_liveness(
         &mut self,
         p: &Plan,
         pending: ValueId,
@@ -1521,8 +1553,72 @@ impl Netlist {
         }
         let mut made = Vec::with_capacity(plans.len());
         let mut untils = self.states.iter().filter(|s| s.name.contains("._sva_until")).count();
+        let mut nfas = self
+            .states
+            .iter()
+            .filter_map(|s| s.name.split_once("._sva_nfa"))
+            .map(|(_, rest)| {
+                rest.strip_prefix('_')
+                    .and_then(|r| r.split('_').next())
+                    .and_then(|d| d.parse::<usize>().ok())
+                    .map_or(1, |idx| idx + 1)
+            })
+            .max()
+            .unwrap_or(0);
         for (p, name) in plans {
             let (kind, loc) = (p.kind, p.loc);
+            if let Some(auto) = &p.automaton {
+                let mut ticks = None;
+                if p.warm > 0 {
+                    let nth = counters.iter().position(|c| c.0 == p.clock).expect("counter planned above");
+                    ticks = Some(match counters[nth].2 {
+                        Some(made) => made,
+                        None => {
+                            let made = self.sva_tick_counter(p.clock, counters[nth].1, nth, loc);
+                            counters[nth].2 = Some(made);
+                            made
+                        }
+                    });
+                }
+                let (monitor, check_kind) = crate::sva_nfa::emit_automaton(self, p, auto, ticks, nfas);
+                nfas += 1;
+                let live = |nl: &mut Netlist, signal: ValueId| {
+                    nl.liveness.push(Liveness {
+                        label: name.clone(),
+                        assume: kind != PropKind::Assert,
+                        signal,
+                        clock: p.clock,
+                        loc,
+                    });
+                    nl.liveness.len() - 1
+                };
+                let (enable, expr) = match monitor {
+                    Monitor::Check(enable, expr) => {
+                        made.push(Compiled::Check(self.checks.len()));
+                        (enable, expr)
+                    }
+                    Monitor::Liveness(signal) => {
+                        let index = live(self, signal);
+                        made.push(Compiled::Liveness(index));
+                        continue;
+                    }
+                    Monitor::Both(enable, expr, signal) => {
+                        let index = live(self, signal);
+                        made.push(Compiled::CheckAndLiveness(self.checks.len(), index));
+                        (enable, expr)
+                    }
+                };
+                self.checks.push(Check {
+                    kind: check_kind,
+                    label: name.clone(),
+                    immediate: false,
+                    enable,
+                    expr,
+                    clock: Some(p.clock),
+                    loc,
+                });
+                continue;
+            }
             if let Some(u) = &p.until {
                 let mut ticks = None;
                 if p.warm > 0 {

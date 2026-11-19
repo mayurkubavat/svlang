@@ -60,6 +60,7 @@ mod loops_sub;
 mod lower;
 mod proc;
 pub mod sva;
+mod sva_nfa;
 
 pub use ir::*;
 pub use lower::lower_design;

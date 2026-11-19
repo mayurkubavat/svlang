@@ -204,14 +204,18 @@ fn kinds_names_and_unsupported_operators() {
          for (genvar i = 0; i < 2; i++) begin : g\n\
            a2: assert property (a |-> c);\n\
          end\n\
-         u1: assert property (a |-> ##[1:$] b);\n\
+         a_unb_del: assert property (a |-> ##[1:$] b);\n\
+         a_unb_rep: assert property (a [*1:$] |-> b);\n\
+         a_goto: assert property (a |-> b [->1] ##1 c);\n\
+         a_nonconsec: assert property (a |-> b [=1:2] ##1 c);\n\
+         u1: assert property ((a [*1:$]) intersect (b [*1:$]) |-> c);\n\
          u2: assert property (a |-> always b);\n\
          u3: assert property (a implies b);\n\
          u4: assert property (@(clk) a);\n\
-         u5: assert property (a [*1:$] |-> b);\n\
+         u5: assert property ((a ##1 b) [->1] |-> c);\n\
          u6: assert property (not a);\n\
-         u7: assert property (a |-> b [->1] ##1 c);\n\
-         u8: assert property (a |-> b [=1:2] ##1 c);\n\
+         u7: assert property ((a ##1 b) [=1] |-> c);\n\
+         u8: assert property ((a [*1:$]) within (b [*1:$]) |-> c);\n\
          u9: assert property (a |-> ##[1:2000] b);\n\
          u10: assert property (a |-> b [*0:1]);\n\
          u11: assert property (a [*0] |-> b);\n\
@@ -226,14 +230,14 @@ fn kinds_names_and_unsupported_operators() {
         Some((_, PropertyOutcome::Unsupported(w))) => w.clone(),
         other => panic!("{name}: {other:?}"),
     };
-    assert_eq!(why("m.u1"), "the delay range [1:$]");
+    assert_eq!(why("m.u1"), "sequence `intersect` with an unbounded operand");
     assert_eq!(why("m.u2"), "`always` with no upper bound");
     assert_eq!(why("m.u3"), "`implies`");
     assert_eq!(why("m.u4"), "a clocking event on both edges");
-    assert_eq!(why("m.u5"), "the repetition range [1:$]");
+    assert_eq!(why("m.u5"), "goto repetition [->] on a multi-cycle sequence");
     assert_eq!(why("m.u6"), "property `not`");
-    assert_eq!(why("m.u7"), "the goto repetition [->]");
-    assert_eq!(why("m.u8"), "the non-consecutive repetition [=]");
+    assert_eq!(why("m.u7"), "non-consecutive repetition [=] on a multi-cycle sequence");
+    assert_eq!(why("m.u8"), "sequence `within` with an unbounded operand");
     assert_eq!(why("m.u9"), "a property longer than 1024 clock ticks");
     assert_eq!(why("m.u10"), "a sequence that admits an empty match, used as a property");
     assert_eq!(why("m.u11"), "an antecedent that has no match");
@@ -252,6 +256,10 @@ fn kinds_names_and_unsupported_operators() {
     assert_eq!(check("m.c1"), CheckKind::Cover);
     assert_eq!(check("m.g[0].a2"), CheckKind::Assert);
     assert_eq!(check("m.g[1].a2"), CheckKind::Assert);
+    assert_eq!(check("m.a_unb_del"), CheckKind::Assert);
+    assert_eq!(check("m.a_unb_rep"), CheckKind::Assert);
+    assert_eq!(check("m.a_goto"), CheckKind::Assert);
+    assert_eq!(check("m.a_nonconsec"), CheckKind::Assert);
 
     // Compiling again keeps what is there.
     let checks = nl.checks.len();
@@ -921,7 +929,7 @@ fn until_is_dropped_by_disable_iff_and_waits_out_the_skipped_cycles() {
 fn until_forms_that_are_not_compiled() {
     let src = format!(
         "module m({PORTS});\n default clocking @(posedge clk); endclocking\n\
-         u1: assert property (a |-> s_eventually [1:$] c);\n\
+         u1: assert property (a |-> s_eventually (b until c));\n\
          u2: cover property (a |-> b until c);\n\
          u3: assert property (a |-> (b ##1 b) until c);\n\
          endmodule\n"
@@ -935,7 +943,7 @@ fn until_forms_that_are_not_compiled() {
             other => panic!("{other:?}"),
         })
         .collect();
-    assert!(why[0].contains("s_eventually"), "{why:?}");
+    assert!(why[0].contains("until"), "{why:?}");
     assert!(why[1].contains("cover of `until`"), "{why:?}");
     assert!(why[2].contains("not single booleans"), "{why:?}");
 }
@@ -1020,4 +1028,428 @@ fn the_bounded_property_operators_are_sequences() {
     let later = "p: assert property (a |-> always [1:2] b);";
     assert_eq!(fails(later, &["0100", "0010", "0010"]), NONE);
     assert_eq!(fails(later, &["0110", "0010", "0000"]), [2]);
+}
+
+#[test]
+fn goto_repetition_in_antecedent_consequent_cover_and_four_state() {
+    const NONE: [usize; 0] = [];
+    // Antecedent `a [->2] |-> b`: fires on the exact tick of the 2nd `a` (even across arbitrary `!a` gaps).
+    let ant = "p: assert property (a [->2] |-> b);";
+    assert_eq!(fails(ant, &["0100", "0000", "0000", "0110", "0000"]), NONE);
+    assert_eq!(fails(ant, &["0100", "0000", "0000", "0100", "0010"]), [3]);
+
+    // Consequent `a |-> b [->2] ##1 c`: waits for 2nd `b`, then requires `c` on the very next tick!
+    let cons = "p: assert property (disable iff (rst) a |-> b [->2] ##1 c);";
+    assert_eq!(fails(cons, &["0100", "0010", "0000", "0010", "0001"]), NONE);
+    assert_eq!(fails(cons, &["0100", "0010", "0000", "0010", "0000"]), [4]);
+    // Reset in the middle of waiting drops the obligation cleanly.
+    assert_eq!(fails(cons, &["0100", "0010", "1000", "0010", "0000"]), NONE);
+
+    // 4-state `'x'` satisfies neither `b` nor `!b` in `b [->1] ##1 c` (`(!b)[*0:$] ##1 b ##1 c`):
+    let four = "p: assert property (a |-> b [->1] ##1 c);";
+    assert_eq!(fails(four, &["0100", "00x0", "0010", "0001"]), [1]);
+
+    // Cover of `a ##1 b [->2]`: hits on the 2nd `b` after `a`.
+    let cov = "p: cover property (a ##1 b [->2]);";
+    assert_eq!(covers(cov, &["0100", "0000", "0010", "0000", "0010", "0000"]), [4]);
+}
+
+#[test]
+fn non_consecutive_repetition_in_antecedent_consequent_and_empty_bounds() {
+    const NONE: [usize; 0] = [];
+    // `b [=1:2]` matches after 1 or 2 `b`s AND across trailing `!b` ticks, but dies on a 3rd `b`!
+    let p = "p: assert property (a |-> b [=1:2] ##1 c);";
+    // 1 `b` at tick 1, trailing `!b` at tick 2, then `c` at tick 3 -> passes!
+    assert_eq!(fails(p, &["0100", "0010", "0000", "0001"]), NONE);
+    // 2 `b`s at ticks 1 and 3, trailing `!b` at tick 4, then `c` at tick 5 -> passes!
+    assert_eq!(fails(p, &["0100", "0010", "0000", "0010", "0000", "0001"]), NONE);
+    // 3rd `b` at tick 3 without `c` having held at tick 2 or tick 3 -> fails at tick 3!
+    assert_eq!(fails(p, &["0100", "0010", "0010", "0010", "0001"]), [3]);
+
+    // `b [=0:1] ##1 c`: allows 0 `b`s (all `!b` before `c`) or 1 `b` before `c`, but fails if 2 `b`s precede `c`!
+    let z = "p: assert property (a |=> b [=0:1] ##1 c);";
+    assert_eq!(fails(z, &["0100", "0001", "0000"]), NONE);
+    assert_eq!(fails(z, &["0100", "0000", "0010", "0001"]), NONE);
+    assert_eq!(fails(z, &["0100", "0010", "0010", "0001"]), [2]);
+
+    // `b [=0:1]` alone as consequent admits empty match -> rejected per IEEE 1800 §16.12.22.
+    let src = format!("module m({PORTS}); default clocking @(posedge clk); endclocking p: assert property (a |-> b [=0:1]); endmodule\n");
+    let mut nl = lower_src(&src).unwrap_netlist();
+    let out = nl.compile_properties(&PropertyOptions::default());
+    assert!(matches!(&out[0], PropertyOutcome::Unsupported(w) if w.contains("empty match")), "{out:?}");
+}
+
+#[test]
+fn unbounded_delay_and_consecutive_repetition_with_strong_liveness_and_related_covers() {
+    const NONE: [usize; 0] = [];
+    // `(a ##1 b) [*2:$] |-> c`: multi-cycle nested operand repeated unboundedly!
+    let p = "p: assert property ((a ##1 b) [*2:$] |-> c);";
+    // 1st `a ##1 b` at 0..1 (no obligation yet), 2nd at 2..3 (c=1 -> ok), 3rd at 4..5 (c=0 -> fails at 5!).
+    assert_eq!(fails(p, &["0100", "0010", "0100", "0011", "0100", "0010"]), [5]);
+
+    // `a |-> ##[1:$] b` (weak) has no finite failure; `s_eventually [1:$] c` is pure Liveness;
+    // on 4-state `logic b`, `strong(b [->2])` has both a finite `'x'` failure check AND Liveness,
+    // while on 2-state `bit b2`, `strong(b2 [->2])` is pure Liveness!
+    let src = format!(
+        "module m({PORTS}, input bit b2);\n default clocking @(posedge clk); endclocking\n\
+         w_weak: assert property (a |-> ##[1:$] b);\n\
+         s_seq4: assert property (a |-> strong(b [->2]));\n\
+         s_seq2: assert property (a |-> strong(b2 [->2]));\n\
+         s_ev: assert property (a |-> s_eventually [1:$] c);\n\
+         s_both: assert property (a |-> strong(b2 [->1] ##1 c));\n\
+         f_assm: assume property (a |-> strong(b2 [->1]));\n\
+         endmodule\n"
+    );
+    let mut nl = lower_src(&src).unwrap_netlist();
+    let mut opts = PropertyOptions::default();
+    opts.precondition_covers = true;
+    opts.witness_covers = true;
+    let out = nl.compile_properties(&opts);
+    assert!(matches!(out[0], PropertyOutcome::Compiled { .. }), "{out:?}");
+    assert!(matches!(out[1], PropertyOutcome::Compiled { .. }) && nl.property_liveness[1].is_some(), "{out:?}");
+    assert!(matches!(out[2], PropertyOutcome::Liveness { .. }), "{out:?}");
+    assert!(matches!(out[3], PropertyOutcome::Liveness { .. }), "{out:?}");
+    // `s_both` has both a finite safety failure (`c` missing after first `b2`) AND a liveness obligation!
+    assert!(matches!(out[4], PropertyOutcome::Compiled { .. }) && nl.property_liveness[4].is_some(), "{out:?}");
+    assert!(matches!(out[5], PropertyOutcome::Liveness { .. }), "{out:?}");
+    assert!(nl.liveness[nl.property_liveness[5].unwrap()].assume);
+
+    // Related `:precondition` and `:witness` covers are emitted for automaton safety assertions (`w_weak`).
+    let labels: Vec<&str> = nl.checks.iter().filter_map(|c| c.label.as_deref()).collect();
+    assert!(labels.contains(&"m.w_weak:precondition"), "{labels:?}");
+    assert!(labels.contains(&"m.w_weak:witness"), "{labels:?}");
+    let mut sim = NetlistSim::new(&nl);
+    for _ in 0..4 {
+        sim.set_u("rst", 0);
+        sim.set_u("a", 1);
+        sim.set_u("b", 0);
+        sim.set_u("c", 0);
+        sim.set_u("b2", 0);
+        sim.tick_posedge("clk");
+    }
+    assert!(sim.failed_asserts.is_empty());
+
+    // Unbounded antecedent feeding `until`: `a [->2] |-> b until c`.
+    let u = "p: assert property (a [->2] |-> b until c);";
+    assert_eq!(fails(u, &["0100", "0000", "0110", "0010", "0001"]), NONE);
+    assert_eq!(fails(u, &["0100", "0000", "0110", "0000", "0001"]), [3]);
+}
+
+/// Reference AST for randomized unbounded / `[->]` / `[=]` Annex F trace equivalence checking.
+#[derive(Clone, Debug)]
+enum AutoSeq {
+    Sig(usize),
+    Delay(Box<AutoSeq>, u32, Option<u32>, Box<AutoSeq>),
+    LeadDelay(u32, Option<u32>, Box<AutoSeq>),
+    Consec(Box<AutoSeq>, u32, Option<u32>),
+    Goto(usize, u32, Option<u32>),
+    NonConsec(usize, u32, Option<u32>),
+    Or(Box<AutoSeq>, Box<AutoSeq>),
+    Throughout(usize, Box<AutoSeq>),
+}
+
+impl AutoSeq {
+    fn fmt_bound(b: Option<u32>) -> String {
+        match b {
+            Some(n) => n.to_string(),
+            None => "$".into(),
+        }
+    }
+
+    fn text(&self) -> String {
+        let name = |i: &usize| ["a", "b", "c"][*i];
+        match self {
+            AutoSeq::Sig(i) => name(i).to_string(),
+            AutoSeq::Delay(l, min, max, r) => {
+                format!("(({}) ##[{min}:{}] ({}))", l.text(), Self::fmt_bound(*max), r.text())
+            }
+            AutoSeq::LeadDelay(min, max, r) => format!("(##[{min}:{}] ({}))", Self::fmt_bound(*max), r.text()),
+            AutoSeq::Consec(s, min, max) => format!("(({}) [*{min}:{}])", s.text(), Self::fmt_bound(*max)),
+            AutoSeq::Goto(i, min, max) => format!("({} [->{min}:{}])", name(i), Self::fmt_bound(*max)),
+            AutoSeq::NonConsec(i, min, max) => format!("({} [={min}:{}])", name(i), Self::fmt_bound(*max)),
+            AutoSeq::Or(l, r) => format!("(({}) or ({}))", l.text(), r.text()),
+            AutoSeq::Throughout(i, s) => format!("({} throughout ({}))", name(i), s.text()),
+        }
+    }
+
+    /// Exact Annex F tight-satisfaction match ends in `from ..= trace.len()` on finite `trace`.
+    fn ends(&self, trace: &Trace, from: usize) -> BTreeSet<usize> {
+        let limit = trace.len();
+        let mut out = BTreeSet::new();
+        if from > limit {
+            return out;
+        }
+        match self {
+            AutoSeq::Sig(i) => {
+                if from < limit && trace[from][*i] {
+                    out.insert(from + 1);
+                }
+            }
+            AutoSeq::Delay(l, min, max, r) => {
+                let max_n = max.map_or(limit, |m| (m as usize).min(limit));
+                for end in l.ends(trace, from) {
+                    for n in (*min as usize)..=max_n {
+                        if n == 0 {
+                            if end > from {
+                                out.extend(r.ends(trace, end - 1).into_iter().filter(|&e| e > end - 1));
+                            }
+                        } else if end + n - 1 <= limit {
+                            out.extend(r.ends(trace, end + n - 1));
+                        }
+                    }
+                }
+            }
+            AutoSeq::LeadDelay(min, max, r) => {
+                let max_n = max.map_or(limit, |m| (m as usize).min(limit));
+                for n in (*min as usize)..=max_n {
+                    if from + n <= limit {
+                        out.extend(r.ends(trace, from + n));
+                    }
+                }
+            }
+            AutoSeq::Consec(s, min, max) => {
+                let cap = max.map_or(limit + 1, |m| m as usize);
+                let mut at = BTreeSet::from([from]);
+                for count in 0..=cap {
+                    if count >= *min as usize {
+                        out.extend(at.iter().copied());
+                    }
+                    if count == cap {
+                        break;
+                    }
+                    let next: BTreeSet<usize> =
+                        at.iter().flat_map(|&t| s.ends(trace, t)).filter(|&e| e <= limit).collect();
+                    if next.is_empty() || (count >= *min as usize && next.is_subset(&out) && next == at) {
+                        break;
+                    }
+                    at = next;
+                }
+            }
+            AutoSeq::Goto(i, min, max) => {
+                let mut ones = 0u32;
+                for (t, row) in trace.iter().enumerate().take(limit).skip(from) {
+                    if row[*i] {
+                        ones += 1;
+                        if ones >= *min && max.is_none_or(|mx| ones <= mx) {
+                            out.insert(t + 1);
+                        }
+                        if max.is_some_and(|mx| ones >= mx) {
+                            break;
+                        }
+                    }
+                }
+            }
+            AutoSeq::NonConsec(i, min, max) => {
+                if *min == 0 {
+                    out.insert(from);
+                }
+                let mut ones = 0u32;
+                for (t, row) in trace.iter().enumerate().take(limit).skip(from) {
+                    if row[*i] {
+                        ones += 1;
+                    }
+                    if max.is_some_and(|mx| ones > mx) {
+                        break;
+                    }
+                    if ones >= *min {
+                        out.insert(t + 1);
+                    }
+                }
+            }
+            AutoSeq::Or(l, r) => {
+                out = l.ends(trace, from);
+                out.extend(r.ends(trace, from));
+            }
+            AutoSeq::Throughout(i, s) => {
+                out = s.ends(trace, from);
+                out.retain(|&end| (from..end).all(|t| t < limit && trace[t][*i]));
+            }
+        }
+        out
+    }
+
+    fn admits_empty(&self) -> bool {
+        self.ends(&[], 0).contains(&0)
+    }
+
+    /// Checks whether `prefix[from..]` can still achieve a non-empty match of `self` either on
+    /// `prefix` itself (`end <= prefix.len()`) or under some future suffix of up to `horizon` ticks.
+    fn can_match_from(&self, prefix: &Trace, from: usize, horizon: usize) -> bool {
+        if self.ends(prefix, from).iter().any(|&e| e > from) {
+            return true;
+        }
+        // BFS / DFS over suffixes of length `1..=horizon`:
+        fn dfs(seq: &AutoSeq, buf: &mut Vec<[bool; 3]>, from: usize, rem: usize) -> bool {
+            if rem == 0 {
+                return false;
+            }
+            for bits in 0..8u8 {
+                buf.push([(bits & 1) != 0, (bits & 2) != 0, (bits & 4) != 0]);
+                let matched = seq.ends(buf, from).iter().any(|&e| e > from);
+                if matched || dfs(seq, buf, from, rem - 1) {
+                    buf.pop();
+                    return true;
+                }
+                buf.pop();
+            }
+            false
+        }
+        let mut buf = prefix.to_vec();
+        dfs(self, &mut buf, from, horizon)
+    }
+}
+
+impl Rng {
+    fn auto_bound(&mut self, min: u32) -> Option<u32> {
+        if self.below(3) == 0 {
+            None
+        } else {
+            Some(min + self.below(2) as u32)
+        }
+    }
+
+    fn auto_seq(&mut self, depth: u32, allow_empty: bool) -> AutoSeq {
+        if depth == 0 {
+            return match self.below(3) {
+                0 => AutoSeq::Sig(self.below(3) as usize),
+                1 => {
+                    let min = 1 + self.below(2) as u32;
+                    let max = self.auto_bound(min);
+                    AutoSeq::Goto(self.below(3) as usize, min, max)
+                }
+                _ => {
+                    let min = if allow_empty && self.below(3) == 0 { 0 } else { 1 + self.below(2) as u32 };
+                    let max = self.auto_bound(min);
+                    AutoSeq::NonConsec(self.below(3) as usize, min, max)
+                }
+            };
+        }
+        let sub = |rng: &mut Rng, ae: bool| Box::new(rng.auto_seq(depth - 1, ae));
+        match self.below(7) {
+            0 | 1 => {
+                let min = self.below(3) as u32;
+                let max = self.auto_bound(min);
+                AutoSeq::Delay(sub(self, allow_empty), min, max, sub(self, false))
+            }
+            2 => {
+                let min = if allow_empty { self.below(2) as u32 } else { 1 + self.below(2) as u32 };
+                let max = self.auto_bound(min);
+                AutoSeq::LeadDelay(min, max, sub(self, false))
+            }
+            3 => {
+                let min = if allow_empty && self.below(3) == 0 { 0 } else { 1 + self.below(2) as u32 };
+                let max = self.auto_bound(min);
+                AutoSeq::Consec(sub(self, false), min, max)
+            }
+            4 => {
+                let min = 1 + self.below(2) as u32;
+                let max = self.auto_bound(min);
+                AutoSeq::Goto(self.below(3) as usize, min, max)
+            }
+            5 => AutoSeq::Or(sub(self, allow_empty), sub(self, allow_empty)),
+            _ => AutoSeq::Throughout(self.below(3) as usize, sub(self, allow_empty)),
+        }
+    }
+}
+
+#[test]
+fn random_automaton_properties_agree_with_annex_f() {
+    let mut rng = Rng(0xD1B5_4A32_D192_ED03);
+    let (mut checked, mut failed, mut hit) = (0usize, 0usize, 0usize);
+
+    for _ in 0..200 {
+        // Force at least one `[->]`, `[=]`, or `$` operator so we exercise `sva_nfa` directly.
+        let antecedent = rng.auto_seq(1, true);
+        let overlapped = rng.below(2) == 0;
+        let consequent = rng.auto_seq(1, false);
+        let text = if overlapped {
+            format!("{} |-> {}", antecedent.text(), consequent.text())
+        } else {
+            format!("{} |=> {}", antecedent.text(), consequent.text())
+        };
+        if !text.contains('$') && !text.contains("[->") && !text.contains("[=") {
+            continue;
+        }
+        if consequent.admits_empty() {
+            continue;
+        }
+        // Ensure antecedent and consequent are satisfiable:
+        if !consequent.can_match_from(&[], 0, 4) {
+            continue;
+        }
+        let ant_can_start = if overlapped {
+            antecedent.can_match_from(&[], 0, 4)
+        } else {
+            antecedent.admits_empty() || antecedent.can_match_from(&[], 0, 4)
+        };
+        if !ant_can_start {
+            continue;
+        }
+
+        let src = format!(
+            "module m({PORTS});\n default clocking @(posedge clk); endclocking\n\
+             p: assert property ({text});\n q: cover property ({text});\nendmodule\n"
+        );
+        let mut nl = lower_src(&src).unwrap_netlist();
+        let outcomes = nl.compile_properties(&PropertyOptions::default());
+        assert!(outcomes.iter().all(|o| matches!(o, PropertyOutcome::Compiled { .. })), "{text}: {outcomes:?}");
+
+        let trace: Vec<[bool; 3]> = (0..24).map(|_| [rng.below(8) < 4, rng.below(8) < 4, rng.below(8) < 4]).collect();
+        let rows: Vec<String> = trace.iter().map(|r| format!("0{}{}{}", r[0] as u8, r[1] as u8, r[2] as u8)).collect();
+        let rows_ref: Vec<&str> = rows.iter().map(String::as_str).collect();
+
+        // Compute exact Annex F expected `want_fail` and `want_hit` ticks on `0..trace.len()`:
+        // First collect every tick `t_start` at which an antecedent match (`from <= t_start`) triggers `consequent`:
+        let mut cons_starts = BTreeSet::new();
+        for from in 0..trace.len() {
+            for end in antecedent.ends(&trace, from) {
+                let start_tick = if overlapped {
+                    if end == from {
+                        continue;
+                    }
+                    end - 1
+                } else {
+                    end
+                };
+                if start_tick < trace.len() {
+                    cons_starts.insert(start_tick);
+                }
+            }
+        }
+
+        let mut want_hit = BTreeSet::new();
+        for &st in &cons_starts {
+            for end in consequent.ends(&trace, st) {
+                if end > st && end <= trace.len() {
+                    want_hit.insert(end - 1);
+                }
+            }
+        }
+        let want_hit_vec: Vec<usize> = want_hit.into_iter().collect();
+
+        // For each obligation started at `st`, find the exact first tick `t >= st` where `trace[..=t]`
+        // cannot be extended (within horizon 6, sufficient for depth-1 `[0..4]` bounds) to a match of `consequent`:
+        let mut want_fail_set = BTreeSet::new();
+        for &st in &cons_starts {
+            for t in st..trace.len() {
+                let prefix = &trace[..=t];
+                // If already matched on some prefix `st ..= s` (`s <= t`), obligation is discharged!
+                if consequent.ends(prefix, st).iter().any(|&e| e > st) {
+                    break;
+                }
+                if !consequent.can_match_from(prefix, st, 4) {
+                    want_fail_set.insert(t);
+                    break;
+                }
+            }
+        }
+        let want_fail_vec: Vec<usize> = want_fail_set.into_iter().collect();
+
+        assert_eq!(ticks(&nl, &rows_ref, Watch::HitCovers), want_hit_vec, "cover {text}\n{rows_ref:?}");
+        assert_eq!(ticks(&nl, &rows_ref, Watch::FailedAsserts), want_fail_vec, "assert {text}\n{rows_ref:?}");
+        checked += 1;
+        failed += want_fail_vec.len();
+        hit += want_hit_vec.len();
+    }
+    assert!(checked >= 80 && failed >= 40 && hit >= 80, "checked={checked} failed={failed} hit={hit}");
 }
