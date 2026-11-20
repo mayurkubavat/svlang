@@ -412,3 +412,56 @@ endmodule
     assert!(!all_labels.contains("top._assert_5:precondition"), "{all_labels:?}");
     assert!(!all_labels.contains("top.e_lbl:precondition"), "{all_labels:?}");
 }
+
+#[test]
+fn s7_16_async_reset_combined_with_sync_clear() {
+    let src = r#"
+module m (
+    input  logic       clk_i,
+    input  logic       rst_ni,
+    input  logic       valid_i,
+    input  logic       ready_o,
+    output logic [3:0] stalls
+);
+    always_ff @(posedge clk_i or negedge rst_ni) begin
+        if (!rst_ni || !valid_i || ready_o) begin
+            stalls <= 4'd0;
+        end else if (valid_i && !ready_o) begin
+            stalls <= stalls + 4'd1;
+        end
+    end
+endmodule
+"#;
+    let nl = lower_src(src).unwrap_netlist();
+    assert_eq!(nl.states.len(), 1);
+    let st = &nl.states[0];
+    let ar = st.async_reset.expect("async_reset must be preserved");
+    assert!(!ar.active_high);
+
+    let mut sim = NetlistSim::new(&nl);
+    sim.set_u("rst_ni", 0);
+    sim.set_u("valid_i", 1);
+    sim.set_u("ready_o", 0);
+    assert_eq!(sim.out_i("stalls"), 0, "async reset clears immediately");
+
+    // Release async reset; stall for two cycles (`valid_i && !ready_o`).
+    sim.set_u("rst_ni", 1);
+    sim.tick_posedge("clk_i");
+    assert_eq!(sim.out_i("stalls"), 1);
+    sim.tick_posedge("clk_i");
+    assert_eq!(sim.out_i("stalls"), 2);
+
+    // Synchronous clear via `ready_o == 1` while `rst_ni == 1`!
+    sim.set_u("ready_o", 1);
+    assert_eq!(sim.out_i("stalls"), 2, "sync clear must not act combinational before posedge");
+    sim.tick_posedge("clk_i");
+    assert_eq!(sim.out_i("stalls"), 0, "sync clear clears stalls on posedge");
+
+    // Stall once, then clear synchronously via `!valid_i`.
+    sim.set_u("ready_o", 0);
+    sim.tick_posedge("clk_i");
+    assert_eq!(sim.out_i("stalls"), 1);
+    sim.set_u("valid_i", 0);
+    sim.tick_posedge("clk_i");
+    assert_eq!(sim.out_i("stalls"), 0);
+}

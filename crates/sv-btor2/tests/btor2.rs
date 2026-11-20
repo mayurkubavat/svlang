@@ -205,7 +205,7 @@ fn compiled_properties_are_bad_lines_and_constraints() {
 fn a_property_outside_the_subset_is_left_out_and_named() {
     let mut nl = netlist(
         "module un(input logic clk, a, b);\n\
-           a_unsup: assert property (@(posedge clk) a |-> always b);\n\
+           a_unsup: assert property (@(posedge clk) a |-> always (b ##1 b));\n\
            a_ok: assert property (@(posedge clk) a |-> b);\n\
            a_win: assert property (@(posedge clk) a |-> ##[1:3] b);\n\
            a_goto: assert property (@(posedge clk) a |-> b [->1] ##1 a);\n\

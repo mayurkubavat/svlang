@@ -617,7 +617,9 @@ impl<'a> DesignLowerer<'a> {
         };
         self.flush_expr_diags(cond_binder.diags);
 
-        let Some((rst_idx, active_high)) = match_async_reset_event(&cond_arena, cond_eid, &parsed_events) else {
+        let Some((rst_idx, active_high, sync_clear_eids)) =
+            match_async_reset_or_sync_clear(&cond_arena, cond_eid, &parsed_events)
+        else {
             self.builder.err(
                 cond_loc,
                 "asynchronous reset 'if' condition does not match sensitivity list signal or edge polarity",
@@ -686,21 +688,71 @@ impl<'a> DesignLowerer<'a> {
         let mem_write_marks: Vec<usize> = self.builder.memories.iter().map(|m| m.writes.len()).collect();
         let check_mark = self.builder.checks.len();
         let assert_mark = self.proc_assert_enables.len();
-        match branch_action {
-            AsyncBranch::Stmts { clk_stmt_opt: Some(clk_stmt), .. } => {
-                for &d in &block_decls {
-                    self.exec_stmt(item.tree, d, &mut sync_ctx);
+        if sync_clear_eids.is_empty() {
+            match branch_action {
+                AsyncBranch::Stmts { clk_stmt_opt: Some(clk_stmt), .. } => {
+                    for &d in &block_decls {
+                        self.exec_stmt(item.tree, d, &mut sync_ctx);
+                    }
+                    self.exec_stmt(item.tree, clk_stmt, &mut sync_ctx);
                 }
-                self.exec_stmt(item.tree, clk_stmt, &mut sync_ctx);
-            }
-            AsyncBranch::Stmts { clk_stmt_opt: None, .. } => {}
-            AsyncBranch::Ternary { lhs, op, sync_val, loc_node, .. } => {
-                for &d in &block_decls {
-                    self.exec_stmt(item.tree, d, &mut sync_ctx);
+                AsyncBranch::Stmts { clk_stmt_opt: None, .. } => {}
+                AsyncBranch::Ternary { lhs, op, sync_val, loc_node, .. } => {
+                    for &d in &block_decls {
+                        self.exec_stmt(item.tree, d, &mut sync_ctx);
+                    }
+                    let loc = self.stmt_loc(item.tree, loc_node, &sync_ctx);
+                    self.exec_assignment(item.tree, lhs, op, Some(sync_val), &mut sync_ctx, loc);
                 }
-                let loc = self.stmt_loc(item.tree, loc_node, &sync_ctx);
-                self.exec_assignment(item.tree, lhs, op, Some(sync_val), &mut sync_ctx, loc);
             }
+        } else {
+            for &d in &block_decls {
+                self.exec_stmt(item.tree, d, &mut sync_ctx);
+            }
+            let mut sync_cond_opt: Option<ValueId> = None;
+            for &seid in &sync_clear_eids {
+                let sloc = cond_arena.get(seid).loc;
+                let Some(pv) = self.lower_in_proc(&cond_arena, seid, &sync_ctx).and_then(|v| v.as_packed()) else {
+                    return;
+                };
+                let bv = self.builder.alloc_bool(pv, sloc);
+                sync_cond_opt = Some(match sync_cond_opt {
+                    None => bv,
+                    Some(acc) => self.builder.alloc_or1(acc, bv, sloc),
+                });
+            }
+            let sync_cond = sync_cond_opt.expect("sync_clear_eids is non-empty");
+            let reach = sync_ctx.effective_reach(&mut self.builder, cond_loc);
+            let then_path = self.builder.alloc_and1(reach, sync_cond, cond_loc);
+            let not_cond = self.builder.alloc_not1(sync_cond, cond_loc);
+            let else_path = self.builder.alloc_and1(reach, not_cond, cond_loc);
+
+            let mut then_ctx = sync_ctx.clone();
+            then_ctx.path_cond = then_path;
+            let mut else_ctx = sync_ctx.clone();
+            else_ctx.path_cond = else_path;
+
+            let has_else = match branch_action {
+                AsyncBranch::Stmts { rst_stmt, clk_stmt_opt } => {
+                    self.exec_stmt(item.tree, rst_stmt, &mut then_ctx);
+                    if let Some(clk_stmt) = clk_stmt_opt {
+                        self.exec_stmt(item.tree, clk_stmt, &mut else_ctx);
+                        true
+                    } else {
+                        false
+                    }
+                }
+                AsyncBranch::Ternary { lhs, op, rst_val, sync_val, loc_node, .. } => {
+                    let loc = self.stmt_loc(item.tree, loc_node, &sync_ctx);
+                    self.exec_assignment(item.tree, lhs, op, Some(rst_val), &mut then_ctx, loc);
+                    self.exec_assignment(item.tree, lhs, op, Some(sync_val), &mut else_ctx, loc);
+                    true
+                }
+            };
+            let saved_path_cond = sync_ctx.path_cond;
+            let mut merged = self.merge_branch_ctxs(sync_cond, then_ctx, else_ctx, has_else, cond_loc);
+            merged.path_cond = saved_path_cond;
+            sync_ctx = merged;
         }
         for ai in assert_mark..self.proc_assert_enables.len() {
             let (old_en, aloc) = (self.proc_assert_enables[ai].3, self.proc_assert_enables[ai].2);
@@ -3201,8 +3253,134 @@ fn top_if_else_stmt(t: &Tree, if_node: NodeId, kids: &[NodeId]) -> Option<NodeId
 }
 
 /// Checks whether `cond_eid` is an active-high (`posedge rst` with `if (rst)`) or active-low
-/// (`negedge rst_n` with `if (!rst_n)` / `if (rst_n == 0)`) test of one of `events`, returning
-/// `(rst_event_index, active_high)`.
+/// (`negedge rst_n` with `if (!rst_n)` / `if (rst_n == 0)`) test of one of `events`, or a
+/// top-level `||` disjunction combining exactly one async-reset test with one or more purely
+/// synchronous clear terms (`if (!rst_n || sync_clear)`), returning
+/// `(rst_event_index, active_high, sync_clear_eids)`.
+fn match_async_reset_or_sync_clear(
+    arena: &ExprArena,
+    cond_eid: ExprId,
+    events: &[(Edge, ValueId, Option<ResetTarget>, Loc)],
+) -> Option<(usize, bool, Vec<ExprId>)> {
+    if let Some((idx, ah)) = match_async_reset_event(arena, cond_eid, events) {
+        return Some((idx, ah, Vec::new()));
+    }
+    let mut disjuncts = Vec::new();
+    collect_or_disjuncts(arena, cond_eid, &mut disjuncts);
+    if disjuncts.len() < 2 {
+        return None;
+    }
+    let mut matched: Option<(usize, usize, bool, ResetTarget)> = None;
+    for (di, &deid) in disjuncts.iter().enumerate() {
+        if let Some((idx, ah)) = match_async_reset_event(arena, deid, events) {
+            let rt = events[idx].2.clone()?;
+            if matched.is_some() {
+                return None;
+            }
+            matched = Some((di, idx, ah, rt));
+        }
+    }
+    let (rst_di, rst_idx, active_high, rst_target) = matched?;
+    let mut sync_eids = Vec::with_capacity(disjuncts.len() - 1);
+    for (di, &deid) in disjuncts.iter().enumerate() {
+        if di == rst_di {
+            continue;
+        }
+        if expr_mentions_reset_target(arena, deid, &rst_target) {
+            return None;
+        }
+        sync_eids.push(deid);
+    }
+    Some((rst_idx, active_high, sync_eids))
+}
+
+fn collect_or_disjuncts(arena: &ExprArena, eid: ExprId, out: &mut Vec<ExprId>) {
+    match &arena.get(eid).kind {
+        ExprKind::Unary { op: UnaryOp::RedOr, arg }
+        | ExprKind::Resize { arg, .. }
+        | ExprKind::CastSign { arg, .. }
+        | ExprKind::CastFourState { arg, .. } => collect_or_disjuncts(arena, *arg, out),
+        ExprKind::Binary { op: BinaryOp::LogOr, lhs, rhs } => {
+            collect_or_disjuncts(arena, *lhs, out);
+            collect_or_disjuncts(arena, *rhs, out);
+        }
+        ExprKind::Binary { op: BinaryOp::BitOr, lhs, rhs } if arena.get(eid).ty.bit_width() == Some(1) => {
+            collect_or_disjuncts(arena, *lhs, out);
+            collect_or_disjuncts(arena, *rhs, out);
+        }
+        _ => out.push(eid),
+    }
+}
+
+fn reset_targets_overlap(a: &ResetTarget, b: &ResetTarget) -> bool {
+    fn is_ancestor(anc: &ResetTarget, mut cur: &ResetTarget) -> bool {
+        loop {
+            if anc == cur {
+                return true;
+            }
+            match cur {
+                ResetTarget::Member { base, .. } | ResetTarget::Bit { base, .. } => cur = base,
+                ResetTarget::Symbol(_) => return false,
+            }
+        }
+    }
+    is_ancestor(a, b) || is_ancestor(b, a)
+}
+
+fn expr_mentions_reset_target(arena: &ExprArena, eid: ExprId, target: &ResetTarget) -> bool {
+    if let Some(nt) = extract_root_symbol(arena, eid) {
+        if reset_targets_overlap(&nt, target) {
+            return true;
+        }
+        if let ExprKind::BitSelect { index, .. } = &arena.get(eid).kind {
+            return expr_mentions_reset_target(arena, *index, target);
+        }
+        return false;
+    }
+    match &arena.get(eid).kind {
+        ExprKind::Symbol(_) | ExprKind::Local(_) | ExprKind::Const(_) | ExprKind::UnbasedUnsized(_) => false,
+        ExprKind::Unary { arg, .. }
+        | ExprKind::Replicate { expr: arg, .. }
+        | ExprKind::Member { base: arg, .. }
+        | ExprKind::PartSelect { base: arg, .. }
+        | ExprKind::Resize { arg, .. }
+        | ExprKind::CastSign { arg, .. }
+        | ExprKind::CastFourState { arg, .. } => expr_mentions_reset_target(arena, *arg, target),
+        ExprKind::Binary { lhs, rhs, .. }
+        | ExprKind::BitSelect { base: lhs, index: rhs, .. }
+        | ExprKind::IndexedPartSelect { base: lhs, base_idx: rhs, .. }
+        | ExprKind::ArrayIndex { base: lhs, index: rhs, .. } => {
+            expr_mentions_reset_target(arena, *lhs, target) || expr_mentions_reset_target(arena, *rhs, target)
+        }
+        ExprKind::Cond { cond, then_val, else_val } => {
+            expr_mentions_reset_target(arena, *cond, target)
+                || expr_mentions_reset_target(arena, *then_val, target)
+                || expr_mentions_reset_target(arena, *else_val, target)
+        }
+        ExprKind::Inside { expr, items } => {
+            expr_mentions_reset_target(arena, *expr, target)
+                || items.iter().any(|it| match it {
+                    sv_semantic::InsideItem::Single(x) => expr_mentions_reset_target(arena, *x, target),
+                    sv_semantic::InsideItem::Range(lo, hi) => {
+                        expr_mentions_reset_target(arena, *lo, target) || expr_mentions_reset_target(arena, *hi, target)
+                    }
+                })
+        }
+        ExprKind::Concat(args) | ExprKind::SysCall { args, .. } => {
+            args.iter().any(|a| expr_mentions_reset_target(arena, *a, target))
+        }
+        ExprKind::Sampled { expr, gate, clock, .. } => {
+            expr_mentions_reset_target(arena, *expr, target)
+                || gate.is_some_and(|g| expr_mentions_reset_target(arena, g, target))
+                || clock.is_some_and(|c| expr_mentions_reset_target(arena, c, target))
+        }
+        ExprKind::FuncCall { callee_inst, args, .. } => {
+            callee_inst.is_some() || args.iter().any(|a| expr_mentions_reset_target(arena, *a, target))
+        }
+        ExprKind::AssignPattern(entries) => entries.iter().any(|(_, x)| expr_mentions_reset_target(arena, *x, target)),
+    }
+}
+
 fn match_async_reset_event(
     arena: &ExprArena,
     cond_eid: ExprId,

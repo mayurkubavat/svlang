@@ -50,11 +50,11 @@ void parallelFor(std::vector<std::function<void()>>& jobs, unsigned threads) {
         }
     };
 
-    std::vector<std::jthread> pool;
+    std::vector<std::thread> pool;
     pool.reserve(workers - 1);
     for (unsigned i = 1; i < workers; i++) pool.emplace_back(worker);
     worker();
-    pool.clear(); // joins
+    for (auto& t : pool) t.join();
     if (error) std::rethrow_exception(error);
 }
 

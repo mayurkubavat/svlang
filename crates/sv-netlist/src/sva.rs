@@ -793,11 +793,13 @@ pub(crate) struct Until {
     /// Where the `until` can start, as a tick of the attempt, with the condition for it
     /// and the first tick counter value at which that condition reads only sampled values.
     starts: Vec<(u32, Cond, u32)>,
+    /// Sticky `always`: once started, re-triggers on every subsequent tick until `disable iff`.
+    sticky: bool,
     /// `b`: has to hold while the monitor is set. `None` for `s_eventually c`, where only
     /// the end has to come: that is made into a [`Liveness`], not a check.
     hold: Option<ValueId>,
-    /// `c`: ends it.
-    release: ValueId,
+    /// `c`: ends it (`None` for unbounded `always b`, i.e. `b until 0`).
+    release: Option<ValueId>,
     /// `until_with`: `b` has to hold at the tick `c` holds too.
     with: bool,
     /// `s_until` / `s_until_with`: `c` has to come, too. A [`Liveness`] beside the check.
@@ -810,24 +812,23 @@ fn is_eventually(p: &PropExpr) -> bool {
         if range.min == 0 && range.max == CycleBound::Unbounded)
 }
 
+fn is_unbounded_always(p: &PropExpr) -> bool {
+    matches!(p, PropExpr::Always { range, .. } if range.max == CycleBound::Unbounded)
+}
+
+fn is_until_like(p: &PropExpr) -> bool {
+    matches!(p, PropExpr::Until { .. }) || is_eventually(p) || is_unbounded_always(p)
+}
+
 /// The `until` of a property that is one, alone or as the consequent of an implication:
 /// its antecedent (with whether the implication is `|->`), and the `until` itself.
 type UntilParts<'a> = (Option<(&'a SeqExpr, bool)>, &'a PropExpr);
 
 fn until_parts(p: &PropExpr) -> Option<UntilParts<'_>> {
     match p {
-        PropExpr::Until { .. } => Some((None, p)),
-        _ if is_eventually(p) => Some((None, p)),
-        PropExpr::OverlappedImplication { lhs, rhs }
-            if matches!(**rhs, PropExpr::Until { .. }) || is_eventually(rhs) =>
-        {
-            Some((Some((lhs, true)), rhs))
-        }
-        PropExpr::NonOverlappedImplication { lhs, rhs }
-            if matches!(**rhs, PropExpr::Until { .. }) || is_eventually(rhs) =>
-        {
-            Some((Some((lhs, false)), rhs))
-        }
+        _ if is_until_like(p) => Some((None, p)),
+        PropExpr::OverlappedImplication { lhs, rhs } if is_until_like(rhs) => Some((Some((lhs, true)), rhs)),
+        PropExpr::NonOverlappedImplication { lhs, rhs } if is_until_like(rhs) => Some((Some((lhs, false)), rhs)),
         _ => None,
     }
 }
@@ -1135,7 +1136,24 @@ impl Netlist {
         let not_lowered = || "an expression that was not lowered".to_string();
         let leaf = |e: ExprId| m.leaves.get(e.0 as usize).copied().flatten();
         let mut ends = false;
-        let (hold, release, with) = match until {
+        let mut sticky = false;
+        let mut shift = 0u32;
+        let mut cur_until = until;
+        while let PropExpr::Always { range, prop: inner, .. } = cur_until {
+            if range.max != CycleBound::Unbounded {
+                break;
+            }
+            if prop.kind == PropKind::Cover {
+                return Err("a cover of `always` with no upper bound".into());
+            }
+            shift = shift.saturating_add(range.min);
+            if shift > MAX_PROPERTY_SPAN {
+                return Err(too_long());
+            }
+            sticky = true;
+            cur_until = inner;
+        }
+        let (hold, release, with) = match cur_until {
             PropExpr::Until { strong, overlapping, lhs, rhs } => {
                 if prop.kind == PropKind::Cover {
                     return Err("a cover of `until`".into());
@@ -1147,18 +1165,30 @@ impl Netlist {
                 let hold = leaf(boolean(lhs)?).ok_or_else(not_lowered)?;
                 let release = leaf(boolean(rhs)?).ok_or_else(not_lowered)?;
                 ends = *strong;
-                (Some(hold), release, *overlapping)
+                (Some(hold), Some(release), *overlapping)
             }
-            PropExpr::Eventually { prop: awaited, .. } => {
+            PropExpr::Eventually { strong: true, range, prop: awaited } if range.max == CycleBound::Unbounded => {
                 if prop.kind == PropKind::Cover {
                     return Err("a cover of `s_eventually`".into());
+                }
+                shift = shift.saturating_add(range.min);
+                if shift > MAX_PROPERTY_SPAN {
+                    return Err(too_long());
                 }
                 let Ok(SeqExpr::Bool(e)) = as_seq(awaited).as_deref().cloned() else {
                     return Err("`s_eventually` of a property that is not a single boolean".into());
                 };
-                (None, leaf(e).ok_or_else(not_lowered)?, false)
+                (None, Some(leaf(e).ok_or_else(not_lowered)?), false)
             }
-            _ => unreachable!("until_parts returns an until or an eventually"),
+            other if sticky => match as_seq(other).as_deref() {
+                Ok(SeqExpr::Bool(e)) => {
+                    // `_sva_until` with `release = None` already stays active forever until `disable iff`.
+                    sticky = false;
+                    (Some(leaf(*e).ok_or_else(not_lowered)?), None, false)
+                }
+                _ => return Err("`always` with no upper bound".into()),
+            },
+            _ => unreachable!("until_parts returns an until, s_eventually, or unbounded always"),
         };
         let disable = match prop.disable_iff {
             Some(d) => Some(leaf(d).ok_or_else(not_lowered)?),
@@ -1174,6 +1204,7 @@ impl Netlist {
                         (true, _) => end - 1,
                         (false, _) => end,
                     };
+                    let at = at.saturating_add(shift);
                     let cond = m.terms.and(reached, cond)?;
                     m.add(&mut starts, at, cond)?;
                 }
@@ -1182,12 +1213,12 @@ impl Netlist {
                 }
             }
             None => {
-                starts.insert(0, reached);
+                starts.insert(shift, reached);
             }
         }
         let terms = m.terms;
         let skip = self.skip_for(clock, opts);
-        let now = hold.map_or(0, |h| self.lookback(h, memo)).max(self.lookback(release, memo));
+        let now = hold.map_or(0, |h| self.lookback(h, memo)).max(release.map_or(0, |r| self.lookback(r, memo)));
         let gone = disable.map_or(0, |d| self.lookback(d, memo));
         let mut live = vec![false; terms.nodes.len()];
         let mut planned = Vec::new();
@@ -1223,7 +1254,7 @@ impl Netlist {
             disable,
             span,
             warm,
-            until: Some(Until { starts: planned, hold, release, with, strong: ends }),
+            until: Some(Until { starts: planned, sticky, hold, release, with, strong: ends }),
             automaton: None,
         })
     }
@@ -1394,16 +1425,49 @@ impl Netlist {
             });
         }
         let start = start.expect("an until has a start");
+        let start = if u.sticky && !(u.starts.len() == 1 && u.starts[0].0 == 0 && u.starts[0].1 == Cond::True) {
+            let aid = StateId(self.states.len() as u32);
+            let aprev = self.sva_value(1, false, ValueKind::StateOut(aid), loc);
+            let mut aactive = self.sva_op(NetOp::LogOr, vec![start, aprev], 1, loc);
+            if let Some((_, off)) = off_now {
+                aactive = self.sva_op(NetOp::LogAnd, vec![aactive, off], 1, loc);
+            }
+            let aname =
+                if nth == 0 { format!("{}._sva_always", self.top) } else { format!("{}._sva_always_{nth}", self.top) };
+            self.states.push(State {
+                id: aid,
+                name: aname,
+                width: 1,
+                signed: false,
+                four_state: false,
+                clock: Some(p.clock),
+                async_reset: None,
+                latch_enable: None,
+                init: Some(CVal::new(1, false, 0)),
+                next: aactive,
+                out: aprev,
+                loc,
+            });
+            aactive
+        } else {
+            start
+        };
         let id = StateId(self.states.len() as u32);
         let pending = self.sva_value(1, false, ValueKind::StateOut(id), loc);
         let mut active = self.sva_op(NetOp::LogOr, vec![start, pending], 1, loc);
         if let Some((_, off)) = off_now {
             active = self.sva_op(NetOp::LogAnd, vec![active, off], 1, loc);
         }
-        let release = self.sva_bool(u.release, loc);
-        let release = self.sva_two_state(release, loc);
-        let ended = self.sva_op(NetOp::LogNot, vec![release], 1, loc);
-        let next = self.sva_op(NetOp::LogAnd, vec![active, ended], 1, loc);
+        let rel_ended = u.release.map(|rel| {
+            let r = self.sva_bool(rel, loc);
+            let r = self.sva_two_state(r, loc);
+            let ended = self.sva_op(NetOp::LogNot, vec![r], 1, loc);
+            (r, ended)
+        });
+        let next = match rel_ended {
+            Some((_, ended)) => self.sva_op(NetOp::LogAnd, vec![active, ended], 1, loc),
+            None => active,
+        };
         let name = if nth == 0 { format!("{}._sva_until", self.top) } else { format!("{}._sva_until_{nth}", self.top) };
         self.states.push(State {
             id,
@@ -1420,12 +1484,17 @@ impl Netlist {
             loc,
         });
         let Some(hold) = u.hold else {
+            let (_, ended) = rel_ended.expect("s_eventually has a release boolean");
             let off = off_now.map(|(_, off)| off);
             return Monitor::Liveness(self.sva_liveness(p, pending, active, ended, off, nth));
         };
         let hold = self.sva_bool(hold, loc);
-        let expr = if u.with { hold } else { self.sva_op(NetOp::LogOr, vec![hold, release], 1, loc) };
+        let expr = match (u.with, rel_ended) {
+            (true, _) | (_, None) => hold,
+            (false, Some((release, _))) => self.sva_op(NetOp::LogOr, vec![hold, release], 1, loc),
+        };
         if u.strong {
+            let (_, ended) = rel_ended.expect("strong until has a release boolean");
             let off = off_now.map(|(_, off)| off);
             let signal = self.sva_liveness(p, pending, active, ended, off, nth);
             return Monitor::Both(active, expr, signal);

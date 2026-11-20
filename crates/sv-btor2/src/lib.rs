@@ -1513,7 +1513,11 @@ impl<'n> Writer<'n> {
             let v = self.value(l.signal)?;
             let v = self.bool(v);
             if l.assume {
-                self.line(format!("fair {v}"));
+                let mut body = format!("fair {v}");
+                if let Some(name) = &l.label {
+                    write!(body, " {}", symbol(name)).unwrap();
+                }
+                self.line(body);
             } else {
                 let mut body = format!("justice 1 {v}");
                 if let Some(name) = &l.label {

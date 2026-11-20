@@ -62,7 +62,11 @@ pub(crate) fn prop_needs_automaton(prop: &PropExpr) -> bool {
             range.max == CycleBound::Unbounded || prop_needs_automaton(inner)
         }
         PropExpr::Always { range, prop: inner, .. } => {
-            range.max != CycleBound::Unbounded && prop_needs_automaton(inner)
+            if range.max == CycleBound::Unbounded {
+                matches!(**inner, PropExpr::Not(_)) && as_bool_formula(inner, false).is_ok()
+            } else {
+                prop_needs_automaton(inner)
+            }
         }
         PropExpr::Until { .. } => false,
         _ => false,
@@ -373,6 +377,7 @@ impl NfaSeq {
 /// 2-state boolean formula over property leaf expressions (used by `until` and its negations).
 #[derive(Clone, Debug)]
 pub(crate) enum BoolFormula {
+    Const(bool),
     Leaf(ExprId),
     Not(Box<BoolFormula>),
     And(Box<BoolFormula>, Box<BoolFormula>),
@@ -1036,6 +1041,7 @@ impl<'a> SeqNfaBuilder<'a> {
 
 #[derive(Clone, Debug)]
 pub(crate) enum ValFormula {
+    Const(bool),
     Leaf(ValueId),
     Not(Box<ValFormula>),
     And(Box<ValFormula>, Box<ValFormula>),
@@ -1051,6 +1057,7 @@ impl ValFormula {
     fn from_bool_formula(bf: &BoolFormula, leaves: &[Option<ValueId>]) -> Result<Self, String> {
         let not_lowered = || "an expression that was not lowered".to_string();
         match bf {
+            BoolFormula::Const(c) => Ok(Self::Const(*c)),
             BoolFormula::Leaf(e) => {
                 let v = leaves.get(e.0 as usize).copied().flatten().ok_or_else(not_lowered)?;
                 Ok(Self::Leaf(v))
@@ -1065,6 +1072,7 @@ impl ValFormula {
 
     fn max_lookback(&self, nl: &Netlist, memo: &mut Lookback) -> u32 {
         match self {
+            Self::Const(_) => 0,
             Self::Leaf(v) => nl.lookback(*v, memo),
             Self::Not(x) => x.max_lookback(nl, memo),
             Self::And(a, b) => a.max_lookback(nl, memo).max(b.max_lookback(nl, memo)),
@@ -1073,6 +1081,7 @@ impl ValFormula {
 
     fn emit(&self, nl: &mut Netlist, loc: Loc) -> ValueId {
         match self {
+            Self::Const(c) => nl.sva_const(1, u32::from(*c), loc),
             Self::Leaf(v) => {
                 let b = nl.sva_bool(*v, loc);
                 nl.sva_two_state(b, loc)
@@ -1251,6 +1260,36 @@ fn norm_prop(p: &PropExpr, neg: bool, default_strong: bool, allow_imp: bool) -> 
         PropExpr::Always { strong, range, prop: inner } => {
             if !neg {
                 let CycleBound::Const(last) = range.max else {
+                    if range.min > crate::sva::MAX_PROPERTY_SPAN {
+                        return Err(too_long());
+                    }
+                    if let Ok(bf) = as_bool_formula(inner, false) {
+                        if range.min == 0 {
+                            return Ok(NormProp::Until {
+                                strong: false,
+                                overlapping: false,
+                                hold: Some(bf),
+                                release: BoolFormula::Const(false),
+                            });
+                        }
+                        match bf {
+                            BoolFormula::Leaf(e) => {
+                                return Ok(NormProp::NotSeq {
+                                    seq: NfaSeq::Delay { range: *range, lhs: None, rhs: Box::new(NfaSeq::NotBool(e)) },
+                                    negated_weak: false,
+                                });
+                            }
+                            BoolFormula::Not(nb) => {
+                                if let BoolFormula::Leaf(e) = *nb {
+                                    return Ok(NormProp::NotSeq {
+                                        seq: NfaSeq::Delay { range: *range, lhs: None, rhs: Box::new(NfaSeq::Bool(e)) },
+                                        negated_weak: false,
+                                    });
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
                     return Err("`always` with no upper bound".into());
                 };
                 if last > crate::sva::MAX_PROPERTY_SPAN || last < range.min {

@@ -211,8 +211,9 @@ fn kinds_names_and_unsupported_operators() {
          a_not: assert property (not a);\n\
          a_fby: assert property ((a ##1 b) #-# c);\n\
          a_abort: assert property (sync_accept_on(c) (a ##1 b));\n\
+         a_alw: assert property (a |-> always b);\n\
          u1: assert property ((a [*1:$]) intersect (b [*1:$]) |-> c);\n\
-         u2: assert property (a |-> always b);\n\
+         u2: assert property (a |-> always (b ##1 c));\n\
          u3: assert property (a implies b);\n\
          u4: assert property (@(clk) a);\n\
          u5: assert property ((a ##1 b) [->1] |-> c);\n\
@@ -1782,4 +1783,45 @@ fn random_not_followed_by_and_abort_properties_agree_with_annex_f() {
         hit += want_hit_vec.len();
     }
     assert!(checked >= 50 && failed >= 30 && hit >= 50, "checked={checked} failed={failed} hit={hit}");
+}
+
+#[test]
+fn unbounded_always_safety_and_liveness() {
+    // `always b`: fails at any tick where `b == 0`.
+    let p_top = "p: assert property (@(posedge clk) always b);";
+    assert_eq!(fails(p_top, &["0010", "0010", "0000", "0010"]), [2]);
+
+    // `a |-> always b`: once `a` holds, `b` must hold at that tick and every tick thereafter.
+    let p_imp = "p: assert property (@(posedge clk) a |-> always b);";
+    assert_eq!(fails(p_imp, &["0000", "0000", "0110", "0010", "0000"]), [4]);
+    assert_eq!(fails(p_imp, &["0000", "0000", "0000"]), [] as [usize; 0]);
+
+    // `disable iff (rst) (a |-> always [2:$] b)`: shifted by 2 ticks, cleared by `rst`.
+    let p_shift = "p: assert property (@(posedge clk) disable iff (rst) (a |-> always [2:$] b));";
+    // `a` at tick 0 -> `b` required from tick 2 onwards; fails at tick 3 when `b == 0`.
+    assert_eq!(fails(p_shift, &["0100", "0000", "0010", "0000"]), [3]);
+    // If `rst` fires at tick 2, the obligation is aborted!
+    assert_eq!(fails(p_shift, &["0100", "0000", "1000", "0000"]), [] as [usize; 0]);
+
+    // NFA antecedent feeding unbounded `always`: `(a [->2]) |-> always b`.
+    let p_nfa = "p: assert property (@(posedge clk) (a [->2]) |-> always b);";
+    assert_eq!(fails(p_nfa, &["0100", "0000", "0110", "0010", "0000"]), [4]);
+
+    // `always s_eventually b` and `a |-> always (b s_until c)` compile into liveness monitors.
+    let src = format!(
+        "module m({PORTS});\n\
+           p_ev: assert property (@(posedge clk) (always s_eventually b));\n\
+           p_su: assert property (@(posedge clk) a |-> always (b s_until c));\n\
+           c_bad: cover property (@(posedge clk) always b);\n\
+         endmodule\n"
+    );
+    let mut nl = lower_src(&src).unwrap_netlist();
+    let out = nl.compile_properties(&PropertyOptions::default());
+    assert!(matches!(out[0], PropertyOutcome::Liveness { .. }), "{out:?}");
+    assert!(matches!(out[1], PropertyOutcome::Compiled { .. }), "{out:?}");
+    assert_eq!(nl.liveness.len(), 2);
+    assert!(
+        matches!(&out[2], PropertyOutcome::Unsupported(w) if w == "a cover of `always` with no upper bound"),
+        "{out:?}"
+    );
 }
