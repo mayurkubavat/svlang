@@ -1,5 +1,5 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
 #include "slang/syntax/SyntaxVisitor.h"
 #include "slang/syntax/SyntaxTree.h"
 #include "slang/parsing/Token.h"
@@ -8,7 +8,7 @@
 #include <array>
 #include <string>
 
-namespace uvmcheck::rules::style {
+namespace svlang_lint::rules::style {
 
 class CommentTriviaVisitor : public engine::SyntaxVisitor<CommentTriviaVisitor> {
 public:
@@ -72,12 +72,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::style
+} // namespace svlang_lint::rules::style
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createTodoCommentTracker() {
     return std::make_unique<style::TodoCommentTracker>();
 }
 }
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createTodoCommentTracker)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createTodoCommentTracker)

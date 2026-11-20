@@ -114,7 +114,7 @@ fn list(items: &[&str]) -> String {
 
 /// The catalog as JSON (`--list-rules --json`): docs/rules/catalog.json.
 pub fn rules_json() -> String {
-    let mut o = String::from("{\n  \"version\": \"2.0\",\n  \"generated\": \"uvmcheck --list-rules --json\",\n");
+    let mut o = String::from("{\n  \"version\": \"2.0\",\n  \"generated\": \"svlang-lint --list-rules --json\",\n");
     o.push_str(&format!("  \"categories\": {},\n  \"rules\": [\n", list(&CATEGORIES)));
     let all = entries();
     for (i, e) in all.iter().enumerate() {
@@ -145,7 +145,7 @@ pub fn rules_json() -> String {
 /// The rules as a table (`--list-rules`).
 pub fn rules_text() -> String {
     let mut o = format!(
-        "\n=== Registered UVMCheck Rules ===\n\n{:<15}{:<32}{:<17}{:<10}Description\n{}\n",
+        "\n=== Registered svlang-lint Rules ===\n\n{:<15}{:<32}{:<17}{:<10}Description\n{}\n",
         "Rule ID",
         "Name",
         "Category",
@@ -209,6 +209,144 @@ pub fn guidelines_json() -> String {
         ));
     }
     o.push_str("  ]\n}\n");
+    o
+}
+
+/// The methodology guidelines enforced by `id` (for a sub-rule, its parent rule's).
+pub fn guidelines_for_rule(id: &str) -> &'static [&'static str] {
+    for r in crate::rules() {
+        if r.id == id || r.name == id {
+            return r.guidelines;
+        }
+        if crate::sub_rules(r.id).iter().any(|s| s.id == id) {
+            return r.guidelines;
+        }
+    }
+    &[]
+}
+
+/// True when selector `sel` (e.g. `"MG-4"` or `"MG-4.1"`) matches guideline `gid`.
+pub fn guideline_matches(sel: &str, gid: &str) -> bool {
+    gid == sel || (gid.len() > sel.len() && gid.starts_with(sel) && gid.as_bytes()[sel.len()] == b'.')
+}
+
+/// Validates comma-separated `--guideline` selectors; returns normalized selectors.
+pub fn parse_guideline_selectors(raw: &[String]) -> Result<Vec<String>, String> {
+    let all = guidelines();
+    let mut out = Vec::new();
+    for item in raw {
+        for part in item.split(',') {
+            let sel = part.trim();
+            if sel.is_empty() {
+                continue;
+            }
+            if !all.iter().any(|g| guideline_matches(sel, g.id)) {
+                return Err(format!("Unknown guideline '{sel}' (see --list-guidelines)"));
+            }
+            out.push(sel.to_string());
+        }
+    }
+    Ok(out)
+}
+
+/// Per-guideline conformance summary row (`--conformance` / `--guideline`).
+#[derive(Clone, Debug)]
+pub struct ConformanceRow {
+    pub guideline: &'static str,
+    pub chapter: &'static str,
+    pub chapter_title: &'static str,
+    pub level: &'static str,
+    pub findings: usize,
+    pub rules: Vec<&'static str>,
+}
+
+/// Computes guideline pass/fail conformance over `active` rule IDs and `found` findings.
+pub fn compute_conformance(active: &[&'static str], found: &[crate::Finding]) -> Vec<ConformanceRow> {
+    let active_set: std::collections::HashSet<&str> = active.iter().copied().collect();
+    let mut per_rule: std::collections::HashMap<&str, usize> = std::collections::HashMap::new();
+    for f in found {
+        *per_rule.entry(f.rule).or_default() += 1;
+    }
+    let mut out = Vec::new();
+    for g in guidelines() {
+        let mut rules = Vec::new();
+        let mut findings = 0;
+        for r in g.rules {
+            if !active_set.contains(r) {
+                continue;
+            }
+            rules.push(r);
+            findings += per_rule.get(r).copied().unwrap_or(0);
+        }
+        if !rules.is_empty() {
+            out.push(ConformanceRow {
+                guideline: g.id,
+                chapter: g.chapter,
+                chapter_title: g.chapter_title,
+                level: g.level,
+                findings,
+                rules,
+            });
+        }
+    }
+    out
+}
+
+/// Formats `rows` as the human-readable `Methodology guide conformance` report.
+pub fn conformance_text(rows: &[ConformanceRow]) -> String {
+    if rows.is_empty() {
+        return String::new();
+    }
+    let mut o = String::from("\nMethodology guide conformance\n");
+    let mut chapter = "";
+    let mut pass = 0usize;
+    let mut total = 0usize;
+    let flush = |o: &mut String, ch: &str, p: usize, t: usize| {
+        if t > 0 {
+            o.push_str(&format!("  {ch}: {p} of {t} guidelines pass\n"));
+        }
+    };
+    for r in rows {
+        if r.chapter != chapter {
+            flush(&mut o, chapter, pass, total);
+            chapter = r.chapter;
+            pass = 0;
+            total = 0;
+            o.push_str(&format!("  {} {}\n", r.chapter, r.chapter_title));
+        }
+        total += 1;
+        let ok = r.findings == 0;
+        if ok {
+            pass += 1;
+        }
+        o.push_str(&format!("    {:<8}{:<8}{}", r.guideline, r.level, if ok { "pass" } else { "FAIL" }));
+        if !ok {
+            o.push_str(&format!("  {} finding{}", r.findings, if r.findings == 1 { "" } else { "s" }));
+        }
+        o.push('\n');
+    }
+    flush(&mut o, chapter, pass, total);
+    o
+}
+
+/// Formats `rows` as the `"conformance"` JSON array in `--json` reports.
+pub fn conformance_json(rows: &[ConformanceRow]) -> String {
+    let mut o = String::from("[");
+    for (i, r) in rows.iter().enumerate() {
+        o.push_str(if i == 0 { "\n" } else { ",\n" });
+        o.push_str(&format!(
+            "    {{\"guideline\": {}, \"level\": {}, \"status\": \"{}\", \"findings\": {}, \"rules\": {}}}",
+            q(r.guideline),
+            q(r.level),
+            if r.findings == 0 { "pass" } else { "fail" },
+            r.findings,
+            list(&r.rules)
+        ));
+    }
+    if !rows.is_empty() {
+        o.push_str("\n  ");
+    }
+    o.push(']');
     o
 }
 

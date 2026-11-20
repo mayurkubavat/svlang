@@ -31,7 +31,7 @@ pub(crate) fn explicit_literal_width(c: &Cst, s: &mut Sink) {
             continue;
         }
         let outer = outer_paren(c, n);
-        // Its tokens, without whitespace or comments (uvmcheck the same).
+        // Its tokens, without whitespace or comments (svlang-lint the same).
         let mut text: String = c.tree.token_range(outer).into_iter().map(|t| c.text_of(t)).collect();
         // `#(50)`: slang keeps the parentheses as an expression.
         if c.parent(outer).is_some_and(|p| {

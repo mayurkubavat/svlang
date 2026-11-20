@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build uvmcheck against slang master and report what changed.
+"""Build svlang-lint against slang master and report what changed.
 
 Run weekly (or before bumping the pin in third_party/slang/slang.cmake). It
   1. clones or updates slang at --ref (default: master) under --work, and
@@ -17,7 +17,7 @@ Run weekly (or before bumping the pin in third_party/slang/slang.cmake). It
   tools/quality/slang_canary.py --work ../canary [--ref master] [--uvm-home ../uvm-core] [--report canary.md]
 
 Exit status: 0 when every suite passes on the new slang (the pin can move),
-1 when one fails, 2 when slang or uvmcheck does not build.
+1 when one fails, 2 when slang or svlang-lint does not build.
 """
 
 import argparse
@@ -41,7 +41,7 @@ def sh(cmd, cwd=None, log=None):
 
 def pinned_commit():
     for line in (ROOT / "third_party" / "slang" / "slang.cmake").read_text().splitlines():
-        if line.startswith("set(UVMCHECK_SLANG_TAG"):
+        if line.startswith("set(SVLANG_LINT_SLANG_TAG"):
             return line.split()[1].rstrip(")")
     return "?"
 
@@ -85,7 +85,7 @@ def main():
     cfg = ["cmake", "-S", str(ROOT), "-B", str(build), "-G", "Ninja", "-DCMAKE_BUILD_TYPE=Release",
            f"-DFETCHCONTENT_SOURCE_DIR_SLANG={slang}"]
     if opts.uvm_home:
-        cfg.append(f"-DUVMCHECK_UVM_HOME={Path(opts.uvm_home).resolve()}")
+        cfg.append(f"-DSVLANG_LINT_UVM_HOME={Path(opts.uvm_home).resolve()}")
     suites = SUITES + (["all_rules_uvm_core_suite"] if opts.uvm_home else [])
     results, built = {}, False
     if sh(cfg, log=logf).returncode == 0 and sh(["cmake", "--build", str(build), "-j", opts.jobs],
@@ -103,7 +103,7 @@ def main():
         lines += ["| Local patch | On this commit |", "| --- | --- |"]
         lines += [f"| {n} | {st} |" for n, st in patches] + [""]
     if not built:
-        lines += ["**Build failed.** slang's API changed in a way uvmcheck does not compile against; "
+        lines += ["**Build failed.** slang's API changed in a way svlang-lint does not compile against; "
                   f"see `{work / 'canary.log'}`."]
     else:
         lines += ["| Suite | Result |", "| --- | --- |"]

@@ -1,8 +1,8 @@
-#include "uvmcheck/rules/Guidelines.h"
+#include "svlang_lint/rules/Guidelines.h"
 
 #include <unordered_map>
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 
 namespace {
 
@@ -216,4 +216,4 @@ bool guidelineMatches(std::string_view selector, std::string_view guidelineId) {
            guidelineId[selector.size()] == '.';
 }
 
-} // namespace uvmcheck::rules
+} // namespace svlang_lint::rules

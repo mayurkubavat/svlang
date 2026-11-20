@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Incremental result cache: a second run is served from .uvmcheck_cache/ with
+"""Incremental result cache: a second run is served from .svlang_lint_cache/ with
 the same JSON; editing an included file or an imported package invalidates the
 units that depend on it; a rule option change invalidates; --no-cache bypasses;
 a corrupt manifest falls back to a full run.
@@ -104,7 +104,7 @@ def write_sources(d):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--binary", default="build/uvmcheck")
+    ap.add_argument("--binary", default="build/svlang-lint")
     args = ap.parse_args()
     binary = str(Path(args.binary).resolve())
 
@@ -117,7 +117,7 @@ def main():
         check(first.returncode in (0, 1), "first run exits cleanly", first.stderr)
         check("cache: stored" in first.stdout, "first run stores the cache", first.stdout)
         check("served from cache" not in first.stdout, "first run is not a hit", first.stdout)
-        check((d / ".uvmcheck_cache" / "manifest.json").is_file(), "manifest written")
+        check((d / ".svlang_lint_cache" / "manifest.json").is_file(), "manifest written")
 
         second = run(binary, d, *sources, "--no-config", "--rule", "SV-COR-009", "--json", "b.json")
         check("served from cache" in second.stdout, "second run is served from cache", second.stdout)
@@ -140,7 +140,7 @@ def main():
               "partial cache matches a run with --no-cache",
               f"cached={violations(d / 'c.json')}\nfresh={violations(d / 'd.json')}")
 
-        shutil.rmtree(d / ".uvmcheck_cache")
+        shutil.rmtree(d / ".svlang_lint_cache")
         write_sources(d)
         run(binary, d, *sources, "--no-config", "--rule", "SV-COR-008", "--json", "e.json")
         (d / "pkg.sv").write_text(PKG_FIXED)
@@ -151,7 +151,7 @@ def main():
         pkg_left = [v for v in violations(d / "f.json") if v[1].endswith("pkg.sv") and v[0] == "SV-COR-008"]
         check(pkg_left == [], "the self-comparison finding is gone after the edit", str(pkg_left))
 
-        (d / ".uvmcheck_cache" / "manifest.json").write_text("{ this is not json")
+        (d / ".svlang_lint_cache" / "manifest.json").write_text("{ this is not json")
         bad = run(binary, d, *sources, "--no-config", "--rule", "SV-COR-008", "--json", "g.json")
         check(bad.returncode in (0, 1), "a corrupt cache does not crash", bad.stderr[-500:])
         check("served from cache" not in bad.stdout, "a corrupt cache is not served", bad.stdout)
@@ -162,7 +162,7 @@ def main():
         (d / "wide.sv").write_text("module wide;\n  int " + ("a" * 80) + ";\nendmodule\n")
         cfg = d / "config.py"
         cfg.write_text(
-            "from uvmcheck.config import ProjectConfig, RuleConfig\n"
+            "from svlang_lint.config import ProjectConfig, RuleConfig\n"
             "class Cfg(ProjectConfig):\n"
             "    class MaxLineLength(RuleConfig):\n"
             "        rule = 'SV-STY-016'\n"
@@ -172,7 +172,7 @@ def main():
         again = run(binary, d, "wide.sv", "--config", "config.py", "--rule", "SV-STY-016", "--json", "w2.json")
         check("served from cache" in again.stdout, "unchanged rule option is a cache hit", again.stdout)
         cfg.write_text(
-            "from uvmcheck.config import ProjectConfig, RuleConfig\n"
+            "from svlang_lint.config import ProjectConfig, RuleConfig\n"
             "class Cfg(ProjectConfig):\n"
             "    class MaxLineLength(RuleConfig):\n"
             "        rule = 'SV-STY-016'\n"
@@ -188,7 +188,7 @@ def main():
     with tempfile.TemporaryDirectory() as tmp:
         d = Path(tmp)
         (d / "plain.sv").write_text("module plain; endmodule\n")
-        exe = d / "uvmcheck_copy"
+        exe = d / "svlang_lint_copy"
         shutil.copy2(binary, exe)
         run(str(exe), d, "plain.sv", "--no-config")
         same = run(str(exe), d, "plain.sv", "--no-config")
@@ -203,7 +203,7 @@ def main():
         (d / "plain.sv").write_text("module plain; endmodule\n")
         bypass = run(binary, d, "plain.sv", "--no-config", "--no-cache")
         check(bypass.returncode in (0, 1), "--no-cache run exits cleanly", bypass.stderr)
-        check(not (d / ".uvmcheck_cache").exists(), "--no-cache does not write a cache")
+        check(not (d / ".svlang_lint_cache").exists(), "--no-cache does not write a cache")
 
     with tempfile.TemporaryDirectory() as tmp:
         d = Path(tmp)

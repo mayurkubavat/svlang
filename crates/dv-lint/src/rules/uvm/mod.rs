@@ -12,6 +12,7 @@ mod build_phase_cross_component_access;
 mod component_name_mismatch;
 mod component_null_parent_in_create;
 mod config_db_cross_component_resolver;
+mod config_db_get_in_run_phase_loop;
 mod config_db_get_unchecked;
 mod contrib_only_api;
 mod deprecated_uvm_api;
@@ -50,6 +51,7 @@ mod time_in_non_time_phase;
 pub(crate) mod tlm_topology_checker;
 mod unchecked_get_response;
 mod unchecked_p_sequencer_cast;
+mod unregistered_uvm_callback;
 mod unused_sequence;
 mod unused_sequence_item;
 mod uvm_component_direct_new;
@@ -208,5 +210,7 @@ pub(crate) fn rules() -> Vec<Rule> {
         Rule { id: "UVM-FAC-006", name: "IncompatibleFactoryOverride", category: "UVM", severity: Severity::Warning, profiles: METHODOLOGY, guidelines: &["MG-4.5"], experimental: false, native: true, about: "Flags type-based UVM factory overrides (set_type_override_by_type, set_inst_override_by_type, type_id::set_type_override) where the override class does not extend the requested base class.", check: Check::Mixed(incompatible_factory_override::incompatible_factory_override) },
         Rule { id: "UVM-PHS-012", name: "MismatchedSuperPhaseCall", category: "UVM", severity: Severity::Warning, profiles: METHODOLOGY, guidelines: &[], experimental: false, native: true, about: "Flags overridden UVM component phase methods that invoke super.<other_phase>(phase) instead of super.<same_phase>(phase).", check: Check::Model(mismatched_super_phase_call::mismatched_super_phase_call) },
         Rule { id: "UVM-SEQ-017", name: "PSequencerTypeMismatch", category: "UVM", severity: Severity::Warning, profiles: METHODOLOGY, guidelines: &[], experimental: false, native: true, about: "Flags sequence .start(seqr) calls where the target sequencer's static class type is incompatible with the p_sequencer type declared by the sequence.", check: Check::Mixed(p_sequencer_type_mismatch::p_sequencer_type_mismatch) },
+        Rule { id: "UVM-CBK-001", name: "UnregisteredUvmCallback", category: "UVM", severity: Severity::Warning, profiles: METHODOLOGY, guidelines: &[], experimental: false, native: true, about: "Flags uvm_callbacks#(T, CB)::add calls where the callback class CB lacks a matching `uvm_register_cb(T, CB) registration.", check: Check::Mixed(unregistered_uvm_callback::unregistered_uvm_callback) },
+        Rule { id: "UVM-PRF-001", name: "ConfigDbGetInRunPhaseLoop", category: "Performance", severity: Severity::Warning, profiles: PERFORMANCE, guidelines: &[], experimental: false, native: true, about: "Flags uvm_config_db::get() calls inside loops in runtime task phases or sequence body() tasks, which scan the global resource table on every iteration.", check: Check::Syntax(config_db_get_in_run_phase_loop::config_db_get_in_run_phase_loop) },
     ]
 }

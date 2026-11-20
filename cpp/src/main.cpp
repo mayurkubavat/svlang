@@ -1,5 +1,5 @@
-#include "uvmcheck/core/Driver.h"
-#include "uvmcheck/core/Process.h"
+#include "svlang_lint/core/Driver.h"
+#include "svlang_lint/core/Process.h"
 
 #include <algorithm>
 #include <cstdlib>
@@ -16,8 +16,8 @@ namespace {
 // finding, and overlapping fixes wait for the rewritten text. Each further pass is a
 // fresh process (exec of this binary), so no state leaks between passes.
 constexpr int kMaxFixPasses = 10;
-constexpr const char* kPassEnv = "UVMCHECK_FIX_PASS";
-constexpr const char* kStatesEnv = "UVMCHECK_FIX_STATES";
+constexpr const char* kPassEnv = "SVLANG_LINT_FIX_PASS";
+constexpr const char* kStatesEnv = "SVLANG_LINT_FIX_STATES";
 
 int currentPass() {
     const char* v = std::getenv(kPassEnv);
@@ -43,7 +43,7 @@ std::string stateKey(const std::pair<std::string, size_t>& written) {
 } // namespace
 
 int main(int argc, char** argv) {
-    uvmcheck::core::LinterDriver driver;
+    svlang_lint::core::LinterDriver driver;
     if (!driver.parseCommandLine(argc, argv)) {
         // A bad option or a file list that cannot be read: the run cannot
         // start (exit 2, as for any input that cannot be read).
@@ -84,7 +84,7 @@ int main(int argc, char** argv) {
     setenv(kPassEnv, std::to_string(pass + 1).c_str(), 1);
     setenv(kStatesEnv, states.c_str(), 1);
 
-    const std::string self = uvmcheck::core::selfExecutablePath(argv[0]);
+    const std::string self = svlang_lint::core::selfExecutablePath(argv[0]);
     execv(self.c_str(), argv);
     std::cerr << "Warning: --fix: could not start pass " << pass + 1 << "; run --fix again to continue.\n";
     std::cout << report.str();

@@ -1,12 +1,12 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
 #include "slang/syntax/AllSyntax.h"
 #include "slang/syntax/SyntaxTree.h"
 #include "slang/syntax/SyntaxVisitor.h"
 #include <unordered_set>
 #include <string>
 
-namespace uvmcheck::rules::oop {
+namespace svlang_lint::rules::oop {
 
 class ForeachShadowVisitor : public slang::syntax::SyntaxVisitor<ForeachShadowVisitor> {
 public:
@@ -120,7 +120,7 @@ public:
     core::Severity getDefaultSeverity() const override { return core::Severity::Warning; }
 
     void run(slang::ast::Compilation& compilation,
-             const uvmcheck::uvm::UvmModel& /*uvmModel*/,
+             const svlang_lint::uvm::UvmModel& /*uvmModel*/,
              core::DiagnosticEngine& diags) override {
         ForeachShadowVisitor visitor(diags);
         for (const auto& tree : compilation.getSyntaxTrees()) {
@@ -131,12 +131,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::oop
+} // namespace svlang_lint::rules::oop
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createForeachLoopVariableShadowing() {
     return std::make_unique<oop::ForeachLoopVariableShadowing>();
 }
 }
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createForeachLoopVariableShadowing)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createForeachLoopVariableShadowing)

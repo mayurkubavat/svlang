@@ -1,5 +1,5 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
 #include "slang/ast/ASTVisitor.h"
 #include "slang/ast/expressions/LiteralExpressions.h"
 #include "slang/ast/symbols/MemberSymbols.h"
@@ -10,7 +10,7 @@
 #include <algorithm>
 #include <cctype>
 
-namespace uvmcheck::rules::style {
+namespace svlang_lint::rules::style {
 
 class ExplicitLiteralWidthVisitor : public engine::AstVisitor<ExplicitLiteralWidthVisitor> {
 public:
@@ -185,12 +185,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::style
+} // namespace svlang_lint::rules::style
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createExplicitLiteralWidth() {
     return std::make_unique<style::ExplicitLiteralWidth>();
 }
 }
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createExplicitLiteralWidth)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createExplicitLiteralWidth)

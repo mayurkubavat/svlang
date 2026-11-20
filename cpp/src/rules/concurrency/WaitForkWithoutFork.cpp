@@ -1,11 +1,11 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
 #include "slang/syntax/AllSyntax.h"
 #include "slang/syntax/SyntaxTree.h"
 #include "slang/syntax/SyntaxVisitor.h"
 #include <string>
 
-namespace uvmcheck::rules::concurrency {
+namespace svlang_lint::rules::concurrency {
 
 class WaitForkVisitor : public slang::syntax::SyntaxVisitor<WaitForkVisitor> {
 public:
@@ -89,7 +89,7 @@ public:
     core::Severity getDefaultSeverity() const override { return core::Severity::Warning; }
 
     void run(slang::ast::Compilation& compilation,
-             const uvmcheck::uvm::UvmModel& /*uvmModel*/,
+             const svlang_lint::uvm::UvmModel& /*uvmModel*/,
              core::DiagnosticEngine& diags) override {
         WaitForkVisitor visitor(diags);
         for (const auto& tree : compilation.getSyntaxTrees()) {
@@ -100,12 +100,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::concurrency
+} // namespace svlang_lint::rules::concurrency
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createWaitForkWithoutFork() {
     return std::make_unique<concurrency::WaitForkWithoutFork>();
 }
 }
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createWaitForkWithoutFork)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createWaitForkWithoutFork)

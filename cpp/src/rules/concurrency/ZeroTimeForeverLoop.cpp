@@ -1,7 +1,7 @@
 // SV-DLY-004: a forever loop whose body can never let time advance.
 
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
 
 #include "slang/ast/ASTVisitor.h"
 #include "slang/ast/expressions/CallExpression.h"
@@ -9,7 +9,7 @@
 #include "slang/ast/statements/MiscStatements.h"
 #include "slang/ast/symbols/SubroutineSymbols.h"
 
-namespace uvmcheck::rules::concurrency {
+namespace svlang_lint::rules::concurrency {
 
 using namespace slang::ast;
 
@@ -78,12 +78,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::concurrency
+} // namespace svlang_lint::rules::concurrency
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createZeroTimeForeverLoop() {
     return std::make_unique<concurrency::ZeroTimeForeverLoop>();
 }
-} // namespace uvmcheck::rules
+} // namespace svlang_lint::rules
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createZeroTimeForeverLoop)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createZeroTimeForeverLoop)

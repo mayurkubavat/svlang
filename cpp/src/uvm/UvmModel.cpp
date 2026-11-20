@@ -1,11 +1,11 @@
 #include <atomic>
-#include "uvmcheck/uvm/UvmModel.h"
+#include "svlang_lint/uvm/UvmModel.h"
 #include "slang/ast/symbols/CompilationUnitSymbols.h"
 #include "slang/ast/symbols/VariableSymbols.h"
-#include "uvmcheck/core/ConfigManager.h"
-#include "uvmcheck/model/SlangModel.h"
+#include "svlang_lint/core/ConfigManager.h"
+#include "svlang_lint/model/SlangModel.h"
 
-namespace uvmcheck::uvm {
+namespace svlang_lint::uvm {
 
 static bool globMatch(std::string_view pattern, std::string_view text) {
     size_t p = 0, t = 0;
@@ -233,4 +233,4 @@ void UvmModel::dumpSemanticJson(std::ostream& out) const {
     out << "}\n";
 }
 
-} // namespace uvmcheck::uvm
+} // namespace svlang_lint::uvm

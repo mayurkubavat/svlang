@@ -1,6 +1,6 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
-#include "uvmcheck/rules/SweSupport.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
+#include "svlang_lint/rules/SweSupport.h"
 #include "slang/ast/ASTVisitor.h"
 #include "slang/ast/expressions/OperatorExpressions.h"
 #include "slang/ast/symbols/ClassSymbols.h"
@@ -19,7 +19,7 @@
 #include <string>
 #include <vector>
 
-namespace uvmcheck::rules::readability {
+namespace svlang_lint::rules::readability {
 
 using namespace slang::ast;
 using slang::parsing::Token;
@@ -477,9 +477,9 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::readability
+} // namespace svlang_lint::rules::readability
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createDoubleNegativeFlag() {
     return std::make_unique<readability::DoubleNegativeFlag>();
 }
@@ -498,11 +498,11 @@ std::unique_ptr<Rule> createUndocumentedTestbenchClass() {
 std::unique_ptr<Rule> createComplexInlineProperty() {
     return std::make_unique<readability::ComplexInlineProperty>();
 }
-} // namespace uvmcheck::rules
+} // namespace svlang_lint::rules
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createDoubleNegativeFlag)
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createNonDescriptiveName)
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createUnclearAbbreviation)
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createRedundantComment)
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createUndocumentedTestbenchClass)
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createComplexInlineProperty)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createDoubleNegativeFlag)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createNonDescriptiveName)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createUnclearAbbreviation)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createRedundantComment)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createUndocumentedTestbenchClass)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createComplexInlineProperty)

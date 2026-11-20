@@ -1,9 +1,9 @@
-#include "uvmcheck/core/ProjectConfig.h"
+#include "svlang_lint/core/ProjectConfig.h"
 #include <cctype>
 #include <cmath>
 #include <cstdlib>
 
-namespace uvmcheck::core {
+namespace svlang_lint::core {
 
 namespace fs = std::filesystem;
 
@@ -264,4 +264,4 @@ std::string ProjectConfig::ruleOptionString(std::string_view ruleId, std::string
     return (v && v->isString()) ? v->asString() : std::string(defaultValue);
 }
 
-} // namespace uvmcheck::core
+} // namespace svlang_lint::core

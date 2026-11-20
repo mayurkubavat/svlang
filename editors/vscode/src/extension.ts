@@ -10,8 +10,8 @@ import {
 
 // One server, `dv-lsp` (Rust, native front end): lint diagnostics and quick
 // fixes, outline, symbols, go to definition, references, hover and
-// completion. With `uvmcheck.executablePath` set, lint comes from that binary
-// instead (`uvmcheck-slang --lsp`, the Slang reference engine).
+// completion. With `svlang-lint.executablePath` set, lint comes from that binary
+// instead (`svlang-lint-slang --lsp`, the Slang reference engine).
 const clients: LanguageClient[] = [];
 
 const documentSelector = [
@@ -21,13 +21,13 @@ const documentSelector = [
 
 export async function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(
-        vscode.commands.registerCommand('uvmcheck.restartServer', async () => {
+        vscode.commands.registerCommand('svlang-lint.restartServer', async () => {
             await stopAll();
             startAll(context);
-            vscode.window.showInformationMessage('UVMCheck language server restarted.');
+            vscode.window.showInformationMessage('svlang-lint language server restarted.');
         }),
         vscode.workspace.onDidChangeConfiguration(async e => {
-            if (e.affectsConfiguration('uvmcheck')) {
+            if (e.affectsConfiguration('svlang-lint')) {
                 await stopAll();
                 startAll(context);
             }
@@ -37,27 +37,27 @@ export async function activate(context: vscode.ExtensionContext) {
 }
 
 function startAll(context: vscode.ExtensionContext) {
-    const config = vscode.workspace.getConfiguration('uvmcheck');
+    const config = vscode.workspace.getConfiguration('svlang-lint');
     const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
     const watcher = vscode.workspace.createFileSystemWatcher('**/*.{sv,svh,v,vh,svi,svp}');
     // The project's config, waivers and baseline: a change re-lints.
-    const configWatcher = vscode.workspace.createFileSystemWatcher('**/{.uvmcheck/*,uvmcheck_config.py,.uvmcheck.py,.uvmcheck.json,uvmcheck.json}');
+    const configWatcher = vscode.workspace.createFileSystemWatcher('**/{.svlang-lint/*,svlang_lint_config.py,.svlang-lint.py,.svlang-lint.json,svlang-lint.json}');
     context.subscriptions.push(watcher, configWatcher);
 
     const lint = config.get<boolean>('enable', true);
     const navigation = config.get<boolean>('navigation.enable', true);
     const slang = config.get<string>('executablePath', '').trim();
-    const reference = lint && slang !== '' && slang !== 'uvmcheck';
+    const reference = lint && slang !== '' && slang !== 'svlang-lint';
 
     if (reference) {
-        const exe = resolveExecutable(context, slang, 'uvmcheck-slang');
+        const exe = resolveExecutable(context, slang, 'svlang-lint-slang');
         if (exe) {
-            start(context, 'uvmcheck-lsp', 'UVMCheck Lint (Slang)', { command: exe, args: ['--lsp'], options: { env: process.env, cwd: workspaceRoot } }, {
+            start(context, 'svlang-lint-lsp', 'svlang-lint Lint (Slang)', { command: exe, args: ['--lsp'], options: { env: process.env, cwd: workspaceRoot } }, {
                 documentSelector,
                 synchronize: { fileEvents: watcher }
             });
         } else {
-            missing(slang, 'uvmcheck.executablePath', 'lint with the Slang engine');
+            missing(slang, 'svlang-lint.executablePath', 'lint with the Slang engine');
         }
     }
 
@@ -65,7 +65,7 @@ function startAll(context: vscode.ExtensionContext) {
     if (nativeLint || navigation) {
         const exe = resolveExecutable(context, config.get<string>('navigation.serverPath', 'dv-lsp'), 'dv-lsp');
         if (exe) {
-            start(context, 'dv-lsp', 'UVMCheck', { command: exe, args: [], options: { env: process.env, cwd: workspaceRoot } }, {
+            start(context, 'dv-lsp', 'svlang-lint', { command: exe, args: [], options: { env: process.env, cwd: workspaceRoot } }, {
                 documentSelector,
                 synchronize: { fileEvents: [watcher, configWatcher] },
                 initializationOptions: {
@@ -77,7 +77,7 @@ function startAll(context: vscode.ExtensionContext) {
                 }
             });
         } else {
-            missing('dv-lsp', 'uvmcheck.navigation.serverPath', 'linting and code browsing');
+            missing('dv-lsp', 'svlang-lint.navigation.serverPath', 'linting and code browsing');
         }
     }
 }
@@ -99,7 +99,7 @@ function missing(binary: string, setting: string, what: string) {
     }
     warned.add(binary);
     vscode.window
-        .showWarningMessage(`UVMCheck: \`${binary}\` was not found, so ${what} is off. Build it or set ${setting}.`, 'Open Settings')
+        .showWarningMessage(`svlang-lint: \`${binary}\` was not found, so ${what} is off. Build it or set ${setting}.`, 'Open Settings')
         .then(choice => {
             if (choice) {
                 vscode.commands.executeCommand('workbench.action.openSettings', setting);

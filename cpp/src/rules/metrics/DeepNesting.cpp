@@ -1,9 +1,9 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
-#include "uvmcheck/rules/CodeMetrics.h"
-#include "uvmcheck/rules/SweSupport.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
+#include "svlang_lint/rules/CodeMetrics.h"
+#include "svlang_lint/rules/SweSupport.h"
 
-namespace uvmcheck::rules::metrics {
+namespace svlang_lint::rules::metrics {
 
 using namespace slang::ast;
 
@@ -33,12 +33,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::metrics
+} // namespace svlang_lint::rules::metrics
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createDeepNesting() {
     return std::make_unique<metrics::DeepNesting>();
 }
 }
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createDeepNesting)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createDeepNesting)

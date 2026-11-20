@@ -1,11 +1,11 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
-#include "uvmcheck/rules/SweSupport.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
+#include "svlang_lint/rules/SweSupport.h"
 #include "slang/ast/statements/ConditionalStatements.h"
 
 #include <map>
 
-namespace uvmcheck::rules::design {
+namespace svlang_lint::rules::design {
 
 using namespace slang::ast;
 
@@ -70,12 +70,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::design
+} // namespace svlang_lint::rules::design
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createRepeatedEnumSwitch() {
     return std::make_unique<design::RepeatedEnumSwitch>();
 }
 }
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createRepeatedEnumSwitch)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createRepeatedEnumSwitch)

@@ -108,14 +108,35 @@ pub fn parse_args<S: AsRef<str>>(args: &[S]) -> Result<(Vec<Tree>, f64), Error> 
     // $VAR/${VAR} from the environment, +incdir+, +define+, -I, -D.
     // `--single-unit` reads every file into one compilation unit and tree.
     let single = args.iter().any(|a| a.as_ref() == "--single-unit");
+    let separate = args.iter().any(|a| a.as_ref() == "--separate-units");
+    let mut dialect = Dialect::Any;
+    let mut filtered: Vec<&str> = Vec::with_capacity(args.len());
+    let mut i = 0;
+    while i < args.len() {
+        let a = args[i].as_ref();
+        if a == "--single-unit" || a == "--separate-units" {
+            i += 1;
+            continue;
+        }
+        if let Some(p) = a.strip_prefix("--compat-profile=") {
+            dialect = parse_dialect(p)?;
+            i += 1;
+            continue;
+        }
+        if a == "--compat-profile" {
+            let Some(next) = args.get(i + 1).map(AsRef::as_ref) else {
+                return Err(Error("--compat-profile needs a value".into()));
+            };
+            dialect = parse_dialect(next)?;
+            i += 2;
+            continue;
+        }
+        filtered.push(a);
+        i += 1;
+    }
     let cwd = std::env::current_dir().unwrap_or_else(|_| ".".into());
-    let list = FileList::read_args(
-        args.iter().map(|a| a.as_ref()).filter(|a| *a != "--single-unit"),
-        &cwd,
-        Dialect::Any,
-        &ProcessEnv,
-    );
-    let opts = Options {
+    let list = FileList::read_args(filtered, &cwd, dialect, &ProcessEnv);
+    let mut opts = Options {
         include_dirs: list.include_dirs.iter().map(|d| d.value.clone()).collect(),
         defines: list
             .effective_defines()
@@ -127,7 +148,7 @@ pub fn parse_args<S: AsRef<str>>(args: &[S]) -> Result<(Vec<Tree>, f64), Error> 
             .collect(),
         ..Options::default()
     };
-    // Simulator options (`-l log`, `+acc`) are ignored, as with uvmcheck's
+    // Simulator options (`-l log`, `+acc`) are ignored, as with svlang-lint's
     // filelist dialect; a `--name` option nothing knows is a mistake.
     if let Some(o) = list.ignored.iter().find(|o| o.value.starts_with("--")) {
         return Err(Error(format!("unknown command line argument '{}'", o.value)));
@@ -151,13 +172,44 @@ pub fn parse_args<S: AsRef<str>>(args: &[S]) -> Result<(Vec<Tree>, f64), Error> 
     }) {
         return Err(Error(d.message.clone()));
     }
-    let files: Vec<PathBuf> = list.sources.iter().map(|s| s.value.clone()).collect();
+    let mut files: Vec<PathBuf> = list.sources.iter().map(|s| s.value.clone()).collect();
+    if list.uvm.requested {
+        let home = list
+            .uvm
+            .home_or_version
+            .as_deref()
+            .map(PathBuf::from)
+            .filter(|p| p.is_dir())
+            .or_else(|| std::env::var_os("UVM_HOME").map(PathBuf::from).filter(|p| p.is_dir()));
+        let uvm_src = home.and_then(|h| {
+            let src = h.join("src");
+            if src.join("uvm_pkg.sv").is_file() {
+                Some(src)
+            } else if h.join("uvm_pkg.sv").is_file() {
+                Some(h)
+            } else {
+                None
+            }
+        });
+        let Some(uvm_src) = uvm_src else {
+            return Err(Error(
+                "UVM requested (-uvm / -ntb_opts uvm) but UVM_HOME is unset or uvm_pkg.sv was not found".into(),
+            ));
+        };
+        if !opts.include_dirs.contains(&uvm_src) {
+            opts.include_dirs.insert(0, uvm_src.clone());
+        }
+        let pkg = uvm_src.join("uvm_pkg.sv");
+        if !files.iter().any(|f| f.file_name().is_some_and(|n| n == "uvm_pkg.sv")) {
+            files.insert(0, pkg);
+        }
+    }
     if files.is_empty() {
         return Err(Error("no sources given".into()));
     }
     let t0 = Instant::now();
     // A source that is missing or cannot be read stops the run (exit 2 in
-    // dv-lint, as in uvmcheck), rather than becoming a finding.
+    // dv-lint, as in svlang-lint), rather than becoming a finding.
     for f in &files {
         // An editor buffer stands in for its file, saved yet or not.
         if sv_syntax::overlay::get(f).is_some() {
@@ -170,6 +222,8 @@ pub fn parse_args<S: AsRef<str>>(args: &[S]) -> Result<(Vec<Tree>, f64), Error> 
     }
     let mut trees = if single {
         vec![sv_syntax::parse_unit(&files, opts.clone())]
+    } else if separate {
+        sv_syntax::parse_files_isolated(&files, opts.clone())
     } else {
         sv_syntax::parse_files(&files, opts.clone())
     };
@@ -177,6 +231,17 @@ pub fn parse_args<S: AsRef<str>>(args: &[S]) -> Result<(Vec<Tree>, f64), Error> 
     library::add_library_trees(&mut trees, &list, &opts);
     let parse_ms = t0.elapsed().as_secs_f64() * 1e3;
     Ok((trees, parse_ms))
+}
+
+fn parse_dialect(profile: &str) -> Result<Dialect, Error> {
+    match profile.to_ascii_lowercase().as_str() {
+        "vcs" => Ok(Dialect::Vcs),
+        "xcelium" => Ok(Dialect::Xcelium),
+        "questa" | "jasper" | "verilator" | "any" | "none" => Ok(Dialect::Any),
+        other => Err(Error(format!(
+            "unknown compat profile '{other}' (expected vcs, xcelium, questa, jasper, verilator, any or none)"
+        ))),
+    }
 }
 
 /// The model half of [`load_with_trees`]: the design of parsed trees.
@@ -277,7 +342,7 @@ pub fn symbol_types(trees: &[Tree], s: &scopes::Scopes) -> Vec<Option<String>> {
     symbol_info(trees, s).0
 }
 
-/// The elaborated design as `uvmcheck_sym_dump --hier` prints it (phase
+/// The elaborated design as `svlang_sym_dump --hier` prints it (phase
 /// N4): instances, taken generate blocks and parameter values by path.
 pub fn hierarchy(trees: &[Tree]) -> Vec<String> {
     elaborate(trees).0
@@ -300,7 +365,7 @@ pub fn elaborate_tops(trees: &[Tree], tops: &[String]) -> (Vec<String>, Vec<name
 /// slang does not report).
 pub struct Elaborated {
     /// Instances, taken generate blocks and parameter values, one line each, in
-    /// the form `uvmcheck_sym_dump --hier` prints.
+    /// the form `svlang_sym_dump --hier` prints.
     pub hierarchy: Vec<String>,
     /// Arena-backed elaborated design object model (per-instance [`Instance`] and [`Symbol`]s).
     pub design: elab_ir::ElaboratedDesign,

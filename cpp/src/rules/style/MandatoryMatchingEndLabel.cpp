@@ -1,10 +1,10 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
 #include "slang/syntax/SyntaxVisitor.h"
 #include "slang/syntax/SyntaxTree.h"
 #include "slang/syntax/AllSyntax.h"
 
-namespace uvmcheck::rules::style {
+namespace svlang_lint::rules::style {
 
 class EndLabelVisitor : public engine::SyntaxVisitor<EndLabelVisitor> {
 public:
@@ -139,7 +139,7 @@ public:
     core::Severity getDefaultSeverity() const override { return core::Severity::Warning; }
 
     void run(slang::ast::Compilation& compilation,
-             const uvmcheck::uvm::UvmModel&,
+             const svlang_lint::uvm::UvmModel&,
              core::DiagnosticEngine& diags) override {
         EndLabelVisitor visitor(diags, false, true);
         for (const auto& tree : compilation.getSyntaxTrees()) {
@@ -150,9 +150,9 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::style
+} // namespace svlang_lint::rules::style
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createMandatoryMatchingEndLabel() {
     return std::make_unique<style::MandatoryMatchingEndLabel>();
 }
@@ -161,5 +161,5 @@ std::unique_ptr<Rule> createMismatchedEndLabel() {
 }
 }
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createMandatoryMatchingEndLabel)
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createMismatchedEndLabel)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createMandatoryMatchingEndLabel)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createMismatchedEndLabel)

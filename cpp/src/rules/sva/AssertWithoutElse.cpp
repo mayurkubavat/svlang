@@ -1,9 +1,9 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
 #include "slang/ast/ASTVisitor.h"
 #include "slang/ast/statements/MiscStatements.h"
 
-namespace uvmcheck::rules::sva {
+namespace svlang_lint::rules::sva {
 
 class AssertWithoutElseVisitor : public engine::AstVisitor<AssertWithoutElseVisitor> {
 public:
@@ -59,12 +59,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::sva
+} // namespace svlang_lint::rules::sva
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createAssertWithoutElse() {
     return std::make_unique<sva::AssertWithoutElse>();
 }
 }
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createAssertWithoutElse)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createAssertWithoutElse)

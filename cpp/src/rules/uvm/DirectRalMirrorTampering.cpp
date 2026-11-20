@@ -1,16 +1,16 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
 #include "slang/ast/ASTVisitor.h"
 #include "slang/ast/expressions/AssignmentExpressions.h"
 #include "slang/ast/expressions/SelectExpressions.h"
 #include "slang/ast/symbols/ClassSymbols.h"
 #include "slang/syntax/AllSyntax.h"
 
-namespace uvmcheck::rules::uvm {
+namespace svlang_lint::rules::uvm {
 
 class RalAssignmentVisitor : public engine::AstVisitor<RalAssignmentVisitor> {
 public:
-    RalAssignmentVisitor(const uvmcheck::uvm::UvmModel& uvmModel, core::DiagnosticEngine& diags)
+    RalAssignmentVisitor(const svlang_lint::uvm::UvmModel& uvmModel, core::DiagnosticEngine& diags)
         : uvmModel(uvmModel), diags(diags) {}
 
     void handle(const slang::ast::AssignmentExpression& assign) {
@@ -53,7 +53,7 @@ public:
     }
 
 private:
-    const uvmcheck::uvm::UvmModel& uvmModel;
+    const svlang_lint::uvm::UvmModel& uvmModel;
     core::DiagnosticEngine& diags;
 };
 
@@ -76,12 +76,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::uvm
+} // namespace svlang_lint::rules::uvm
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createDirectRalMirrorTampering() {
     return std::make_unique<uvm::DirectRalMirrorTampering>();
 }
 }
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createDirectRalMirrorTampering)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createDirectRalMirrorTampering)

@@ -1,6 +1,6 @@
 # UVM Methodology Guide
 
-This guide describes how UVMCheck expects UVM testbench code to be structured so that it stays reusable and easy to change. Each guideline is a short, testable statement; most are enforced by one or more lint rules, and the rest are left to review until a rule exists.
+This guide describes how svlang-lint expects UVM testbench code to be structured so that it stays reusable and easy to change. Each guideline is a short, testable statement; most are enforced by one or more lint rules, and the rest are left to review until a rule exists.
 
 ## Structure
 
@@ -37,18 +37,18 @@ Guideline levels use the wording of standards documents:
 
 ```bash
 # Print the guide with the rules behind each guideline
-uvmcheck --list-guidelines
-uvmcheck --list-guidelines --json guide.json
+svlang-lint --list-guidelines
+svlang-lint --list-guidelines --json guide.json
 
 # Run only the rules of one chapter or guideline (Advisory rules included)
-uvmcheck --guideline MG-4 -f files.f
-uvmcheck --guideline MG-3.1,MG-4.1 -f files.f
+svlang-lint --guideline MG-4 -f files.f
+svlang-lint --guideline MG-3.1,MG-4.1 -f files.f
 
 # Presets: reuse = MG-1 to MG-5; guide = every guideline
-uvmcheck --preset reuse -f files.f
+svlang-lint --preset reuse -f files.f
 
 # Add a pass/fail line per guideline to any run
-uvmcheck --conformance --json report.json -f files.f
+svlang-lint --conformance --json report.json -f files.f
 ```
 
 With guideline selection or `--conformance`, the console summary ends with a pass/fail line per guideline and a tally per chapter, and the JSON report gains a `conformance` array. Every finding in the JSON report also lists the guidelines its rule enforces.

@@ -1,6 +1,6 @@
 [package]
 name = "dv-lint"
-description = "UVMCheck: the SystemVerilog/UVM linter on the native front end (binaries uvmcheck and dv-lint)"
+description = "svlang-lint: the SystemVerilog/UVM linter on the native front end (binaries svlang-lint and dv-lint)"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -8,20 +8,20 @@ rust-version.workspace = true
 publish = false
 build = "build.rs"
 
-# One program under two names: `uvmcheck` is the product's command, `dv-lint`
+# One program under two names: `svlang-lint` is the product's command, `dv-lint`
 # the name the gates and scripts call. Both run `dv_lint::app::run`.
 [[bin]]
 name = "dv-lint"
 path = "src/main.rs"
 
 [[bin]]
-name = "uvmcheck"
-path = "src/uvmcheck.rs"
+name = "svlang-lint"
+path = "src/svlang_lint.rs"
 
 [features]
 default = []
 # `--slang`: load the design through Slang instead of the native front end
-# (needs libuvmcheck_model). Oracle and parity use only, never the default.
+# (needs libsvlang_lint_model). Oracle and parity use only, never the default.
 slang = ["dv-model/slang"]
 
 [dependencies]

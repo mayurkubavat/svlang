@@ -1,9 +1,9 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
-#include "uvmcheck/rules/CodeMetrics.h"
-#include "uvmcheck/rules/SweSupport.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
+#include "svlang_lint/rules/CodeMetrics.h"
+#include "svlang_lint/rules/SweSupport.h"
 
-namespace uvmcheck::rules::metrics {
+namespace svlang_lint::rules::metrics {
 
 using namespace slang::ast;
 
@@ -34,12 +34,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::metrics
+} // namespace svlang_lint::rules::metrics
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createTooManyArguments() {
     return std::make_unique<metrics::TooManyArguments>();
 }
 }
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createTooManyArguments)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createTooManyArguments)

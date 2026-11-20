@@ -1,7 +1,7 @@
 // SV-COV-017: a coverpoint bin whose values the coverpoint expression can never take.
 
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
 
 #include "slang/ast/ASTVisitor.h"
 #include "slang/ast/EvalContext.h"
@@ -12,7 +12,7 @@
 #include <limits>
 #include <optional>
 
-namespace uvmcheck::rules::coverage {
+namespace svlang_lint::rules::coverage {
 
 using namespace slang::ast;
 
@@ -115,12 +115,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::coverage
+} // namespace svlang_lint::rules::coverage
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createUnreachableCoverBin() {
     return std::make_unique<coverage::UnreachableCoverBin>();
 }
-} // namespace uvmcheck::rules
+} // namespace svlang_lint::rules
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createUnreachableCoverBin)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createUnreachableCoverBin)

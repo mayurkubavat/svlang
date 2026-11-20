@@ -1,7 +1,7 @@
-//! `dv-lint --json FILE` writes uvmcheck's JSON report form.
+//! `dv-lint --json FILE` writes svlang-lint's JSON report form.
 
 #[test]
-fn json_report_has_uvmchecks_fields() {
+fn json_report_has_svlang_lints_fields() {
     let dir = std::env::temp_dir().join(format!("dv-lint-json-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let src = dir.join("t.sv");
@@ -13,7 +13,7 @@ fn json_report_has_uvmchecks_fields() {
         .arg(&src)
         .status()
         .unwrap();
-    assert_eq!(st.code(), Some(0), "only infos and warnings: exit 0, as uvmcheck");
+    assert_eq!(st.code(), Some(0), "only infos and warnings: exit 0, as svlang-lint");
     let text = std::fs::read_to_string(&out).unwrap();
     for key in ["\"tool\": \"dv-lint\"", "\"compileErrors\": 0", "\"violations\": [", "\"ruleId\": \"SV-STY-003\""] {
         assert!(text.contains(key), "{key} in {text}");
@@ -24,7 +24,7 @@ fn json_report_has_uvmchecks_fields() {
 }
 
 #[test]
-fn presets_select_rules_as_uvmcheck() {
+fn presets_select_rules_as_svlang_lint() {
     let dir = std::env::temp_dir().join(format!("dv-lint-preset-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let src = dir.join("t.sv");
@@ -53,11 +53,11 @@ fn presets_select_rules_as_uvmcheck() {
 #[test]
 fn project_config_paths_rules_and_waivers() {
     let dir = std::env::temp_dir().join(format!("dv-lint-config-{}", std::process::id()));
-    for d in [".uvmcheck", "vip", "tb"] {
+    for d in [".svlang-lint", "vip", "tb"] {
         std::fs::create_dir_all(dir.join(d)).unwrap();
     }
     std::fs::write(
-        dir.join(".uvmcheck/config.json"),
+        dir.join(".svlang-lint/config.json"),
         r#"{"preset": "all", "library_paths": ["vip/**"], "rules": {"SV-STY-003": "off", "SV-BAN-001": {"severity": "ERROR"}},
             "waivers": [{"rule": "SV-STY-010", "path": "tb/top.sv", "line": 3, "reason": "known"}]}"#,
     )
@@ -107,7 +107,7 @@ fn rule_options_from_the_config() {
     let dir = std::env::temp_dir().join(format!("dv-lint-options-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     std::fs::write(
-        dir.join("uvmcheck.json"),
+        dir.join("svlang-lint.json"),
         r#"{"rules": {"MaxLineLength": {"options": {"max_columns": 40}}, "SV-MET-003": {"options": {"max_args": 2}}}}"#,
     )
     .unwrap();
@@ -128,7 +128,7 @@ fn style_block_from_the_config() {
     let dir = std::env::temp_dir().join(format!("dv-lint-style-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     std::fs::write(
-        dir.join("uvmcheck.json"),
+        dir.join("svlang-lint.json"),
         r#"{"style": {"max_line_length": 30, "allow_tabs": true, "mandatory_matching_end_label": false,
             "require_file_header": true, "file_header_pattern": "Copyright|SPDX-License-Identifier",
             "file_matches_class_name": true}}"#,
@@ -160,7 +160,7 @@ fn naming_block_from_the_config() {
     let dir = std::env::temp_dir().join(format!("dv-lint-naming-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     std::fs::write(
-        dir.join("uvmcheck.json"),
+        dir.join("svlang-lint.json"),
         r#"{"naming": {"Class": {"enabled": true}, "Typedef": {"suffix": "_type", "severity": "ERROR"},
             "Package": {"suffix": ""}, "Coverpoint": {"pattern": "^x_.*$"}}}"#,
     )
@@ -191,9 +191,9 @@ fn naming_block_from_the_config() {
 #[test]
 fn waiver_files_regrades_and_baselines() {
     let dir = std::env::temp_dir().join(format!("dv-lint-baseline-{}", std::process::id()));
-    std::fs::create_dir_all(dir.join(".uvmcheck")).unwrap();
+    std::fs::create_dir_all(dir.join(".svlang-lint")).unwrap();
     std::fs::write(
-        dir.join(".uvmcheck/config.json"),
+        dir.join(".svlang-lint/config.json"),
         r#"{"preset": "all", "waivers": [{"rule": "SV-BAN-001", "severity": "error", "reason": "regrade"}]}"#,
     )
     .unwrap();
@@ -276,16 +276,16 @@ fn html_dashboard() {
 #[test]
 fn inline_waiver_patterns_are_regexes() {
     // Line 2: "literal .9." does not match the message about '5', so it stays
-    // (as with uvmcheck's std::regex). Line 3: a regex that matches waives.
+    // (as with svlang-lint's std::regex). Line 3: a regex that matches waives.
     // Line 4: a pattern dv-lint refuses (a backreference) waives nothing and
     // is a UVM-WV-001 error at the comment, whatever --rule selects.
     let dir = std::env::temp_dir().join(format!("dv-lint-inline-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     std::fs::write(
         dir.join("t.sv"),
-        "module m; integer i;\ninitial i = 5; // uvmcheck:waive SV-STY-010 \"literal .9.\"\n\
-         initial i = 6; // uvmcheck:waive SV-STY-010 \"literal '[0-9]'\"\n\
-         initial i = 7; // uvmcheck:waive SV-STY-010 \"(7)\\\\1\"\nendmodule\n",
+        "module m; integer i;\ninitial i = 5; // svlang-lint:waive SV-STY-010 \"literal .9.\"\n\
+         initial i = 6; // svlang-lint:waive SV-STY-010 \"literal '[0-9]'\"\n\
+         initial i = 7; // svlang-lint:waive SV-STY-010 \"(7)\\\\1\"\nendmodule\n",
     )
     .unwrap();
     let out = std::process::Command::new(env!("CARGO_BIN_EXE_dv-lint"))
@@ -344,14 +344,14 @@ fn fix_rewrites_and_dry_run_shows_the_diff() {
     };
     let dry = run(&["--fix-dry-run"]);
     assert!(dry.starts_with("--- a/a.sv\n+++ b/a.sv\n@@ -1,3 +1,3 @@\n-module m;   \n+module m;\n"), "{dry}");
-    assert!(dry.contains("[uvmcheck] Would apply 3 fix-it(s) in 1 file(s)."), "{dry}");
+    assert!(dry.contains("[svlang-lint] Would apply 3 fix-it(s) in 1 file(s)."), "{dry}");
     assert_eq!(
         std::fs::read_to_string(&src).unwrap(),
         "module m;   \n  logic a;\t\nendmodule  \n",
         "dry run writes nothing"
     );
     let fixed = run(&["--fix"]);
-    assert!(fixed.contains("[uvmcheck] Applied 3 fix-it(s) in 1 file(s)."), "{fixed}");
+    assert!(fixed.contains("[svlang-lint] Applied 3 fix-it(s) in 1 file(s)."), "{fixed}");
     assert_eq!(std::fs::read_to_string(&src).unwrap(), "module m;\n  logic a;\nendmodule\n");
     assert!(!fixed.contains("SV-STY-015"), "the next pass reports on the fixed text: {fixed}");
     let _ = std::fs::remove_dir_all(&dir);
@@ -360,7 +360,7 @@ fn fix_rewrites_and_dry_run_shows_the_diff() {
 #[test]
 fn fix_skips_files_with_semantic_errors() {
     // A `solve before` on a non-random property: slang rejects the file and
-    // uvmcheck applies no fix in it; the native front end now agrees.
+    // svlang-lint applies no fix in it; the native front end now agrees.
     let dir = std::env::temp_dir().join(format!("dv-lint-fix-cmp-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let text = "class c;   \n  rand int w; int plain;\n  constraint k_c { solve plain before w; }\nendclass\n";
@@ -378,7 +378,7 @@ fn fix_skips_files_with_semantic_errors() {
 
 #[test]
 fn inputs_that_cannot_be_read_exit_2() {
-    // As uvmcheck: the run cannot start (docs/guide/uvmcheck.md, Exit status).
+    // As svlang-lint: the run cannot start (docs/guide/svlang-lint.md, Exit status).
     let dir = std::env::temp_dir().join(format!("dv-lint-exit2-{}", std::process::id()));
     std::fs::create_dir_all(dir.join("adir")).unwrap();
     std::fs::write(dir.join("ok.sv"), "module m; endmodule\n").unwrap();
@@ -503,11 +503,11 @@ fn exit_status_follows_errors_only() {
 fn a_configured_rule_runs_outside_the_default_set() {
     let dir = std::env::temp_dir().join(format!("dv-lint-configured-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(dir.join(".uvmcheck")).unwrap();
+    std::fs::create_dir_all(dir.join(".svlang-lint")).unwrap();
     // SV-STY-003 (a TODO comment) and SV-STY-015 (trailing whitespace) are style rules.
     std::fs::write(dir.join("t.sv"), "module m; // TODO: later  \nendmodule\n").unwrap();
     let run = |config: &str, extra: &[&str]| {
-        std::fs::write(dir.join(".uvmcheck/config.json"), config).unwrap();
+        std::fs::write(dir.join(".svlang-lint/config.json"), config).unwrap();
         let o = std::process::Command::new(env!("CARGO_BIN_EXE_dv-lint"))
             .current_dir(&dir)
             .args(["--no-cache"])
@@ -532,5 +532,64 @@ fn a_configured_rule_runs_outside_the_default_set() {
     assert!(preset.contains("SV-STY-003") && preset.contains("SV-STY-015"), "{preset}");
     let bad = run(r#"{"preset": "nope"}"#, &[]);
     assert!(bad.contains("preset: unknown preset 'nope'"), "{bad}");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn verissimo_native_fixes_preserve_semantics() {
+    let dir = std::env::temp_dir().join(format!("dv-lint-vfix-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let repo = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+
+    // 1. SV-STY-020, SV-STY-021, SV-STY-022, SV-CON-017 safe fixes.
+    std::fs::write(
+        dir.join("m.sv"),
+        "`define ADD4(x) x + 4\nmodule m;\n  logic a; logic b;\n      string s;\n  initial begin\n    s <= \"hi\";\n  end\nendmodule\n",
+    )
+    .unwrap();
+    let o = std::process::Command::new(env!("CARGO_BIN_EXE_dv-lint"))
+        .current_dir(&dir)
+        .args([
+            "--no-config",
+            "--no-cache",
+            "--fix",
+            "--fix-rule",
+            "SV-STY-020,SV-STY-021,SV-STY-022,SV-CON-017",
+            "m.sv",
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(o.status.code(), Some(0), "{}", String::from_utf8_lossy(&o.stdout));
+    let fixed = std::fs::read_to_string(dir.join("m.sv")).unwrap();
+    assert!(fixed.contains("`define ADD4(x) (x) + 4"), "{fixed}");
+    assert!(fixed.contains("\n  logic a;\n  logic b;\n  string s;\n"), "{fixed}");
+    assert!(fixed.contains("s = \"hi\";"), "{fixed}");
+
+    // 2. UVM-DEP-005 safe fix (`starting_phase` -> `get_starting_phase()`).
+    std::fs::write(
+        dir.join("seq.sv"),
+        "`include \"uvm_mock.svh\"\nclass s_seq extends uvm_sequence;\n  `uvm_object_utils(s_seq)\n  function new(string name = \"s_seq\"); super.new(name); endfunction\n  virtual task body();\n    if (starting_phase != null) begin\n      starting_phase.raise_objection(this, \"r\");\n      starting_phase.drop_objection(this, \"r\");\n    end\n  endtask\nendclass\n",
+    )
+    .unwrap();
+    let o = std::process::Command::new(env!("CARGO_BIN_EXE_dv-lint"))
+        .current_dir(&dir)
+        .args([
+            "--no-config",
+            "--no-cache",
+            "-I",
+            repo.join("testdata/common").to_str().unwrap(),
+            "--fix",
+            "--fix-rule",
+            "UVM-DEP-005",
+            "seq.sv",
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(o.status.code(), Some(0), "{}", String::from_utf8_lossy(&o.stdout));
+    let fixed_seq = std::fs::read_to_string(dir.join("seq.sv")).unwrap();
+    assert!(fixed_seq.contains("if (get_starting_phase() != null) begin"), "{fixed_seq}");
+    assert!(fixed_seq.contains("get_starting_phase().raise_objection(this, \"r\");"), "{fixed_seq}");
+    assert!(fixed_seq.contains("get_starting_phase().drop_objection(this, \"r\");"), "{fixed_seq}");
     let _ = std::fs::remove_dir_all(&dir);
 }

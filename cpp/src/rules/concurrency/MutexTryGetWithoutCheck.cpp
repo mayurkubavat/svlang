@@ -1,12 +1,12 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
 #include "slang/ast/ASTVisitor.h"
 #include "slang/ast/expressions/CallExpression.h"
 #include "slang/ast/expressions/ConversionExpression.h"
 #include "slang/ast/statements/MiscStatements.h"
 #include "slang/syntax/AllSyntax.h"
 
-namespace uvmcheck::rules::concurrency {
+namespace svlang_lint::rules::concurrency {
 
 class MutexTryGetVisitor : public engine::AstVisitor<MutexTryGetVisitor> {
 public:
@@ -90,12 +90,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::concurrency
+} // namespace svlang_lint::rules::concurrency
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createMutexTryGetWithoutCheck() {
     return std::make_unique<concurrency::MutexTryGetWithoutCheck>();
 }
 }
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createMutexTryGetWithoutCheck)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createMutexTryGetWithoutCheck)

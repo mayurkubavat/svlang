@@ -4,7 +4,7 @@ IEEE 1800-2023 conformance corpus (testdata/conformance/, docs/reference/conform
 
 Every clause of the LRM from 5 to 35, and the 2023 additions, has a probe file
 of legal SystemVerilog (or is marked out of scope in clauses.json). Each probe
-is linted with every rule on, the way a user runs uvmcheck:
+is linted with every rule on, the way a user runs svlang-lint:
 
 - the run must end normally (no crash, exit 0 or 1);
 - the JSON report must parse;
@@ -28,7 +28,7 @@ CORPUS = REPO / "testdata" / "conformance"
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--binary", default=str(REPO / "build" / "uvmcheck"))
+    ap.add_argument("--binary", default=str(REPO / "build" / "svlang-lint"))
     ap.add_argument("--verbose", action="store_true", help="list the findings of each probe")
     args = ap.parse_args()
     binary = str(Path(args.binary).resolve())

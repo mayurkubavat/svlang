@@ -1,8 +1,8 @@
 // Methodology guide chapter MG-2, config_db as coupling: UVM-CFG-007 to UVM-CFG-009.
 
 #include "MethodologySupport.h"
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
 
 #include "slang/ast/ASTVisitor.h"
 #include "slang/ast/expressions/AssignmentExpressions.h"
@@ -17,7 +17,7 @@
 #include <unordered_map>
 #include <unordered_set>
 
-namespace uvmcheck::rules::methodology {
+namespace svlang_lint::rules::methodology {
 
 using namespace slang::ast;
 
@@ -432,9 +432,9 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::methodology
+} // namespace svlang_lint::rules::methodology
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createConfigDbAsRuntimeChannel() { return std::make_unique<methodology::ConfigDbAsRuntimeChannel>(); }
 std::unique_ptr<Rule> createScatteredConfigKeyLiteral() { return std::make_unique<methodology::ScatteredConfigKeyLiteral>(); }
 std::unique_ptr<Rule> createSharedConfigMutatedAtRuntime() { return std::make_unique<methodology::SharedConfigMutatedAtRuntime>(); }
@@ -442,8 +442,8 @@ std::unique_ptr<Rule> createConfigDbGetWithoutSet() { return std::make_unique<me
 std::unique_ptr<Rule> createConfigDbSetNeverGot() { return std::make_unique<methodology::ConfigDbSetNeverGot>(); }
 }
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createConfigDbAsRuntimeChannel)
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createScatteredConfigKeyLiteral)
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createSharedConfigMutatedAtRuntime)
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createConfigDbGetWithoutSet)
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createConfigDbSetNeverGot)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createConfigDbAsRuntimeChannel)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createScatteredConfigKeyLiteral)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createSharedConfigMutatedAtRuntime)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createConfigDbGetWithoutSet)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createConfigDbSetNeverGot)

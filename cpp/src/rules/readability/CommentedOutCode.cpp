@@ -1,6 +1,6 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
-#include "uvmcheck/rules/SweSupport.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
+#include "svlang_lint/rules/SweSupport.h"
 #include "slang/parsing/Token.h"
 #include "slang/syntax/SyntaxTree.h"
 #include "slang/syntax/SyntaxVisitor.h"
@@ -8,7 +8,7 @@
 
 #include <filesystem>
 
-namespace uvmcheck::rules::readability {
+namespace svlang_lint::rules::readability {
 
 using namespace slang;
 using namespace slang::syntax;
@@ -132,12 +132,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::readability
+} // namespace svlang_lint::rules::readability
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createCommentedOutCode() {
     return std::make_unique<readability::CommentedOutCode>();
 }
 }
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createCommentedOutCode)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createCommentedOutCode)

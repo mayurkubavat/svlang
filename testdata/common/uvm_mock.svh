@@ -1,4 +1,4 @@
-// Mock UVM classes and utility macros for UVMCheck unit testing
+// Mock UVM classes and utility macros for svlang-lint unit testing
 // Eliminates the need to install or compile standard UVM-1.2 / IEEE 1800.2 packages during lint test execution.
 
 `ifndef UVM_MOCK_SVH
@@ -367,8 +367,15 @@ endclass
 
 virtual class uvm_sequence_base extends uvm_sequence_item;
     uvm_sequencer_base m_sequencer;
+    uvm_phase starting_phase;
     function new(string name = "");
         super.new(name);
+    endfunction
+    virtual function uvm_phase get_starting_phase();
+        return starting_phase;
+    endfunction
+    virtual function void set_starting_phase(uvm_phase phase);
+        starting_phase = phase;
     endfunction
     task start(uvm_sequencer_base sequencer = null, uvm_sequence_base parent_sequence = null, int this_priority = -1, bit call_pre_post = 1);
     endtask

@@ -1,5 +1,5 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
 #include "slang/ast/ASTVisitor.h"
 #include "slang/ast/statements/ConditionalStatements.h"
 #include "slang/ast/types/AllTypes.h"
@@ -8,7 +8,7 @@
 #include <unordered_set>
 #include <vector>
 
-namespace uvmcheck::rules::correctness {
+namespace svlang_lint::rules::correctness {
 
 class NonExhaustiveEnumCaseVisitor : public engine::AstVisitor<NonExhaustiveEnumCaseVisitor> {
 public:
@@ -100,12 +100,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::correctness
+} // namespace svlang_lint::rules::correctness
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createNonExhaustiveEnumCase() {
     return std::make_unique<correctness::NonExhaustiveEnumCase>();
 }
 }
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createNonExhaustiveEnumCase)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createNonExhaustiveEnumCase)

@@ -1,12 +1,12 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
 #include "slang/ast/ASTVisitor.h"
 #include "slang/ast/expressions/AssignmentExpressions.h"
 #include "slang/ast/expressions/ConversionExpression.h"
 #include "slang/ast/expressions/SelectExpressions.h"
 #include "slang/syntax/AllSyntax.h"
 
-namespace uvmcheck::rules::performance {
+namespace svlang_lint::rules::performance {
 
 class QueueSliceVisitor : public engine::AstVisitor<QueueSliceVisitor> {
 public:
@@ -79,12 +79,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::performance
+} // namespace svlang_lint::rules::performance
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createQueueSlicePopFirst() {
     return std::make_unique<performance::QueueSlicePopFirst>();
 }
 }
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createQueueSlicePopFirst)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createQueueSlicePopFirst)

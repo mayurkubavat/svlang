@@ -1,11 +1,11 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
 #include "slang/ast/ASTVisitor.h"
 #include "slang/ast/expressions/CallExpression.h"
 #include "slang/ast/expressions/ConversionExpression.h"
 #include "slang/ast/statements/MiscStatements.h"
 
-namespace uvmcheck::rules::oop {
+namespace svlang_lint::rules::oop {
 
 class UncheckedCastVisitor : public engine::AstVisitor<UncheckedCastVisitor> {
 public:
@@ -70,12 +70,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::oop
+} // namespace svlang_lint::rules::oop
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createUncheckedDynamicCast() {
     return std::make_unique<oop::UncheckedDynamicCast>();
 }
 }
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createUncheckedDynamicCast)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createUncheckedDynamicCast)

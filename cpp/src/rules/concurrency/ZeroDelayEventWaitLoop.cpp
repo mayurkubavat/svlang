@@ -1,11 +1,11 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
 #include "slang/ast/ASTVisitor.h"
 #include "slang/ast/statements/LoopStatements.h"
 #include "slang/ast/statements/MiscStatements.h"
 #include "slang/syntax/AllSyntax.h"
 
-namespace uvmcheck::rules::concurrency {
+namespace svlang_lint::rules::concurrency {
 
 class LoopTimeAdvanceVisitor : public slang::ast::ASTVisitor<LoopTimeAdvanceVisitor, slang::ast::VisitFlags::AllGood> {
 public:
@@ -88,12 +88,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::concurrency
+} // namespace svlang_lint::rules::concurrency
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createZeroDelayEventWaitLoop() {
     return std::make_unique<concurrency::ZeroDelayEventWaitLoop>();
 }
 }
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createZeroDelayEventWaitLoop)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createZeroDelayEventWaitLoop)

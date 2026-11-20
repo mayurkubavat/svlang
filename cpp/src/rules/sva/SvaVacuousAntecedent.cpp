@@ -1,5 +1,5 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
 #include "slang/syntax/SyntaxVisitor.h"
 #include "slang/syntax/AllSyntax.h"
 #include "slang/syntax/SyntaxTree.h"
@@ -8,7 +8,7 @@
 #include <string>
 #include <vector>
 
-namespace uvmcheck::rules::sva {
+namespace svlang_lint::rules::sva {
 
 class VacuousAntecedentVisitor : public engine::SyntaxVisitor<VacuousAntecedentVisitor> {
 public:
@@ -126,12 +126,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::sva
+} // namespace svlang_lint::rules::sva
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createSvaVacuousAntecedent() {
     return std::make_unique<sva::SvaVacuousAntecedent>();
 }
 }
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createSvaVacuousAntecedent)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createSvaVacuousAntecedent)

@@ -1,5 +1,5 @@
 #include <algorithm>
-#include "uvmcheck/reporting/HtmlReporter.h"
+#include "svlang_lint/reporting/HtmlReporter.h"
 #include <fstream>
 #include <sstream>
 #include <unordered_map>
@@ -8,7 +8,7 @@
 #include <chrono>
 #include <ctime>
 
-namespace uvmcheck::reporting {
+namespace svlang_lint::reporting {
 
 std::string HtmlReporter::escapeHtml(std::string_view str) {
     std::string out;
@@ -105,7 +105,7 @@ bool HtmlReporter::writeHtml(const std::string& outputPath,
         << "<head>\n"
         << "  <meta charset=\"UTF-8\">\n"
         << "  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n"
-        << "  <title>UVMCheck Quality Dashboard</title>\n"
+        << "  <title>svlang-lint Quality Dashboard</title>\n"
         << "  <style>\n"
         << "    :root {\n"
         << "      --bg: #0b0f19;\n"
@@ -170,7 +170,7 @@ bool HtmlReporter::writeHtml(const std::string& outputPath,
         << "  <div class=\"container\">\n"
         << "    <header>\n"
         << "      <div class=\"logo-group\">\n"
-        << "        <h1>UVMCheck Quality Dashboard <span class=\"badge-pill\">v0.2.0</span></h1>\n"
+        << "        <h1>svlang-lint Quality Dashboard <span class=\"badge-pill\">v0.2.0</span></h1>\n"
         << "        <div class=\"meta-time\">SystemVerilog &amp; UVM Static Analysis &bull; Generated " << timeStr << "</div>\n"
         << "      </div>\n"
         << "    </header>\n\n";
@@ -367,4 +367,4 @@ bool HtmlReporter::writeHtml(const std::string& outputPath,
     return true;
 }
 
-} // namespace uvmcheck::reporting
+} // namespace svlang_lint::reporting

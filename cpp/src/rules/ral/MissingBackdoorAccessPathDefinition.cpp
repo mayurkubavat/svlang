@@ -1,11 +1,11 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
 #include "slang/syntax/AllSyntax.h"
 #include "slang/syntax/SyntaxTree.h"
 #include "slang/syntax/SyntaxVisitor.h"
 #include <string>
 
-namespace uvmcheck::rules::ral {
+namespace svlang_lint::rules::ral {
 
 class BackdoorPathVisitor : public engine::SyntaxVisitor<BackdoorPathVisitor> {
 public:
@@ -65,12 +65,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::ral
+} // namespace svlang_lint::rules::ral
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createMissingBackdoorAccessPathDefinition() {
     return std::make_unique<ral::MissingBackdoorAccessPathDefinition>();
 }
-} // namespace uvmcheck::rules
+} // namespace svlang_lint::rules
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createMissingBackdoorAccessPathDefinition)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createMissingBackdoorAccessPathDefinition)

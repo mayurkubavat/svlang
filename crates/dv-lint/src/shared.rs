@@ -121,6 +121,16 @@ pub(crate) fn elaboration(c: &crate::syntax::Cst) -> Arc<svlang::semantic::Elabo
     get("elaboration", c.compile_key(), || svlang::semantic::elaborate_full(c.all, &crate::tops()))
 }
 
+/// Cached token-trivia and preprocessor layout index for `c.tree`.
+#[allow(dead_code)]
+pub(crate) fn tree_layout(c: &crate::syntax::Cst) -> Arc<crate::support::layout::TreeLayout> {
+    let key = (c.tree as *const svlang::syntax::Tree as usize, c.tree.tokens.len());
+    if current() == 0 {
+        return Arc::new(crate::support::layout::TreeLayout::build(c.tree));
+    }
+    get("tree_layout", key, || crate::support::layout::TreeLayout::build(c.tree))
+}
+
 /// Word-level RTL netlist lowering per elaborated top module, cached once per compile.
 pub(crate) fn netlist_facts(c: &crate::syntax::Cst) -> Arc<Vec<(svlang::InstanceId, svlang::netlist::LowerOutcome)>> {
     get("netlist_facts", c.compile_key(), || {

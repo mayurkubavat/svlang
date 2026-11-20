@@ -1,9 +1,9 @@
-//! `--init`: sets up a project folder as uvmcheck's ProjectInit does. It
+//! `--init`: sets up a project folder as svlang-lint's ProjectInit does. It
 //! finds the SystemVerilog sources (top-level files nothing `includes, or
 //! readable `.f` file lists nothing else names), the include folders the
 //! includes need, and the UVM library (in the tree, else `$UVM_HOME`); it
 //! learns the naming conventions the UVM classes follow where most of them
-//! do not follow the defaults; and it writes `.uvmcheck/config.py` (the
+//! do not follow the defaults; and it writes `.svlang-lint/config.py` (the
 //! caller then writes a first baseline with it).
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -52,7 +52,7 @@ fn skip_dir(name: &str) -> bool {
         "INCA_libs",
         "obj_dir",
     ];
-    // .git, .uvmcheck, editor folders.
+    // .git, .svlang-lint, editor folders.
     name.starts_with('.') || SKIP.contains(&name) || name.starts_with("build-") || name.starts_with("cmake-build")
 }
 
@@ -249,7 +249,7 @@ fn ending(n: &str) -> String {
 }
 
 /// Infers house naming conventions for the UVM class kinds of the user
-/// classes (outside `library_dir`), as uvmcheck's `inferNaming`.
+/// classes (outside `library_dir`), as svlang-lint's `inferNaming`.
 pub fn infer_naming(design: &Design, library_dir: Option<&Path>) -> Vec<NamingChoice> {
     use crate::rules::style::configurable_naming_engine::{class_kind, convention};
     let mut names: BTreeMap<&'static str, Vec<&str>> = BTreeMap::new();
@@ -320,15 +320,15 @@ fn py_list(items: &[String], indent: &str) -> String {
     out + indent + "]"
 }
 
-/// The `.uvmcheck/config.py` text.
+/// The `.svlang-lint/config.py` text.
 pub fn render_config(d: &Discovery, naming: &[NamingChoice]) -> String {
     let mut o = String::from(
-        r#""""UVMCheck project configuration, written by `uvmcheck --init`.
+        r#""""svlang-lint project configuration, written by `svlang-lint --init`.
 
-Paths are relative to the project root (the folder holding .uvmcheck/).
+Paths are relative to the project root (the folder holding .svlang-lint/).
 See docs/guide/project_config.md for every setting.
 """
-from uvmcheck.config import ProjectConfig, RuleConfig, Waiver, Severity
+from svlang_lint.config import ProjectConfig, RuleConfig, Waiver, Severity
 
 
 class Project(ProjectConfig):
@@ -387,7 +387,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn endings_as_uvmcheck_groups_them() {
+    fn endings_as_svlang_lint_groups_them() {
         assert_eq!(ending("axi_bfm"), "_bfm");
         assert_eq!(ending("AxiDriver"), "Driver");
         assert_eq!(ending("driver"), "");

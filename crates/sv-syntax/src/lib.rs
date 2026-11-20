@@ -47,7 +47,7 @@ pub use exprs::canonical_exprs;
 pub use kinds::SyntaxKind;
 pub use outline::{outline, OutlineEntry};
 pub use sv_lexer::Kind as TokenKind;
-pub use sv_preprocessor::{overlay, Options, Origin};
+pub use sv_preprocessor::{overlay, CondEvent, CondKind, IncludeEdge, MacroDef, MacroUse, Options, Origin};
 /// A built-in data type keyword (`int`, `bit`, `string`, ...).
 pub fn is_builtin_type(s: &str) -> bool {
     grammar::BUILTIN_TYPES.contains(&s)
@@ -105,6 +105,9 @@ pub fn parse_output(out: sv_preprocessor::Output) -> Tree {
         errors,
         pp_diagnostics: out.diagnostics,
         macro_uses: out.macro_uses,
+        macro_defs: out.macro_defs,
+        includes: out.includes,
+        conditionals: out.conditionals,
         skipped: out.skipped,
         timescales: out.timescales,
         mains: out.mains,

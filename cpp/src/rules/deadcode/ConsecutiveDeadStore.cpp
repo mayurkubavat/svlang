@@ -1,12 +1,12 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
 #include "slang/ast/ASTVisitor.h"
 #include "slang/ast/Statement.h"
 #include "slang/ast/expressions/AssignmentExpressions.h"
 #include "slang/ast/expressions/MiscExpressions.h"
 #include "slang/ast/statements/MiscStatements.h"
 
-namespace uvmcheck::rules::deadcode {
+namespace svlang_lint::rules::deadcode {
 
 class SymbolSearchVisitor : public slang::ast::ASTVisitor<SymbolSearchVisitor, slang::ast::VisitFlags::AllGood> {
 public:
@@ -89,12 +89,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::deadcode
+} // namespace svlang_lint::rules::deadcode
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createConsecutiveDeadStore() {
     return std::make_unique<deadcode::ConsecutiveDeadStore>();
 }
 }
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createConsecutiveDeadStore)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createConsecutiveDeadStore)

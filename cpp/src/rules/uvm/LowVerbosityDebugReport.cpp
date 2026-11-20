@@ -1,5 +1,5 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
 #include "slang/ast/ASTVisitor.h"
 #include "slang/ast/expressions/CallExpression.h"
 #include "slang/ast/expressions/ConversionExpression.h"
@@ -9,7 +9,7 @@
 #include <string>
 #include <algorithm>
 
-namespace uvmcheck::rules::uvm {
+namespace svlang_lint::rules::uvm {
 
 static std::string toUpper(std::string_view s) {
     std::string res;
@@ -129,12 +129,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::uvm
+} // namespace svlang_lint::rules::uvm
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createLowVerbosityDebugReport() {
     return std::make_unique<uvm::LowVerbosityDebugReport>();
 }
-} // namespace uvmcheck::rules
+} // namespace svlang_lint::rules
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createLowVerbosityDebugReport)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createLowVerbosityDebugReport)

@@ -25,15 +25,15 @@ failures = []
 SOURCE = """module user_tb;
   int a, b;
   initial begin
-    if (a == a) $display("one");   // uvmcheck:waive SV-COR-008 -- reviewed
+    if (a == a) $display("one");   // svlang-lint:waive SV-COR-008 -- reviewed
     if (b == b) $display("two");
-    $display("clean");             // uvmcheck:waive SV-COR-008 -- stale comment
+    $display("clean");             // svlang-lint:waive SV-COR-008 -- stale comment
   end
 endmodule : user_tb
 """
 
 CONFIG = """\
-from uvmcheck.config import ProjectConfig, Waiver
+from svlang_lint.config import ProjectConfig, Waiver
 
 class Project(ProjectConfig):
     waivers = [
@@ -61,14 +61,14 @@ def run(binary, cwd, *args):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--binary", default=str(REPO / "build" / "uvmcheck"))
+    ap.add_argument("--binary", default=str(REPO / "build" / "svlang-lint"))
     binary = str(Path(ap.parse_args().binary).resolve())
 
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
-        (root / ".uvmcheck").mkdir()
+        (root / ".svlang-lint").mkdir()
         (root / "user_tb.sv").write_text(SOURCE)
-        (root / ".uvmcheck" / "config.py").write_text(CONFIG)
+        (root / ".svlang-lint" / "config.py").write_text(CONFIG)
 
         print("Report")
         rc, out = run(binary, root, "--waiver-report")
@@ -92,8 +92,8 @@ def main():
               "stale baseline entries counted", out)
 
         print("Clean")
-        (root / "user_tb.sv").write_text(SOURCE.replace("             // uvmcheck:waive SV-COR-008 -- stale comment", ""))
-        (root / ".uvmcheck" / "config.py").write_text(CONFIG.replace(
+        (root / "user_tb.sv").write_text(SOURCE.replace("             // svlang-lint:waive SV-COR-008 -- stale comment", ""))
+        (root / ".svlang-lint" / "config.py").write_text(CONFIG.replace(
             '        Waiver("SV-COR-009", path="user_tb.sv", reason="nothing here", owner="carol"),\n', "").replace(
             '        Waiver("SV-COR-008", path="user_tb.sv", reason="old", expires="2001-01-01"),\n', ""))
         rc, out = run(binary, root, "--strict-waivers")
@@ -104,12 +104,12 @@ def main():
         scoped.mkdir()
         (scoped / "user_tb.sv").write_text(
             "module user_tb;\n  int a, b;\n  initial begin\n"
-            "    if (a == a) $display(\"one\"); // uvmcheck:waive SV-COR-008 \"expression 'a'\"\n"
-            "    // uvmcheck: waive SV-COR-008 \"expression 'b'\"\n"
+            "    if (a == a) $display(\"one\"); // svlang-lint:waive SV-COR-008 \"expression 'a'\"\n"
+            "    // svlang-lint: waive SV-COR-008 \"expression 'b'\"\n"
             "    if (b == b) $display(\"two\");\n"
             "  end\nendmodule\n")
         (scoped / "config.py").write_text(
-            "from uvmcheck.config import ProjectConfig, Waiver\n"
+            "from svlang_lint.config import ProjectConfig, Waiver\n"
             "class Project(ProjectConfig):\n"
             "    waivers = [Waiver('SV-COR-008', reason='only a', message=\"expression 'a'\")]\n")
         # The inline comments already waive both lines; drop them so the config regex is what decides.
@@ -126,8 +126,8 @@ def main():
 
         (scoped / "user_tb.sv").write_text(
             "module user_tb;\n  int a, b;\n  initial begin\n"
-            "    if (a == a) $display(\"one\"); // uvmcheck:waive SV-COR-008 \"expression 'a'\"\n"
-            "    // uvmcheck: waive SV-COR-008 \"no-such-text\"\n"
+            "    if (a == a) $display(\"one\"); // svlang-lint:waive SV-COR-008 \"expression 'a'\"\n"
+            "    // svlang-lint: waive SV-COR-008 \"no-such-text\"\n"
             "    if (b == b) $display(\"two\");\n"
             "  end\nendmodule\n")
         rc, out = run(binary, scoped, "--no-config", "--rule", "SV-COR-008", "--json", "out.json")
@@ -138,16 +138,16 @@ def main():
         (scoped / "user_tb.sv").write_text(
             "module user_tb;\n  int a, b;\n  initial begin\n"
             "    if (a == a) $display(\"one\");\n"
-            "    // uvmcheck: waive SV-COR-008 \"expression 'b'\"\n"
+            "    // svlang-lint: waive SV-COR-008 \"expression 'b'\"\n"
             "    if (b == b) $display(\"two\");\n"
             "  end\nendmodule\n")
         rc, out = run(binary, scoped, "--no-config", "--rule", "SV-COR-008", "--json", "out.json")
         found = json.loads((scoped / "out.json").read_text())["violations"]
         lines = sorted(v["line"] for v in found if v["ruleId"] == "SV-COR-008")
-        check(lines == [4], f"'uvmcheck: waive' with a message regex waives the next line, got {lines}", out)
+        check(lines == [4], f"'svlang-lint: waive' with a message regex waives the next line, got {lines}", out)
 
         (scoped / "config.py").write_text(
-            "from uvmcheck.config import ProjectConfig, Waiver\n"
+            "from svlang_lint.config import ProjectConfig, Waiver\n"
             "class Project(ProjectConfig):\n"
             "    waivers = [Waiver('SV-COR-009', reason='nothing casex', message='casex')]\n")
         rc, out = run(binary, scoped, "--config", "config.py", "--report-unused-waivers", "--rule", "SV-COR-008")
@@ -157,7 +157,7 @@ def main():
         check("UVM-WV-001" not in quiet, "unused waivers stay quiet without the flag", quiet)
 
         (scoped / "config.py").write_text(
-            "from uvmcheck.config import ProjectConfig, Waiver\n"
+            "from svlang_lint.config import ProjectConfig, Waiver\n"
             "class Project(ProjectConfig):\n"
             "    waivers = [Waiver('SV-COR-008', reason='bad', message='(')]\n")
         rc, out = run(binary, scoped, "--config", "config.py")
@@ -177,7 +177,7 @@ def main():
             "    if (b == b) $display(\"two\");\n"
             "  end\nendmodule\n")
         (scoped / "config.py").write_text(
-            "from uvmcheck.config import ProjectConfig, Waiver, Severity\n"
+            "from svlang_lint.config import ProjectConfig, Waiver, Severity\n"
             "class Project(ProjectConfig):\n"
             "    waivers = [Waiver('SV-COR-008', reason='tracked', message=\"expression 'b'\", severity=Severity.Info)]\n")
         rc, out = run(binary, scoped, "--config", "config.py", "--rule", "SV-COR-008", "--json", "out.json")
@@ -196,7 +196,7 @@ def main():
               "waiver file severity re-grades", out)
 
         (scoped / "config.py").write_text(
-            "from uvmcheck.config import ProjectConfig, Waiver\n"
+            "from svlang_lint.config import ProjectConfig, Waiver\n"
             "class Project(ProjectConfig):\n"
             "    waivers = [Waiver('SV-COR-008', reason='x', severity='fatal')]\n")
         rc, out = run(binary, scoped, "--config", "config.py")

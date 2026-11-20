@@ -8,8 +8,8 @@
   "configurePresets": [
     {
       "name": "reference",
-      "displayName": "Reference engine: uvmcheck on Slang (Release, Ninja)",
-      "description": "The C++/Slang engine (build/uvmcheck) and the oracles the parity gates compare the native Rust tools against; the tools themselves build with cargo",
+      "displayName": "Reference engine: svlang-lint on Slang (Release, Ninja)",
+      "description": "The C++/Slang engine (build/svlang-lint) and the oracles the parity gates compare the native Rust tools against; the tools themselves build with cargo",
       "generator": "Ninja",
       "binaryDir": "${sourceDir}/build",
       "cacheVariables": {
@@ -25,20 +25,20 @@
       "binaryDir": "${sourceDir}/build-dev",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "RelWithDebInfo",
-        "UVMCHECK_ENABLE_UNITY_BUILD": "ON",
+        "SVLANG_LINT_ENABLE_UNITY_BUILD": "ON",
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
       }
     },
     {
       "name": "model",
       "displayName": "Release + shared model library (Rust/Python)",
-      "description": "Builds libuvmcheck_model.so with its C ABI for crates/ (Rust) and other tools; position independent, no mimalloc",
+      "description": "Builds libsvlang_lint_model.so with its C ABI for crates/ (Rust) and other tools; position independent, no mimalloc",
       "generator": "Ninja",
       "binaryDir": "${sourceDir}/build-model",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
-        "UVMCHECK_BUILD_MODEL_LIB": "ON"
+        "SVLANG_LINT_BUILD_MODEL_LIB": "ON"
       }
     }
   ],

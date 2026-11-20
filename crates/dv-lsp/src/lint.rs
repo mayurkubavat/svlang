@@ -148,14 +148,14 @@ impl Project {
         let base = ws.map_or(root, |w| w.root()).to_path_buf();
         files.extend(ws.and_then(|w| w.config_file()).map(Path::to_path_buf));
         for n in [
-            ".uvmcheck/config.py",
-            ".uvmcheck/config.json",
-            "uvmcheck_config.py",
-            ".uvmcheck.py",
-            ".uvmcheck.json",
-            "uvmcheck.json",
-            ".uvmcheck/waivers.json",
-            ".uvmcheck/baseline.json",
+            ".svlang-lint/config.py",
+            ".svlang-lint/config.json",
+            "svlang_lint_config.py",
+            ".svlang-lint.py",
+            ".svlang-lint.json",
+            "svlang-lint.json",
+            ".svlang-lint/waivers.json",
+            ".svlang-lint/baseline.json",
         ] {
             files.push(base.join(n));
         }
@@ -192,7 +192,7 @@ fn check(project: &mut Project, state: &Mutex<State>, out: &Out) {
     let checked = match checked {
         Ok(c) => c,
         Err(e) => {
-            let params = obj(vec![("type", 2u32.into()), ("message", format!("uvmcheck: {e}").into())]);
+            let params = obj(vec![("type", 2u32.into()), ("message", format!("svlang-lint: {e}").into())]);
             send(
                 out,
                 &obj(vec![("jsonrpc", "2.0".into()), ("method", "window/logMessage".into()), ("params", params)]),
@@ -227,7 +227,7 @@ fn check(project: &mut Project, state: &Mutex<State>, out: &Out) {
             ("range", range_json(range)),
             ("severity", severity.into()),
             ("code", f.rule.into()),
-            ("source", "uvmcheck".into()),
+            ("source", "svlang-lint".into()),
             ("message", format!("{} ({})", f.message, f.name).into()),
         ];
         if !related.is_empty() {
@@ -257,7 +257,7 @@ fn check(project: &mut Project, state: &Mutex<State>, out: &Out) {
             fixes.push(Edit {
                 title: format!("Waive {} on this line", f.rule),
                 range: [range[0], 0, range[0], 0],
-                text: format!("{indent}// uvmcheck-disable-next-line {}\n", f.rule),
+                text: format!("{indent}// svlang-lint-disable-next-line {}\n", f.rule),
                 preferred: false,
             });
         }

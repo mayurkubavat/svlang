@@ -78,7 +78,7 @@ def main():
         hits = [v for v in out.get("violations", []) if v["ruleId"] == "SV-CMP-001"]
         check(len(hits) == 1 and hits[0]["line"] == 4 and hits[0].get("configurations") == ["T=string"],
               "'v + 1' breaks only when T is a string", str(hits))
-        check(not any("__uvmcheck_spec_sweep" in v["file"] for v in out.get("violations", [])),
+        check(not any("__svlang_lint_spec_sweep" in v["file"] for v in out.get("violations", [])),
               "nothing is reported in the generated sweep module", res.stdout)
     print("config sweep: " + ("PASSED" if not FAILS else f"{FAILS} failure(s)"))
     return 1 if FAILS else 0

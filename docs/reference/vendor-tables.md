@@ -1,7 +1,7 @@
 # Measured vendor tables
 
 Simulators accept SystemVerilog that IEEE 1800 forbids, and real code relies
-on it. slang (and so uvmcheck) is strict by default and offers one option per
+on it. slang (and so svlang-lint) is strict by default and offers one option per
 relaxation; `--compat vcs` turns on a fixed bundle of them. These tables say
 what each tool actually accepts, measured, not copied from documentation.
 
@@ -11,20 +11,20 @@ compiles every probe with one tool and records the result in
 `data/vendor/<tool>.json` with the tool's version and the date:
 
 ```
-tools/quality/vendor_table.py measure verilator      # or iverilog, vcs, xcelium, questa, uvmcheck, dv-build
+tools/quality/vendor_table.py measure verilator      # or iverilog, vcs, xcelium, questa, svlang-lint, dv-build
 tools/quality/vendor_table.py table                  # this table, from data/vendor/
-uvmcheck $(tools/quality/vendor_table.py slang-flags data/vendor/vcs.json) -f files.f
+svlang-lint $(tools/quality/vendor_table.py slang-flags data/vendor/vcs.json) -f files.f
 ```
 
 `slang-flags` prints the slang options for the relaxations a measured tool
-accepts, so uvmcheck accepts the same code that tool does.
+accepts, so svlang-lint accepts the same code that tool does.
 
 ## Results
 
 "no" can also mean the tool fails on something else in the probe (Verilator
 5.020 has no covergroups); the JSON keeps each rejection's message.
 
-| Probe | slang option | dv-build | iverilog | uvmcheck | verilator |
+| Probe | slang option | dv-build | iverilog | svlang-lint | verilator |
 |---|---|---|---|---|---|
 | `array-concat-pattern` | `--allow-array-concat-assign-pattern` | yes | no | no | yes |
 | `bare-value-param` | `--allow-bare-value-param-assigment` | yes | no | no | yes |
@@ -41,7 +41,7 @@ accepts, so uvmcheck accepts the same code that tool does.
 
 - dv-build: dv-build at 6c930fa (measured 2026-11-08)
 - iverilog: Icarus Verilog version 12.0 (stable) () (measured 2026-11-08)
-- uvmcheck: uvmcheck at 6c930fa (measured 2026-11-08)
+- svlang-lint: svlang-lint at 6c930fa (measured 2026-11-08)
 - verilator: Verilator 5.020 2024-01-01 rev (Debian 5.020-1) (measured 2026-11-08)
 
 ## Not measured yet

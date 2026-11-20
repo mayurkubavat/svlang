@@ -1,11 +1,11 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
 #include "slang/syntax/SyntaxVisitor.h"
 #include "slang/syntax/AllSyntax.h"
 #include "slang/syntax/SyntaxTree.h"
 #include <unordered_map>
 
-namespace uvmcheck::rules::portability {
+namespace svlang_lint::rules::portability {
 
 class ProprietaryVendorCallsVisitor : public engine::SyntaxVisitor<ProprietaryVendorCallsVisitor> {
 public:
@@ -67,12 +67,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::portability
+} // namespace svlang_lint::rules::portability
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createProprietaryVendorCalls() {
     return std::make_unique<portability::ProprietaryVendorCalls>();
 }
 }
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createProprietaryVendorCalls)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createProprietaryVendorCalls)

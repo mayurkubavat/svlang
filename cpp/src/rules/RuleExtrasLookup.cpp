@@ -1,6 +1,6 @@
-#include "uvmcheck/rules/RuleExtras.h"
+#include "svlang_lint/rules/RuleExtras.h"
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 
 const RuleExtra* findRuleExtra(std::string_view ruleId) {
     for (const auto& e : ruleExtras()) {
@@ -9,4 +9,4 @@ const RuleExtra* findRuleExtra(std::string_view ruleId) {
     return nullptr;
 }
 
-} // namespace uvmcheck::rules
+} // namespace svlang_lint::rules

@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
-`uvmcheck --init`:
+`svlang-lint --init`:
 
 - finds the top-level sources (files nobody `includes) and skips headers;
 - learns naming conventions the code follows instead of the defaults
   (drivers ending in _bfm, agents in _agt), and leaves the defaults where the
   code already follows them (items ending in _item);
-- writes .uvmcheck/config.py and a baseline, after which a plain run is clean;
+- writes .svlang-lint/config.py and a baseline, after which a plain run is clean;
 - prefers a readable .f file list over the discovered files;
 - refuses to overwrite an existing config.
 """
@@ -68,7 +68,7 @@ def run(binary, cwd, *args):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--binary", default=str(REPO / "build" / "uvmcheck"))
+    ap.add_argument("--binary", default=str(REPO / "build" / "svlang-lint"))
     binary = str(Path(ap.parse_args().binary).resolve())
 
     with tempfile.TemporaryDirectory() as tmp:
@@ -76,7 +76,7 @@ def main():
         make_project(root)
         print("Discovery and naming inference")
         rc, out, err = run(binary, root, "--init")
-        cfg_path = root / ".uvmcheck" / "config.py"
+        cfg_path = root / ".svlang-lint" / "config.py"
         check(rc == 0 and cfg_path.exists(), "config written", f"rc={rc}\n{out}\n{err}")
         cfg = cfg_path.read_text() if cfg_path.exists() else ""
         check('"tb/tb_classes.sv"' in cfg and '"tb/tb_top.sv"' in cfg, "top-level files are the sources", cfg)
@@ -85,7 +85,7 @@ def main():
         check('"UvmDriver"' in cfg and "_bfm" in cfg, "driver convention _bfm learnt", cfg)
         check('"UvmAgent"' in cfg and "_agt" in cfg, "agent convention _agt learnt", cfg)
         check('"UvmSequenceItem"' not in cfg, "default kept where the code follows it (_item)", cfg)
-        base = root / ".uvmcheck" / "baseline.json"
+        base = root / ".svlang-lint" / "baseline.json"
         check(base.exists(), "baseline written", out)
         check(base.exists() and "UVM-NAM-101" not in base.read_text() and "UVM-NAM-106" not in base.read_text(),
               "house-style names are not baselined as naming findings")
@@ -102,7 +102,7 @@ def main():
         (root2 / "sim").mkdir()
         (root2 / "sim" / "files.f").write_text("+incdir+../tb\n../tb/tb_classes.sv\n../tb/tb_top.sv\n")
         rc, out, err = run(binary, root2, "--init")
-        cfg = (root2 / ".uvmcheck" / "config.py").read_text() if rc == 0 else ""
+        cfg = (root2 / ".svlang-lint" / "config.py").read_text() if rc == 0 else ""
         check(rc == 0 and '"sim/files.f"' in cfg, "readable file list used", f"rc={rc}\n{cfg}\n{err}")
         rc, out, err = run(binary, root2)
         check("Total Violations: 0" in out, "plain run with the file list is clean", out + err)

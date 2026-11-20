@@ -1,5 +1,5 @@
 //! Fix-its: the rewrites rules attach to findings, and applying them as
-//! uvmcheck's FixPlanner does (`--fix`, `--fix-dry-run`).
+//! svlang-lint's FixPlanner does (`--fix`, `--fix-dry-run`).
 //!
 //! Edits of one file are applied in file order; exact repeats collapse to
 //! one and an edit overlapping one already taken is left for the next pass,
@@ -20,7 +20,7 @@ pub enum FixSafety {
 }
 
 impl FixSafety {
-    /// The name uvmcheck's reports use.
+    /// The name svlang-lint's reports use.
     pub fn as_str(self) -> &'static str {
         match self {
             FixSafety::Safe => "safe",
@@ -372,7 +372,7 @@ pub fn apply(
         }
         // A sibling file renamed over the original: an interrupted run never
         // leaves a half-written source.
-        let tmp = format!("{path}.uvmcheck-fix.tmp");
+        let tmp = format!("{path}.svlang-lint-fix.tmp");
         if std::fs::write(&tmp, &p.updated).is_err() {
             eprintln!("Warning: --fix: cannot write {display}");
             let _ = std::fs::remove_file(&tmp);
@@ -391,13 +391,13 @@ pub fn apply(
     if r.applied > 0 || skipped > 0 || unsafe_skipped > 0 || broken_fixes > 0 {
         let mut line = if unsafe_skipped > 0 {
             format!(
-                "[uvmcheck] {} {}, {unsafe_skipped} unsafe fixes skipped (use --unsafe-fixes)",
+                "[svlang-lint] {} {}, {unsafe_skipped} unsafe fixes skipped (use --unsafe-fixes)",
                 r.applied,
                 if dry_run { "fixes would be applied" } else { "fixes applied" }
             )
         } else {
             format!(
-                "[uvmcheck] {} {} fix-it(s) in {} file(s)",
+                "[svlang-lint] {} {} fix-it(s) in {} file(s)",
                 if dry_run { "Would apply" } else { "Applied" },
                 r.applied,
                 r.changed_files

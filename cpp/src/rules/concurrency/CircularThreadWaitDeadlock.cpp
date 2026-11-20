@@ -1,6 +1,6 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
-#include "uvmcheck/uvm/UvmModel.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
+#include "svlang_lint/uvm/UvmModel.h"
 #include "slang/ast/ASTVisitor.h"
 #include "slang/ast/Statement.h"
 #include "slang/ast/statements/MiscStatements.h"
@@ -11,7 +11,7 @@
 #include <unordered_map>
 #include <unordered_set>
 
-namespace uvmcheck::rules::concurrency {
+namespace svlang_lint::rules::concurrency {
 
 struct LockAcquisition {
     std::string lockName;
@@ -30,7 +30,7 @@ public:
     core::Severity getDefaultSeverity() const override { return core::Severity::Error; }
 
     void run(slang::ast::Compilation& compilation,
-             const uvmcheck::uvm::UvmModel&,
+             const svlang_lint::uvm::UvmModel&,
              core::DiagnosticEngine& diags) override {
 
         class ForkBlockVisitor : public slang::ast::ASTVisitor<ForkBlockVisitor, slang::ast::VisitFlags::AllGood> {
@@ -142,12 +142,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::concurrency
+} // namespace svlang_lint::rules::concurrency
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createCircularThreadWaitDeadlock() {
     return std::make_unique<concurrency::CircularThreadWaitDeadlock>();
 }
 }
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createCircularThreadWaitDeadlock)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createCircularThreadWaitDeadlock)

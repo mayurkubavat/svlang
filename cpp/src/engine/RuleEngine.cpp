@@ -1,4 +1,4 @@
-#include "uvmcheck/engine/RuleEngine.h"
+#include "svlang_lint/engine/RuleEngine.h"
 
 #include <algorithm>
 #include <atomic>
@@ -11,11 +11,11 @@
 #include <tuple>
 #include <unordered_set>
 
-#include "uvmcheck/rules/Rule.h"
+#include "svlang_lint/rules/Rule.h"
 #include "slang/ast/symbols/ClassSymbols.h"
 #include "slang/ast/symbols/ParameterSymbols.h"
 
-namespace uvmcheck::engine {
+namespace svlang_lint::engine {
 
 namespace {
 
@@ -484,4 +484,4 @@ void RuleEngine::printProfile(std::ostream& os) const {
     }
 }
 
-} // namespace uvmcheck::engine
+} // namespace svlang_lint::engine

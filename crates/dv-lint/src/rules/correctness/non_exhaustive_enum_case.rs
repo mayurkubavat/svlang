@@ -131,7 +131,7 @@ pub(crate) fn non_exhaustive_enum_case(c: &Cst, s: &mut Sink) {
                     handled.insert(c.text_of(last).to_string());
                 } else {
                     // A constant label compares the enum's value with an
-                    // int; uvmcheck reports nothing for such a case.
+                    // int; svlang-lint reports nothing for such a case.
                     labels_ok = false;
                 }
             }

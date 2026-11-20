@@ -1,5 +1,5 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
 #include "slang/ast/ASTVisitor.h"
 #include "slang/ast/expressions/CallExpression.h"
 #include "slang/ast/expressions/LiteralExpressions.h"
@@ -7,7 +7,7 @@
 #include <unordered_set>
 #include <algorithm>
 
-namespace uvmcheck::rules::smells {
+namespace svlang_lint::rules::smells {
 
 class GenericReportIdVisitor : public engine::AstVisitor<GenericReportIdVisitor> {
 public:
@@ -79,12 +79,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::smells
+} // namespace svlang_lint::rules::smells
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createGenericReportId() {
     return std::make_unique<smells::GenericReportId>();
 }
 }
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createGenericReportId)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createGenericReportId)

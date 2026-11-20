@@ -1,5 +1,5 @@
 //! Prints the preprocessed tokens of one file, one per line, in the same
-//! form as the Slang reference tool (build/uvmcheck_pp_dump), so the two
+//! form as the Slang reference tool (build/svlang_pp_dump), so the two
 //! can be diffed:
 //!
 //!     cargo run --release -p sv-preprocessor --example ppdump -- [+incdir+DIR]... [+define+X[=V]]... FILE

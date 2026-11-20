@@ -1,12 +1,12 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
 #include "slang/ast/symbols/ClassSymbols.h"
 #include "slang/ast/symbols/SubroutineSymbols.h"
 #include "slang/ast/symbols/VariableSymbols.h"
 #include "slang/ast/types/Type.h"
 #include "slang/syntax/AllSyntax.h"
 
-namespace uvmcheck::rules::uvm {
+namespace svlang_lint::rules::uvm {
 
 class ScoreboardLeftoverQueue : public Rule {
 public:
@@ -20,7 +20,7 @@ public:
     core::Severity getDefaultSeverity() const override { return core::Severity::Error; }
 
     void run(slang::ast::Compilation&,
-             const uvmcheck::uvm::UvmModel& uvmModel,
+             const svlang_lint::uvm::UvmModel& uvmModel,
              core::DiagnosticEngine& diags) override {
         for (const auto* cls : uvmModel.getAllClasses()) {
             if (!cls) continue;
@@ -121,12 +121,12 @@ private:
     }
 };
 
-} // namespace uvmcheck::rules::uvm
+} // namespace svlang_lint::rules::uvm
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createScoreboardLeftoverQueue() {
     return std::make_unique<uvm::ScoreboardLeftoverQueue>();
 }
 }
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createScoreboardLeftoverQueue)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createScoreboardLeftoverQueue)

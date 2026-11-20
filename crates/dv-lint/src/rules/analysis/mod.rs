@@ -6,7 +6,7 @@
 //! (`clocked_blocking_race`), the C side of DPI is never seen
 //! (`conflicting_dpi_prototypes`), and whether coverage is ever collected
 //! is a testbench-wide question (`uncovered_analysis_port`,
-//! `covergroup_never_sampled`). None has a uvmcheck twin: each is in
+//! `covergroup_never_sampled`). None has a svlang-lint twin: each is in
 //! [`crate::NATIVE_ONLY`].
 
 use crate::profile::*;

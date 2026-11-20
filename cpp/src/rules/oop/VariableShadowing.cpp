@@ -1,11 +1,11 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
-#include "uvmcheck/model/SlangModel.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
+#include "svlang_lint/model/SlangModel.h"
 
 #include <string>
 #include <utility>
 
-namespace uvmcheck::rules::oop {
+namespace svlang_lint::rules::oop {
 
 class VariableShadowing : public Rule {
 public:
@@ -18,9 +18,9 @@ public:
     std::string_view getCategory() const override { return "OOP"; }
     core::Severity getDefaultSeverity() const override { return core::Severity::Warning; }
 
-    // Reads only uvmcheck::model, not slang's AST.
+    // Reads only svlang_lint::model, not slang's AST.
     void run(slang::ast::Compilation& /*compilation*/,
-             const uvmcheck::uvm::UvmModel& uvmModel,
+             const svlang_lint::uvm::UvmModel& uvmModel,
              core::DiagnosticEngine& diags) override {
         const model::Model& design = uvmModel.facade();
         for (const model::Class& cls : design.classes()) {
@@ -112,12 +112,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::oop
+} // namespace svlang_lint::rules::oop
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createVariableShadowing() {
     return std::make_unique<oop::VariableShadowing>();
 }
 }
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createVariableShadowing)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createVariableShadowing)

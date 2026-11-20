@@ -1,11 +1,11 @@
-#include "uvmcheck/core/FixPlanner.h"
+#include "svlang_lint/core/FixPlanner.h"
 
 #include <cctype>
 
 #include <algorithm>
 #include <sstream>
 
-namespace uvmcheck::fix {
+namespace svlang_lint::fix {
 
 namespace {
 
@@ -178,4 +178,4 @@ bool dropsMacroCall(std::string_view text, size_t start, size_t end, const std::
     return false;
 }
 
-} // namespace uvmcheck::fix
+} // namespace svlang_lint::fix

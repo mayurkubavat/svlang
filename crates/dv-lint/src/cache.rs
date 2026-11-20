@@ -1,18 +1,18 @@
-//! The result cache (`.uvmcheck_cache/`), with uvmcheck's semantics: a run is
+//! The result cache (`.svlang_lint_cache/`), with svlang-lint's semantics: a run is
 //! replayed only when its environment key matches and every file the last
 //! run read still has the same bytes; anything else, a corrupt entry
-//! included, is a miss and a full run. Hashes are of file bytes (uvmcheck
+//! included, is a miss and a full run. Hashes are of file bytes (svlang-lint
 //! deliberately keeps no signature-based hashing either).
 //!
 //! The environment key hashes the tool version, this binary's build (size
 //! and modification time), the whole command line, and the bytes of the
 //! files that steer the run without being sources: the project config and
 //! its layers, `-f`/`-F` file lists, the waiver file and baseline (given or
-//! the default `.uvmcheck/` ones), and Python rule sources.
+//! the default `.svlang-lint/` ones), and Python rule sources.
 //!
 //! What is cached is the rules' output before the project config, waivers
 //! and baseline are applied (those run again on a replay, cheaply), so a hit
-//! gives the same report as a full run. uvmcheck also keeps per-unit entries
+//! gives the same report as a full run. svlang-lint also keeps per-unit entries
 //! and merges them on a partial hit, but it still compiles and runs every
 //! rule then, so only a complete hit saves time; this cache keeps the one
 //! entry that can be replayed. Its files live under `native/` in the cache
@@ -27,7 +27,7 @@ use dv_model::Loc;
 
 const FORMAT: u32 = 1;
 
-/// uvmcheck's two-lane FNV-1a hash, 32 hex digits.
+/// svlang-lint's two-lane FNV-1a hash, 32 hex digits.
 #[derive(Clone)]
 pub struct Hasher {
     a: u64,

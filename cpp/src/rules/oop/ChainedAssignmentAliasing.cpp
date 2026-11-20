@@ -1,11 +1,11 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
 #include "slang/syntax/AllSyntax.h"
 #include "slang/syntax/SyntaxTree.h"
 #include "slang/syntax/SyntaxVisitor.h"
 #include <string>
 
-namespace uvmcheck::rules::oop {
+namespace svlang_lint::rules::oop {
 
 class ChainedAssignmentVisitor : public engine::SyntaxVisitor<ChainedAssignmentVisitor> {
 public:
@@ -59,12 +59,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::oop
+} // namespace svlang_lint::rules::oop
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createChainedAssignmentAliasing() {
     return std::make_unique<oop::ChainedAssignmentAliasing>();
 }
 }
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createChainedAssignmentAliasing)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createChainedAssignmentAliasing)

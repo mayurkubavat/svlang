@@ -1,6 +1,6 @@
 # Slang overlay
 
-uvmcheck compiles SystemVerilog with [slang](https://github.com/MikePopoloski/slang).
+svlang-lint compiles SystemVerilog with [slang](https://github.com/MikePopoloski/slang).
 Slang follows IEEE 1800 closely and elaborates the Accellera UVM library cleanly,
 but real projects are written for a simulator: their file lists use simulator
 options, they expect the simulator to supply UVM, and they call the simulator's
@@ -11,7 +11,7 @@ except three that fix defects rather than adapt to a tool: `lang-std`,
 `--override -<id>` (or `"-<id>"` in `overrides`) turns it off.
 
 ```
-uvmcheck --list-addons
+svlang-lint --list-addons
 ```
 
 ## Turning it on
@@ -19,10 +19,10 @@ uvmcheck --list-addons
 A profile turns on the overrides a simulator's code usually needs:
 
 ```
-uvmcheck -f sim/files.f --compat-profile questa
+svlang-lint -f sim/files.f --compat-profile questa
 ```
 
-or in `.uvmcheck/config.py`:
+or in `.svlang-lint/config.py`:
 
 ```python
 class Project(ProjectConfig):
@@ -59,7 +59,7 @@ result-cache key.
 ## Adding an override
 
 An override is a class derived from `compat::Override`
-(`cpp/include/uvmcheck/compat/Overlay.h`) registered in `cpp/src/compat/Overlay.cpp`.
+(`cpp/include/svlang-lint/compat/Overlay.h`) registered in `cpp/src/compat/Overlay.cpp`.
 It hooks into one stage:
 
 - `configureDriver`: after the command line and project config are read, before
@@ -77,12 +77,12 @@ fails until the override is deleted, so workarounds do not outlive their bug.
 ## Configuration sweep
 
 Code inside an `` `ifdef `` whose macro is not defined is never parsed, so no
-rule checks it. `tools/quality/config_sweep.py` runs uvmcheck once per configuration
+rule checks it. `tools/quality/config_sweep.py` runs svlang-lint once per configuration
 and merges the findings; a finding seen only under some configurations lists
 them.
 
 ```
-tools/quality/config_sweep.py --binary build/uvmcheck --auto --set "FAST_SIM,WIDTH=64" -- -f sim/files.f
+tools/quality/config_sweep.py --binary build/svlang-lint --auto --set "FAST_SIM,WIDTH=64" -- -f sim/files.f
 ```
 
 `--auto` adds one configuration per macro the sources test with `` `ifdef ``,
@@ -99,7 +99,7 @@ at their defaults. An error seen only in such a run (for example `v + 1` when
 `T` is `string`) lists the stand-in that breaks it.
 
 ```
-tools/quality/config_sweep.py --binary build/uvmcheck --specializations -- -f sim/files.f
+tools/quality/config_sweep.py --binary build/svlang-lint --specializations -- -f sim/files.f
 ```
 
 Overrides never silence a real IEEE 1800 error by default; turning one of

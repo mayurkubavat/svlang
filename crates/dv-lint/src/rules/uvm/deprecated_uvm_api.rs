@@ -3,7 +3,7 @@
 //! deprecated API: in UVM 1.1d/1.2 what UVM_NO_DEPRECATED removes (for
 //! example uvm_component::set_config_int, uvm_root::stop_request,
 //! uvm_sequence_base::get_sequence_by_name, uvm_random_sequence). The list is
-//! the UVM API pack's (tools/codegen/gen_uvm_api_pack.py). No uvmcheck twin:
+//! the UVM API pack's (tools/codegen/gen_uvm_api_pack.py). No svlang-lint twin:
 //! a dv-lint rule.
 
 use crate::support::defines_packages::{api_pack, user_tok, Files};

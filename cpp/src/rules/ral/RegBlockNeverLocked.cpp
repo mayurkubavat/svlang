@@ -1,7 +1,7 @@
 // RAL-BLK-001: a top-level register block that is never locked.
 
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
 
 #include "slang/ast/ASTVisitor.h"
 #include "slang/ast/expressions/CallExpression.h"
@@ -12,7 +12,7 @@
 #include <unordered_set>
 #include <vector>
 
-namespace uvmcheck::rules::ral {
+namespace svlang_lint::rules::ral {
 
 using namespace slang::ast;
 
@@ -20,7 +20,7 @@ namespace {
 
 class LockVisitor : public engine::AstVisitor<LockVisitor> {
 public:
-    explicit LockVisitor(const uvmcheck::uvm::UvmModel& model) : model(model) {}
+    explicit LockVisitor(const svlang_lint::uvm::UvmModel& model) : model(model) {}
 
     std::vector<const ClassType*> blocks;
     std::unordered_set<const Type*> topUse, subUse, locked;
@@ -63,7 +63,7 @@ public:
     }
 
 private:
-    const uvmcheck::uvm::UvmModel& model;
+    const svlang_lint::uvm::UvmModel& model;
 };
 
 } // namespace
@@ -99,12 +99,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::ral
+} // namespace svlang_lint::rules::ral
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createRegBlockNeverLocked() {
     return std::make_unique<ral::RegBlockNeverLocked>();
 }
-} // namespace uvmcheck::rules
+} // namespace svlang_lint::rules
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createRegBlockNeverLocked)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createRegBlockNeverLocked)

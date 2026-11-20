@@ -1,10 +1,10 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
 #include "slang/ast/ASTVisitor.h"
 #include "slang/ast/symbols/BlockSymbols.h"
 #include "slang/ast/statements/MiscStatements.h"
 
-namespace uvmcheck::rules::sva {
+namespace svlang_lint::rules::sva {
 
 class ImmediateAssertVisitor : public slang::ast::ASTVisitor<ImmediateAssertVisitor, slang::ast::VisitFlags::AllGood> {
 public:
@@ -64,12 +64,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::sva
+} // namespace svlang_lint::rules::sva
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createImmediateAssertInCombinatorialLogic() {
     return std::make_unique<sva::ImmediateAssertInCombinatorialLogic>();
 }
 }
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createImmediateAssertInCombinatorialLogic)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createImmediateAssertInCombinatorialLogic)

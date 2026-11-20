@@ -1,6 +1,6 @@
 # Architecture overview
 
-UVMCheck has two engines, one rule set and one test suite. This page is the
+svlang-lint has two engines, one rule set and one test suite. This page is the
 map of how they fit together; [rust.md](rust.md) goes deeper into the Rust
 workspace.
 
@@ -11,27 +11,27 @@ workspace.
                                  │   (shared fixtures)              │ (shared packs)
               ┌──────────────────┴───────────────────┐              │
               ▼                                      ▼              │
-  cpp/  uvmcheck (C++20)                 crates/  dv-lint (Rust) ◄──┤
+  cpp/  svlang-lint (C++20)                 crates/  dv-lint (Rust) ◄──┤
         Slang front end                          native front end   │
         rules in cpp/src/rules/                  sv-source → sv-lexer → sv-preprocessor
         reporting, fixes, LSP,                   → sv-syntax → sv-semantic
         baselines, waivers, Python rules         rules in crates/dv-lint
               │                                      ▲
-              │ libuvmcheck_model (C ABI)            │ --slang: Slang as the reference
+              │ libsvlang_lint_model (C ABI)            │ --slang: Slang as the reference
               └──► crates/sv-slang → crates/dv-model ┘
-                   python/uvmcheck/model.py (same ABI)
+                   python/svlang_lint/model.py (same ABI)
 ```
 
-- **uvmcheck** (`cpp/`) is the Slang-based CLI. It owns reporting (text, JSON,
+- **svlang-lint** (`cpp/`) is the Slang-based CLI. It owns reporting (text, JSON,
   SARIF, HTML), fixes, baselines, waivers, project config and the Python rule
   SDK. Its own `--lsp` server remains for linting an editor with Slang.
-- **dv-lint** (`crates/dv-lint`) runs every uvmcheck rule on the native Rust
+- **dv-lint** (`crates/dv-lint`) runs every svlang-lint rule on the native Rust
   front end, in parallel. Built with the `slang` Cargo feature (off by
   default), `--slang` builds the design through Slang instead, so the two
   front ends can be compared.
-- **libuvmcheck_model** (built by the `model` CMake preset) puts Slang's view
+- **libsvlang_lint_model** (built by the `model` CMake preset) puts Slang's view
   of a design behind a C ABI. `sv-slang` binds it, `dv-model` wraps it in safe
-  Rust, and `python/uvmcheck/model.py` reads the same ABI from Python.
+  Rust, and `python/svlang_lint/model.py` reads the same ABI from Python.
 - The other Rust tools: `dv-lsp` (the editor's language server: lint
   diagnostics and quick fixes from dv-lint, code browsing and completion), `dv-build` (the native builder: parses, elaborates and reports errors as a
   compiler would), `dv-map`
@@ -56,7 +56,7 @@ workspace.
 - `tools/gates/` compare the Rust side with them: `pp_parity.py`,
   `cst_parity.py`, `sym_gate.py`, `expr_gate.py`, `model_parity.py`,
   `ieee_gate.py` (sv-tests), `slang_unit_gate.py`, `spec_gate.py`, and
-  `lint_parity.py` (dv-lint findings against uvmcheck's). `rust_gate.sh`
+  `lint_parity.py` (dv-lint findings against svlang-lint's). `rust_gate.sh`
   is the Rust format and Clippy gate (`cargo fmt --check`, `clippy -D
   warnings`).
 - The real-code corpus (UVM releases, riscv-dv, ibex, core-v-verif, cva6,
@@ -75,14 +75,14 @@ our own code, in the overlay under `cpp/src/compat/`
 
 | Command | Output |
 |---|---|
-| `cargo build --release` (repository root) | `target/release/uvmcheck` (the linter, also built as `dv-lint`), `dv-lsp`, `dv-build`, `dv-map`, `dv-filelist`: the tools |
-| `cargo build --profile dist` and `tools/release/package.sh` | `uvmcheck-<platform>.tar.gz`, what a release ships (stripped, no debug info, with the Python SDK) |
-| `cmake --preset reference && cmake --build build` | `build/uvmcheck` (the C++ reference engine on Slang) and the oracles, for the parity gates |
-| `cmake --preset model && cmake --build build-model` | the same plus `build-model/libuvmcheck_model.so` (position independent, no mimalloc) |
+| `cargo build --release` (repository root) | `target/release/svlang-lint` (the linter, also built as `dv-lint`), `dv-lsp`, `dv-build`, `dv-map`, `dv-filelist`: the tools |
+| `cargo build --profile dist` and `tools/release/package.sh` | `svlang-lint-<platform>.tar.gz`, what a release ships (stripped, no debug info, with the Python SDK) |
+| `cmake --preset reference && cmake --build build` | `build/svlang-lint` (the C++ reference engine on Slang) and the oracles, for the parity gates |
+| `cmake --preset model && cmake --build build-model` | the same plus `build-model/libsvlang_lint_model.so` (position independent, no mimalloc) |
 
 There is no default CMake preset: the tools build with cargo, and the Slang
 builds exist to check them.
 
 A plain `cargo build` needs neither CMake build. Only with
 `--features slang` (the parity gates) does the Rust build link the model
-library, from `build-model/` or wherever `UVMCHECK_BUILD_DIR` points.
+library, from `build-model/` or wherever `SVLANG_LINT_BUILD_DIR` points.

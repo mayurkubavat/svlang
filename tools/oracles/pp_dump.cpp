@@ -2,7 +2,7 @@
 // as "<kind> <text>", with escapes for newlines. The reference that
 // crates/sv-preprocessor is checked against (crates/sv-preprocessor/examples/ppdiff.rs).
 //
-//   uvmcheck_pp_dump [+incdir+DIR]... [+define+NAME[=VALUE]]... FILE
+//   svlang_pp_dump [+incdir+DIR]... [+define+NAME[=VALUE]]... FILE
 #include <cstdio>
 #include <string>
 #include <vector>

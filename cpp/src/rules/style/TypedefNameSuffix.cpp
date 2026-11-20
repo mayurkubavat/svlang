@@ -1,9 +1,9 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
 #include "slang/ast/ASTVisitor.h"
 #include "slang/ast/types/AllTypes.h"
 
-namespace uvmcheck::rules::style {
+namespace svlang_lint::rules::style {
 
 class TypedefVisitor : public engine::AstVisitor<TypedefVisitor> {
 public:
@@ -61,12 +61,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::style
+} // namespace svlang_lint::rules::style
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createTypedefNameSuffix() {
     return std::make_unique<style::TypedefNameSuffix>();
 }
 }
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createTypedefNameSuffix)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createTypedefNameSuffix)

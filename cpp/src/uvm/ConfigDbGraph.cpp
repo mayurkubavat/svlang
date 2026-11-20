@@ -1,4 +1,4 @@
-#include "uvmcheck/uvm/ConfigDbGraph.h"
+#include "svlang_lint/uvm/ConfigDbGraph.h"
 #include "slang/ast/ASTVisitor.h"
 #include "slang/ast/symbols/ClassSymbols.h"
 #include "slang/ast/symbols/SubroutineSymbols.h"
@@ -7,7 +7,7 @@
 #include "slang/ast/expressions/LiteralExpressions.h"
 #include "slang/syntax/AllSyntax.h"
 
-namespace uvmcheck::uvm {
+namespace svlang_lint::uvm {
 
 static std::string extractStringArg(const slang::ast::Expression* expr) {
     if (!expr) return "";
@@ -139,4 +139,4 @@ std::vector<ConfigDbMismatch> ConfigDbGraph::findMismatches() const {
     return mismatches;
 }
 
-} // namespace uvmcheck::uvm
+} // namespace svlang_lint::uvm

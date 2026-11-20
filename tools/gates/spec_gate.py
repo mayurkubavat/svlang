@@ -2,7 +2,7 @@
 """Specialization counts: dv-lint's syntax engine (dv-lint --specs first column, which also
 folds in body-level heuristics) or, with --model, sv-semantic's (third column,
 sv_semantic::spec_counts: exact per class) against
-slang's, as uvmcheck's AST walk sees them (build/specdump, see
+slang's, as svlang-lint's AST walk sees them (build/specdump, see
 tools/oracles/specdump.cpp). A generic class's body is visited once per count, so
 every rule that walks bodies depends on these numbers.
 
@@ -13,12 +13,12 @@ import concurrent.futures, glob, os, subprocess, sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(os.path.dirname(HERE))
 def _default_specdump():
-    for rel in (('build', 'uvmcheck_specdump'), ('build-dev', 'uvmcheck_specdump'),
+    for rel in (('build', 'svlang_specdump'), ('build-dev', 'svlang_specdump'),
                 ('build', 'specdump'), ('build-dev', 'specdump')):
         p = os.path.join(REPO, *rel)
         if os.path.isfile(p) and os.access(p, os.X_OK):
             return p
-    return os.path.join(REPO, 'build', 'uvmcheck_specdump')
+    return os.path.join(REPO, 'build', 'svlang_specdump')
 
 
 SPECDUMP = os.environ.get('SPECDUMP', _default_specdump())

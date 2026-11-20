@@ -1,11 +1,11 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
 #include "slang/syntax/AllSyntax.h"
 #include "slang/syntax/SyntaxTree.h"
 #include "slang/syntax/SyntaxVisitor.h"
 #include <string>
 
-namespace uvmcheck::rules::deadcode {
+namespace svlang_lint::rules::deadcode {
 
 class EmptyProceduralBlockVisitor : public engine::SyntaxVisitor<EmptyProceduralBlockVisitor> {
 public:
@@ -62,12 +62,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::deadcode
+} // namespace svlang_lint::rules::deadcode
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createEmptyAlwaysOrInitial() {
     return std::make_unique<deadcode::EmptyAlwaysOrInitial>();
 }
-} // namespace uvmcheck::rules
+} // namespace svlang_lint::rules
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createEmptyAlwaysOrInitial)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createEmptyAlwaysOrInitial)

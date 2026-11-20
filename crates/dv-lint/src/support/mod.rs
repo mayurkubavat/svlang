@@ -26,6 +26,7 @@ pub(crate) mod for_loops;
 pub(crate) mod free_routines;
 pub(crate) mod handles;
 pub(crate) mod history;
+pub(crate) mod layout;
 pub(crate) mod literal_values;
 pub(crate) mod literals;
 pub(crate) mod names;

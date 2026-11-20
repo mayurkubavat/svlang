@@ -32,7 +32,7 @@ pub(crate) fn component_direct_new(c: &Cst, s: &mut Sink) {
         // The class as the target's declaration writes it (`uvm_tlm_fifo#(REQ)`),
         // once per line: slang's toString() would name a specialization's
         // arguments through the alias that created it first, which depends on
-        // elaboration order. uvmcheck names it the same way.
+        // elaboration order. svlang-lint names it the same way.
         let mut written: Option<String> = None;
         let target = match c.kind(p) {
             BinaryExpr if c.tok(p, "=").is_some() && c.tree.children(p).nth(1) == Some(nx) => {

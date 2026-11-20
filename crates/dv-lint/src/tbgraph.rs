@@ -1,6 +1,6 @@
 //! The UVM structure the Python rules and the testbench map read: the user
 //! classes' TLM ports, the `connect()` calls, and the `uvm_config_db`
-//! set/get calls, as uvmcheck's TlmTopologyGraph and ConfigDbGraph collect
+//! set/get calls, as svlang-lint's TlmTopologyGraph and ConfigDbGraph collect
 //! them. Locations are resolved to file names here (a location in a macro
 //! expansion is where the macro is used).
 
@@ -107,7 +107,7 @@ impl Graph {
         for k in crate::rules::uvm::tlm_topology_checker::connections(&csts) {
             g.connections.push(Connection { in_class: k.class, source: k.source, target: k.target, at: at(k.loc) });
         }
-        // One entry per call, as uvmcheck's ConfigDbGraph (a call typed in
+        // One entry per call, as svlang-lint's ConfigDbGraph (a call typed in
         // several specializations once, by its first type).
         let mut seen = std::collections::HashSet::new();
         for k in crate::support::config_db_calls::config_db_calls(&csts) {
@@ -135,7 +135,7 @@ impl Graph {
     }
 
     /// Ports no `connect()` names (pull and analysis ports only), as
-    /// uvmcheck's `findUnconnectedPorts`.
+    /// svlang-lint's `findUnconnectedPorts`.
     pub fn unconnected(&self) -> Vec<&Port> {
         self.ports
             .iter()

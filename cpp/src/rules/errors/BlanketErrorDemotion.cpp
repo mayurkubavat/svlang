@@ -1,9 +1,9 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
-#include "uvmcheck/rules/SweSupport.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
+#include "svlang_lint/rules/SweSupport.h"
 #include "slang/ast/statements/MiscStatements.h"
 
-namespace uvmcheck::rules::errors {
+namespace svlang_lint::rules::errors {
 
 using namespace slang::ast;
 
@@ -110,12 +110,12 @@ private:
     }
 };
 
-} // namespace uvmcheck::rules::errors
+} // namespace svlang_lint::rules::errors
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createBlanketErrorDemotion() {
     return std::make_unique<errors::BlanketErrorDemotion>();
 }
 }
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createBlanketErrorDemotion)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createBlanketErrorDemotion)

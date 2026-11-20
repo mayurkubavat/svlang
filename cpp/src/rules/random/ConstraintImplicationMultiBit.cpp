@@ -1,10 +1,10 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
 #include "slang/ast/Constraints.h"
 #include "slang/ast/symbols/ClassSymbols.h"
 #include "slang/ast/types/AllTypes.h"
 
-namespace uvmcheck::rules::random {
+namespace svlang_lint::rules::random {
 
 static void inspectConstraint(const slang::ast::Constraint& c, core::DiagnosticEngine& diags) {
     switch (c.kind) {
@@ -59,7 +59,7 @@ public:
     core::Severity getDefaultSeverity() const override { return core::Severity::Warning; }
 
     void run(slang::ast::Compilation& /*compilation*/,
-             const uvmcheck::uvm::UvmModel& uvmModel,
+             const svlang_lint::uvm::UvmModel& uvmModel,
              core::DiagnosticEngine& diags) override {
         for (const auto* cls : uvmModel.getAllClasses()) {
             if (!cls) continue;
@@ -73,12 +73,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::random
+} // namespace svlang_lint::rules::random
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createConstraintImplicationMultiBit() {
     return std::make_unique<random::ConstraintImplicationMultiBit>();
 }
-} // namespace uvmcheck::rules
+} // namespace svlang_lint::rules
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createConstraintImplicationMultiBit)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createConstraintImplicationMultiBit)

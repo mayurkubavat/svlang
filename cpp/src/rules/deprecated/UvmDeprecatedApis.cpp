@@ -1,11 +1,11 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
 #include "slang/ast/ASTVisitor.h"
 #include "slang/ast/expressions/CallExpression.h"
 #include "slang/ast/expressions/SelectExpressions.h"
 #include "slang/syntax/AllSyntax.h"
 
-namespace uvmcheck::rules::deprecated {
+namespace svlang_lint::rules::deprecated {
 
 class UvmDeprecatedApisVisitor : public engine::AstVisitor<UvmDeprecatedApisVisitor> {
 public:
@@ -125,7 +125,7 @@ public:
     core::Severity getDefaultSeverity() const override { return core::Severity::Warning; }
 
     void run(slang::ast::Compilation& compilation,
-             const uvmcheck::uvm::UvmModel&,
+             const svlang_lint::uvm::UvmModel&,
              core::DiagnosticEngine& diags) override {
         UvmDeprecatedApisVisitor visitor(diags, getId());
         compilation.getRoot().visit(visitor);
@@ -144,7 +144,7 @@ public:
     core::Severity getDefaultSeverity() const override { return core::Severity::Warning; }
 
     void run(slang::ast::Compilation& compilation,
-             const uvmcheck::uvm::UvmModel&,
+             const svlang_lint::uvm::UvmModel&,
              core::DiagnosticEngine& diags) override {
         UvmDeprecatedApisVisitor visitor(diags, getId());
         compilation.getRoot().visit(visitor);
@@ -163,16 +163,16 @@ public:
     core::Severity getDefaultSeverity() const override { return core::Severity::Error; }
 
     void run(slang::ast::Compilation& compilation,
-             const uvmcheck::uvm::UvmModel&,
+             const svlang_lint::uvm::UvmModel&,
              core::DiagnosticEngine& diags) override {
         UvmDeprecatedApisVisitor visitor(diags, getId());
         compilation.getRoot().visit(visitor);
     }
 };
 
-} // namespace uvmcheck::rules::deprecated
+} // namespace svlang_lint::rules::deprecated
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createUvmDeprecatedConfigCalls() {
     return std::make_unique<deprecated::UvmDeprecatedConfigCalls>();
 }
@@ -187,7 +187,7 @@ std::unique_ptr<Rule> createUvmDeprecatedTestDone() {
 }
 }
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createUvmDeprecatedConfigCalls)
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createUvmDeprecatedReportServer)
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createUvmDeprecatedPrinterKnobs)
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createUvmDeprecatedTestDone)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createUvmDeprecatedConfigCalls)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createUvmDeprecatedReportServer)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createUvmDeprecatedPrinterKnobs)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createUvmDeprecatedTestDone)

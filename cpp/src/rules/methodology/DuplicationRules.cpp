@@ -2,8 +2,8 @@
 // method bodies across classes) lives in oop/DuplicateMethodBody.cpp.
 
 #include "MethodologySupport.h"
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
 
 #include "slang/ast/ASTVisitor.h"
 #include "slang/ast/expressions/LiteralExpressions.h"
@@ -17,7 +17,7 @@
 #include <unordered_map>
 #include <unordered_set>
 
-namespace uvmcheck::rules::methodology {
+namespace svlang_lint::rules::methodology {
 
 using namespace slang::ast;
 
@@ -503,16 +503,16 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::methodology
+} // namespace svlang_lint::rules::methodology
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createCloneFragments() { return std::make_unique<methodology::CloneFragments>(); }
 std::unique_ptr<Rule> createDuplicatedConstraint() { return std::make_unique<methodology::DuplicatedConstraint>(); }
 std::unique_ptr<Rule> createRepeatedStringLiteral() { return std::make_unique<methodology::RepeatedStringLiteral>(); }
 std::unique_ptr<Rule> createCopiedAgentPackage() { return std::make_unique<methodology::CopiedAgentPackage>(); }
 }
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createCloneFragments)
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createDuplicatedConstraint)
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createRepeatedStringLiteral)
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createCopiedAgentPackage)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createCloneFragments)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createDuplicatedConstraint)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createRepeatedStringLiteral)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createCopiedAgentPackage)

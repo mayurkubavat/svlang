@@ -1,6 +1,6 @@
 # Incremental result cache
 
-The cache lives in `.uvmcheck_cache/` (gitignored) and is **on by default**. A second run with the same inputs prints `N compilation units served from cache` and does not parse or run rules. `--no-cache` skips the cache entirely. `--cache-dir <path>` moves it. `--clear-cache` deletes it and then runs.
+The cache lives in `.svlang_lint_cache/` (gitignored) and is **on by default**. A second run with the same inputs prints `N compilation units served from cache` and does not parse or run rules. `--no-cache` skips the cache entirely. `--cache-dir <path>` moves it. `--clear-cache` deletes it and then runs.
 
 The cache is on by default because a hit is taken only when every recorded dependency still has the same bytes. A missing file, a version or format mismatch, or a JSON entry that does not parse falls back to a full run. The process does not abort on a bad cache.
 

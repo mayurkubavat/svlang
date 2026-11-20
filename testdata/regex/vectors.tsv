@@ -24422,186 +24422,186 @@ objection	i	uvm_info	0 0
 objection	i	width 8	0 0
 objection	i	x	0 0
 objection	i	xobjectionx	1 0
-uvmcheck-disable			0 0
-uvmcheck-disable		-	0 0
-uvmcheck-disable		9	0 0
-uvmcheck-disable		A	0 0
-uvmcheck-disable		UVM_LOW	0 0
-uvmcheck-disable		[	0 0
-uvmcheck-disable		\t	0 0
-uvmcheck-disable		\xc3\xa9	0 0
-uvmcheck-disable		]	0 0
-uvmcheck-disable		_	0 0
-uvmcheck-disable		a	0 0
-uvmcheck-disable		a b	0 0
-uvmcheck-disable		a.b	0 0
-uvmcheck-disable		a9_	0 0
-uvmcheck-disable		aB	0 0
-uvmcheck-disable		a\nb	0 0
-uvmcheck-disable		a\rb	0 0
-uvmcheck-disable		a\xc3\xa9	0 0
-uvmcheck-disable		aab	0 0
-uvmcheck-disable		ab	0 0
-uvmcheck-disable		abab	0 0
-uvmcheck-disable		abc	0 0
-uvmcheck-disable		b	0 0
-uvmcheck-disable		ba	0 0
-uvmcheck-disable		my_type_t	0 0
-uvmcheck-disable		uvm_info	0 0
-uvmcheck-disable		uvmcheck-disable	1 1
-uvmcheck-disable		width 8	0 0
-uvmcheck-disable		x	0 0
-uvmcheck-disable		xuvmcheck-disablex	1 0
-uvmcheck-disable	i		0 0
-uvmcheck-disable	i	-	0 0
-uvmcheck-disable	i	9	0 0
-uvmcheck-disable	i	A	0 0
-uvmcheck-disable	i	UVM_LOW	0 0
-uvmcheck-disable	i	[	0 0
-uvmcheck-disable	i	\t	0 0
-uvmcheck-disable	i	\xc3\xa9	0 0
-uvmcheck-disable	i	]	0 0
-uvmcheck-disable	i	_	0 0
-uvmcheck-disable	i	a	0 0
-uvmcheck-disable	i	a b	0 0
-uvmcheck-disable	i	a.b	0 0
-uvmcheck-disable	i	a9_	0 0
-uvmcheck-disable	i	aB	0 0
-uvmcheck-disable	i	a\nb	0 0
-uvmcheck-disable	i	a\rb	0 0
-uvmcheck-disable	i	a\xc3\xa9	0 0
-uvmcheck-disable	i	aab	0 0
-uvmcheck-disable	i	ab	0 0
-uvmcheck-disable	i	abab	0 0
-uvmcheck-disable	i	abc	0 0
-uvmcheck-disable	i	b	0 0
-uvmcheck-disable	i	ba	0 0
-uvmcheck-disable	i	my_type_t	0 0
-uvmcheck-disable	i	uvm_info	0 0
-uvmcheck-disable	i	uvmcheck-disable	1 1
-uvmcheck-disable	i	width 8	0 0
-uvmcheck-disable	i	x	0 0
-uvmcheck-disable	i	xuvmcheck-disablex	1 0
-uvmcheck: waive			0 0
-uvmcheck: waive		-	0 0
-uvmcheck: waive		9	0 0
-uvmcheck: waive		A	0 0
-uvmcheck: waive		UVM_LOW	0 0
-uvmcheck: waive		[	0 0
-uvmcheck: waive		\t	0 0
-uvmcheck: waive		\xc3\xa9	0 0
-uvmcheck: waive		]	0 0
-uvmcheck: waive		_	0 0
-uvmcheck: waive		a	0 0
-uvmcheck: waive		a b	0 0
-uvmcheck: waive		a.b	0 0
-uvmcheck: waive		a9_	0 0
-uvmcheck: waive		aB	0 0
-uvmcheck: waive		a\nb	0 0
-uvmcheck: waive		a\rb	0 0
-uvmcheck: waive		a\xc3\xa9	0 0
-uvmcheck: waive		aab	0 0
-uvmcheck: waive		ab	0 0
-uvmcheck: waive		abab	0 0
-uvmcheck: waive		abc	0 0
-uvmcheck: waive		b	0 0
-uvmcheck: waive		ba	0 0
-uvmcheck: waive		my_type_t	0 0
-uvmcheck: waive		uvm_info	0 0
-uvmcheck: waive		uvmcheck: waive	1 1
-uvmcheck: waive		width 8	0 0
-uvmcheck: waive		x	0 0
-uvmcheck: waive		xuvmcheck: waivex	1 0
-uvmcheck: waive	i		0 0
-uvmcheck: waive	i	-	0 0
-uvmcheck: waive	i	9	0 0
-uvmcheck: waive	i	A	0 0
-uvmcheck: waive	i	UVM_LOW	0 0
-uvmcheck: waive	i	[	0 0
-uvmcheck: waive	i	\t	0 0
-uvmcheck: waive	i	\xc3\xa9	0 0
-uvmcheck: waive	i	]	0 0
-uvmcheck: waive	i	_	0 0
-uvmcheck: waive	i	a	0 0
-uvmcheck: waive	i	a b	0 0
-uvmcheck: waive	i	a.b	0 0
-uvmcheck: waive	i	a9_	0 0
-uvmcheck: waive	i	aB	0 0
-uvmcheck: waive	i	a\nb	0 0
-uvmcheck: waive	i	a\rb	0 0
-uvmcheck: waive	i	a\xc3\xa9	0 0
-uvmcheck: waive	i	aab	0 0
-uvmcheck: waive	i	ab	0 0
-uvmcheck: waive	i	abab	0 0
-uvmcheck: waive	i	abc	0 0
-uvmcheck: waive	i	b	0 0
-uvmcheck: waive	i	ba	0 0
-uvmcheck: waive	i	my_type_t	0 0
-uvmcheck: waive	i	uvm_info	0 0
-uvmcheck: waive	i	uvmcheck: waive	1 1
-uvmcheck: waive	i	width 8	0 0
-uvmcheck: waive	i	x	0 0
-uvmcheck: waive	i	xuvmcheck: waivex	1 0
-uvmcheck:waive			0 0
-uvmcheck:waive		-	0 0
-uvmcheck:waive		9	0 0
-uvmcheck:waive		A	0 0
-uvmcheck:waive		UVM_LOW	0 0
-uvmcheck:waive		[	0 0
-uvmcheck:waive		\t	0 0
-uvmcheck:waive		\xc3\xa9	0 0
-uvmcheck:waive		]	0 0
-uvmcheck:waive		_	0 0
-uvmcheck:waive		a	0 0
-uvmcheck:waive		a b	0 0
-uvmcheck:waive		a.b	0 0
-uvmcheck:waive		a9_	0 0
-uvmcheck:waive		aB	0 0
-uvmcheck:waive		a\nb	0 0
-uvmcheck:waive		a\rb	0 0
-uvmcheck:waive		a\xc3\xa9	0 0
-uvmcheck:waive		aab	0 0
-uvmcheck:waive		ab	0 0
-uvmcheck:waive		abab	0 0
-uvmcheck:waive		abc	0 0
-uvmcheck:waive		b	0 0
-uvmcheck:waive		ba	0 0
-uvmcheck:waive		my_type_t	0 0
-uvmcheck:waive		uvm_info	0 0
-uvmcheck:waive		uvmcheck:waive	1 1
-uvmcheck:waive		width 8	0 0
-uvmcheck:waive		x	0 0
-uvmcheck:waive		xuvmcheck:waivex	1 0
-uvmcheck:waive	i		0 0
-uvmcheck:waive	i	-	0 0
-uvmcheck:waive	i	9	0 0
-uvmcheck:waive	i	A	0 0
-uvmcheck:waive	i	UVM_LOW	0 0
-uvmcheck:waive	i	[	0 0
-uvmcheck:waive	i	\t	0 0
-uvmcheck:waive	i	\xc3\xa9	0 0
-uvmcheck:waive	i	]	0 0
-uvmcheck:waive	i	_	0 0
-uvmcheck:waive	i	a	0 0
-uvmcheck:waive	i	a b	0 0
-uvmcheck:waive	i	a.b	0 0
-uvmcheck:waive	i	a9_	0 0
-uvmcheck:waive	i	aB	0 0
-uvmcheck:waive	i	a\nb	0 0
-uvmcheck:waive	i	a\rb	0 0
-uvmcheck:waive	i	a\xc3\xa9	0 0
-uvmcheck:waive	i	aab	0 0
-uvmcheck:waive	i	ab	0 0
-uvmcheck:waive	i	abab	0 0
-uvmcheck:waive	i	abc	0 0
-uvmcheck:waive	i	b	0 0
-uvmcheck:waive	i	ba	0 0
-uvmcheck:waive	i	my_type_t	0 0
-uvmcheck:waive	i	uvm_info	0 0
-uvmcheck:waive	i	uvmcheck:waive	1 1
-uvmcheck:waive	i	width 8	0 0
-uvmcheck:waive	i	x	0 0
-uvmcheck:waive	i	xuvmcheck:waivex	1 0
+svlang-lint-disable			0 0
+svlang-lint-disable		-	0 0
+svlang-lint-disable		9	0 0
+svlang-lint-disable		A	0 0
+svlang-lint-disable		UVM_LOW	0 0
+svlang-lint-disable		[	0 0
+svlang-lint-disable		\t	0 0
+svlang-lint-disable		\xc3\xa9	0 0
+svlang-lint-disable		]	0 0
+svlang-lint-disable		_	0 0
+svlang-lint-disable		a	0 0
+svlang-lint-disable		a b	0 0
+svlang-lint-disable		a.b	0 0
+svlang-lint-disable		a9_	0 0
+svlang-lint-disable		aB	0 0
+svlang-lint-disable		a\nb	0 0
+svlang-lint-disable		a\rb	0 0
+svlang-lint-disable		a\xc3\xa9	0 0
+svlang-lint-disable		aab	0 0
+svlang-lint-disable		ab	0 0
+svlang-lint-disable		abab	0 0
+svlang-lint-disable		abc	0 0
+svlang-lint-disable		b	0 0
+svlang-lint-disable		ba	0 0
+svlang-lint-disable		my_type_t	0 0
+svlang-lint-disable		uvm_info	0 0
+svlang-lint-disable		svlang-lint-disable	1 1
+svlang-lint-disable		width 8	0 0
+svlang-lint-disable		x	0 0
+svlang-lint-disable		xsvlang-lint-disablex	1 0
+svlang-lint-disable	i		0 0
+svlang-lint-disable	i	-	0 0
+svlang-lint-disable	i	9	0 0
+svlang-lint-disable	i	A	0 0
+svlang-lint-disable	i	UVM_LOW	0 0
+svlang-lint-disable	i	[	0 0
+svlang-lint-disable	i	\t	0 0
+svlang-lint-disable	i	\xc3\xa9	0 0
+svlang-lint-disable	i	]	0 0
+svlang-lint-disable	i	_	0 0
+svlang-lint-disable	i	a	0 0
+svlang-lint-disable	i	a b	0 0
+svlang-lint-disable	i	a.b	0 0
+svlang-lint-disable	i	a9_	0 0
+svlang-lint-disable	i	aB	0 0
+svlang-lint-disable	i	a\nb	0 0
+svlang-lint-disable	i	a\rb	0 0
+svlang-lint-disable	i	a\xc3\xa9	0 0
+svlang-lint-disable	i	aab	0 0
+svlang-lint-disable	i	ab	0 0
+svlang-lint-disable	i	abab	0 0
+svlang-lint-disable	i	abc	0 0
+svlang-lint-disable	i	b	0 0
+svlang-lint-disable	i	ba	0 0
+svlang-lint-disable	i	my_type_t	0 0
+svlang-lint-disable	i	uvm_info	0 0
+svlang-lint-disable	i	svlang-lint-disable	1 1
+svlang-lint-disable	i	width 8	0 0
+svlang-lint-disable	i	x	0 0
+svlang-lint-disable	i	xsvlang-lint-disablex	1 0
+svlang-lint: waive			0 0
+svlang-lint: waive		-	0 0
+svlang-lint: waive		9	0 0
+svlang-lint: waive		A	0 0
+svlang-lint: waive		UVM_LOW	0 0
+svlang-lint: waive		[	0 0
+svlang-lint: waive		\t	0 0
+svlang-lint: waive		\xc3\xa9	0 0
+svlang-lint: waive		]	0 0
+svlang-lint: waive		_	0 0
+svlang-lint: waive		a	0 0
+svlang-lint: waive		a b	0 0
+svlang-lint: waive		a.b	0 0
+svlang-lint: waive		a9_	0 0
+svlang-lint: waive		aB	0 0
+svlang-lint: waive		a\nb	0 0
+svlang-lint: waive		a\rb	0 0
+svlang-lint: waive		a\xc3\xa9	0 0
+svlang-lint: waive		aab	0 0
+svlang-lint: waive		ab	0 0
+svlang-lint: waive		abab	0 0
+svlang-lint: waive		abc	0 0
+svlang-lint: waive		b	0 0
+svlang-lint: waive		ba	0 0
+svlang-lint: waive		my_type_t	0 0
+svlang-lint: waive		uvm_info	0 0
+svlang-lint: waive		svlang-lint: waive	1 1
+svlang-lint: waive		width 8	0 0
+svlang-lint: waive		x	0 0
+svlang-lint: waive		xsvlang-lint: waivex	1 0
+svlang-lint: waive	i		0 0
+svlang-lint: waive	i	-	0 0
+svlang-lint: waive	i	9	0 0
+svlang-lint: waive	i	A	0 0
+svlang-lint: waive	i	UVM_LOW	0 0
+svlang-lint: waive	i	[	0 0
+svlang-lint: waive	i	\t	0 0
+svlang-lint: waive	i	\xc3\xa9	0 0
+svlang-lint: waive	i	]	0 0
+svlang-lint: waive	i	_	0 0
+svlang-lint: waive	i	a	0 0
+svlang-lint: waive	i	a b	0 0
+svlang-lint: waive	i	a.b	0 0
+svlang-lint: waive	i	a9_	0 0
+svlang-lint: waive	i	aB	0 0
+svlang-lint: waive	i	a\nb	0 0
+svlang-lint: waive	i	a\rb	0 0
+svlang-lint: waive	i	a\xc3\xa9	0 0
+svlang-lint: waive	i	aab	0 0
+svlang-lint: waive	i	ab	0 0
+svlang-lint: waive	i	abab	0 0
+svlang-lint: waive	i	abc	0 0
+svlang-lint: waive	i	b	0 0
+svlang-lint: waive	i	ba	0 0
+svlang-lint: waive	i	my_type_t	0 0
+svlang-lint: waive	i	uvm_info	0 0
+svlang-lint: waive	i	svlang-lint: waive	1 1
+svlang-lint: waive	i	width 8	0 0
+svlang-lint: waive	i	x	0 0
+svlang-lint: waive	i	xsvlang-lint: waivex	1 0
+svlang-lint:waive			0 0
+svlang-lint:waive		-	0 0
+svlang-lint:waive		9	0 0
+svlang-lint:waive		A	0 0
+svlang-lint:waive		UVM_LOW	0 0
+svlang-lint:waive		[	0 0
+svlang-lint:waive		\t	0 0
+svlang-lint:waive		\xc3\xa9	0 0
+svlang-lint:waive		]	0 0
+svlang-lint:waive		_	0 0
+svlang-lint:waive		a	0 0
+svlang-lint:waive		a b	0 0
+svlang-lint:waive		a.b	0 0
+svlang-lint:waive		a9_	0 0
+svlang-lint:waive		aB	0 0
+svlang-lint:waive		a\nb	0 0
+svlang-lint:waive		a\rb	0 0
+svlang-lint:waive		a\xc3\xa9	0 0
+svlang-lint:waive		aab	0 0
+svlang-lint:waive		ab	0 0
+svlang-lint:waive		abab	0 0
+svlang-lint:waive		abc	0 0
+svlang-lint:waive		b	0 0
+svlang-lint:waive		ba	0 0
+svlang-lint:waive		my_type_t	0 0
+svlang-lint:waive		uvm_info	0 0
+svlang-lint:waive		svlang-lint:waive	1 1
+svlang-lint:waive		width 8	0 0
+svlang-lint:waive		x	0 0
+svlang-lint:waive		xsvlang-lint:waivex	1 0
+svlang-lint:waive	i		0 0
+svlang-lint:waive	i	-	0 0
+svlang-lint:waive	i	9	0 0
+svlang-lint:waive	i	A	0 0
+svlang-lint:waive	i	UVM_LOW	0 0
+svlang-lint:waive	i	[	0 0
+svlang-lint:waive	i	\t	0 0
+svlang-lint:waive	i	\xc3\xa9	0 0
+svlang-lint:waive	i	]	0 0
+svlang-lint:waive	i	_	0 0
+svlang-lint:waive	i	a	0 0
+svlang-lint:waive	i	a b	0 0
+svlang-lint:waive	i	a.b	0 0
+svlang-lint:waive	i	a9_	0 0
+svlang-lint:waive	i	aB	0 0
+svlang-lint:waive	i	a\nb	0 0
+svlang-lint:waive	i	a\rb	0 0
+svlang-lint:waive	i	a\xc3\xa9	0 0
+svlang-lint:waive	i	aab	0 0
+svlang-lint:waive	i	ab	0 0
+svlang-lint:waive	i	abab	0 0
+svlang-lint:waive	i	abc	0 0
+svlang-lint:waive	i	b	0 0
+svlang-lint:waive	i	ba	0 0
+svlang-lint:waive	i	my_type_t	0 0
+svlang-lint:waive	i	uvm_info	0 0
+svlang-lint:waive	i	svlang-lint:waive	1 1
+svlang-lint:waive	i	width 8	0 0
+svlang-lint:waive	i	x	0 0
+svlang-lint:waive	i	xsvlang-lint:waivex	1 0
 }(?:(?!a)*?\\x{41}?)??	i		err
 }*(9\\W??)*	i		err
 }*?${1,2}?			err

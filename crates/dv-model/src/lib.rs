@@ -8,10 +8,10 @@
 //!   the pure IEEE 1800 model via `sv-semantic` and classifies UVM roles and
 //!   phases via [`Design::from_sv`];
 //! - slang, through `Design::load` (feature `slang`, off by default; oracle
-//!   and parity use only), which copies the C++ `uvmcheck::model` across the
+//!   and parity use only), which copies the C++ `svlang_lint::model` across the
 //!   C ABI in `sv-slang`.
 //!
-//! Both take the same compile options as `uvmcheck`. Tools read only this
+//! Both take the same compile options as `svlang-lint`. Tools read only this
 //! crate's types and do not see which front end built the design;
 //! [`Design::dump`] prints the canonical form the parity gates compare.
 
@@ -319,12 +319,12 @@ pub struct Design {
 
 /// Owns a C design and frees it on every exit path.
 #[cfg(feature = "slang")]
-struct Handle(*mut ffi::uvmcheck_design);
+struct Handle(*mut ffi::svlang_lint_design);
 
 #[cfg(feature = "slang")]
 impl Drop for Handle {
     fn drop(&mut self) {
-        unsafe { ffi::uvmcheck_design_free(self.0) }
+        unsafe { ffi::svlang_lint_design_free(self.0) }
     }
 }
 
@@ -338,7 +338,7 @@ fn text(p: *const c_char) -> String {
 }
 
 #[cfg(feature = "slang")]
-fn loc(l: ffi::uvmcheck_loc) -> Loc {
+fn loc(l: ffi::svlang_lint_loc) -> Loc {
     Loc {
         file: l.file,
         line: l.line,
@@ -473,7 +473,7 @@ impl Design {
         &self.specializations
     }
 
-    /// Loads a design through slang (libuvmcheck_model) from compile options as given to `uvmcheck`, e.g.
+    /// Loads a design through slang (libsvlang_lint_model) from compile options as given to `svlang-lint`, e.g.
     /// `["+incdir+src", "src/uvm_pkg.sv"]` or `["-f", "files.f"]`.
     #[cfg(feature = "slang")]
     pub fn load<I, S>(args: I) -> Result<Design, Error>
@@ -481,38 +481,38 @@ impl Design {
         I: IntoIterator<Item = S>,
         S: AsRef<str>,
     {
-        let abi = unsafe { ffi::uvmcheck_model_abi_version() };
+        let abi = unsafe { ffi::svlang_lint_model_abi_version() };
         if abi != ffi::ABI_VERSION {
-            return Err(Error(format!("libuvmcheck_model ABI {abi}, expected {}", ffi::ABI_VERSION)));
+            return Err(Error(format!("libsvlang_lint_model ABI {abi}, expected {}", ffi::ABI_VERSION)));
         }
         let args: Vec<CString> = args
             .into_iter()
             .map(|a| CString::new(a.as_ref()).map_err(|_| Error("argument contains a NUL byte".into())))
             .collect::<Result<_, _>>()?;
         let argv: Vec<*const c_char> = args.iter().map(|a| a.as_ptr()).collect();
-        let handle = Handle(unsafe { ffi::uvmcheck_design_load(argv.len() as i32, argv.as_ptr()) });
+        let handle = Handle(unsafe { ffi::svlang_lint_design_load(argv.len() as i32, argv.as_ptr()) });
         let d = handle.0;
-        let err = unsafe { ffi::uvmcheck_design_error(d) };
+        let err = unsafe { ffi::svlang_lint_design_error(d) };
         if !err.is_null() {
             return Err(Error(text(err)));
         }
 
         let start = Instant::now();
-        let files = (0..unsafe { ffi::uvmcheck_file_count(d) })
-            .map(|i| text(unsafe { ffi::uvmcheck_file_name(d, i) }))
+        let files = (0..unsafe { ffi::svlang_lint_file_count(d) })
+            .map(|i| text(unsafe { ffi::svlang_lint_file_name(d, i) }))
             .collect();
-        let count = unsafe { ffi::uvmcheck_class_count(d) };
+        let count = unsafe { ffi::svlang_lint_class_count(d) };
         let mut classes = Vec::with_capacity(count as usize);
         for cid in 0..count {
-            let mut c = std::mem::MaybeUninit::<ffi::uvmcheck_class>::uninit();
-            if unsafe { ffi::uvmcheck_get_class(d, cid, c.as_mut_ptr()) } == 0 {
+            let mut c = std::mem::MaybeUninit::<ffi::svlang_lint_class>::uninit();
+            if unsafe { ffi::svlang_lint_get_class(d, cid, c.as_mut_ptr()) } == 0 {
                 return Err(Error(format!("class {cid} missing")));
             }
             let c = unsafe { c.assume_init() };
             let mut properties = Vec::with_capacity(c.property_count as usize);
             for i in 0..c.property_count {
-                let mut p = std::mem::MaybeUninit::<ffi::uvmcheck_property>::uninit();
-                if unsafe { ffi::uvmcheck_get_property(d, cid, i, p.as_mut_ptr()) } == 0 {
+                let mut p = std::mem::MaybeUninit::<ffi::svlang_lint_property>::uninit();
+                if unsafe { ffi::svlang_lint_get_property(d, cid, i, p.as_mut_ptr()) } == 0 {
                     return Err(Error(format!("property {i} of class {cid} missing")));
                 }
                 let p = unsafe { p.assume_init() };
@@ -530,15 +530,15 @@ impl Design {
             }
             let mut methods = Vec::with_capacity(c.method_count as usize);
             for i in 0..c.method_count {
-                let mut m = std::mem::MaybeUninit::<ffi::uvmcheck_method>::uninit();
-                if unsafe { ffi::uvmcheck_get_method(d, cid, i, m.as_mut_ptr()) } == 0 {
+                let mut m = std::mem::MaybeUninit::<ffi::svlang_lint_method>::uninit();
+                if unsafe { ffi::svlang_lint_get_method(d, cid, i, m.as_mut_ptr()) } == 0 {
                     return Err(Error(format!("method {i} of class {cid} missing")));
                 }
                 let m = unsafe { m.assume_init() };
                 let mut arguments = Vec::with_capacity(m.argument_count as usize);
                 for a in 0..m.argument_count {
-                    let mut x = std::mem::MaybeUninit::<ffi::uvmcheck_argument>::uninit();
-                    if unsafe { ffi::uvmcheck_get_argument(d, cid, i, a, x.as_mut_ptr()) } == 0 {
+                    let mut x = std::mem::MaybeUninit::<ffi::svlang_lint_argument>::uninit();
+                    if unsafe { ffi::svlang_lint_get_argument(d, cid, i, a, x.as_mut_ptr()) } == 0 {
                         return Err(Error(format!("argument {a} of method {i} of class {cid} missing")));
                     }
                     let x = unsafe { x.assume_init() };
@@ -554,8 +554,8 @@ impl Design {
                 }
                 let mut locals = Vec::with_capacity(m.local_count as usize);
                 for l in 0..m.local_count {
-                    let mut x = std::mem::MaybeUninit::<ffi::uvmcheck_local>::uninit();
-                    if unsafe { ffi::uvmcheck_get_local(d, cid, i, l, x.as_mut_ptr()) } == 0 {
+                    let mut x = std::mem::MaybeUninit::<ffi::svlang_lint_local>::uninit();
+                    if unsafe { ffi::svlang_lint_get_local(d, cid, i, l, x.as_mut_ptr()) } == 0 {
                         return Err(Error(format!("local {l} of method {i} of class {cid} missing")));
                     }
                     let x = unsafe { x.assume_init() };
@@ -568,8 +568,8 @@ impl Design {
                 }
                 let mut calls = Vec::with_capacity(m.call_count as usize);
                 for k in 0..m.call_count {
-                    let mut x = std::mem::MaybeUninit::<ffi::uvmcheck_call>::uninit();
-                    if unsafe { ffi::uvmcheck_get_call(d, cid, i, k, x.as_mut_ptr()) } == 0 {
+                    let mut x = std::mem::MaybeUninit::<ffi::svlang_lint_call>::uninit();
+                    if unsafe { ffi::svlang_lint_get_call(d, cid, i, k, x.as_mut_ptr()) } == 0 {
                         return Err(Error(format!("call {k} of method {i} of class {cid} missing")));
                     }
                     let x = unsafe { x.assume_init() };
@@ -588,8 +588,8 @@ impl Design {
                 }
                 let mut assignments = Vec::with_capacity(m.assignment_count as usize);
                 for k in 0..m.assignment_count {
-                    let mut x = std::mem::MaybeUninit::<ffi::uvmcheck_assignment>::uninit();
-                    if unsafe { ffi::uvmcheck_get_assignment(d, cid, i, k, x.as_mut_ptr()) } == 0 {
+                    let mut x = std::mem::MaybeUninit::<ffi::svlang_lint_assignment>::uninit();
+                    if unsafe { ffi::svlang_lint_get_assignment(d, cid, i, k, x.as_mut_ptr()) } == 0 {
                         return Err(Error(format!("assignment {k} of method {i} of class {cid} missing")));
                     }
                     let x = unsafe { x.assume_init() };
@@ -609,8 +609,8 @@ impl Design {
                 }
                 let mut timing_controls = Vec::with_capacity(m.timing_count as usize);
                 for k in 0..m.timing_count {
-                    let mut x = ffi::uvmcheck_loc::default();
-                    if unsafe { ffi::uvmcheck_get_timing(d, cid, i, k, &mut x) } == 0 {
+                    let mut x = ffi::svlang_lint_loc::default();
+                    if unsafe { ffi::svlang_lint_get_timing(d, cid, i, k, &mut x) } == 0 {
                         return Err(Error(format!("timing control {k} of method {i} of class {cid} missing")));
                     }
                     timing_controls.push(loc(x));
@@ -644,8 +644,8 @@ impl Design {
             }
             let mut constraints = Vec::with_capacity(c.constraint_count as usize);
             for i in 0..c.constraint_count {
-                let mut x = std::mem::MaybeUninit::<ffi::uvmcheck_constraint>::uninit();
-                if unsafe { ffi::uvmcheck_get_constraint(d, cid, i, x.as_mut_ptr()) } == 0 {
+                let mut x = std::mem::MaybeUninit::<ffi::svlang_lint_constraint>::uninit();
+                if unsafe { ffi::svlang_lint_get_constraint(d, cid, i, x.as_mut_ptr()) } == 0 {
                     return Err(Error(format!("constraint {i} of class {cid} missing")));
                 }
                 let x = unsafe { x.assume_init() };
@@ -653,8 +653,8 @@ impl Design {
             }
             let mut macros = Vec::with_capacity(c.macro_count as usize);
             for i in 0..c.macro_count {
-                let mut x = std::mem::MaybeUninit::<ffi::uvmcheck_macro>::uninit();
-                if unsafe { ffi::uvmcheck_get_macro(d, cid, i, x.as_mut_ptr()) } == 0 {
+                let mut x = std::mem::MaybeUninit::<ffi::svlang_lint_macro>::uninit();
+                if unsafe { ffi::svlang_lint_get_macro(d, cid, i, x.as_mut_ptr()) } == 0 {
                     return Err(Error(format!("macro use {i} of class {cid} missing")));
                 }
                 let x = unsafe { x.assume_init() };
@@ -662,8 +662,8 @@ impl Design {
             }
             let mut typedefs = Vec::with_capacity(c.typedef_count as usize);
             for i in 0..c.typedef_count {
-                let mut x = std::mem::MaybeUninit::<ffi::uvmcheck_typedef>::uninit();
-                if unsafe { ffi::uvmcheck_get_typedef(d, cid, i, x.as_mut_ptr()) } == 0 {
+                let mut x = std::mem::MaybeUninit::<ffi::svlang_lint_typedef>::uninit();
+                if unsafe { ffi::svlang_lint_get_typedef(d, cid, i, x.as_mut_ptr()) } == 0 {
                     return Err(Error(format!("typedef {i} of class {cid} missing")));
                 }
                 let x = unsafe { x.assume_init() };
@@ -691,13 +691,13 @@ impl Design {
         let copy_ms = start.elapsed().as_secs_f64() * 1e3;
         let timings = unsafe {
             Timings {
-                parse_ms: ffi::uvmcheck_design_time_ms(d, 0),
-                elaborate_ms: ffi::uvmcheck_design_time_ms(d, 1),
-                model_ms: ffi::uvmcheck_design_time_ms(d, 2),
+                parse_ms: ffi::svlang_lint_design_time_ms(d, 0),
+                elaborate_ms: ffi::svlang_lint_design_time_ms(d, 1),
+                model_ms: ffi::svlang_lint_design_time_ms(d, 2),
                 copy_ms,
             }
         };
-        let compile_errors = unsafe { ffi::uvmcheck_design_compile_errors(d) };
+        let compile_errors = unsafe { ffi::svlang_lint_design_compile_errors(d) };
         Ok(Design { files, classes, compile_errors, timings, specializations: Vec::new() })
     }
 

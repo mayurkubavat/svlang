@@ -3,7 +3,7 @@
 Precision tracking: lint a fixed corpus of real UVM code and compare each
 rule's finding count with the previous run.
 
-    python3 tools/quality/precision.py --binary build/uvmcheck --corpus tools/quality/precision_corpus.json \\
+    python3 tools/quality/precision.py --binary build/svlang-lint --corpus tools/quality/precision_corpus.json \\
         --out precision.json [--previous last.json] [--summary summary.md] [--fail-on-jump]
 
 The corpus file lists named code bases:
@@ -12,7 +12,7 @@ The corpus file lists named code bases:
       "args": ["${UVM_HOME}/src/uvm_pkg.sv", "-I", "${UVM_HOME}/src"],
       "count": ["${UVM_HOME}/src"]}]
 
-`args` are passed to uvmcheck (plus --no-config --preset all --experimental
+`args` are passed to svlang-lint (plus --no-config --preset all --experimental
 --json); `count` are the folders whose .sv/.svh/.v lines give the kLOC.
 ${VAR} is expanded from the environment; a corpus whose variables are unset
 is skipped.
@@ -72,7 +72,7 @@ def lint(binary, args):
         res = subprocess.run([binary, *args, "--no-config", "--preset", "all", "--experimental", "--json", str(out)],
                              capture_output=True, text=True)
         if not out.exists():
-            raise RuntimeError(f"uvmcheck failed (exit {res.returncode}):\n{res.stdout[-2000:]}{res.stderr[-2000:]}")
+            raise RuntimeError(f"svlang-lint failed (exit {res.returncode}):\n{res.stdout[-2000:]}{res.stderr[-2000:]}")
         return json.loads(out.read_text())
 
 
@@ -149,7 +149,7 @@ def summary(now, flags, rules_meta, have_previous):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0].strip())
-    ap.add_argument("--binary", default="build/uvmcheck")
+    ap.add_argument("--binary", default="build/svlang-lint")
     ap.add_argument("--corpus", default=str(Path(__file__).with_name("precision_corpus.json")))
     ap.add_argument("--out", required=True, help="result JSON to write")
     ap.add_argument("--previous", help="result JSON of the previous run")

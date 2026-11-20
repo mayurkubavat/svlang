@@ -63,8 +63,8 @@ with `--features slang`; see `third_party/slang/README.md`.
 | `sv-netlist` | lib | Format-neutral word-level RTL netlist IR (`Netlist`): procedural execution (`always_ff`, async reset metadata, `always_comb`, `always_latch`, `assign`, port stitching, SCC combinational loop detection), bit-level driver resolution, static loop unrolling, subroutine inlining, memory ports, and `blast_memories`. |
 | `svlang` | lib | Public umbrella SDK re-exporting `source`, `lexer`, `preprocessor`, `syntax`, `semantic`, and `netlist`, plus top-level `Driver` and `Compilation` APIs (`lower_netlist`, `bind_property_in_scope`). |
 | `dv-model` | lib | The UVM-aware design model DV tools read: classes, UVM roles (`UvmKind`), UVM phases (`PhaseKind`), properties, methods and body facts, all owned. Lifted from `svlang` (native) or copied from slang through `sv-slang`. |
-| `sv-slang` | lib | Raw FFI to `libuvmcheck_model` (`cpp/include/uvmcheck/model/CApi.h`). Only `dv-model` uses it, and only with the `slang` feature. |
-| `dv-lint` | lib + bins | The linter: every uvmcheck rule ported to Rust, run in parallel over the model and the syntax trees. Its command line (`dv_lint::app`) is built under two names: `uvmcheck`, the product's command, and `dv-lint`, the name the gates call. |
+| `sv-slang` | lib | Raw FFI to `libsvlang_lint_model` (`cpp/include/svlang-lint/model/CApi.h`). Only `dv-model` uses it, and only with the `slang` feature. |
+| `dv-lint` | lib + bins | The linter: every svlang-lint rule ported to Rust, run in parallel over the model and the syntax trees. Its command line (`dv_lint::app`) is built under two names: `svlang-lint`, the product's command, and `dv-lint`, the name the gates call. |
 | `dv-build` | bin | The native builder: reports file list, preprocessor, syntax, semantic, and RTL lowering errors like a compiler; dumps symbols, types, values, hierarchy, and word-level netlists for the gates. |
 | `dv-lsp` | bin | The language server: code browsing (symbols, definition, references, hover, completion) on `svlang::syntax`, and lint diagnostics with quick fixes from `dv-lint`. |
 | `dv-map` | bin | Prints the static UVM component tree of a testbench (text or JSON). |
@@ -80,7 +80,7 @@ byte offset). For a token a macro produced, `origin` is the macro use and
 `written` is where its text was written (in the `define body or a macro
 argument). `sv_semantic::Locator` turns these into `dv_model::Loc` (1-based
 line and column) with one file table per design, and records the
-expansion site, which is where uvmcheck reports findings on macro code.
+expansion site, which is where svlang-lint reports findings on macro code.
 
 **Compilation units.** `sv_syntax::parse_files` gives one tree per file
 with macros shared across files, as simulators compile a file list.
@@ -193,13 +193,13 @@ built with `--features slang` where a gate uses `--slang`; most need
 | `expr_gate.py` | expression types from `dv-lint --exprs` |
 | `spec_gate.py` | specialization counts from `dv-lint --specs` |
 | `netlist_gate.py` | word-level RTL lowering, memory blasting, and fail-closed diagnostics from `dv-build --netlist` |
-| `lint_parity.py` | dv-lint findings against uvmcheck's |
+| `lint_parity.py` | dv-lint findings against svlang-lint's |
 
 Plus `cargo test` (native) and `cargo test --workspace --features slang`
 (also the Slang bridge and the tests that load through Slang), and
 `rust_gate.sh`: `cargo fmt --check` (`rustfmt.toml`) and Clippy with
 `-D warnings` on all targets, natively and with `--features slang` when
-libuvmcheck_model is built. Clippy takes the MSRV from `rust-version` in
+libsvlang_lint_model is built. Clippy takes the MSRV from `rust-version` in
 the root `Cargo.toml`. A change to the front end should keep
 every gate where it was; a change to a rule should keep `lint_parity.py`
 identical.

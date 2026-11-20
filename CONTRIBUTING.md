@@ -1,6 +1,6 @@
-# Contributing to UVMCheck
+# Contributing to svlang-lint
 
-Thank you for your interest in contributing to **UVMCheck**! We welcome bug reports, feature suggestions, architectural improvements, and new verification rules.
+Thank you for your interest in contributing to **svlang-lint**! We welcome bug reports, feature suggestions, architectural improvements, and new verification rules.
 
 ---
 
@@ -19,7 +19,7 @@ Please be respectful, constructive, and collaborative in all issues, pull reques
 - **Scripting:** Python 3.9+ (for the regression test runner)
 
 ### Memory-Bounded Build Workflow
-UVMCheck is configured with CMake presets and Ninja job pools to prevent out-of-memory compiler spikes when building heavy AST visitors:
+svlang-lint is configured with CMake presets and Ninja job pools to prevent out-of-memory compiler spikes when building heavy AST visitors:
 
 ```bash
 # Clone the repository
@@ -50,7 +50,7 @@ git config core.hooksPath tools/hooks
 
 ## Adding a New Verification Rule
 
-UVMCheck's architecture makes it straightforward to add new rules without modifying core engine logic.
+svlang-lint's architecture makes it straightforward to add new rules without modifying core engine logic.
 
 ### 1. Choose Rule Category & ID
 Locate the relevant category directory under `cpp/src/rules/`:
@@ -72,13 +72,13 @@ Locate the relevant category directory under `cpp/src/rules/`:
 Rules in `errors/`, `design/`, `metrics/` and `readability/` (and the SV-BUG, SV-RSC, SV-CNC-003/004 and
 SV-THR-003 rules) build on shared helpers instead of re-implementing them:
 
-- `uvmcheck/rules/SweSupport.h`: UVM role of a class (driver, monitor, scoreboard, env, test, config,
+- `svlang-lint/rules/SweSupport.h`: UVM role of a class (driver, monitor, scoreboard, env, test, config,
   register model ...), user classes and methods with the UVM library filtered out, `uvm_*` report macro
   handling for both the test stub and real uvm-core (`isReportGuard`, `reportLevel`, `alwaysExits`), written
   and referenced symbols, and `UserCodeVisitor`, a visitor root that skips the UVM library.
-- `uvmcheck/rules/CodeMetrics.h`: per-routine metrics (cognitive and cyclomatic complexity, nesting,
+- `svlang-lint/rules/CodeMetrics.h`: per-routine metrics (cognitive and cyclomatic complexity, nesting,
   statements) and per-class metrics (WMC, ATFD, TCC, LCOM4, CBO, DIT), computed once per compilation.
-- `uvmcheck/rules/PathWalker.h`: a small path-sensitive walker for rules that track state along paths.
+- `svlang-lint/rules/PathWalker.h`: a small path-sensitive walker for rules that track state along paths.
 
 Thresholds go through `swe::ruleOption("<RULE-ID>", "<key>", default)` so the project config can override
 them per rule. Opinionated rules use the category `Advisory`: they are off unless `--preset advisory`,
@@ -91,10 +91,10 @@ Create `cpp/src/rules/<category>/YourRule.cpp`. Rules hand their visitor to the
 engine's shared walk instead of walking the design themselves:
 
 ```cpp
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
 
-namespace uvmcheck::rules::uvm {
+namespace svlang_lint::rules::uvm {
 
 // Derive from engine::AstVisitor (elaborated AST) or engine::SyntaxVisitor
 // (syntax trees). They are drop-in replacements for slang's visitors.
@@ -126,13 +126,13 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::uvm
+} // namespace svlang_lint::rules::uvm
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createYourRule() { return std::make_unique<uvm::YourRule>(); }
-} // namespace uvmcheck::rules
+} // namespace svlang_lint::rules
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createYourRule)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createYourRule)
 ```
 
 When a finding has a second half, say where it is. `addViolation` returns the
@@ -147,7 +147,7 @@ diags.addRelated(v, original.location, "first copy, in 'my_driver'");
 diags.setRange(v, stmt.sourceRange); // optional; defaults to the identifier at the location
 ```
 
-`getCategory()` must return one of the categories in `ruleCategories()` (`uvmcheck/rules/Rule.h`);
+`getCategory()` must return one of the categories in `ruleCategories()` (`svlang-lint/rules/Rule.h`);
 the category also sets the rule's default presets.
 
 **How the engine runs it.** `co_await ctx.visitAst(v)` suspends the rule; the
@@ -173,7 +173,7 @@ which only shrinks. `swe::UserCodeVisitor` takes part in the shared walk.
 as the reference `--engine isolated` mode.
 
 ### 3. Register and Document the Rule
-The `UVMCHECK_REGISTER_RULE` line at the end of the rule file registers it; there is no central
+The `SVLANG_LINT_REGISTER_RULE` line at the end of the rule file registers it; there is no central
 list to edit. If the rule enforces a guideline of the
 [UVM Methodology Guide](docs/methodology/README.md), add its ID to that guideline in
 `cpp/src/rules/Guidelines.cpp`. The published catalog is generated from the native
@@ -182,7 +182,7 @@ and description (`crates/dv-lint/src/rules/<category>/mod.rs`). Regenerate the d
 check that this engine agrees with them:
 
 ```bash
-cargo build -p dv-lint --bin uvmcheck
+cargo build -p dv-lint --bin svlang-lint
 python3 tools/codegen/gen_rule_docs.py          # docs/rules/catalog.json, docs/rules/README.md, MG "Enforced by" lines
 python3 tools/codegen/gen_rule_docs.py --check  # what CI runs: fails if any of them is stale
 python3 cpp/tests/test_catalog.py               # the C++ rules declare what the catalog says
@@ -192,7 +192,7 @@ The guide also describes how to turn a software-engineering principle into a rul
 score a candidate before it runs by default.
 
 ### 4. Create Paired Unit Tests
-Every rule in UVMCheck **must** have paired `bad.sv` and `good.sv` test cases plus an `expect.json`:
+Every rule in svlang-lint **must** have paired `bad.sv` and `good.sv` test cases plus an `expect.json`:
 1. Create directory `testdata/rules/<category>/<RULE_ID>/`.
 2. Add `bad.sv` containing an isolated violation that should trigger the rule.
 3. Add `good.sv` containing the compliant implementation that should pass cleanly without warnings.
@@ -220,8 +220,8 @@ git clone --depth 1 --branch 2020.3.1 https://github.com/accellera-official/uvm-
 python3 cpp/tests/regression.py --mode all-rules --uvm-home ../uvm-core \
     --baseline cpp/tests/baselines/baseline_uvm_core.json
 
-# Everything via CTest (suite 3 only when UVMCHECK_UVM_HOME is set at configure time)
-cmake --preset reference -DUVMCHECK_UVM_HOME=$PWD/../uvm-core
+# Everything via CTest (suite 3 only when SVLANG_LINT_UVM_HOME is set at configure time)
+cmake --preset reference -DSVLANG_LINT_UVM_HOME=$PWD/../uvm-core
 ctest --test-dir build --output-on-failure
 ```
 

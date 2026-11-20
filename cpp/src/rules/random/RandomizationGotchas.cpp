@@ -1,6 +1,6 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
-#include "uvmcheck/rules/SweSupport.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
+#include "svlang_lint/rules/SweSupport.h"
 #include "slang/ast/Constraints.h"
 #include "slang/ast/EvalContext.h"
 #include "slang/ast/expressions/CallExpression.h"
@@ -13,7 +13,7 @@
 #include <string>
 #include <unordered_set>
 
-namespace uvmcheck::rules::random {
+namespace svlang_lint::rules::random {
 
 using namespace slang::ast;
 
@@ -325,9 +325,9 @@ private:
     }
 };
 
-} // namespace uvmcheck::rules::random
+} // namespace svlang_lint::rules::random
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createRandomizeInsideAssert() {
     return std::make_unique<random::RandomizeInsideAssert>();
 }
@@ -337,8 +337,8 @@ std::unique_ptr<Rule> createDistWideRangeColonEq() {
 std::unique_ptr<Rule> createUnrelatedSolveBefore() {
     return std::make_unique<random::UnrelatedSolveBefore>();
 }
-} // namespace uvmcheck::rules
+} // namespace svlang_lint::rules
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createRandomizeInsideAssert)
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createDistWideRangeColonEq)
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createUnrelatedSolveBefore)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createRandomizeInsideAssert)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createDistWideRangeColonEq)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createUnrelatedSolveBefore)

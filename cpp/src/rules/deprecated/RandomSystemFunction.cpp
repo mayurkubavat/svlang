@@ -1,9 +1,9 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
 #include "slang/ast/ASTVisitor.h"
 #include "slang/ast/expressions/CallExpression.h"
 
-namespace uvmcheck::rules::deprecated {
+namespace svlang_lint::rules::deprecated {
 
 class RandomSystemFunctionVisitor : public engine::AstVisitor<RandomSystemFunctionVisitor> {
 public:
@@ -46,12 +46,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::deprecated
+} // namespace svlang_lint::rules::deprecated
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createRandomSystemFunction() {
     return std::make_unique<deprecated::RandomSystemFunction>();
 }
 }
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createRandomSystemFunction)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createRandomSystemFunction)

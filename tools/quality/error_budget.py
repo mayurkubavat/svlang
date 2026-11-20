@@ -3,7 +3,7 @@
 The ERROR budget: how many ERROR findings each rule may report on code that
 is known to be clean.
 
-    python3 tools/quality/error_budget.py --binary target/release/uvmcheck [--update [--allow-raise]]
+    python3 tools/quality/error_budget.py --binary target/release/svlang-lint [--update [--allow-raise]]
 
 The corpus (tools/quality/precision_corpus.json) is reviewed, simulator-clean
 code such as Accellera's UVM library, so an ERROR finding there is almost
@@ -45,7 +45,7 @@ def errors_by_rule(report):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0].strip())
-    ap.add_argument("--binary", default="target/release/uvmcheck")
+    ap.add_argument("--binary", default="target/release/svlang-lint")
     ap.add_argument("--corpus", default=str(HERE / "precision_corpus.json"))
     ap.add_argument("--budget", default=str(HERE / "error_budget.json"))
     ap.add_argument("--update", action="store_true", help="rewrite the budget from this run")

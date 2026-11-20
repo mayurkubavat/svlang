@@ -1,10 +1,10 @@
 [package]
 name = "sv-slang"
-description = "Raw FFI to libuvmcheck_model, the slang-backed design model"
+description = "Raw FFI to libsvlang_lint_model, the slang-backed design model"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
 publish = false
-links = "uvmcheck_model"
+links = "svlang_lint_model"
 build = "build.rs"

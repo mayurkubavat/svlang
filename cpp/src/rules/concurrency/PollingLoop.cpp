@@ -1,11 +1,11 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
-#include "uvmcheck/rules/SweSupport.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
+#include "svlang_lint/rules/SweSupport.h"
 #include "slang/ast/statements/ConditionalStatements.h"
 #include "slang/ast/statements/LoopStatements.h"
 #include "slang/ast/statements/MiscStatements.h"
 
-namespace uvmcheck::rules::concurrency {
+namespace svlang_lint::rules::concurrency {
 
 using namespace slang::ast;
 
@@ -126,12 +126,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::concurrency
+} // namespace svlang_lint::rules::concurrency
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createPollingLoop() {
     return std::make_unique<concurrency::PollingLoop>();
 }
 }
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createPollingLoop)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createPollingLoop)

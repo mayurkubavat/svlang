@@ -1,8 +1,8 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
-#include "uvmcheck/model/SlangModel.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
+#include "svlang_lint/model/SlangModel.h"
 
-namespace uvmcheck::rules::uvm {
+namespace svlang_lint::rules::uvm {
 
 class UvmPhaseSignatureMismatch : public Rule {
 public:
@@ -15,9 +15,9 @@ public:
     std::string_view getCategory() const override { return "UVM"; }
     core::Severity getDefaultSeverity() const override { return core::Severity::Error; }
 
-    // Reads only uvmcheck::model, not slang's AST.
+    // Reads only svlang_lint::model, not slang's AST.
     void run(slang::ast::Compilation& /*compilation*/,
-             const uvmcheck::uvm::UvmModel& uvmModel,
+             const svlang_lint::uvm::UvmModel& uvmModel,
              core::DiagnosticEngine& diags) override {
         const model::Model& design = uvmModel.facade();
         for (const model::Class& cls : design.classes()) {
@@ -28,8 +28,8 @@ public:
                 if (sub.isBuiltIn) continue;
 
                 const std::string& subName = sub.name;
-                bool isFuncPhase = uvmcheck::uvm::UvmModel::isFunctionPhase(subName);
-                bool isTskPhase = uvmcheck::uvm::UvmModel::isTaskPhase(subName);
+                bool isFuncPhase = svlang_lint::uvm::UvmModel::isFunctionPhase(subName);
+                bool isTskPhase = svlang_lint::uvm::UvmModel::isTaskPhase(subName);
 
                 if (!isFuncPhase && !isTskPhase) continue;
                 const auto where = model::toSlang(sub.loc);
@@ -103,12 +103,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::uvm
+} // namespace svlang_lint::rules::uvm
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createUvmPhaseSignatureMismatch() {
     return std::make_unique<uvm::UvmPhaseSignatureMismatch>();
 }
 }
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createUvmPhaseSignatureMismatch)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createUvmPhaseSignatureMismatch)

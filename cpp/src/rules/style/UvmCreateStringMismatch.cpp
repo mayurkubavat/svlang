@@ -1,12 +1,12 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
 #include "slang/syntax/SyntaxVisitor.h"
 #include "slang/syntax/SyntaxTree.h"
 #include "slang/syntax/AllSyntax.h"
 #include <algorithm>
 #include <cctype>
 
-namespace uvmcheck::rules::style {
+namespace svlang_lint::rules::style {
 
 class FactoryCreateVisitor : public engine::SyntaxVisitor<FactoryCreateVisitor> {
 public:
@@ -94,12 +94,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::style
+} // namespace svlang_lint::rules::style
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createUvmCreateStringMismatch() {
     return std::make_unique<style::UvmCreateStringMismatch>();
 }
 }
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createUvmCreateStringMismatch)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createUvmCreateStringMismatch)

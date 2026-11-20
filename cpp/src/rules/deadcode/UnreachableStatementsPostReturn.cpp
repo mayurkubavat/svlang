@@ -1,10 +1,10 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
 #include "slang/ast/ASTVisitor.h"
 #include "slang/ast/Statement.h"
 #include "slang/ast/statements/MiscStatements.h"
 
-namespace uvmcheck::rules::deadcode {
+namespace svlang_lint::rules::deadcode {
 
 class UnreachableVisitor : public engine::AstVisitor<UnreachableVisitor> {
 public:
@@ -65,12 +65,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::deadcode
+} // namespace svlang_lint::rules::deadcode
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createUnreachableStatementsPostReturn() {
     return std::make_unique<deadcode::UnreachableStatementsPostReturn>();
 }
 }
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createUnreachableStatementsPostReturn)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createUnreachableStatementsPostReturn)

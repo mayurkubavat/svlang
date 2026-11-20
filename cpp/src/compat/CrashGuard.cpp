@@ -1,7 +1,7 @@
-#include "uvmcheck/compat/CrashGuard.h"
+#include "svlang_lint/compat/CrashGuard.h"
 
-#include "uvmcheck/compat/Overlay.h"
-#include "uvmcheck/core/Diagnostic.h"
+#include "svlang_lint/compat/Overlay.h"
+#include "svlang_lint/core/Diagnostic.h"
 
 #include <cerrno>
 #include <csignal>
@@ -20,7 +20,7 @@
 #include <unistd.h>
 #endif
 
-namespace uvmcheck::compat {
+namespace svlang_lint::compat {
 
 using namespace slang::syntax;
 
@@ -226,7 +226,7 @@ core::Violation CrashGuard::crashFinding(const Outcome& outcome, std::vector<cor
     v.line = 1;
     v.column = 1;
     if (outcome.stage == "rules" || outcome.stage == "report") {
-        v.message = "uvmcheck crashed " + how +
+        v.message = "svlang-lint crashed " + how +
                     "; no findings could be produced. Please report it with the sources that trigger it; "
                     "--engine isolated narrows it to one rule.";
     } else {
@@ -237,4 +237,4 @@ core::Violation CrashGuard::crashFinding(const Outcome& outcome, std::vector<cor
     return v;
 }
 
-} // namespace uvmcheck::compat
+} // namespace svlang_lint::compat

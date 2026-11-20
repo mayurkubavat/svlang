@@ -16,7 +16,7 @@ struct Style {
     mandatory_matching_end_label: bool,
     /// `require_file_header` with its pattern, compiled case-insensitively
     /// (`std::regex::icase`); off when the pattern does not compile, as in
-    /// uvmcheck.
+    /// svlang-lint.
     header: Option<(String, crate::pattern::Pattern)>,
     file_matches_class_name: bool,
 }

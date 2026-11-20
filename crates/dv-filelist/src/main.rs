@@ -5,7 +5,7 @@
 //!
 //! Default output is a summary plus every problem with its file:line.
 //! --args prints the normalized compile options, one per line: a flat .f
-//! that uvmcheck (and slang) read directly. --json prints everything.
+//! that svlang-lint (and slang) read directly. --json prints everything.
 //! --load also compiles the design with the native front end (sv-semantic) and
 //! reports the result; --slang compiles it through Slang instead, when built
 //! with the `slang` feature.

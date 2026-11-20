@@ -1,12 +1,12 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
 #include "slang/syntax/AllSyntax.h"
 #include "slang/syntax/SyntaxTree.h"
 #include "slang/syntax/SyntaxVisitor.h"
 #include <unordered_map>
 #include <unordered_set>
 
-namespace uvmcheck::rules::deadcode {
+namespace svlang_lint::rules::deadcode {
 
 class ClassPropertyUsageVisitor : public slang::syntax::SyntaxVisitor<ClassPropertyUsageVisitor> {
 public:
@@ -134,12 +134,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::deadcode
+} // namespace svlang_lint::rules::deadcode
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createUnreadClassProperty() {
     return std::make_unique<deadcode::UnreadClassProperty>();
 }
 }
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createUnreadClassProperty)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createUnreadClassProperty)

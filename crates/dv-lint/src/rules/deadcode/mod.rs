@@ -12,6 +12,7 @@ mod empty_task_or_function;
 mod unreachable_statements_post_return;
 mod unread_class_property;
 mod unreferenced_parameter;
+mod unreferenced_typedef;
 mod unused_generate_block;
 mod unused_local_method;
 mod unused_pure_routine_result;
@@ -48,5 +49,6 @@ pub(crate) fn rules() -> Vec<Rule> {
         },
         Rule { id: "SV-DED-014", name: "UnusedLocalMethod", category: "Maintainability", severity: Severity::Warning, profiles: SMELLS, guidelines: &["MG-9.1"], experimental: false, native: false, about: "Flags a local task or function that no method of its class calls. A local method is invisible outside the class, so with no caller it is dead.", check: Check::Syntax(unused_local_method::unused_local_method),
         },
+        Rule { id: "SV-DED-016", name: "UnreferencedTypedef", category: "Maintainability", severity: Severity::Info, profiles: SMELLS, guidelines: &[], experimental: false, native: true, about: "Flags typedef declarations inside modules, interfaces, classes, and subroutines whose type alias is never referenced anywhere in scope.", check: Check::Syntax(unreferenced_typedef::unreferenced_typedef) },
     ]
 }

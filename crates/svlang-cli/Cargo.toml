@@ -15,4 +15,4 @@ name = "svlang"
 path = "src/main.rs"
 
 [dependencies]
-svlang = { version = "0.1.1", path = "../svlang" }
+svlang = { version = "0.2.0", path = "../svlang" }

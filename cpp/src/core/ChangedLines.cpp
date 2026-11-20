@@ -1,11 +1,11 @@
-#include "uvmcheck/core/ChangedLines.h"
+#include "svlang_lint/core/ChangedLines.h"
 
-#include "uvmcheck/core/Process.h"
+#include "svlang_lint/core/Process.h"
 
 #include <cstdlib>
 #include <sstream>
 
-namespace uvmcheck::core {
+namespace svlang_lint::core {
 
 namespace fs = std::filesystem;
 
@@ -108,4 +108,4 @@ bool ChangedLines::contains(const std::string& filePath, size_t line) const {
     return false;
 }
 
-} // namespace uvmcheck::core
+} // namespace svlang_lint::core

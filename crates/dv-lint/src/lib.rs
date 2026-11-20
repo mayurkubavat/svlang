@@ -1,10 +1,10 @@
-//! UVMCheck's rules in Rust, over [`dv_model::Design`] and `sv-syntax` trees.
+//! svlang-lint's rules in Rust, over [`dv_model::Design`] and `sv-syntax` trees.
 //!
 //! Each rule is a line-for-line port of its C++ twin under `cpp/src/rules/`.
 //! Model rules read only the class model, so any front end that fills a
 //! `Design` (slang or the native sv-semantic) can feed them; syntax rules (see
 //! [`syntax`]) read the native syntax tree. Messages are copied verbatim so
-//! findings compare one to one with `uvmcheck` (see `tools/gates/lint_parity.py`).
+//! findings compare one to one with `svlang-lint` (see `tools/gates/lint_parity.py`).
 //!
 //! # How a run works
 //!
@@ -100,21 +100,23 @@ pub mod tbmap;
 mod workspace;
 pub use workspace::{Checked, Workspace};
 
-static INLINE_WAIVED: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
-
-/// How many findings inline waiver comments have dropped so far.
+/// How many findings inline waiver comments have dropped so far in the process session.
 pub fn inline_waived() -> usize {
-    INLINE_WAIVED.load(std::sync::atomic::Ordering::Relaxed)
+    session::with(|s| s.waiver_state.lock().map_or(0, |st| st.inline_waived))
 }
 
 /// Sets the count [`inline_waived`] reports (a run replayed from the cache).
 pub fn set_inline_waived(n: usize) {
-    INLINE_WAIVED.store(n, std::sync::atomic::Ordering::Relaxed);
+    session::with(|s| {
+        if let Ok(mut st) = s.waiver_state.lock() {
+            st.inline_waived = n;
+        }
+    });
 }
 
 /// A UVM-WV-001 error for a waiver comment whose pattern does not compile:
 /// reported whatever the config, waivers and `--changed-since` keep, as
-/// uvmcheck adds these after them.
+/// svlang-lint adds these after them.
 pub fn is_bad_waiver_pattern(f: &Finding) -> bool {
     waivers::is_bad_pattern(f)
 }
@@ -122,7 +124,7 @@ pub fn is_bad_waiver_pattern(f: &Finding) -> bool {
 /// Drops the findings inline waiver comments waive (findings made outside
 /// the rules, such as Python rules'), counting them in [`inline_waived`].
 pub fn apply_inline_waivers(found: &mut Vec<Finding>, files: &[String]) {
-    INLINE_WAIVED.fetch_add(waivers::apply(found, files), std::sync::atomic::Ordering::Relaxed);
+    waivers::apply(found, files);
 }
 
 /// The profiles that run when no preset is named (RuleProfile bits):
@@ -201,7 +203,7 @@ pub enum Severity {
 }
 
 impl Severity {
-    /// The name uvmcheck prints (`"WARNING"`).
+    /// The name svlang-lint prints (`"WARNING"`).
     pub fn as_str(self) -> &'static str {
         match self {
             Severity::Info => "INFO",
@@ -221,7 +223,7 @@ pub struct Finding {
     pub name: &'static str,
     /// Severity, as the C++ rule reports it.
     pub severity: Severity,
-    /// The message, word for word as uvmcheck prints it.
+    /// The message, word for word as svlang-lint prints it.
     pub message: String,
     /// Where it is (see [`Finding::position`] for where it is reported).
     pub loc: Loc,
@@ -232,7 +234,7 @@ pub struct Finding {
 }
 
 impl Finding {
-    /// File, line and column as uvmcheck reports them: for code from a macro,
+    /// File, line and column as svlang-lint reports them: for code from a macro,
     /// the line of the outermost expansion with column 0.
     pub fn position<'d>(&self, d: &'d Design) -> (&'d str, u32, u32) {
         self.position_in(d.files())
@@ -327,7 +329,7 @@ pub struct Rule {
     pub guidelines: &'static [&'static str],
     /// Runs only with `--experimental`.
     pub experimental: bool,
-    /// Only this engine has it: the C++ engine (uvmcheck-slang) does not.
+    /// Only this engine has it: the C++ engine (svlang-lint-slang) does not.
     pub native: bool,
     /// What the rule flags and why, for the catalog and `--explain`.
     pub about: &'static str,
@@ -365,7 +367,7 @@ pub fn add_tops(tops: &[String]) {
 }
 
 /// Reports nothing in library files (`-v`, `-y`): they are read only to
-/// resolve instances. Off by default, as uvmcheck reports in them. Sets the
+/// resolve instances. Off by default, as svlang-lint reports in them. Sets the
 /// process's session.
 pub fn set_skip_libraries(on: bool) {
     session::change_process(|s| s.skip_libraries = on);
@@ -386,7 +388,7 @@ pub fn sub_rules(id: &str) -> &'static [Sub] {
     }
 }
 
-/// Every ported rule, in the order uvmcheck registers them (by id).
+/// Every ported rule, in the order svlang-lint registers them (by id).
 pub fn rules() -> Vec<Rule> {
     let mut v = rules::all();
     v.sort_by_key(|r| r.id);
@@ -394,7 +396,7 @@ pub fn rules() -> Vec<Rule> {
 }
 
 /// Runs the rules whose ids pass `keep` and returns their findings in a stable
-/// order (file, line, column, rule). As in uvmcheck's DiagnosticEngine, nothing
+/// order (file, line, column, rule). As in svlang-lint's DiagnosticEngine, nothing
 /// is reported in the test UVM mock (`uvm_mock.svh`).
 /// Only model rules run here; see [`lint_all`] for syntax rules too.
 pub fn lint(design: &Design, keep: impl Fn(&str) -> bool) -> Vec<Finding> {
@@ -438,6 +440,7 @@ pub(crate) fn lint_from(
 ) -> (Option<Design>, (Vec<String>, Vec<Finding>)) {
     let all: Vec<Rule> = rules().into_iter().filter(|r| keep(r.id)).collect();
     let skip_libs = settings.skip_libraries;
+    let waiver_state = settings.waiver_state.clone();
     let gen = shared::begin(settings);
     let jobs = jobs().min(all.len());
     let built = std::sync::OnceLock::new();
@@ -459,7 +462,7 @@ pub(crate) fn lint_from(
     shared::end(gen);
     let (files, mut f) = out;
     // Nothing is reported in the test UVM mock, nor in library files (-v,
-    // -y) after `--skip-libraries`; uvmcheck reports in libraries.
+    // -y) after `--skip-libraries`; svlang-lint reports in libraries.
     let library: std::collections::HashSet<String> = trees
         .iter()
         .filter(|t| skip_libs && t.library)
@@ -470,7 +473,7 @@ pub(crate) fn lint_from(
         !file.contains("uvm_mock.svh") && !library.contains(file)
     });
     dedup(&mut f, &files);
-    INLINE_WAIVED.fetch_add(waivers::apply(&mut f, &files), std::sync::atomic::Ordering::Relaxed);
+    waivers::apply_into(&mut f, &files, &waiver_state);
     f.sort_by(|a, b| (a.position_in(&files), a.rule).cmp(&(b.position_in(&files), b.rule)));
     (built.into_inner(), (files, f))
 }
@@ -478,7 +481,7 @@ pub(crate) fn lint_from(
 /// One finding per rule, position and message. A rule that walks the
 /// elaborated design meets the same line once per module instance and class
 /// specialization; the copies say nothing new, and their number depends on
-/// how often (and in what order) the design is elaborated. uvmcheck merges
+/// how often (and in what order) the design is elaborated. svlang-lint merges
 /// them the same way. The first copy, with its related locations, is kept.
 fn dedup(f: &mut Vec<Finding>, files: &[String]) {
     let mut seen = std::collections::HashSet::new();

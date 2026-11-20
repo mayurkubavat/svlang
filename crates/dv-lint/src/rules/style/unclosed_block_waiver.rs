@@ -1,4 +1,4 @@
-//! SV-WVR-001 (UnclosedBlockWaiver): Scoped block waiver (`uvmcheck:off`,
+//! SV-WVR-001 (UnclosedBlockWaiver): Scoped block waiver (`svlang-lint:off`,
 //! `verissimo_lint: waive_start`, `lint:waive-start`) never closed before EOF.
 
 use dv_model::Loc;
@@ -33,7 +33,7 @@ pub(crate) fn unclosed_block_waiver(c: &Cst, out: &mut Sink) {
                 "UnclosedBlockWaiver",
                 Severity::Warning,
                 format!(
-                    "Scoped block waiver for '{}' opened on line {} is never closed with a matching 'uvmcheck:on' or 'verissimo_lint: waive_stop' directive, silently suppressing diagnostics through the end of the file.",
+                    "Scoped block waiver for '{}' opened on line {} is never closed with a matching 'svlang-lint:on' or 'verissimo_lint: waive_stop' directive, silently suppressing diagnostics through the end of the file.",
                     rules, line
                 ),
                 Loc { file: base_loc.file, line, column: 1, expansion: None },

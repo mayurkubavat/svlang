@@ -1,11 +1,11 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
-#include "uvmcheck/rules/SweSupport.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
+#include "svlang_lint/rules/SweSupport.h"
 #include "slang/ast/expressions/CallExpression.h"
 #include "slang/ast/expressions/LiteralExpressions.h"
 #include <string>
 
-namespace uvmcheck::rules::uvm {
+namespace svlang_lint::rules::uvm {
 
 using namespace slang::ast;
 
@@ -70,12 +70,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::uvm
+} // namespace svlang_lint::rules::uvm
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createObjectionWithoutDescription() {
     return std::make_unique<uvm::ObjectionWithoutDescription>();
 }
-} // namespace uvmcheck::rules
+} // namespace svlang_lint::rules
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createObjectionWithoutDescription)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createObjectionWithoutDescription)

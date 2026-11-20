@@ -28,6 +28,7 @@ mod randomize_inside_assert;
 mod randomize_missing_super;
 mod redundant_constraint;
 mod relational_constraint_cycle;
+mod soft_constraint_shadowed_in_same_class;
 mod static_constraint;
 mod unallocated_rand_object_array;
 mod unchecked_randomize;
@@ -96,5 +97,6 @@ pub(crate) fn rules() -> Vec<Rule> {
         Rule { id: "SV-RND-043", name: "DanglingDisableSoft", category: "Randomization", severity: Severity::Warning, profiles: SOUNDNESS, guidelines: &[], experimental: false, native: true, about: "Flags 'disable soft <var>' directives in constraint blocks when neither the class nor any base class declares a soft constraint referencing <var>.", check: Check::Syntax(dangling_disable_soft::dangling_disable_soft) },
         Rule { id: "SV-RND-044", name: "UniquePigeonholeOverflow", category: "Randomization", severity: Severity::Error, profiles: SOUNDNESS, guidelines: &[], experimental: false, native: true, about: "Flags 'unique { arr }' constraints on fixed-size unpacked arrays whose element count exceeds the cardinality of the element integral type (pigeonhole overflow), making randomize() unsatisfiable.", check: Check::Syntax(unique_pigeonhole_overflow::unique_pigeonhole_overflow) },
         Rule { id: "SV-RND-045", name: "RandModeInRandomizeCallback", category: "Randomization", severity: Severity::Warning, profiles: SOUNDNESS, guidelines: &[], experimental: false, native: true, about: "Flags mutating .rand_mode() or .constraint_mode() calls inside post_randomize(), where solver execution has already finished and mode mutations silently leak into subsequent randomize() calls.", check: Check::Syntax(rand_mode_in_randomize_callback::rand_mode_in_randomize_callback) },
+        Rule { id: "SV-RND-046", name: "SoftConstraintShadowedInSameClass", category: "Randomization", severity: Severity::Warning, profiles: SOUNDNESS, guidelines: &[], experimental: false, native: true, about: "Flags soft constraints on a rand property that are unconditionally shadowed by a hard constraint on the same property in the very same class.", check: Check::Syntax(soft_constraint_shadowed_in_same_class::soft_constraint_shadowed_in_same_class) },
     ]
 }

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-uvmcheck.report: merge, diff and trend over JSON reports. Findings keep
+svlang_lint.report: merge, diff and trend over JSON reports. Findings keep
 their identity when lines move (fingerprints), so a diff after an edit
 shows only what really changed.
 """
@@ -56,16 +56,16 @@ def lint(binary, cwd, src, out):
 
 
 def report(*args):
-    return subprocess.run([sys.executable, "-m", "uvmcheck.report", *args], capture_output=True, text=True,
+    return subprocess.run([sys.executable, "-m", "svlang_lint.report", *args], capture_output=True, text=True,
                           cwd=REPO / "python")
 
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--binary", default="build/uvmcheck")
+    ap.add_argument("--binary", default="build/svlang-lint")
     args = ap.parse_args()
     binary = str(Path(args.binary).resolve())
-    print("[REPORT TEST] uvmcheck.report merge / diff / trend")
+    print("[REPORT TEST] svlang_lint.report merge / diff / trend")
 
     with tempfile.TemporaryDirectory() as tmp:
         d = Path(tmp)

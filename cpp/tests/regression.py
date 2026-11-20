@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-UVMCheck Per-Rule Test Runner
+svlang-lint Per-Rule Test Runner
 
 Each rule has a folder testdata/rules/<category>/<RULE-ID>/ holding:
   bad.sv       must trigger the rule
@@ -62,15 +62,15 @@ DATA_DIR = Path(__file__).resolve().parents[2] / "testdata"
 EXPECT_FILE = "expect.json"
 
 
-def find_uvmcheck_binary(explicit_path=None):
+def find_svlang_lint_binary(explicit_path=None):
     if explicit_path and os.path.isfile(explicit_path):
         return os.path.abspath(explicit_path)
 
     candidates = [
-        "build/uvmcheck",
-        "build-dev/uvmcheck",
-        "../build/uvmcheck",
-        "uvmcheck"
+        "build/svlang-lint",
+        "build-dev/svlang-lint",
+        "../build/svlang-lint",
+        "svlang-lint"
     ]
     for c in candidates:
         if os.path.isfile(c) and os.access(c, os.X_OK):
@@ -83,8 +83,8 @@ class Linter:
         self.binary = binary
         self.common_dir = Path(common_dir).resolve()
         self.uvm_home = Path(uvm_home).resolve() if uvm_home else None
-        # Run from an empty directory so a stray uvmcheck.json in the tree can't leak in
-        self.workdir = tempfile.mkdtemp(prefix="uvmcheck-tests-")
+        # Run from an empty directory so a stray svlang-lint.json in the tree can't leak in
+        self.workdir = tempfile.mkdtemp(prefix="svlang-lint-tests-")
         atexit.register(shutil.rmtree, self.workdir, ignore_errors=True)
 
     def run(self, sv_file, rule_id=None):
@@ -107,7 +107,7 @@ class Linter:
         else:
             # all-rules mode includes the opt-in Advisory and experimental rules
             cmd += ["--preset", "all", "--experimental"]
-        # Rule tests must not pick up the repository's own .uvmcheck/ configuration.
+        # Rule tests must not pick up the repository's own .svlang-lint/ configuration.
         # Every fixture is its own compile: a result cache would only fill the
         # disk (gigabytes with the real UVM library), so none is written.
         cmd += ["--no-config", "--no-cache", "--json", json_path, "--diag-json", diag_path]
@@ -265,8 +265,8 @@ def write_step_summary(title, total, failed, failure_list):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="UVMCheck Per-Rule Test Runner")
-    parser.add_argument("--binary", help="Path to uvmcheck binary")
+    parser = argparse.ArgumentParser(description="svlang-lint Per-Rule Test Runner")
+    parser.add_argument("--binary", help="Path to svlang-lint binary")
     parser.add_argument("--rule", help="Filter by rule ID (e.g. UVM-FAC-001)")
     parser.add_argument("--category", help="Filter by category (e.g. uvm, oop, random)")
     parser.add_argument("--mode", choices=["isolated", "all-rules"], default="isolated",
@@ -284,9 +284,9 @@ def main():
     parser.add_argument("--common-dir", default=str(DATA_DIR / "common"), help="Path to testdata/common include directory")
     args = parser.parse_args()
 
-    binary = find_uvmcheck_binary(args.binary)
+    binary = find_svlang_lint_binary(args.binary)
     if not binary:
-        print(f"{RED}Error: uvmcheck binary not found. Build the project first using 'cmake --build build'{RESET}")
+        print(f"{RED}Error: svlang-lint binary not found. Build the project first using 'cmake --build build'{RESET}")
         return 1
 
     rules_dir = Path(args.rules_dir)
@@ -309,8 +309,8 @@ def main():
             with open(args.baseline) as f:
                 baseline = json.load(f)
 
-    # Discover rules supported by this binary so C++ uvmcheck cleanly skips
-    # native-only rule directories (tested by cargo test / native uvmcheck).
+    # Discover rules supported by this binary so C++ svlang-lint cleanly skips
+    # native-only rule directories (tested by cargo test / native svlang-lint).
     supported_rules = None
     with tempfile.TemporaryDirectory() as tmp_cat:
         cat_path = Path(tmp_cat) / "cat.json"

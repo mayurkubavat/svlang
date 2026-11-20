@@ -2,8 +2,8 @@
 """
 Python rule API checks:
 
-- the sample rules in python/tests pass their bad/good tests through uvmcheck.testing,
-  run from outside the repository (the SDK is found wherever uvmcheck runs);
+- the sample rules in python/tests pass their bad/good tests through svlang_lint.testing,
+  run from outside the repository (the SDK is found wherever svlang-lint runs);
 - a rule customized by subclassing replaces its base (only the leaf runs);
 - rule options come from the project config (RuleConfig attributes);
 - a rule that raises does not hide the findings of the others.
@@ -40,16 +40,16 @@ def lint(binary, cwd, rules, source, *extra):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--binary", default=str(REPO / "build" / "uvmcheck"))
+    ap.add_argument("--binary", default=str(REPO / "build" / "svlang-lint"))
     binary = str(Path(ap.parse_args().binary).resolve())
 
     with tempfile.TemporaryDirectory() as tmp:
         env = dict(os.environ, PYTHONPATH=str(REPO / "python"))
-        res = subprocess.run([sys.executable, "-m", "uvmcheck.testing", "--binary", binary, "--rules", str(RULES),
+        res = subprocess.run([sys.executable, "-m", "svlang_lint.testing", "--binary", binary, "--rules", str(RULES),
                               "--tests", str(CASES), "--", "-I", str(COMMON)],
                              cwd=tmp, env=env, capture_output=True, text=True)
         print(res.stdout)
-        check(res.returncode == 0, "sample rules pass their tests via uvmcheck.testing")
+        check(res.returncode == 0, "sample rules pass their tests via svlang_lint.testing")
 
         found, _ = lint(binary, tmp, RULES, CASES / "PY-OVR-001" / "bad.sv")
         ovr = [v for v in found if v["ruleId"] == "PY-OVR-001"]
@@ -57,9 +57,9 @@ def main():
               "the subclassed rule runs instead of its base")
 
         proj = Path(tmp) / "proj"
-        (proj / ".uvmcheck").mkdir(parents=True)
-        (proj / ".uvmcheck" / "config.py").write_text(
-            "from uvmcheck.config import ProjectConfig, RuleConfig\n"
+        (proj / ".svlang-lint").mkdir(parents=True)
+        (proj / ".svlang-lint" / "config.py").write_text(
+            "from svlang_lint.config import ProjectConfig, RuleConfig\n"
             "class Project(ProjectConfig):\n"
             "    class UnreadConfigKey(RuleConfig):\n"
             "        rule = 'PY-CFG-001'\n"
@@ -71,7 +71,7 @@ def main():
         broken.mkdir()
         (broken / "a.py").write_text((RULES / "sample_rules.py").read_text())
         (broken / "b.py").write_text(
-            "from uvmcheck import Rule\n"
+            "from svlang_lint import Rule\n"
             "class Boom(Rule):\n"
             "    id = 'PY-BOOM-001'\n"
             "    def analyze(self, ctx):\n"
@@ -84,7 +84,7 @@ def main():
         fixing = Path(tmp) / "fix_rules"
         fixing.mkdir()
         (fixing / "fix.py").write_text(
-            "from uvmcheck import Fix, FixSafety, Rule\n"
+            "from svlang_lint import Fix, FixSafety, Rule\n"
             "class WithFix(Rule):\n"
             "    id = 'PY-FIX-001'\n"
             "    def analyze(self, ctx):\n"

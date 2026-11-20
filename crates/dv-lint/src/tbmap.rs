@@ -1,4 +1,4 @@
-//! `--map FILE`: the testbench map, as uvmcheck's TestbenchMap writes it:
+//! `--map FILE`: the testbench map, as svlang-lint's TestbenchMap writes it:
 //! the component tree from each test (component-typed properties are
 //! children), each component's TLM ports, connect() calls, config_db sets
 //! and gets and the findings inside it; then the config_db flows by field

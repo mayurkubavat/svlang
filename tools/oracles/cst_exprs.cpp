@@ -6,7 +6,7 @@
 // an expression are left out. The reference for tools/gates/cst_parity.py
 // --exprs.
 //
-//   uvmcheck_cst_exprs [+incdir+DIR]... [+define+NAME[=VALUE]]... FILE
+//   svlang_cst_exprs [+incdir+DIR]... [+define+NAME[=VALUE]]... FILE
 #include <cstdio>
 #include <string>
 

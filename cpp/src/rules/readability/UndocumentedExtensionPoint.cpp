@@ -1,12 +1,12 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
-#include "uvmcheck/rules/SweSupport.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
+#include "svlang_lint/rules/SweSupport.h"
 #include "slang/parsing/Token.h"
 #include "slang/syntax/SyntaxNode.h"
 
 #include <unordered_set>
 
-namespace uvmcheck::rules::readability {
+namespace svlang_lint::rules::readability {
 
 using namespace slang::ast;
 
@@ -84,12 +84,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::readability
+} // namespace svlang_lint::rules::readability
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createUndocumentedExtensionPoint() {
     return std::make_unique<readability::UndocumentedExtensionPoint>();
 }
 }
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createUndocumentedExtensionPoint)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createUndocumentedExtensionPoint)

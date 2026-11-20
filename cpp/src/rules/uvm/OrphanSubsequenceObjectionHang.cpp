@@ -1,6 +1,6 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
-#include "uvmcheck/uvm/UvmModel.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
+#include "svlang_lint/uvm/UvmModel.h"
 #include "slang/ast/ASTVisitor.h"
 #include "slang/ast/symbols/ClassSymbols.h"
 #include "slang/ast/symbols/SubroutineSymbols.h"
@@ -9,7 +9,7 @@
 #include "slang/ast/expressions/CallExpression.h"
 #include "slang/syntax/AllSyntax.h"
 
-namespace uvmcheck::rules::uvm {
+namespace svlang_lint::rules::uvm {
 
 class OrphanSubsequenceObjectionHang : public Rule {
 public:
@@ -23,7 +23,7 @@ public:
     core::Severity getDefaultSeverity() const override { return core::Severity::Error; }
 
     void run(slang::ast::Compilation& compilation,
-             const uvmcheck::uvm::UvmModel& uvmModel,
+             const svlang_lint::uvm::UvmModel& uvmModel,
              core::DiagnosticEngine& diags) override {
 
         class SequenceObjectionVisitor : public slang::ast::ASTVisitor<SequenceObjectionVisitor, slang::ast::VisitFlags::AllGood> {
@@ -103,12 +103,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::uvm
+} // namespace svlang_lint::rules::uvm
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createOrphanSubsequenceObjectionHang() {
     return std::make_unique<uvm::OrphanSubsequenceObjectionHang>();
 }
 }
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createOrphanSubsequenceObjectionHang)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createOrphanSubsequenceObjectionHang)

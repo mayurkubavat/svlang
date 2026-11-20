@@ -1,11 +1,11 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
-#include "uvmcheck/core/ConfigManager.h"
-#include "uvmcheck/style/NamingEngine.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
+#include "svlang_lint/core/ConfigManager.h"
+#include "svlang_lint/style/NamingEngine.h"
 
 #include <algorithm>
 
-namespace uvmcheck::rules::style {
+namespace svlang_lint::rules::style {
 
 class ConfigurableNamingEngineRule : public Rule {
 public:
@@ -18,7 +18,7 @@ public:
     core::Severity getDefaultSeverity() const override { return core::Severity::Warning; }
 
     std::vector<SubRule> getSubRules() const override {
-        uvmcheck::style::NamingEngine defaults;
+        svlang_lint::style::NamingEngine defaults;
         defaults.loadDefaultRules();
         std::vector<SubRule> subs;
         for (const auto& [kind, spec] : defaults.getRules()) {
@@ -29,7 +29,7 @@ public:
     }
 
     void run(slang::ast::Compilation& compilation,
-             const uvmcheck::uvm::UvmModel& uvmModel,
+             const svlang_lint::uvm::UvmModel& uvmModel,
              core::DiagnosticEngine& diags) override {
         core::ConfigManager::instance().getNamingEngine().run(compilation, uvmModel, diags);
     }
@@ -58,15 +58,15 @@ public:
     }
 
     void run(slang::ast::Compilation& compilation,
-             const uvmcheck::uvm::UvmModel& uvmModel,
+             const svlang_lint::uvm::UvmModel& uvmModel,
              core::DiagnosticEngine& diags) override {
         core::ConfigManager::instance().getStyleEngine().run(compilation, uvmModel, diags);
     }
 };
 
-} // namespace uvmcheck::rules::style
+} // namespace svlang_lint::rules::style
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createConfigurableNamingEngine() {
     return std::make_unique<style::ConfigurableNamingEngineRule>();
 }
@@ -74,7 +74,7 @@ std::unique_ptr<Rule> createConfigurableNamingEngine() {
 std::unique_ptr<Rule> createConfigurableStyleEngine() {
     return std::make_unique<style::ConfigurableStyleEngineRule>();
 }
-} // namespace uvmcheck::rules
+} // namespace svlang_lint::rules
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createConfigurableNamingEngine)
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createConfigurableStyleEngine)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createConfigurableNamingEngine)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createConfigurableStyleEngine)

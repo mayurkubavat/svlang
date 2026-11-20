@@ -1,9 +1,9 @@
 #include <cctype>
-#include "uvmcheck/core/Diagnostic.h"
-#include "uvmcheck/core/FixPlanner.h"
-#include "uvmcheck/core/ProjectConfig.h"
+#include "svlang_lint/core/Diagnostic.h"
+#include "svlang_lint/core/FixPlanner.h"
+#include "svlang_lint/core/ProjectConfig.h"
 
-namespace uvmcheck::core {
+namespace svlang_lint::core {
 
 static bool isMockLibrary(std::string_view fileName) {
     return fileName.find("uvm_mock.svh") != std::string_view::npos;
@@ -228,4 +228,4 @@ void DiagnosticEngine::printSummary(std::ostream& os) const {
     }
 }
 
-} // namespace uvmcheck::core
+} // namespace svlang_lint::core

@@ -1,8 +1,8 @@
-#include "uvmcheck/core/ProjectInit.h"
+#include "svlang_lint/core/ProjectInit.h"
 
-#include "uvmcheck/rules/SweSupport.h"
-#include "uvmcheck/style/NamingEngine.h"
-#include "uvmcheck/uvm/UvmModel.h"
+#include "svlang_lint/rules/SweSupport.h"
+#include "svlang_lint/style/NamingEngine.h"
+#include "svlang_lint/uvm/UvmModel.h"
 
 #include "slang/driver/Driver.h"
 #include "slang/text/SourceManager.h"
@@ -15,7 +15,7 @@
 #include <set>
 #include <sstream>
 
-namespace uvmcheck::core::init {
+namespace svlang_lint::core::init {
 
 namespace fs = std::filesystem;
 
@@ -26,7 +26,7 @@ constexpr size_t kMaxFiles = 50000;
 bool skipDir(const fs::path& dir) {
     std::string name = dir.filename().string();
     if (name.empty()) return false;
-    if (name[0] == '.') return true; // .git, .uvmcheck, editor folders
+    if (name[0] == '.') return true; // .git, .svlang-lint, editor folders
     static const std::set<std::string> skip = {"build", "node_modules", "work", "sim_build", "xcelium.d",
                                                "csrc", "simv.daidir", "__pycache__", "INCA_libs", "obj_dir"};
     return skip.count(name) > 0 || name.starts_with("build-") || name.starts_with("cmake-build");
@@ -268,12 +268,12 @@ std::vector<NamingChoice> inferNaming(const uvm::UvmModel& model, style::NamingE
 
 std::string renderConfig(const Discovery& d, const std::vector<NamingChoice>& naming) {
     std::ostringstream os;
-    os << R"PY("""UVMCheck project configuration, written by `uvmcheck --init`.
+    os << R"PY("""svlang-lint project configuration, written by `svlang-lint --init`.
 
-Paths are relative to the project root (the folder holding .uvmcheck/).
+Paths are relative to the project root (the folder holding .svlang-lint/).
 See docs/guide/project_config.md for every setting.
 """
-from uvmcheck.config import ProjectConfig, RuleConfig, Waiver, Severity
+from svlang_lint.config import ProjectConfig, RuleConfig, Waiver, Severity
 
 
 class Project(ProjectConfig):
@@ -323,4 +323,4 @@ class Project(ProjectConfig):
     return os.str();
 }
 
-} // namespace uvmcheck::core::init
+} // namespace svlang_lint::core::init

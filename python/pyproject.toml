@@ -3,9 +3,9 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "uvmcheck"
-version = "0.1.0"
-description = "Python Plugin SDK for UVMCheck Static Linter"
+name = "svlang-lint"
+version = "0.2.0"
+description = "Python Plugin SDK for svlang-lint Static Linter"
 readme = "README.md"
 authors = [{ name = "Mayur Kubavat", email = "mkubavat01@gmail.com" }]
 license = { text = "Apache-2.0" }
@@ -13,9 +13,9 @@ requires-python = ">=3.9"
 dependencies = []
 
 [project.scripts]
-uvmcheck-plugins = "uvmcheck.plugin_runner:main"
-uvmcheck-report = "uvmcheck.report:main"
+svlang-lint-plugins = "svlang_lint.plugin_runner:main"
+svlang-lint-report = "svlang_lint.report:main"
 
 # Only the SDK is packaged; examples/ and tests/ stay in the repository.
 [tool.setuptools]
-packages = ["uvmcheck"]
+packages = ["svlang_lint"]

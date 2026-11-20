@@ -1,4 +1,4 @@
-#include "uvmcheck/core/ConfigManager.h"
+#include "svlang_lint/core/ConfigManager.h"
 #include <fstream>
 #include <sstream>
 #include <filesystem>
@@ -11,11 +11,11 @@
 #include <unordered_set>
 #include <unistd.h>
 
-#ifndef UVMCHECK_PYTHON_SDK_DIR
-#define UVMCHECK_PYTHON_SDK_DIR ""
+#ifndef SVLANG_LINT_PYTHON_SDK_DIR
+#define SVLANG_LINT_PYTHON_SDK_DIR ""
 #endif
 
-namespace uvmcheck::core {
+namespace svlang_lint::core {
 
 namespace fs = std::filesystem;
 
@@ -61,40 +61,40 @@ bool isPythonConfig(const std::string& path) {
     return fs::path(path).extension() == ".py";
 }
 
-/// Locates the directory holding the `uvmcheck` Python package.
+/// Locates the directory holding the `svlang_lint` Python package.
 std::string findPythonSdkDir() {
     auto hasSdk = [](const fs::path& dir) {
         std::error_code ec;
-        return fs::exists(dir / "uvmcheck" / "config_runner.py", ec);
+        return fs::exists(dir / "svlang_lint" / "config_runner.py", ec);
     };
-    if (const char* env = std::getenv("UVMCHECK_PYTHON_SDK")) {
+    if (const char* env = std::getenv("SVLANG_LINT_PYTHON_SDK")) {
         if (hasSdk(env)) return env;
     }
     std::error_code ec;
     fs::path exe = fs::read_symlink("/proc/self/exe", ec);
     if (!ec) {
         for (const fs::path& cand : {exe.parent_path() / ".." / "python", exe.parent_path() / "python",
-                                     exe.parent_path() / ".." / "share" / "uvmcheck" / "python"}) {
+                                     exe.parent_path() / ".." / "share" / "svlang-lint" / "python"}) {
             if (hasSdk(cand)) return cand.lexically_normal().string();
         }
     }
-    if (hasSdk(UVMCHECK_PYTHON_SDK_DIR)) return UVMCHECK_PYTHON_SDK_DIR;
-    return ""; // rely on an installed `uvmcheck` package
+    if (hasSdk(SVLANG_LINT_PYTHON_SDK_DIR)) return SVLANG_LINT_PYTHON_SDK_DIR;
+    return ""; // rely on an installed `svlang-lint` package
 }
 
 } // namespace
 
 bool ConfigManager::runPythonConfig(const std::string& filePath, std::string& jsonOut) {
     fs::path outPath = fs::temp_directory_path() /
-                       ("uvmcheck_config_" + std::to_string(getpid()) + ".json");
+                       ("svlang_lint_config_" + std::to_string(getpid()) + ".json");
 
-    const char* pyEnv = std::getenv("UVMCHECK_PYTHON");
+    const char* pyEnv = std::getenv("SVLANG_LINT_PYTHON");
     std::string python = (pyEnv && *pyEnv) ? pyEnv : "python3";
     std::string sdk = findPythonSdkDir();
 
     std::string cmd;
     if (!sdk.empty()) cmd += "PYTHONPATH=" + shellQuote(sdk) + "${PYTHONPATH:+:$PYTHONPATH} ";
-    cmd += shellQuote(python) + " -m uvmcheck.config_runner --config " + shellQuote(filePath) +
+    cmd += shellQuote(python) + " -m svlang_lint.config_runner --config " + shellQuote(filePath) +
            " --out " + shellQuote(outPath.string()) + " 2>&1";
 
     FILE* pipe = popen(cmd.c_str(), "r");
@@ -505,9 +505,9 @@ bool ConfigManager::loadFromFile(const std::string& filePath) {
 
     std::error_code ec;
     fs::path baseDir = fs::absolute(fs::path(filePath), ec).parent_path();
-    // A config inside .uvmcheck/ describes the folder that holds it: relative
-    // paths are relative to the project root, not to .uvmcheck/ itself.
-    if (baseDir.filename() == ".uvmcheck") baseDir = baseDir.parent_path();
+    // A config inside .svlang-lint/ describes the folder that holds it: relative
+    // paths are relative to the project root, not to .svlang-lint/ itself.
+    if (baseDir.filename() == ".svlang-lint") baseDir = baseDir.parent_path();
     if (!applyConfig(*root, baseDir)) {
         lastError = filePath + ": " + lastError;
         return false;
@@ -522,17 +522,17 @@ fs::path ConfigManager::getProjectRoot() const {
     if (!configLoaded) return {};
     std::error_code ec;
     fs::path dir = fs::absolute(loadedConfigPath, ec).parent_path();
-    return dir.filename() == ".uvmcheck" ? dir.parent_path() : dir;
+    return dir.filename() == ".svlang-lint" ? dir.parent_path() : dir;
 }
 
 bool ConfigManager::autoDiscover(const std::string& startDir) {
     static const char* const names[] = {
-        ".uvmcheck/config.py",
-        ".uvmcheck/config.json",
-        "uvmcheck_config.py",
-        ".uvmcheck.py",
-        ".uvmcheck.json",
-        "uvmcheck.json"
+        ".svlang-lint/config.py",
+        ".svlang-lint/config.json",
+        "svlang_lint_config.py",
+        ".svlang-lint.py",
+        ".svlang-lint.json",
+        "svlang-lint.json"
     };
     lastError.clear();
     std::error_code ec;
@@ -564,19 +564,19 @@ void ConfigManager::validateRuleKeys(const std::unordered_map<std::string, std::
 }
 
 void ConfigManager::dumpDefaultConfig(std::ostream& os) const {
-    os << R"PY("""UVMCheck project configuration.
+    os << R"PY("""svlang-lint project configuration.
 
-Save as .uvmcheck/config.py (or uvmcheck_config.py) at the root of your
-verification project; uvmcheck finds it automatically (or pass --config path/to/file.py).
-Paths are relative to the project root (the folder holding .uvmcheck/) and may
+Save as .svlang-lint/config.py (or svlang_lint_config.py) at the root of your
+verification project; svlang-lint finds it automatically (or pass --config path/to/file.py).
+Paths are relative to the project root (the folder holding .svlang-lint/) and may
 use $ENV_VARS, * / ? within a name, and ** across folders.
 """
-from uvmcheck.config import ProjectConfig, RuleConfig, Waiver, Severity
+from svlang_lint.config import ProjectConfig, RuleConfig, Waiver, Severity
 
 
 class Project(ProjectConfig):
     # What to compile when no files are named on the command line; the editor
-    # integration (uvmcheck --lsp) also compiles these around the open file.
+    # integration (svlang-lint --lsp) also compiles these around the open file.
     sources = [
         # "$UVM_HOME/src/uvm_pkg.sv",
         # "tb/tb_pkg.sv",
@@ -605,7 +605,7 @@ class Project(ProjectConfig):
     ]
 
     # Slang overlay (docs/reference/compat.md): opt-in fixes for simulator file lists,
-    # built-in UVM and vendor system tasks. uvmcheck --list-overrides shows them.
+    # built-in UVM and vendor system tasks. svlang-lint --list-overrides shows them.
     compat = {
         # "profile": "questa",          # questa, xcelium, vcs or none
         # "overrides": ["-auto-uvm"],   # "id" turns one on, "-id" off
@@ -681,4 +681,4 @@ class Project(ProjectConfig):
 )PY";
 }
 
-} // namespace uvmcheck::core
+} // namespace svlang_lint::core

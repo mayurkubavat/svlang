@@ -1,6 +1,6 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
-#include "uvmcheck/rules/SweSupport.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
+#include "svlang_lint/rules/SweSupport.h"
 #include "slang/ast/ASTVisitor.h"
 #include "slang/ast/Constraints.h"
 #include "slang/ast/expressions/CallExpression.h"
@@ -13,7 +13,7 @@
 #include <string>
 #include <vector>
 
-namespace uvmcheck::rules::methodology {
+namespace svlang_lint::rules::methodology {
 
 using namespace slang::ast;
 
@@ -334,9 +334,9 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::methodology
+} // namespace svlang_lint::rules::methodology
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createRunPhaseWithRuntimePhases() {
     return std::make_unique<methodology::RunPhaseWithRuntimePhases>();
 }
@@ -352,10 +352,10 @@ std::unique_ptr<Rule> createSequencerFromConfigDb() {
 std::unique_ptr<Rule> createConfigKnobBudget() {
     return std::make_unique<methodology::ConfigKnobBudget>();
 }
-} // namespace uvmcheck::rules
+} // namespace svlang_lint::rules
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createRunPhaseWithRuntimePhases)
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createSoftConstraintShadowing)
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createVirtualInterfaceInChecker)
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createSequencerFromConfigDb)
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createConfigKnobBudget)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createRunPhaseWithRuntimePhases)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createSoftConstraintShadowing)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createVirtualInterfaceInChecker)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createSequencerFromConfigDb)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createConfigKnobBudget)

@@ -1,5 +1,5 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
 #include "slang/syntax/AllSyntax.h"
 #include "slang/syntax/SyntaxTree.h"
 #include "slang/syntax/SyntaxVisitor.h"
@@ -7,7 +7,7 @@
 #include <vector>
 #include <algorithm>
 
-namespace uvmcheck::rules::coverage {
+namespace svlang_lint::rules::coverage {
 
 class OverlappingBinRangeVisitor : public engine::SyntaxVisitor<OverlappingBinRangeVisitor> {
 public:
@@ -90,12 +90,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::coverage
+} // namespace svlang_lint::rules::coverage
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createOverlappingRangesInCoverpointBin() {
     return std::make_unique<coverage::OverlappingRangesInCoverpointBin>();
 }
-} // namespace uvmcheck::rules
+} // namespace svlang_lint::rules
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createOverlappingRangesInCoverpointBin)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createOverlappingRangesInCoverpointBin)

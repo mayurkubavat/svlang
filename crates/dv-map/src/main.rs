@@ -1,6 +1,6 @@
 //! dv-map: the component tree of a UVM testbench, as text or JSON.
 //!
-//!     dv-map [--json] [--bench N] [--include-library] [--slang] -- <uvmcheck compile options>
+//!     dv-map [--json] [--bench N] [--include-library] [--slang] -- <svlang-lint compile options>
 //!
 //! The design comes from the native front end (sv-semantic); --slang loads it
 //! through Slang instead, when built with the `slang` feature.

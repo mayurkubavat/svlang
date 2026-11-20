@@ -1,12 +1,12 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
 #include "slang/ast/ASTVisitor.h"
 #include "slang/ast/expressions/AssignmentExpressions.h"
 #include "slang/ast/expressions/ConversionExpression.h"
 #include "slang/ast/expressions/OperatorExpressions.h"
 #include "slang/syntax/AllSyntax.h"
 
-namespace uvmcheck::rules::performance {
+namespace svlang_lint::rules::performance {
 
 class QueueConcatVisitor : public engine::AstVisitor<QueueConcatVisitor> {
 public:
@@ -93,12 +93,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::performance
+} // namespace svlang_lint::rules::performance
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createQueueConcatAppend() {
     return std::make_unique<performance::QueueConcatAppend>();
 }
 }
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createQueueConcatAppend)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createQueueConcatAppend)

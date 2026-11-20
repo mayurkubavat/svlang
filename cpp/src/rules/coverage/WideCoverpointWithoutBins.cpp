@@ -1,11 +1,11 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
 #include "slang/syntax/AllSyntax.h"
 #include "slang/syntax/SyntaxTree.h"
 #include "slang/syntax/SyntaxVisitor.h"
 #include <string>
 
-namespace uvmcheck::rules::coverage {
+namespace svlang_lint::rules::coverage {
 
 class WideCoverpointVisitor : public engine::SyntaxVisitor<WideCoverpointVisitor> {
 public:
@@ -76,12 +76,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::coverage
+} // namespace svlang_lint::rules::coverage
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createWideCoverpointWithoutBins() {
     return std::make_unique<coverage::WideCoverpointWithoutBins>();
 }
 }
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createWideCoverpointWithoutBins)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createWideCoverpointWithoutBins)

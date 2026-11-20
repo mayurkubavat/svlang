@@ -3,8 +3,8 @@
 // SV-DBC-001 (MG-8.2, interfaces without assertions).
 
 #include "MethodologySupport.h"
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
 
 #include "slang/ast/ASTVisitor.h"
 #include "slang/ast/expressions/AssignmentExpressions.h"
@@ -21,7 +21,7 @@
 #include <string>
 #include <vector>
 
-namespace uvmcheck::rules::methodology {
+namespace svlang_lint::rules::methodology {
 
 using namespace slang::ast;
 
@@ -309,16 +309,16 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::methodology
+} // namespace svlang_lint::rules::methodology
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createNoExtensionPoint() { return std::make_unique<methodology::NoExtensionPoint>(); }
 std::unique_ptr<Rule> createFeatureEnvy() { return std::make_unique<methodology::FeatureEnvy>(); }
 std::unique_ptr<Rule> createInterfaceWithoutAssertions() {
     return std::make_unique<methodology::InterfaceWithoutAssertions>();
 }
-} // namespace uvmcheck::rules
+} // namespace svlang_lint::rules
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createNoExtensionPoint)
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createFeatureEnvy)
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createInterfaceWithoutAssertions)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createNoExtensionPoint)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createFeatureEnvy)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createInterfaceWithoutAssertions)

@@ -1,8 +1,8 @@
 // Methodology guide chapter MG-1, layering and packages: SV-PKG-001 to SV-PKG-005.
 
 #include "MethodologySupport.h"
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
 
 #include "slang/ast/ASTVisitor.h"
 #include "slang/ast/symbols/CompilationUnitSymbols.h"
@@ -16,7 +16,7 @@
 #include <set>
 #include <unordered_set>
 
-namespace uvmcheck::rules::methodology {
+namespace svlang_lint::rules::methodology {
 
 using namespace slang::ast;
 using namespace slang::syntax;
@@ -461,9 +461,9 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::methodology
+} // namespace svlang_lint::rules::methodology
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createFileClassNameMismatch() { return std::make_unique<methodology::FileClassNameMismatch>(); }
 std::unique_ptr<Rule> createWildcardImportOutsidePackage() { return std::make_unique<methodology::WildcardImportOutsidePackage>(); }
 std::unique_ptr<Rule> createUnusedPackageImport() { return std::make_unique<methodology::UnusedPackageImport>(); }
@@ -471,8 +471,8 @@ std::unique_ptr<Rule> createPackageLayerInversion() { return std::make_unique<me
 std::unique_ptr<Rule> createUnstablePackageDependedOn() { return std::make_unique<methodology::UnstablePackageDependedOn>(); }
 }
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createFileClassNameMismatch)
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createWildcardImportOutsidePackage)
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createUnusedPackageImport)
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createPackageLayerInversion)
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createUnstablePackageDependedOn)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createFileClassNameMismatch)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createWildcardImportOutsidePackage)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createUnusedPackageImport)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createPackageLayerInversion)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createUnstablePackageDependedOn)

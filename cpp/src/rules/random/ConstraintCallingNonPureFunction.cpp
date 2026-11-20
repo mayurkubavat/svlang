@@ -1,5 +1,5 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
 #include "slang/ast/ASTVisitor.h"
 #include "slang/ast/symbols/SubroutineSymbols.h"
 #include "slang/ast/expressions/CallExpression.h"
@@ -8,7 +8,7 @@
 #include "slang/syntax/SyntaxVisitor.h"
 #include <string>
 
-namespace uvmcheck::rules::random {
+namespace svlang_lint::rules::random {
 
 class ConstraintPureVisitor : public slang::syntax::SyntaxVisitor<ConstraintPureVisitor> {
 public:
@@ -72,7 +72,7 @@ public:
     core::Severity getDefaultSeverity() const override { return core::Severity::Error; }
 
     void run(slang::ast::Compilation& compilation,
-             const uvmcheck::uvm::UvmModel& /*uvmModel*/,
+             const svlang_lint::uvm::UvmModel& /*uvmModel*/,
              core::DiagnosticEngine& diags) override {
         ConstraintPureVisitor visitor(diags);
         for (const auto& tree : compilation.getSyntaxTrees()) {
@@ -83,12 +83,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::random
+} // namespace svlang_lint::rules::random
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createConstraintCallingNonPureFunction() {
     return std::make_unique<random::ConstraintCallingNonPureFunction>();
 }
-} // namespace uvmcheck::rules
+} // namespace svlang_lint::rules
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createConstraintCallingNonPureFunction)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createConstraintCallingNonPureFunction)

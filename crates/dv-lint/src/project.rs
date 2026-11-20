@@ -1,12 +1,12 @@
-//! The project configuration, read and applied as uvmcheck does
+//! The project configuration, read and applied as svlang-lint does
 //! (docs/guide/project_config.md): which files are library or excluded code,
 //! per-rule `enabled`, `severity`, `exclude_paths` and `only_paths`,
-//! waivers (the config's and `.uvmcheck/waivers.json`), and the compile
+//! waivers (the config's and `.svlang-lint/waivers.json`), and the compile
 //! settings a config may carry (`sources`, `filelists`, `include_dirs`,
 //! `defines`).
 //!
-//! A Python config (`.uvmcheck/config.py`) is evaluated by the uvmcheck
-//! Python SDK (`python3 -m uvmcheck.config_runner`), as the C++ engine does,
+//! A Python config (`.svlang-lint/config.py`) is evaluated by the svlang-lint
+//! Python SDK (`python3 -m svlang_lint.config_runner`), as the C++ engine does,
 //! into the same JSON a `.json` config holds. Integer and boolean rule
 //! options and the `style` and `naming` blocks go to [`crate::options`];
 //! what the native rules cannot apply (other option types, a header or
@@ -18,17 +18,17 @@ use std::path::{Path, PathBuf};
 use crate::json::Json;
 use crate::{Finding, Severity};
 
-/// Config file names, in the order uvmcheck looks for them in each folder.
+/// Config file names, in the order svlang-lint looks for them in each folder.
 pub(crate) const NAMES: [&str; 6] = [
-    ".uvmcheck/config.py",
-    ".uvmcheck/config.json",
-    "uvmcheck_config.py",
-    ".uvmcheck.py",
-    ".uvmcheck.json",
-    "uvmcheck.json",
+    ".svlang-lint/config.py",
+    ".svlang-lint/config.json",
+    "svlang_lint_config.py",
+    ".svlang-lint.py",
+    ".svlang-lint.json",
+    "svlang-lint.json",
 ];
 
-/// A path pattern, anchored as uvmcheck's PathPattern: `$VAR` and `~`
+/// A path pattern, anchored as svlang-lint's PathPattern: `$VAR` and `~`
 /// expanded (unset: never matches), a bare name matches in any folder,
 /// relative patterns are under the config's folder, `**` spans folders and a
 /// pattern naming a folder covers everything under it.
@@ -193,12 +193,12 @@ struct RuleSettings {
 }
 
 /// A waiver from the config (`waivers`) or a waiver file (`--waivers`,
-/// `.uvmcheck/waivers.json`), as uvmcheck's ExternalWaiver.
+/// `.svlang-lint/waivers.json`), as svlang-lint's ExternalWaiver.
 #[derive(Debug)]
 pub(crate) struct Waiver {
     pub(crate) rule: String,
     /// Config waivers: a path pattern. Waiver files: text the path must
-    /// contain (leading and trailing `*` dropped), as uvmcheck reads them.
+    /// contain (leading and trailing `*` dropped), as svlang-lint reads them.
     pub(crate) path: Option<Pattern>,
     pub(crate) contains: Option<String>,
     pub(crate) line: u32,
@@ -226,7 +226,7 @@ impl Waiver {
     }
 }
 
-/// A waiver's `message` compiled; an error names the waiver as uvmcheck
+/// A waiver's `message` compiled; an error names the waiver as svlang-lint
 /// does (`waiver LABEL: invalid message regex 'P': WHY`).
 fn message_regex(label: &str, message: &str) -> Result<Option<crate::pattern::Pattern>, String> {
     if message.is_empty() {
@@ -309,13 +309,17 @@ pub struct Config {
     pub unapplied: Vec<String>,
     /// Integer rule options: (rule ID or name, key, value).
     pub options: Vec<(String, String, i64)>,
+    /// String rule options: (rule ID or name, key, value).
+    pub str_options: Vec<(String, String, String)>,
+    /// String-list rule options: (rule ID or name, key, values).
+    pub list_options: Vec<(String, String, Vec<String>)>,
     /// `preset`: the project's rule set, used when `--preset` is not given.
     pub preset: Option<String>,
     /// The `style` block.
     pub style: Vec<(String, crate::options::StyleValue)>,
     /// The `naming` block.
     pub naming: Vec<(String, crate::options::NamingOverride)>,
-    /// The project root: the folder holding `.uvmcheck/` (or the config).
+    /// The project root: the folder holding `.svlang-lint/` (or the config).
     pub root: PathBuf,
     /// Waivers past their `expires` date (`label expired DATE`), for the
     /// waiver report.
@@ -372,22 +376,22 @@ pub fn find(explicit: Option<&str>, first_source: Option<&str>) -> Option<PathBu
     })
 }
 
-/// The uvmcheck Python SDK next to this binary (`<repo>/python` from
-/// `<repo>/target/release`), else `$UVMCHECK_PYTHON_SDK`.
+/// The svlang-lint Python SDK next to this binary (`<repo>/python` from
+/// `<repo>/target/release`), else `$SVLANG_LINT_PYTHON_SDK`.
 pub(crate) fn python_sdk() -> Option<PathBuf> {
-    if let Some(p) = std::env::var_os("UVMCHECK_PYTHON_SDK") {
+    if let Some(p) = std::env::var_os("SVLANG_LINT_PYTHON_SDK") {
         return Some(PathBuf::from(p));
     }
     let exe = std::env::current_exe().ok()?.canonicalize().ok()?;
-    exe.ancestors().skip(1).map(|a| a.join("python")).find(|p| p.join("uvmcheck").join("config_runner.py").is_file())
+    exe.ancestors().skip(1).map(|a| a.join("python")).find(|p| p.join("svlang_lint").join("config_runner.py").is_file())
 }
 
 fn load_json(file: &Path) -> Result<Json, String> {
     let text = if file.extension().is_some_and(|e| e == "py") {
         let out = std::env::temp_dir().join(format!("dv_lint_config_{}.json", std::process::id()));
-        let python = std::env::var("UVMCHECK_PYTHON").unwrap_or_else(|_| "python3".into());
+        let python = std::env::var("SVLANG_LINT_PYTHON").unwrap_or_else(|_| "python3".into());
         let mut cmd = std::process::Command::new(&python);
-        cmd.args(["-m", "uvmcheck.config_runner", "--config"]).arg(file).arg("--out").arg(&out);
+        cmd.args(["-m", "svlang_lint.config_runner", "--config"]).arg(file).arg("--out").arg(&out);
         if let Some(sdk) = python_sdk() {
             let mut pp = sdk.into_os_string();
             if let Some(old) = std::env::var_os("PYTHONPATH") {
@@ -413,17 +417,17 @@ fn load_json(file: &Path) -> Result<Json, String> {
 }
 
 impl Config {
-    /// Reads `file` and, next to its project root, `.uvmcheck/waivers.json`.
+    /// Reads `file` and, next to its project root, `.svlang-lint/waivers.json`.
     pub fn load(file: &Path) -> Result<Config, String> {
         let root = load_json(file)?;
         let base = file.parent().map(Path::to_path_buf).unwrap_or_default();
-        // `.uvmcheck/config.py` belongs to the folder above `.uvmcheck`.
-        let project = if base.file_name().is_some_and(|n| n == ".uvmcheck") {
+        // `.svlang-lint/config.py` belongs to the folder above `.svlang-lint`.
+        let project = if base.file_name().is_some_and(|n| n == ".svlang-lint") {
             base.parent().map(Path::to_path_buf).unwrap_or_default()
         } else {
             base.clone()
         };
-        let base = if base.file_name().is_some_and(|n| n == ".uvmcheck") { project.clone() } else { base };
+        let base = if base.file_name().is_some_and(|n| n == ".svlang-lint") { project.clone() } else { base };
         let mut c = Config { file: file.to_path_buf(), ..Config::default() };
         let pats = |c: &mut Config, v: &Json, what: &str| -> Vec<Pattern> {
             strings(v)
@@ -476,6 +480,11 @@ impl Config {
                                         c.options.push((key.clone(), k.clone(), *n as i64))
                                     }
                                     Json::Bool(b) => c.options.push((key.clone(), k.clone(), i64::from(*b))),
+                                    Json::Str(s) => c.str_options.push((key.clone(), k.clone(), s.clone())),
+                                    Json::Arr(a) if a.iter().all(|x| x.as_str().is_some()) => {
+                                        let items = a.iter().filter_map(|x| x.as_str().map(str::to_string)).collect();
+                                        c.list_options.push((key.clone(), k.clone(), items));
+                                    }
                                     _ => c.unapplied.push(format!("rules.{key}.options.{k}")),
                                 }
                             }
@@ -486,7 +495,7 @@ impl Config {
                 c.rules.push((key.clone(), rs));
             }
         }
-        // As uvmcheck: a rules key that names no rule is a warning.
+        // As svlang-lint: a rules key that names no rule is a warning.
         let all = crate::rules();
         for (key, _) in &c.rules {
             let known = all.iter().any(|r| {
@@ -507,7 +516,7 @@ impl Config {
                     _ => continue,
                 };
                 match k.as_str() {
-                    // uvmcheck reads it but no rule acts on it.
+                    // svlang-lint reads it but no rule acts on it.
                     "one_statement_per_line" => {}
                     "max_line_length"
                     | "allow_tabs"
@@ -556,7 +565,7 @@ impl Config {
         c.root = project;
         // Compile settings.
         for s in strings(root.get("filelists")) {
-            // Paths in the list are relative to it, as uvmcheck reads config file
+            // Paths in the list are relative to it, as svlang-lint reads config file
             // lists (slang `processCommandFiles(makeRelative = true)`, i.e. -F).
             c.compile_args.extend(["-F".to_string(), anchor(&s, &base)]);
         }
@@ -611,7 +620,7 @@ impl Config {
                 if globs.is_empty() { vec![None] } else { globs.into_iter().map(Some).collect() };
             let all = crate::rules();
             for r in &rules {
-                // A rule's name names its ID, as uvmcheck resolves it.
+                // A rule's name names its ID, as svlang-lint resolves it.
                 let id = all.iter().find(|x| x.name == r.as_str()).map_or(r.clone(), |x| x.id.to_string());
                 for g in &globs {
                     self.waivers.push(Waiver {
@@ -660,7 +669,7 @@ impl Config {
     /// come after, in [`crate::suppress`]).
     pub fn apply(&self, found: &mut Vec<Finding>, files: &[String]) {
         // Config keys and waivers name a rule by ID or by a rule's name, as
-        // uvmcheck resolves them: a sub-rule (SV-STY-102 ...) by its ID only.
+        // svlang-lint resolves them: a sub-rule (SV-STY-102 ...) by its ID only.
         let all = crate::rules();
         let names: std::collections::HashMap<&str, &str> = all.iter().map(|r| (r.id, r.name)).collect();
         let mut cache: std::collections::HashMap<u32, String> = Default::default();
@@ -715,6 +724,30 @@ impl Config {
         self.library.iter().any(|p| p.matches(&path)) || self.exclude.iter().any(|p| p.matches(&path))
     }
 
+    /// Adds `--library <glob>` patterns from the command line, anchored to `cwd`.
+    pub fn add_library_globs(&mut self, globs: &[String], cwd: &Path) {
+        for g in globs {
+            let p = Pattern::new(g, cwd);
+            if p.0.is_none() {
+                self.warnings.push(format!("--library: '{g}' uses an unset environment variable; pattern ignored"));
+            } else {
+                self.library.push(p);
+            }
+        }
+    }
+
+    /// Adds `--exclude <glob>` patterns from the command line, anchored to `cwd`.
+    pub fn add_exclude_globs(&mut self, globs: &[String], cwd: &Path) {
+        for g in globs {
+            let p = Pattern::new(g, cwd);
+            if p.0.is_none() {
+                self.warnings.push(format!("--exclude: '{g}' uses an unset environment variable; pattern ignored"));
+            } else {
+                self.exclude.push(p);
+            }
+        }
+    }
+
     /// The config's waivers, in order.
     pub(crate) fn waivers(&self) -> &[Waiver] {
         &self.waivers
@@ -753,7 +786,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn globs_as_uvmcheck_matches_them() {
+    fn globs_as_svlang_lint_matches_them() {
         let p = Pattern(Some("**/legacy/**".into()));
         assert!(p.matches("/a/legacy/b.sv"));
         assert!(!p.matches("/a/new/b.sv"));

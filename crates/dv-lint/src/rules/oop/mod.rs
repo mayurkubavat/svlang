@@ -13,6 +13,7 @@ mod duplicate_method_body;
 mod empty_virtual_method_without_pure;
 mod foreach_loop_variable_shadowing;
 mod lsp_constraint_contradiction;
+mod missing_super_in_do_hook;
 mod missing_super_new;
 mod mutable_object_getter_leak;
 mod non_virtual_interface_in_class;
@@ -68,5 +69,6 @@ pub(crate) fn rules() -> Vec<Rule> {
         },
         Rule { id: "SV-OOP-016", name: "OverrideDefaultArgMismatch", category: "OOP", severity: Severity::Warning, profiles: METHODOLOGY, guidelines: &["MG-5.2"], experimental: false, native: true, about: "Flags virtual method overrides in derived classes that change or omit a default argument value declared on the base virtual method (IEEE 1800 § 8.20).", check: Check::Syntax(override_default_arg_mismatch::override_default_arg_mismatch) },
         Rule { id: "SV-OOP-017", name: "TransitiveVirtualCallInNew", category: "OOP", severity: Severity::Warning, profiles: METHODOLOGY, guidelines: &[], experimental: false, native: true, about: "Flags class constructors that call a non-virtual helper method on 'this' which transitively invokes a virtual method before derived class members are initialized.", check: Check::Model(transitive_virtual_call_in_new::transitive_virtual_call_in_new) },
+        Rule { id: "SV-OOP-018", name: "MissingSuperInDoHook", category: "OOP", severity: Severity::Warning, profiles: METHODOLOGY, guidelines: &[], experimental: false, native: true, about: "Flags do_copy, do_compare, do_print, do_pack, and do_unpack overrides in derived user classes that omit super.do_*(), silently dropping base-class fields.", check: Check::Model(missing_super_in_do_hook::missing_super_in_do_hook) },
     ]
 }

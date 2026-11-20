@@ -1,11 +1,11 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
 #include "slang/syntax/AllSyntax.h"
 #include "slang/syntax/SyntaxTree.h"
 #include "slang/syntax/SyntaxVisitor.h"
 #include <string>
 
-namespace uvmcheck::rules::types {
+namespace svlang_lint::rules::types {
 
 class TaskReturnTypeVisitor : public engine::SyntaxVisitor<TaskReturnTypeVisitor> {
 public:
@@ -63,12 +63,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::types
+} // namespace svlang_lint::rules::types
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createTaskWithNonVoidReturnType() {
     return std::make_unique<types::TaskWithNonVoidReturnType>();
 }
-} // namespace uvmcheck::rules
+} // namespace svlang_lint::rules
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createTaskWithNonVoidReturnType)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createTaskWithNonVoidReturnType)

@@ -1,12 +1,12 @@
-#include "uvmcheck/reporting/JsonReporter.h"
-#include "uvmcheck/rules/RuleRegistry.h"
+#include "svlang_lint/reporting/JsonReporter.h"
+#include "svlang_lint/rules/RuleRegistry.h"
 #include <algorithm>
 #include <unordered_map>
 #include <cstdio>
 #include <fstream>
 #include <iostream>
 
-namespace uvmcheck::reporting {
+namespace svlang_lint::reporting {
 
 static std::string escapeJson(std::string_view s) {
     std::string out;
@@ -53,8 +53,8 @@ static void writeReport(std::ostream& os,
         for (const auto& sub : r->getSubRules()) categories[sub.id] = std::string(r->getCategory());
     }
     os << "{\n"
-       << "  \"tool\": \"uvmcheck\",\n"
-       << "  \"version\": \"0.1.0\",\n"
+       << "  \"tool\": \"svlang-lint\",\n"
+       << "  \"version\": \"0.2.0\",\n"
        << "  \"compileErrors\": " << compileErrors << ",\n"
        << "  \"waived\": " << waivedCount << ",\n";
     if (!overrides.empty()) {
@@ -192,7 +192,7 @@ static void writeCatalog(std::ostream& os, const std::vector<std::unique_ptr<rul
     }
     std::sort(entries.begin(), entries.end(), [](const Entry& a, const Entry& b) { return a.id < b.id; });
 
-    os << "{\n  \"version\": \"2.0\",\n  \"generated\": \"uvmcheck --list-rules --json\",\n"
+    os << "{\n  \"version\": \"2.0\",\n  \"generated\": \"svlang-lint --list-rules --json\",\n"
        << "  \"categories\": " << jsonList(rules::ruleCategories()) << ",\n  \"rules\": [\n";
     for (size_t i = 0; i < entries.size(); ++i) {
         const auto& e = entries[i];
@@ -238,4 +238,4 @@ bool JsonReporter::writeJson(const std::string& outputPath,
     return true;
 }
 
-} // namespace uvmcheck::reporting
+} // namespace svlang_lint::reporting

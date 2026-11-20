@@ -1,4 +1,4 @@
-#include "uvmcheck/rules/History.h"
+#include "svlang_lint/rules/History.h"
 
 #include <atomic>
 #include <cstdio>
@@ -7,7 +7,7 @@
 #include <memory>
 #include <mutex>
 
-namespace uvmcheck::rules::history {
+namespace svlang_lint::rules::history {
 
 namespace {
 
@@ -99,4 +99,4 @@ const Log* logFor(const std::string& path, size_t maxCommits) {
     return it->second.get();
 }
 
-} // namespace uvmcheck::rules::history
+} // namespace svlang_lint::rules::history

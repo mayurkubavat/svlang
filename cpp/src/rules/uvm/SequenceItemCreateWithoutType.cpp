@@ -1,15 +1,15 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
 #include "slang/syntax/AllSyntax.h"
 #include "slang/syntax/SyntaxTree.h"
 #include "slang/syntax/SyntaxVisitor.h"
 #include <string>
 
-namespace uvmcheck::rules::uvm {
+namespace svlang_lint::rules::uvm {
 
 class SeqItemCreateVisitor : public slang::syntax::SyntaxVisitor<SeqItemCreateVisitor> {
 public:
-    explicit SeqItemCreateVisitor(core::DiagnosticEngine& diags, const uvmcheck::uvm::UvmModel& uvmModel)
+    explicit SeqItemCreateVisitor(core::DiagnosticEngine& diags, const svlang_lint::uvm::UvmModel& uvmModel)
         : diags(diags), uvmModel(uvmModel) {}
 
     void handle(const slang::syntax::ClassDeclarationSyntax& clsNode) {
@@ -60,7 +60,7 @@ public:
 
 private:
     core::DiagnosticEngine& diags;
-    const uvmcheck::uvm::UvmModel& uvmModel;
+    const svlang_lint::uvm::UvmModel& uvmModel;
     std::string currentClass;
     bool currentIsSeq = false;
 
@@ -143,7 +143,7 @@ public:
     core::Severity getDefaultSeverity() const override { return core::Severity::Warning; }
 
     void run(slang::ast::Compilation& compilation,
-             const uvmcheck::uvm::UvmModel& uvmModel,
+             const svlang_lint::uvm::UvmModel& uvmModel,
              core::DiagnosticEngine& diags) override {
         SeqItemCreateVisitor visitor(diags, uvmModel);
         for (const auto& tree : compilation.getSyntaxTrees()) {
@@ -154,12 +154,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::uvm
+} // namespace svlang_lint::rules::uvm
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createSequenceItemCreateWithoutType() {
     return std::make_unique<uvm::SequenceItemCreateWithoutType>();
 }
 }
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createSequenceItemCreateWithoutType)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createSequenceItemCreateWithoutType)

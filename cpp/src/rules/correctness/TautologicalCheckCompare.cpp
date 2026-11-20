@@ -1,12 +1,12 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
 #include "slang/ast/ASTVisitor.h"
 #include "slang/ast/expressions/OperatorExpressions.h"
 #include "slang/ast/expressions/ConversionExpression.h"
 #include "slang/ast/expressions/LiteralExpressions.h"
 #include "slang/syntax/AllSyntax.h"
 
-namespace uvmcheck::rules::correctness {
+namespace svlang_lint::rules::correctness {
 
 class TautologicalCompareVisitor : public engine::AstVisitor<TautologicalCompareVisitor> {
 public:
@@ -106,12 +106,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::correctness
+} // namespace svlang_lint::rules::correctness
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createTautologicalCheckCompare() {
     return std::make_unique<correctness::TautologicalCheckCompare>();
 }
 }
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createTautologicalCheckCompare)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createTautologicalCheckCompare)

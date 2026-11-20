@@ -1,12 +1,12 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
 #include "slang/syntax/AllSyntax.h"
 #include "slang/syntax/SyntaxTree.h"
 #include "slang/syntax/SyntaxVisitor.h"
 #include <unordered_set>
 #include <string>
 
-namespace uvmcheck::rules::correctness {
+namespace svlang_lint::rules::correctness {
 
 class ModifyingLoopIndexVisitor : public engine::SyntaxVisitor<ModifyingLoopIndexVisitor> {
 public:
@@ -106,12 +106,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::correctness
+} // namespace svlang_lint::rules::correctness
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createModifyingLoopIndexInsideFor() {
     return std::make_unique<correctness::ModifyingLoopIndexInsideFor>();
 }
 }
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createModifyingLoopIndexInsideFor)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createModifyingLoopIndexInsideFor)

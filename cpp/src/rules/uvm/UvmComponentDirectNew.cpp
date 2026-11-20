@@ -1,5 +1,5 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
 #include "slang/ast/ASTVisitor.h"
 #include "slang/ast/expressions/AssignmentExpressions.h"
 #include "slang/ast/expressions/MiscExpressions.h"
@@ -11,11 +11,11 @@
 #include <cctype>
 #include <unordered_map>
 
-namespace uvmcheck::rules::uvm {
+namespace svlang_lint::rules::uvm {
 
 class UvmComponentDirectNewVisitor : public engine::AstVisitor<UvmComponentDirectNewVisitor> {
 public:
-    UvmComponentDirectNewVisitor(const uvmcheck::uvm::UvmModel& model, core::DiagnosticEngine& diags)
+    UvmComponentDirectNewVisitor(const svlang_lint::uvm::UvmModel& model, core::DiagnosticEngine& diags)
         : uvmModel(model), diags(diags) {}
 
     // The class is named as the target's declaration writes it
@@ -76,7 +76,7 @@ public:
 
 private:
     std::unordered_map<const slang::ast::NewClassExpression*, std::string> written;
-    const uvmcheck::uvm::UvmModel& uvmModel;
+    const svlang_lint::uvm::UvmModel& uvmModel;
     core::DiagnosticEngine& diags;
 };
 
@@ -99,12 +99,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::uvm
+} // namespace svlang_lint::rules::uvm
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createUvmComponentDirectNew() {
     return std::make_unique<uvm::UvmComponentDirectNew>();
 }
 }
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createUvmComponentDirectNew)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createUvmComponentDirectNew)

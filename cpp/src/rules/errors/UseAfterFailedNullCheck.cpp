@@ -1,7 +1,7 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
-#include "uvmcheck/rules/PathWalker.h"
-#include "uvmcheck/rules/SweSupport.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
+#include "svlang_lint/rules/PathWalker.h"
+#include "svlang_lint/rules/SweSupport.h"
 #include "slang/ast/expressions/AssignmentExpressions.h"
 #include "slang/ast/expressions/MiscExpressions.h"
 #include "slang/ast/expressions/OperatorExpressions.h"
@@ -10,7 +10,7 @@
 #include <map>
 #include <set>
 
-namespace uvmcheck::rules::errors {
+namespace svlang_lint::rules::errors {
 
 using namespace slang::ast;
 
@@ -174,12 +174,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::errors
+} // namespace svlang_lint::rules::errors
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createUseAfterFailedNullCheck() {
     return std::make_unique<errors::UseAfterFailedNullCheck>();
 }
 }
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createUseAfterFailedNullCheck)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createUseAfterFailedNullCheck)

@@ -3,7 +3,7 @@
 
 Each TEST_CASE in Slang's tests/unittests/ast/*.cpp that compiles one
 source text is a small design with a known verdict. The text is run
-through dv-build and through uvmcheck (Slang); per test file it reports
+through dv-build and through svlang-lint (Slang); per test file it reports
 how many both accept, both reject, only Slang rejects (a native gap) and
 only dv-build rejects (a native false error). Cases that set compilation
 options or use several trees are skipped.
@@ -14,7 +14,7 @@ import collections, concurrent.futures, glob, json, os, re, resource, subprocess
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(os.path.dirname(HERE))
-UVMCHECK = os.environ.get('UVMCHECK', os.path.join(REPO, 'build', 'uvmcheck'))
+SVLANG_LINT = os.environ.get('SVLANG_LINT', os.path.join(REPO, 'build', 'svlang-lint'))
 DVBUILD = os.environ.get('DV_BUILD', os.path.join(REPO, 'target', 'release', 'dv-build'))
 
 
@@ -71,7 +71,7 @@ def verdicts(texts, is_2023):
         out = os.path.join(tmp, 'r.json')
         sl_flags = ['--std', '1800-2023'] if is_2023 else []
         try:
-            subprocess.run([UVMCHECK, '--no-config', '--no-cache', *sl_flags, '--json', out, *files], capture_output=True, timeout=30, preexec_fn=limit)
+            subprocess.run([SVLANG_LINT, '--no-config', '--no-cache', *sl_flags, '--json', out, *files], capture_output=True, timeout=30, preexec_fn=limit)
         except subprocess.TimeoutExpired:
             pass
         try:

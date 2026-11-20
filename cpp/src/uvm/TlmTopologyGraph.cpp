@@ -1,13 +1,13 @@
-#include "uvmcheck/uvm/TlmTopologyGraph.h"
+#include "svlang_lint/uvm/TlmTopologyGraph.h"
 #include "slang/ast/ASTVisitor.h"
 #include "slang/ast/symbols/ClassSymbols.h"
 #include "slang/ast/symbols/SubroutineSymbols.h"
 #include "slang/ast/symbols/VariableSymbols.h"
 #include "slang/ast/expressions/CallExpression.h"
 #include "slang/syntax/AllSyntax.h"
-#include "uvmcheck/rules/SweSupport.h"
+#include "svlang_lint/rules/SweSupport.h"
 
-namespace uvmcheck::uvm {
+namespace svlang_lint::uvm {
 
 class TlmConnectionCollector : public slang::ast::ASTVisitor<TlmConnectionCollector, slang::ast::VisitFlags::AllGood> {
 public:
@@ -113,4 +113,4 @@ std::vector<TlmPortDecl> TlmTopologyGraph::findUnconnectedPorts() const {
     return unconnected;
 }
 
-} // namespace uvmcheck::uvm
+} // namespace svlang_lint::uvm

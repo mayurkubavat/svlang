@@ -1,10 +1,10 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
 #include "slang/syntax/SyntaxVisitor.h"
 #include "slang/syntax/AllSyntax.h"
 #include "slang/syntax/SyntaxTree.h"
 
-namespace uvmcheck::rules::sva {
+namespace svlang_lint::rules::sva {
 
 class UnlabeledAssertionVisitor : public engine::SyntaxVisitor<UnlabeledAssertionVisitor> {
 public:
@@ -64,12 +64,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::sva
+} // namespace svlang_lint::rules::sva
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createUnlabeledAssertion() {
     return std::make_unique<sva::UnlabeledAssertion>();
 }
 }
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createUnlabeledAssertion)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createUnlabeledAssertion)

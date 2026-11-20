@@ -1,16 +1,16 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
 #include "slang/ast/ASTVisitor.h"
 #include "slang/ast/expressions/CallExpression.h"
 #include "slang/ast/expressions/LiteralExpressions.h"
 #include "slang/ast/expressions/ConversionExpression.h"
 #include "slang/syntax/AllSyntax.h"
 
-namespace uvmcheck::rules::uvm {
+namespace svlang_lint::rules::uvm {
 
 class DanglingConfigStringVisitor : public engine::AstVisitor<DanglingConfigStringVisitor> {
 public:
-    explicit DanglingConfigStringVisitor(const uvmcheck::uvm::UvmModel& uvmModel, core::DiagnosticEngine& diags)
+    explicit DanglingConfigStringVisitor(const svlang_lint::uvm::UvmModel& uvmModel, core::DiagnosticEngine& diags)
         : uvmModel(uvmModel), diags(diags) {}
     void handle(const slang::ast::CallExpression& call) {
         bool isConfigSet = false;
@@ -68,7 +68,7 @@ public:
     }
 
 private:
-    const uvmcheck::uvm::UvmModel& uvmModel;
+    const svlang_lint::uvm::UvmModel& uvmModel;
     core::DiagnosticEngine& diags;
 };
 
@@ -94,12 +94,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::uvm
+} // namespace svlang_lint::rules::uvm
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createUvmDanglingConfigString() {
     return std::make_unique<uvm::UvmDanglingConfigString>();
 }
 }
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createUvmDanglingConfigString)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createUvmDanglingConfigString)

@@ -1,12 +1,12 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
 #include "slang/syntax/SyntaxVisitor.h"
 #include "slang/syntax/AllSyntax.h"
 #include "slang/syntax/SyntaxTree.h"
 #include <algorithm>
 #include <cctype>
 
-namespace uvmcheck::rules::correctness {
+namespace svlang_lint::rules::correctness {
 
 class NonBlockingInFunctionVisitor : public slang::syntax::SyntaxVisitor<NonBlockingInFunctionVisitor> {
 public:
@@ -88,7 +88,7 @@ public:
     core::Severity getDefaultSeverity() const override { return core::Severity::Error; }
 
     void run(slang::ast::Compilation& compilation,
-             const uvmcheck::uvm::UvmModel& /*uvmModel*/,
+             const svlang_lint::uvm::UvmModel& /*uvmModel*/,
              core::DiagnosticEngine& diags) override {
         NonBlockingInFunctionVisitor visitor(diags);
         for (const auto& syntaxTree : compilation.getSyntaxTrees()) {
@@ -99,12 +99,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::correctness
+} // namespace svlang_lint::rules::correctness
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createNonBlockingInFunction() {
     return std::make_unique<correctness::NonBlockingInFunction>();
 }
 }
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createNonBlockingInFunction)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createNonBlockingInFunction)

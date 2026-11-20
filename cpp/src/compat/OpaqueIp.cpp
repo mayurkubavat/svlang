@@ -1,7 +1,7 @@
-#include "uvmcheck/compat/Overlay.h"
+#include "svlang_lint/compat/Overlay.h"
 
-#include "uvmcheck/core/Diagnostic.h"
-#include "uvmcheck/core/ProjectConfig.h"
+#include "svlang_lint/core/Diagnostic.h"
+#include "svlang_lint/core/ProjectConfig.h"
 
 #include <algorithm>
 #include <filesystem>
@@ -15,7 +15,7 @@
 
 namespace fs = std::filesystem;
 
-namespace uvmcheck::compat {
+namespace svlang_lint::compat {
 
 namespace {
 
@@ -132,10 +132,10 @@ private:
             ctx.driver.sourceLoader.addFiles(path.string());
             ctx.project.libraryPaths().add(core::PathPattern(path.generic_string(), "."));
         } else {
-            ctx.log << "[uvmcheck] warning: opaque-ip: stub path '" << stub << "' does not exist\n";
+            ctx.log << "[svlang-lint] warning: opaque-ip: stub path '" << stub << "' does not exist\n";
             return;
         }
-        ctx.log << "[uvmcheck] opaque-ip: compiling stubs from " << stub << "\n";
+        ctx.log << "[svlang-lint] opaque-ip: compiling stubs from " << stub << "\n";
     }
 
     std::vector<std::pair<std::string, size_t>> envelopes;
@@ -187,4 +187,4 @@ std::unique_ptr<Override> createGlobalClock() {
     return std::make_unique<GlobalClock>();
 }
 
-} // namespace uvmcheck::compat
+} // namespace svlang_lint::compat

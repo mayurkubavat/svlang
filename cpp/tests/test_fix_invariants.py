@@ -162,7 +162,7 @@ def main():
     parser.add_argument("--binary", required=True)
     parser.add_argument("--mutations", type=int, default=3, help="mutated copies per sampled file")
     parser.add_argument("--sample", type=int, default=40, help="files to mutate (0 = all)")
-    parser.add_argument("--seed", default="uvmcheck")
+    parser.add_argument("--seed", default="svlang-lint")
     parser.add_argument("--timeout", type=int, default=60)
     parser.add_argument("-j", "--jobs", type=int, default=8)
     args = parser.parse_args()

@@ -9,7 +9,7 @@ Baseline and inline-waiver behaviour:
   reported as no longer matching;
 - version 1.0 baselines (rule@basename:line) are still honoured;
 - waiver files are parsed as JSON (a list, or {"waivers": [...]});
-- `// uvmcheck-disable-next-line RULE` on the line above waives a finding.
+- `// svlang-lint-disable-next-line RULE` on the line above waives a finding.
 """
 
 import argparse
@@ -59,14 +59,14 @@ def lint(binary, cwd, files, *extra):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--binary", default=str(REPO / "build" / "uvmcheck"))
+    ap.add_argument("--binary", default=str(REPO / "build" / "svlang-lint"))
     binary = str(Path(ap.parse_args().binary).resolve())
 
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp) / "proj"
-        (root / ".uvmcheck").mkdir(parents=True)
-        (root / ".uvmcheck" / "config.py").write_text(
-            "from uvmcheck.config import ProjectConfig\nclass Project(ProjectConfig):\n    pass\n")
+        (root / ".svlang-lint").mkdir(parents=True)
+        (root / ".svlang-lint" / "config.py").write_text(
+            "from svlang_lint.config import ProjectConfig\nclass Project(ProjectConfig):\n    pass\n")
         write(root / "agent_a" / "driver.sv", "drv_a")
         write(root / "agent_b" / "driver.sv", "drv_b")
         files = ["agent_a/driver.sv", "agent_b/driver.sv"]
@@ -74,8 +74,8 @@ def main():
         found, _ = lint(binary, root, files)
         check(len(found) == 2, "two findings before the baseline")
 
-        lint(binary, root, files, "--update-baseline", ".uvmcheck/baseline.json")
-        data = json.loads((root / ".uvmcheck" / "baseline.json").read_text())
+        lint(binary, root, files, "--update-baseline", ".svlang-lint/baseline.json")
+        data = json.loads((root / ".svlang-lint" / "baseline.json").read_text())
         fps = {e["fingerprint"] for e in data["baseline"]}
         check(data["version"] == "2.0", "baseline is version 2.0")
         check(len(fps) == 2, "same-named files in different folders get distinct fingerprints")
@@ -119,9 +119,9 @@ def main():
         nl = Path(tmp) / "nl"
         nl.mkdir()
         (nl / "t.sv").write_text(MODULE.format(name="t", pad="").replace(
-            "    if (a == a)", f"    // uvmcheck-disable-next-line {RULE}\n    if (a == a)"))
+            "    if (a == a)", f"    // svlang-lint-disable-next-line {RULE}\n    if (a == a)"))
         found, _ = lint(binary, nl, ["t.sv"])
-        check(found == [], "uvmcheck-disable-next-line waives the next line")
+        check(found == [], "svlang-lint-disable-next-line waives the next line")
 
     print(f"baseline tests: {len(failures)} failure(s)")
     return 1 if failures else 0

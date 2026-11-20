@@ -1,50 +1,50 @@
-//! Inline waivers, as uvmcheck's WaiverEngine reads them:
+//! Inline waivers, as svlang-lint's WaiverEngine reads them:
 //!
-//! - on the finding's own line: `uvmcheck:waive RULE`, `uvmcheck:disable`,
-//!   `uvmcheck-disable`, `lint:waive`, `lint:off`, `uvmcheck: waive`;
-//! - on the line above: `uvmcheck-disable-next-line RULE`,
-//!   `uvmcheck:waive-next-line`, `uvmcheck:disable-next-line`.
+//! - on the finding's own line: `svlang-lint:waive RULE`, `svlang-lint:disable`,
+//!   `svlang-lint-disable`, `lint:waive`, `lint:off`, `svlang-lint: waive`;
+//! - on the line above: `svlang-lint-disable-next-line RULE`,
+//!   `svlang-lint:waive-next-line`, `svlang-lint:disable-next-line`.
 //!
 //! `*` waives any rule. A quoted pattern after the rule narrows the waiver to
 //! findings whose message it matches, searched for as `std::regex_search`
 //! does ([`crate::pattern`]). A pattern that does not compile, or a quote left
 //! open, waives nothing and is reported as a UVM-WV-001 error at the comment,
-//! as uvmcheck reports it.
+//! as svlang-lint reports it.
 
 use std::collections::{HashMap, HashSet};
 
 use crate::Finding;
 
 const SAME_LINE: [&str; 8] = [
-    "uvmcheck:waive",
-    "uvmcheck:disable",
-    "uvmcheck-disable",
+    "svlang-lint:waive",
+    "svlang-lint:disable",
+    "svlang-lint-disable",
     "lint:waive",
     "lint:off",
-    "uvmcheck: waive",
+    "svlang-lint: waive",
     "verissimo_lint: waive_line",
     "verissimo_lint:waive_line",
 ];
 const NEXT_LINE: [&str; 6] = [
-    "uvmcheck-disable-next-line",
-    "uvmcheck:waive-next-line",
-    "uvmcheck:disable-next-line",
-    "uvmcheck: waive",
+    "svlang-lint-disable-next-line",
+    "svlang-lint:waive-next-line",
+    "svlang-lint:disable-next-line",
+    "svlang-lint: waive",
     "verissimo_lint: waive_line",
     "verissimo_lint:waive_line",
 ];
 const BLOCK_OFF: [&str; 6] = [
-    "uvmcheck:off",
-    "uvmcheck: off",
-    "uvmcheck-off",
+    "svlang-lint:off",
+    "svlang-lint: off",
+    "svlang-lint-off",
     "verissimo_lint: waive_start",
     "verissimo_lint:waive_start",
     "lint:waive-start",
 ];
 const BLOCK_ON: [&str; 8] = [
-    "uvmcheck:on",
-    "uvmcheck: on",
-    "uvmcheck-on",
+    "svlang-lint:on",
+    "svlang-lint: on",
+    "svlang-lint-on",
     "verissimo_lint: waive_stop",
     "verissimo_lint:waive_stop",
     "lint:waive-stop",
@@ -69,7 +69,7 @@ fn message_pattern(rest: &str) -> Result<Option<String>, String> {
 }
 
 /// The message of the UVM-WV-001 error for a waiver comment whose pattern
-/// is unusable (uvmcheck's wording).
+/// is unusable (svlang-lint's wording).
 pub(crate) const BAD_PATTERN: &str = "invalid message regex '";
 
 /// Inline patterns, compiled once each: Err holds why one does not compile.
@@ -86,7 +86,7 @@ fn waives(text: &str, f: &Finding, at: u32, same_line: bool, compiled: &mut Comp
             let pos = from + p;
             from = pos + 1;
             let rest = &text[pos + kw.len()..];
-            // `uvmcheck:waive` is a prefix of `uvmcheck:waive-next-line`.
+            // `svlang-lint:waive` is a prefix of `svlang-lint:waive-next-line`.
             if rest.starts_with('-') || rest.starts_with(':') {
                 continue;
             }
@@ -118,16 +118,21 @@ fn waives(text: &str, f: &Finding, at: u32, same_line: bool, compiled: &mut Comp
 
 /// What inline comments waived so far, for the waiver report: the comment
 /// lines used (file, line) and the waived findings per rule.
-#[derive(Default)]
+#[derive(Clone, Debug, Default)]
 pub(crate) struct Used {
     pub(crate) lines: HashSet<(String, u32)>,
     pub(crate) by_rule: HashMap<String, usize>,
     /// The waived findings, with their file: a waiver file entry that also
-    /// matches one counts as used, as in uvmcheck.
+    /// matches one counts as used, as in svlang-lint.
     pub(crate) waived: Vec<(String, u32, &'static str, String)>,
 }
 
-pub(crate) static USED: std::sync::Mutex<Option<Used>> = std::sync::Mutex::new(None);
+/// Session-scoped inline waiver tracking state.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct WaiverState {
+    pub(crate) inline_waived: usize,
+    pub(crate) used: Used,
+}
 
 #[derive(Clone, Debug)]
 struct BlockSpan {
@@ -210,7 +215,7 @@ fn parse_blocks(lines: &[String]) -> (Vec<BlockSpan>, Vec<(u32, String)>) {
     (spans, unclosed)
 }
 
-/// Returns `(line_number, rule_list)` for every strict block waiver (`uvmcheck:off`,
+/// Returns `(line_number, rule_list)` for every strict block waiver (`svlang-lint:off`,
 /// `verissimo_lint: waive_start`, etc.) in `src` that is never closed before EOF.
 pub(crate) fn find_unclosed_blocks(src: &str) -> Vec<(u32, String)> {
     let lines: Vec<String> = src.lines().map(str::to_string).collect();
@@ -258,8 +263,12 @@ fn waives_in_blocks(
 
 type FileWaiverData = (Vec<String>, Vec<BlockSpan>);
 
-/// Drops findings an inline comment waives; returns how many.
-pub(crate) fn apply(findings: &mut Vec<Finding>, files: &[String]) -> usize {
+/// Drops findings an inline comment waives, recording into `state`; returns how many.
+pub(crate) fn apply_into(
+    findings: &mut Vec<Finding>,
+    files: &[String],
+    state: &std::sync::Mutex<WaiverState>,
+) -> usize {
     let before = findings.len();
     let mut used = Used::default();
     let mut texts: HashMap<String, Option<FileWaiverData>> = HashMap::new();
@@ -313,19 +322,25 @@ pub(crate) fn apply(findings: &mut Vec<Finding>, files: &[String]) -> usize {
             fixes: Vec::new(),
         });
     }
-    if let Ok(mut u) = USED.lock() {
-        let all = u.get_or_insert_with(Used::default);
-        all.lines.extend(used.lines);
-        all.waived.extend(used.waived);
+    if let Ok(mut s) = state.lock() {
+        s.inline_waived += waived;
+        s.used.lines.extend(used.lines);
+        s.used.waived.extend(used.waived);
         for (r, n) in used.by_rule {
-            *all.by_rule.entry(r).or_default() += n;
+            *s.used.by_rule.entry(r).or_default() += n;
         }
     }
     waived
 }
 
+/// Drops findings an inline comment waives in the active session; returns how many.
+pub(crate) fn apply(findings: &mut Vec<Finding>, files: &[String]) -> usize {
+    let state = crate::session::with(|s| s.waiver_state.clone());
+    apply_into(findings, files, &state)
+}
+
 /// The UVM-WV-001 errors [`apply`] added for unusable waiver patterns: kept
-/// out of the config, waivers and `--changed-since`, as uvmcheck adds them
+/// out of the config, waivers and `--changed-since`, as svlang-lint adds them
 /// after those.
 pub(crate) fn is_bad_pattern(f: &Finding) -> bool {
     f.rule == "UVM-WV-001" && f.message.starts_with(BAD_PATTERN)
@@ -334,20 +349,22 @@ pub(crate) fn is_bad_pattern(f: &Finding) -> bool {
 /// A waiver comment that waived nothing: (file, line, comment text).
 pub type Unused = (String, u32, String);
 
-/// The waiver comments in `files`: how many there are, and those that waived
-/// nothing while naming a rule that ran (`active`) or `*`, as uvmcheck's
-/// waiver hygiene finds them (a keyword inside a `//` or `/*` comment).
-pub(crate) fn unused_comments(files: &[String], active: &HashSet<&str>) -> (usize, Vec<Unused>) {
+/// The waiver comments in `files` against an explicit `used` line set.
+pub(crate) fn unused_comments_with(
+    files: &[String],
+    active: &HashSet<&str>,
+    used: &HashSet<(String, u32)>,
+) -> (usize, Vec<Unused>) {
     const KEYWORDS: [&str; 16] = [
-        "uvmcheck-disable-next-line",
-        "uvmcheck:waive-next-line",
-        "uvmcheck:disable-next-line",
-        "uvmcheck:waive",
-        "uvmcheck:disable",
-        "uvmcheck-disable",
-        "uvmcheck:off",
-        "uvmcheck: off",
-        "uvmcheck-off",
+        "svlang-lint-disable-next-line",
+        "svlang-lint:waive-next-line",
+        "svlang-lint:disable-next-line",
+        "svlang-lint:waive",
+        "svlang-lint:disable",
+        "svlang-lint-disable",
+        "svlang-lint:off",
+        "svlang-lint: off",
+        "svlang-lint-off",
         "verissimo_lint: waive_start",
         "verissimo_lint:waive_start",
         "verissimo_lint: waive_line",
@@ -356,7 +373,6 @@ pub(crate) fn unused_comments(files: &[String], active: &HashSet<&str>) -> (usiz
         "lint:waive",
         "lint:off",
     ];
-    let used = USED.lock().ok().and_then(|u| u.as_ref().map(|u| u.lines.clone())).unwrap_or_default();
     let mut count = 0;
     let mut unused = Vec::new();
     for file in files {
@@ -380,8 +396,14 @@ pub(crate) fn unused_comments(files: &[String], active: &HashSet<&str>) -> (usiz
     (count, unused)
 }
 
+/// The waiver comments in `files` in the active session.
+pub(crate) fn unused_comments(files: &[String], active: &HashSet<&str>) -> (usize, Vec<Unused>) {
+    let used = crate::session::with(|s| s.waiver_state.lock().ok().map(|st| st.used.lines.clone()).unwrap_or_default());
+    unused_comments_with(files, active, &used)
+}
+
 /// The rule IDs (`SV-STY-002`, `UVM-NAM-101.x`) and `*` in `text`, as
-/// uvmcheck's `[A-Z][A-Z0-9]*-[A-Z][A-Z0-9]*-[0-9]+[A-Za-z0-9.]*|\*`.
+/// svlang-lint's `[A-Z][A-Z0-9]*-[A-Z][A-Z0-9]*-[0-9]+[A-Za-z0-9.]*|\*`.
 fn rule_ids(text: &str) -> impl Iterator<Item = &str> {
     let b = text.as_bytes();
     let mut i = 0;
@@ -438,7 +460,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn finds_rule_ids_as_uvmcheck_does() {
+    fn finds_rule_ids_as_svlang_lint_does() {
         let ids: Vec<&str> = rule_ids(" SV-STY-002 -- x, UVM-NAM-101.a and * not sv-sty-1 or A-B-").collect();
         assert_eq!(ids, ["SV-STY-002", "UVM-NAM-101.a", "*"]);
     }
@@ -446,9 +468,9 @@ mod tests {
     #[test]
     fn parses_closed_and_unclosed_block_waivers() {
         let lines: Vec<String> = [
-            "// uvmcheck:off SV-STY-002",
+            "// svlang-lint:off SV-STY-002",
             "int a;",
-            "// uvmcheck:on SV-STY-002",
+            "// svlang-lint:on SV-STY-002",
             "// verissimo_lint: waive_start SV-DED-001",
             "int b;",
         ]

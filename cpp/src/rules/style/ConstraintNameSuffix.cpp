@@ -1,8 +1,8 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
-#include "uvmcheck/model/SlangModel.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
+#include "svlang_lint/model/SlangModel.h"
 
-namespace uvmcheck::rules::style {
+namespace svlang_lint::rules::style {
 
 class ConstraintNameSuffix : public Rule {
 public:
@@ -14,9 +14,9 @@ public:
     std::string_view getCategory() const override { return "Style"; }
     core::Severity getDefaultSeverity() const override { return core::Severity::Warning; }
 
-    // Reads only uvmcheck::model, not slang's AST.
+    // Reads only svlang_lint::model, not slang's AST.
     void run(slang::ast::Compilation&,
-             const uvmcheck::uvm::UvmModel& uvmModel,
+             const svlang_lint::uvm::UvmModel& uvmModel,
              core::DiagnosticEngine& diags) override {
         for (const model::Class& cls : uvmModel.facade().classes()) {
             if (cls.isParameterized) continue;
@@ -37,12 +37,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::style
+} // namespace svlang_lint::rules::style
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createConstraintNameSuffix() {
     return std::make_unique<style::ConstraintNameSuffix>();
 }
 }
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createConstraintNameSuffix)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createConstraintNameSuffix)

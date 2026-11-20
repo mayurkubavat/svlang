@@ -1,9 +1,9 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
 #include "slang/ast/ASTVisitor.h"
 #include "slang/ast/statements/MiscStatements.h"
 
-namespace uvmcheck::rules::sva {
+namespace svlang_lint::rules::sva {
 
 class TimingControlVisitor : public slang::ast::ASTVisitor<TimingControlVisitor, slang::ast::VisitFlags::AllGood> {
 public:
@@ -81,12 +81,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::sva
+} // namespace svlang_lint::rules::sva
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createTimeInAssertionAction() {
     return std::make_unique<sva::TimeInAssertionAction>();
 }
 }
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createTimeInAssertionAction)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createTimeInAssertionAction)

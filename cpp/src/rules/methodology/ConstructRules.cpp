@@ -2,8 +2,8 @@
 // (MG-2.4), which shares SV-CNS-004's string-dispatch check for routine arguments.
 
 #include "MethodologySupport.h"
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
 
 #include "slang/ast/ASTVisitor.h"
 #include "slang/ast/expressions/AssignmentExpressions.h"
@@ -22,7 +22,7 @@
 #include <unordered_map>
 #include <unordered_set>
 
-namespace uvmcheck::rules::methodology {
+namespace svlang_lint::rules::methodology {
 
 using namespace slang::ast;
 using namespace slang::syntax;
@@ -786,9 +786,9 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::methodology
+} // namespace svlang_lint::rules::methodology
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createStringModeParameter() { return std::make_unique<methodology::StringModeParameter>(); }
 std::unique_ptr<Rule> createDefineForConstant() { return std::make_unique<methodology::DefineForConstant>(); }
 std::unique_ptr<Rule> createMacroAsRoutine() { return std::make_unique<methodology::MacroAsRoutine>(); }
@@ -800,12 +800,12 @@ std::unique_ptr<Rule> createLegacyIntegerType() { return std::make_unique<method
 std::unique_ptr<Rule> createFunctionOutputArguments() { return std::make_unique<methodology::FunctionOutputArguments>(); }
 }
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createStringModeParameter)
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createDefineForConstant)
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createMacroAsRoutine)
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createIfdefInReusableClass)
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createStringAsEnum)
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createManualBitFieldSlicing)
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createImplicitEnumBaseType)
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createLegacyIntegerType)
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createFunctionOutputArguments)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createStringModeParameter)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createDefineForConstant)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createMacroAsRoutine)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createIfdefInReusableClass)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createStringAsEnum)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createManualBitFieldSlicing)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createImplicitEnumBaseType)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createLegacyIntegerType)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createFunctionOutputArguments)

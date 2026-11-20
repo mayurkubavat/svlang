@@ -4,7 +4,7 @@
 //! parameter with the value it has in that instance, plus the arena-backed
 //! [`crate::elab_ir::ElaboratedDesign`] object model.
 //!
-//! Lines in [`Elab::out`] are those of `uvmcheck_sym_dump --hier`:
+//! Lines in [`Elab::out`] are those of `svlang_sym_dump --hier`:
 //!
 //! ```text
 //! <path> instance <name> : <definition>

@@ -1,12 +1,12 @@
 # Slang (third-party)
 
 [Slang](https://github.com/MikePopoloski/slang) is the upstream SystemVerilog
-compiler front end that `uvmcheck` (`cpp/`), `libuvmcheck_model` and the
+compiler front end that `svlang-lint` (`cpp/`), `libsvlang_lint_model` and the
 reference dumpers in `tools/oracles/` are built on. It is not our code, so it
 is kept out of this repository:
 
 - **Pinned, fetched, never edited in place.** [`slang.cmake`](slang.cmake)
-  holds the pin (`UVMCHECK_SLANG_TAG`) and fetches that commit at configure
+  holds the pin (`SVLANG_LINT_SLANG_TAG`) and fetches that commit at configure
   time into `<build>/_deps/slang-src`. Nothing under `cpp/` copies or forks
   Slang sources.
 - **Workarounds live in our code, not in Slang.** Differences from simulators
@@ -30,7 +30,7 @@ only through the C ABI bridge (`crates/sv-slang`, used by `crates/dv-model`'s
 
 - **Off by default.** `cargo build` and `cargo test` at the repository root
   build every tool (`dv-lint`, `dv-lsp`, `dv-build`, `dv-map`, `dv-filelist`)
-  natively, with no C++ build and no libuvmcheck_model. `sv-slang` is not a
+  natively, with no C++ build and no libsvlang_lint_model. `sv-slang` is not a
   default workspace member.
 - **Never the default front end.** With the feature on, a tool still loads
   natively unless asked: `dv-lint --slang`, `dv-map --slang`,
@@ -69,7 +69,7 @@ the canary below tells you before a bump what breaks.
      delete the override (or retire the crash pattern);
    - rule suites changed: decide whether each change is a Slang fix or a
      regression; report regressions upstream.
-3. Move the pin: set `UVMCHECK_SLANG_TAG` in `slang.cmake` (a release tag when
+3. Move the pin: set `SVLANG_LINT_SLANG_TAG` in `slang.cmake` (a release tag when
    one has what we need, else a master commit, with its date and why).
 4. Rebuild from clean (`rm -rf build build-model`, or at least
    `<build>/_deps/slang-*`), then refresh what depends on Slang's output and

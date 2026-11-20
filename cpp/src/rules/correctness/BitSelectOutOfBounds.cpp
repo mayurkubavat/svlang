@@ -1,5 +1,5 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
 #include "slang/ast/ASTVisitor.h"
 #include "slang/ast/expressions/SelectExpressions.h"
 #include "slang/ast/expressions/LiteralExpressions.h"
@@ -8,7 +8,7 @@
 #include <algorithm>
 #include <cctype>
 
-namespace uvmcheck::rules::correctness {
+namespace svlang_lint::rules::correctness {
 
 class BitSelectOutOfBoundsVisitor : public engine::AstVisitor<BitSelectOutOfBoundsVisitor> {
 public:
@@ -86,12 +86,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::correctness
+} // namespace svlang_lint::rules::correctness
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createBitSelectOutOfBounds() {
     return std::make_unique<correctness::BitSelectOutOfBounds>();
 }
 }
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createBitSelectOutOfBounds)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createBitSelectOutOfBounds)

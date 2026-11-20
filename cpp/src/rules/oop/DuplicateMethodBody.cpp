@@ -1,12 +1,12 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
 #include "slang/ast/symbols/ClassSymbols.h"
 #include "slang/ast/symbols/SubroutineSymbols.h"
 #include "slang/syntax/SyntaxNode.h"
 #include <unordered_map>
 #include <algorithm>
 
-namespace uvmcheck::rules::oop {
+namespace svlang_lint::rules::oop {
 
 class DuplicateMethodBody : public Rule {
 public:
@@ -20,7 +20,7 @@ public:
     core::Severity getDefaultSeverity() const override { return core::Severity::Warning; }
 
     void run(slang::ast::Compilation& compilation,
-             const uvmcheck::uvm::UvmModel& uvmModel,
+             const svlang_lint::uvm::UvmModel& uvmModel,
              core::DiagnosticEngine& diags) override {
         const auto* sm = compilation.getSourceManager();
         if (!sm) return;
@@ -110,12 +110,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::oop
+} // namespace svlang_lint::rules::oop
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createDuplicateMethodBody() {
     return std::make_unique<oop::DuplicateMethodBody>();
 }
 }
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createDuplicateMethodBody)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createDuplicateMethodBody)

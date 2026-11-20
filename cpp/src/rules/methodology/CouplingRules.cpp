@@ -1,8 +1,8 @@
 // Methodology guide chapter MG-2, coupling: UVM-CPL-002 to UVM-CPL-004.
 
 #include "MethodologySupport.h"
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
 
 #include "slang/ast/ASTVisitor.h"
 #include "slang/ast/expressions/AssignmentExpressions.h"
@@ -10,7 +10,7 @@
 #include "slang/ast/expressions/SelectExpressions.h"
 #include "slang/ast/symbols/InstanceSymbols.h"
 
-namespace uvmcheck::rules::methodology {
+namespace svlang_lint::rules::methodology {
 
 using namespace slang::ast;
 
@@ -216,14 +216,14 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::methodology
+} // namespace svlang_lint::rules::methodology
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createHandleToEnvOrTest() { return std::make_unique<methodology::HandleToEnvOrTest>(); }
 std::unique_ptr<Rule> createForeignComponentStateWrite() { return std::make_unique<methodology::ForeignComponentStateWrite>(); }
 std::unique_ptr<Rule> createHierarchicalReferenceInClass() { return std::make_unique<methodology::HierarchicalReferenceInClass>(); }
 }
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createHandleToEnvOrTest)
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createForeignComponentStateWrite)
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createHierarchicalReferenceInClass)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createHandleToEnvOrTest)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createForeignComponentStateWrite)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createHierarchicalReferenceInClass)

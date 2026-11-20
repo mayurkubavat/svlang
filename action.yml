@@ -1,16 +1,16 @@
-name: uvmcheck
-description: Lint SystemVerilog/UVM code with uvmcheck and upload the findings to GitHub code scanning (SARIF).
+name: svlang-lint
+description: Lint SystemVerilog/UVM code with svlang-lint and upload the findings to GitHub code scanning (SARIF).
 branding:
   icon: check-circle
   color: green
 
 inputs:
   args:
-    description: Extra uvmcheck arguments (sources, -f file lists, --preset ...). Empty uses .uvmcheck/config.py.
+    description: Extra svlang-lint arguments (sources, -f file lists, --preset ...). Empty uses .svlang-lint/config.py.
     required: false
     default: ""
   version:
-    description: A released version to download (for example v0.2.0). Empty builds uvmcheck from the action's own source.
+    description: A released version to download (for example v0.2.0). Empty builds svlang-lint from the action's own source.
     required: false
     default: ""
   working-directory:
@@ -24,13 +24,13 @@ inputs:
   sarif-file:
     description: Where to write the SARIF report.
     required: false
-    default: uvmcheck.sarif
+    default: svlang-lint.sarif
   upload-sarif:
     description: Upload the SARIF report to code scanning (needs security-events write permission).
     required: false
     default: "true"
   fail-on-findings:
-    description: Fail the step when uvmcheck reports errors.
+    description: Fail the step when svlang-lint reports errors.
     required: false
     default: "true"
 
@@ -45,48 +45,48 @@ runs:
     # A released build when `version` names one; otherwise the native engine
     # is built from this checkout of the action (about two minutes the first
     # time, then cached). Neither needs a C++ toolchain.
-    - name: Download uvmcheck
+    - name: Download svlang-lint
       if: inputs.version != ''
       shell: bash
       env:
         VERSION: ${{ inputs.version }}
-        DEST: ${{ runner.temp }}/uvmcheck-release
+        DEST: ${{ runner.temp }}/svlang-lint-release
       run: |
         case "$RUNNER_OS-$RUNNER_ARCH" in
           Linux-X64) target=linux-x64 ;;
           Linux-ARM64) target=linux-arm64 ;;
           macOS-ARM64) target=darwin-arm64 ;;
           macOS-X64) target=darwin-x64 ;;
-          *) echo "uvmcheck has no release build for $RUNNER_OS-$RUNNER_ARCH; leave 'version' empty to build it" >&2; exit 2 ;;
+          *) echo "svlang-lint has no release build for $RUNNER_OS-$RUNNER_ARCH; leave 'version' empty to build it" >&2; exit 2 ;;
         esac
         mkdir -p "$DEST"
-        curl -fsSL "https://github.com/mayurkubavat/svlang/releases/download/$VERSION/uvmcheck-$target.tar.gz" \
+        curl -fsSL "https://github.com/mayurkubavat/svlang/releases/download/$VERSION/svlang-lint-$target.tar.gz" \
           | tar -xz -C "$DEST" --strip-components=1
-        echo "UVMCHECK=$DEST/bin/uvmcheck" >> "$GITHUB_ENV"
+        echo "SVLANG_LINT=$DEST/bin/svlang-lint" >> "$GITHUB_ENV"
 
-    - name: Restore uvmcheck build
+    - name: Restore svlang-lint build
       if: inputs.version == ''
       id: cache
       uses: actions/cache@v4
       with:
-        path: ${{ github.action_path }}/target/release/uvmcheck
-        key: uvmcheck-native-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles(format('{0}/crates/**', github.action_path), format('{0}/Cargo.lock', github.action_path), format('{0}/testdata/rules/**', github.action_path)) }}
+        path: ${{ github.action_path }}/target/release/svlang-lint
+        key: svlang-lint-native-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles(format('{0}/crates/**', github.action_path), format('{0}/Cargo.lock', github.action_path), format('{0}/testdata/rules/**', github.action_path)) }}
 
-    - name: Build uvmcheck
+    - name: Build svlang-lint
       if: inputs.version == '' && steps.cache.outputs.cache-hit != 'true'
       shell: bash
       working-directory: ${{ github.action_path }}
       run: |
         if ! command -v cargo >/dev/null; then
-          echo "uvmcheck: no Rust toolchain on this runner; install one (1.82 or later) or set the action's 'version' input to a release" >&2
+          echo "svlang-lint: no Rust toolchain on this runner; install one (1.82 or later) or set the action's 'version' input to a release" >&2
           exit 2
         fi
-        cargo build --release --locked -p dv-lint --bin uvmcheck
+        cargo build --release --locked -p dv-lint --bin svlang-lint
 
-    - name: Use the built uvmcheck
+    - name: Use the built svlang-lint
       if: inputs.version == ''
       shell: bash
-      run: echo "UVMCHECK=${{ github.action_path }}/target/release/uvmcheck" >> "$GITHUB_ENV"
+      run: echo "SVLANG_LINT=${{ github.action_path }}/target/release/svlang-lint" >> "$GITHUB_ENV"
 
     - name: Lint
       id: lint
@@ -102,7 +102,7 @@ runs:
         if [ -n "$CHANGED" ]; then extra+=(--changed-since "$CHANGED"); fi
         set +e
         # shellcheck disable=SC2086  # ARGS is a word list on purpose
-        "$UVMCHECK" $ARGS "${extra[@]}" --sarif "$SARIF"
+        "$SVLANG_LINT" $ARGS "${extra[@]}" --sarif "$SARIF"
         status=$?
         set -e
         echo "sarif=$SARIF" >> "$GITHUB_OUTPUT"
@@ -114,11 +114,11 @@ runs:
       uses: github/codeql-action/upload-sarif@v3
       with:
         sarif_file: ${{ inputs.working-directory }}/${{ inputs.sarif-file }}
-        category: uvmcheck
+        category: svlang-lint
 
     - name: Fail on findings
       if: steps.lint.outputs.failed == 'true'
       shell: bash
       run: |
-        echo "uvmcheck reported errors; see the code scanning alerts or the log above."
+        echo "svlang-lint reported errors; see the code scanning alerts or the log above."
         exit 1

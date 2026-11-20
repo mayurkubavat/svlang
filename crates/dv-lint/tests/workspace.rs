@@ -8,13 +8,13 @@ fn rules(c: &dv_lint::Checked) -> Vec<(&'static str, u32)> {
 #[test]
 fn a_workspace_applies_the_project_and_reads_editor_text() {
     let dir = std::env::temp_dir().join(format!("dv-lint-workspace-{}", std::process::id()));
-    std::fs::create_dir_all(dir.join(".uvmcheck")).unwrap();
+    std::fs::create_dir_all(dir.join(".svlang-lint")).unwrap();
     std::fs::create_dir_all(dir.join("tb")).unwrap();
     // SV-STY-003 (a TODO comment, reported at the token after it) is a style
     // rule: off by default, on when the config configures it. The waiver
     // takes out the one reported on line 4.
     std::fs::write(
-        dir.join(".uvmcheck/config.json"),
+        dir.join(".svlang-lint/config.json"),
         r#"{"sources": ["tb/top.sv"], "rules": {"SV-STY-003": {"severity": "ERROR"}},
             "waivers": [{"rule": "SV-STY-003", "path": "tb/top.sv", "line": 4, "reason": "known"}]}"#,
     )
@@ -25,7 +25,7 @@ fn a_workspace_applies_the_project_and_reads_editor_text() {
     std::fs::write(&other, "module other; // TODO elsewhere\nendmodule\n").unwrap();
 
     let ws = dv_lint::Workspace::open(&dir).expect("the project opens");
-    assert!(ws.config_file().is_some_and(|f| f.ends_with(".uvmcheck/config.json")));
+    assert!(ws.config_file().is_some_and(|f| f.ends_with(".svlang-lint/config.json")));
     let checked = ws.check(&[]).expect("the project checks");
     assert_eq!(rules(&checked), vec![("SV-STY-003", 2)]);
     assert_eq!(checked.findings[0].severity, dv_lint::Severity::Error);

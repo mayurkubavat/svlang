@@ -1,5 +1,5 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
 #include "slang/syntax/AllSyntax.h"
 #include "slang/syntax/SyntaxTree.h"
 #include "slang/syntax/SyntaxVisitor.h"
@@ -7,7 +7,7 @@
 #include <string>
 #include <vector>
 
-namespace uvmcheck::rules::coverage {
+namespace svlang_lint::rules::coverage {
 
 struct BinValueInfo {
     std::string binName;
@@ -98,12 +98,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::coverage
+} // namespace svlang_lint::rules::coverage
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createIgnoreBinsOverlapsIllegalBins() {
     return std::make_unique<coverage::IgnoreBinsOverlapsIllegalBins>();
 }
-} // namespace uvmcheck::rules
+} // namespace svlang_lint::rules
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createIgnoreBinsOverlapsIllegalBins)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createIgnoreBinsOverlapsIllegalBins)

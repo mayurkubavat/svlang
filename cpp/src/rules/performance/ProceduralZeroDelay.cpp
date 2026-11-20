@@ -1,5 +1,5 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
 #include "slang/ast/ASTVisitor.h"
 #include "slang/ast/TimingControl.h"
 #include "slang/ast/statements/MiscStatements.h"
@@ -8,7 +8,7 @@
 #include "slang/syntax/SyntaxVisitor.h"
 #include <string>
 
-namespace uvmcheck::rules::performance {
+namespace svlang_lint::rules::performance {
 
 class ZeroDelayVisitor : public engine::AstVisitor<ZeroDelayVisitor> {
 public:
@@ -146,9 +146,9 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::performance
+} // namespace svlang_lint::rules::performance
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createProceduralZeroDelay() {
     return std::make_unique<performance::ProceduralZeroDelay>();
 }
@@ -157,5 +157,5 @@ std::unique_ptr<Rule> createForkInClockedLoop() {
 }
 }
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createProceduralZeroDelay)
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createForkInClockedLoop)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createProceduralZeroDelay)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createForkInClockedLoop)

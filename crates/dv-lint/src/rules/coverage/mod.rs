@@ -17,6 +17,7 @@ mod illegal_bin_overlap;
 mod missing_iff_on_covergroup_clock;
 mod missing_per_instance_option;
 mod overlapping_ranges_in_coverpoint_bin;
+mod per_instance_zero_on_class_covergroup;
 mod unbounded_transition_bins;
 mod unreachable_cover_bin;
 mod unreferenced_covergroup;
@@ -60,5 +61,6 @@ pub(crate) fn rules() -> Vec<Rule> {
         Rule { id: "SV-COV-017", name: "UnreachableCoverBin", category: "Coverage", severity: Severity::Warning, profiles: SOUNDNESS, guidelines: &[], experimental: false, native: false, about: "Flags coverpoint bins whose values all lie outside the range of the coverpoint expression (for example bins {[16:31]} on a 4-bit value). Such a bin can never be hit.", check: Check::Syntax(unreachable_cover_bin::unreachable_bin),
         },
         Rule { id: "SV-COV-020", name: "MissingPerInstanceOption", category: "Advisory", severity: Severity::Info, profiles: ADVISORY, guidelines: &[], experimental: false, native: true, about: "Flags covergroups declared in uvm_component subclasses that omit 'option.per_instance = 1;', merging multi-instance coverage into type-level bins only. Advisory: off by default.", check: Check::Mixed(missing_per_instance_option::missing_per_instance_option) },
+        Rule { id: "SV-COV-021", name: "PerInstanceZeroOnClassCovergroup", category: "Coverage", severity: Severity::Warning, profiles: SOUNDNESS, guidelines: &[], experimental: false, native: true, about: "Flags covergroups declared in classes or parameterized modules/interfaces that explicitly set 'option.per_instance = 0;', collapsing per-instance coverage holes.", check: Check::Syntax(per_instance_zero_on_class_covergroup::per_instance_zero_on_class_covergroup) },
     ]
 }

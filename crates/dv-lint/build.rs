@@ -1,4 +1,4 @@
-// With the slang feature the binary can load through libuvmcheck_model; let
+// With the slang feature the binary can load through libsvlang_lint_model; let
 // it find the library at run time (same lookup as sv-slang). Without it
 // nothing here refers to the C++ build.
 //
@@ -10,11 +10,11 @@ use std::path::{Path, PathBuf};
 
 fn main() {
     explain_data();
-    println!("cargo:rerun-if-env-changed=UVMCHECK_BUILD_DIR");
+    println!("cargo:rerun-if-env-changed=SVLANG_LINT_BUILD_DIR");
     if std::env::var_os("CARGO_FEATURE_SLANG").is_none() {
         return;
     }
-    let dir = match std::env::var_os("UVMCHECK_BUILD_DIR") {
+    let dir = match std::env::var_os("SVLANG_LINT_BUILD_DIR") {
         Some(d) => PathBuf::from(d),
         None => PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../build-model"),
     };

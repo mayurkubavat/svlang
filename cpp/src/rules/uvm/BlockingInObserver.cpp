@@ -13,16 +13,16 @@
 #include <set>
 #include <string>
 
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
-#include "uvmcheck/rules/SweSupport.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
+#include "svlang_lint/rules/SweSupport.h"
 #include "slang/ast/ASTVisitor.h"
 #include "slang/ast/statements/MiscStatements.h"
 #include "slang/ast/symbols/ClassSymbols.h"
 #include "slang/ast/symbols/MemberSymbols.h"
 #include "slang/ast/symbols/SubroutineSymbols.h"
 
-namespace uvmcheck::rules::uvm {
+namespace svlang_lint::rules::uvm {
 
 using namespace slang::ast;
 
@@ -74,7 +74,7 @@ public:
     core::Severity getDefaultSeverity() const override { return core::Severity::Error; }
 
     // Queries the class model only; it does not walk the design.
-    void run(slang::ast::Compilation&, const uvmcheck::uvm::UvmModel& model,
+    void run(slang::ast::Compilation&, const svlang_lint::uvm::UvmModel& model,
              core::DiagnosticEngine& diags) override {
         for (const auto* cls : swe::userClasses(model)) {
             auto writes = analysisWriteMethods(*cls);
@@ -113,12 +113,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::uvm
+} // namespace svlang_lint::rules::uvm
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createBlockingInObserver() {
     return std::make_unique<uvm::BlockingInObserver>();
 }
-} // namespace uvmcheck::rules
+} // namespace svlang_lint::rules
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createBlockingInObserver)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createBlockingInObserver)

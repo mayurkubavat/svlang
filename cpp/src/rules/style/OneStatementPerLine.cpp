@@ -1,11 +1,11 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
 #include "slang/syntax/SyntaxVisitor.h"
 #include "slang/syntax/SyntaxTree.h"
 #include "slang/syntax/AllSyntax.h"
 #include <unordered_set>
 
-namespace uvmcheck::rules::style {
+namespace svlang_lint::rules::style {
 
 class OneStatementPerLineVisitor : public engine::SyntaxVisitor<OneStatementPerLineVisitor> {
 public:
@@ -97,12 +97,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::style
+} // namespace svlang_lint::rules::style
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createOneStatementPerLine() {
     return std::make_unique<style::OneStatementPerLine>();
 }
 }
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createOneStatementPerLine)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createOneStatementPerLine)

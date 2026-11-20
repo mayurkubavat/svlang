@@ -1,5 +1,5 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
 #include "slang/ast/ASTVisitor.h"
 #include "slang/ast/symbols/SubroutineSymbols.h"
 #include "slang/ast/symbols/ClassSymbols.h"
@@ -9,7 +9,7 @@
 #include "slang/diagnostics/ExpressionsDiags.h"
 #include "slang/syntax/AllSyntax.h"
 
-namespace uvmcheck::rules::correctness {
+namespace svlang_lint::rules::correctness {
 
 class PartSelectReversedVisitor : public slang::ast::ASTVisitor<PartSelectReversedVisitor, slang::ast::VisitFlags::AllGood | slang::ast::VisitFlags::Bad> {
 public:
@@ -114,7 +114,7 @@ public:
     core::Severity getDefaultSeverity() const override { return core::Severity::Error; }
 
     void run(slang::ast::Compilation& compilation,
-             const uvmcheck::uvm::UvmModel& uvmModel,
+             const svlang_lint::uvm::UvmModel& uvmModel,
              core::DiagnosticEngine& diags) override {
         PartSelectReversedVisitor visitor(diags);
         compilation.getRoot().visit(visitor);
@@ -175,12 +175,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::correctness
+} // namespace svlang_lint::rules::correctness
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createPartSelectReversed() {
     return std::make_unique<correctness::PartSelectReversed>();
 }
 }
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createPartSelectReversed)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createPartSelectReversed)

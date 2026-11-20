@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """IEEE 1800 conformance gate for the native builder (dv-build) against Slang.
 
-Runs every sv-tests file through dv-build and through uvmcheck (Slang) and
+Runs every sv-tests file through dv-build and through svlang-lint (Slang) and
 reports, per LRM clause (the sv-tests chapter):
   legal        tests that must compile: how many each front end accepts;
   should_fail  tests that must be rejected: how many each front end rejects.
@@ -17,7 +17,7 @@ import collections, concurrent.futures, json, os, re, subprocess, sys, tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(os.path.dirname(HERE))
-UVMCHECK = os.environ.get('UVMCHECK', os.path.join(REPO, 'build', 'uvmcheck'))
+SVLANG_LINT = os.environ.get('SVLANG_LINT', os.path.join(REPO, 'build', 'svlang-lint'))
 DVBUILD = os.environ.get('DV_BUILD', os.path.join(REPO, 'target', 'release', 'dv-build'))
 
 CLAUSES = {
@@ -56,7 +56,7 @@ def args_for(root, f, h):
 def slang_rejects(args):
     with tempfile.TemporaryDirectory() as tmp:
         out = os.path.join(tmp, 'r.json')
-        subprocess.run([UVMCHECK, '--no-config', '--no-cache', '--json', out, *args], capture_output=True,
+        subprocess.run([SVLANG_LINT, '--no-config', '--no-cache', '--json', out, *args], capture_output=True,
                        text=True, errors='replace', timeout=120)
         try:
             return json.load(open(out)).get('compileErrors', 0) > 0

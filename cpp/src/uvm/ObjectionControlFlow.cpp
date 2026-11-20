@@ -1,10 +1,10 @@
-#include "uvmcheck/uvm/ObjectionControlFlow.h"
+#include "svlang_lint/uvm/ObjectionControlFlow.h"
 #include "slang/ast/statements/ConditionalStatements.h"
 #include "slang/ast/statements/LoopStatements.h"
 #include "slang/ast/statements/MiscStatements.h"
 #include "slang/ast/expressions/CallExpression.h"
 
-namespace uvmcheck::uvm {
+namespace svlang_lint::uvm {
 
 static bool isCallTo(const slang::ast::Expression& expr, std::string_view targetName) {
     if (expr.kind == slang::ast::ExpressionKind::Call) {
@@ -235,4 +235,4 @@ bool ObjectionControlFlowAnalyzer::evaluateStatement(
     }
 }
 
-} // namespace uvmcheck::uvm
+} // namespace svlang_lint::uvm

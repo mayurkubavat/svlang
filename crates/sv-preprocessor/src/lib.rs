@@ -89,6 +89,12 @@ pub struct Output {
     /// Uses of defined macros written in the source text (not inside
     /// another expansion), in order: Slang's top-level macro references.
     pub macro_uses: Vec<MacroUse>,
+    /// Macro definitions (`define) encountered during preprocessing, in order.
+    pub macro_defs: Vec<MacroDef>,
+    /// Resolved `include directive edges, in order.
+    pub includes: Vec<IncludeEdge>,
+    /// Conditional compilation directive events (`ifdef, `ifndef, `elsif, `else, `endif).
+    pub conditionals: Vec<CondEvent>,
     /// The `timescale unit in force from a token index on, as a power of
     /// ten femtoseconds (1ns is 6). The first entry is at token 0.
     pub timescales: Vec<(u32, i32)>,
@@ -97,6 +103,53 @@ pub struct Output {
     pub skipped: Vec<(u32, u32, u32)>,
     /// The files given to the preprocessor (not included ones), in order.
     pub mains: Vec<u32>,
+}
+
+/// A macro definition (`define) recorded in [`Output::macro_defs`].
+#[derive(Clone, Debug)]
+pub struct MacroDef {
+    /// Macro name without the backtick.
+    pub name: Arc<str>,
+    /// Origin of the `` `define `` directive token.
+    pub origin: Origin,
+    /// Origin of the macro name token.
+    pub name_origin: Origin,
+    /// `None` for object-like macros; `Some(param_names)` for function-like macros.
+    pub params: Option<Vec<Arc<str>>>,
+    /// Replacement body tokens `(kind, text, origin)`.
+    pub body: Vec<(Kind, Arc<str>, Origin)>,
+}
+
+/// A resolved `` `include `` directive edge recorded in [`Output::includes`].
+#[derive(Clone, Debug)]
+pub struct IncludeEdge {
+    /// Origin of the `` `include `` directive token in the including file.
+    pub origin: Origin,
+    /// File index of the included file in [`Output::files`].
+    pub target_file: u32,
+    /// Raw include operand text without quotes/angle brackets.
+    pub raw_name: Arc<str>,
+}
+
+/// Kind of conditional compilation directive in [`CondEvent`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CondKind {
+    Ifdef,
+    Ifndef,
+    Elsif,
+    Else,
+    Endif,
+}
+
+/// A conditional compilation directive event recorded in [`Output::conditionals`].
+#[derive(Clone, Copy, Debug)]
+pub struct CondEvent {
+    /// Origin of the directive token.
+    pub origin: Origin,
+    /// Which conditional directive this is.
+    pub kind: CondKind,
+    /// Whether this branch was taken (`true` for `endif`).
+    pub taken: bool,
 }
 
 /// A macro used in the source text: its name without the backtick and the
@@ -391,6 +444,9 @@ impl Preprocessor {
             all.tokens.append(&mut out.tokens);
             all.diagnostics.append(&mut out.diagnostics);
             all.macro_uses.append(&mut out.macro_uses);
+            all.macro_defs.append(&mut out.macro_defs);
+            all.includes.append(&mut out.includes);
+            all.conditionals.append(&mut out.conditionals);
             all.skipped.append(&mut out.skipped);
             all.mains.append(&mut out.mains);
             all.timescales.extend(out.timescales.into_iter().map(|(t, u)| (t + base, u)));
@@ -501,6 +557,11 @@ impl Preprocessor {
                 "ifdef" | "ifndef" => {
                     let cond = self.condition(&t);
                     let take = if name == "ifdef" { cond } else { !cond };
+                    self.out.conditionals.push(CondEvent {
+                        origin: t.origin,
+                        kind: if name == "ifdef" { CondKind::Ifdef } else { CondKind::Ifndef },
+                        taken: take,
+                    });
                     self.conds.push(Cond { taken: take });
                     if !take {
                         self.skip_branch(t.origin);
@@ -511,6 +572,11 @@ impl Preprocessor {
                     if name == "elsif" {
                         self.condition(&t);
                     }
+                    self.out.conditionals.push(CondEvent {
+                        origin: t.origin,
+                        kind: if name == "elsif" { CondKind::Elsif } else { CondKind::Else },
+                        taken: false,
+                    });
                     if self.conds.is_empty() {
                         self.diag(t.origin, format!("`{name} without `ifdef"));
                     } else {
@@ -518,6 +584,7 @@ impl Preprocessor {
                     }
                 }
                 "endif" => {
+                    self.out.conditionals.push(CondEvent { origin: t.origin, kind: CondKind::Endif, taken: true });
                     if self.conds.pop().is_none() {
                         self.diag(t.origin, "`endif without `ifdef".into());
                     }
@@ -723,6 +790,15 @@ impl Preprocessor {
         if let Some(t) = body.iter().find(|t| t.kind == Kind::Unknown && t.text.starts_with('"')) {
             self.diag(t.origin, format!("unterminated string literal in the text of macro `{}", name.text));
         }
+        if self.top_level(d) {
+            self.out.macro_defs.push(MacroDef {
+                name: name.text.clone(),
+                origin: d.origin,
+                name_origin: name.origin,
+                params: params.as_ref().map(|ps| ps.iter().map(|(n, _)| Arc::from(n.as_str())).collect()),
+                body: body.iter().map(|t| (t.kind, t.text.clone(), t.origin)).collect(),
+            });
+        }
         self.macros.insert(name.text.to_string(), Rc::new(Macro { params, body }));
     }
 
@@ -864,13 +940,16 @@ impl Preprocessor {
                 "ifdef" | "ifndef" => depth += 1,
                 "endif" if depth > 0 => depth -= 1,
                 "endif" => {
+                    self.out.conditionals.push(CondEvent { origin: t.origin, kind: CondKind::Endif, taken: true });
                     self.conds.pop();
                     return;
                 }
                 "elsif" if depth == 0 => {
                     let taken = self.conds.last().is_none_or(|c| c.taken);
                     let cond = self.condition(&t);
-                    if !taken && cond {
+                    let take_now = !taken && cond;
+                    self.out.conditionals.push(CondEvent { origin: t.origin, kind: CondKind::Elsif, taken: take_now });
+                    if take_now {
                         if let Some(c) = self.conds.last_mut() {
                             c.taken = true;
                         }
@@ -879,7 +958,9 @@ impl Preprocessor {
                 }
                 "else" if depth == 0 => {
                     let taken = self.conds.last().is_none_or(|c| c.taken);
-                    if !taken {
+                    let take_now = !taken;
+                    self.out.conditionals.push(CondEvent { origin: t.origin, kind: CondKind::Else, taken: take_now });
+                    if take_now {
                         if let Some(c) = self.conds.last_mut() {
                             c.taken = true;
                         }
@@ -974,6 +1055,11 @@ impl Preprocessor {
             Some(path) => match overlay::read(&path) {
                 Ok(src) => {
                     let id = self.add_file(path, &src);
+                    self.out.includes.push(IncludeEdge {
+                        origin: d.origin,
+                        target_file: id,
+                        raw_name: Arc::from(name.as_str()),
+                    });
                     self.push_file(id);
                 }
                 Err(e) => self.diag(d.origin, format!("cannot read {}: {e}", path.display())),

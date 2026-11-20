@@ -4,6 +4,7 @@
 use crate::profile::*;
 use crate::{Check, Rule, Severity};
 
+mod class_member_ordering;
 mod class_member_prefix;
 pub(crate) mod configurable_naming_engine;
 mod configurable_style_engine;
@@ -11,12 +12,14 @@ mod constraint_name_suffix;
 mod explicit_literal_width;
 mod extern_method_threshold;
 mod include_guard;
+mod inconsistent_block_indentation;
 mod interface_naming_convention;
 mod macro_trailing_semicolon;
 mod mandatory_matching_end_label;
 mod max_line_length;
 mod method_banner_style;
 mod mismatched_end_label;
+mod multiple_declarations_per_line;
 mod one_statement_per_line;
 mod package_naming_convention;
 mod section_header_banner;
@@ -25,6 +28,8 @@ mod todo_comment_tracker;
 mod trailing_whitespace;
 mod typedef_name_suffix;
 mod unclosed_block_waiver;
+mod unparenthesized_macro_arg;
+mod unused_include_directive;
 mod uvm_class_type_suffix;
 mod uvm_component_naming_convention;
 mod uvm_create_string_mismatch;
@@ -78,6 +83,11 @@ pub(crate) fn rules() -> Vec<Rule> {
         },
         Rule { id: "UVM-TLM-003", name: "UvmTlmPortSuffix", category: "Style", severity: Severity::Warning, profiles: STYLE, guidelines: &[], experimental: false, native: false, about: "Enforces standard UVM TLM port suffix naming conventions (_ap for analysis ports, _imp for imps, _export for exports, _port for ports, _fifo for TLM FIFOs).", check: Check::Syntax(uvm_tlm_port_suffix::tlm_port_suffix),
         },
-        Rule { id: "SV-WVR-001", name: "UnclosedBlockWaiver", category: "Maintainability", severity: Severity::Warning, profiles: SOUNDNESS, guidelines: &[], experimental: false, native: true, about: "Flags scoped block waiver comments (uvmcheck:off, verissimo_lint: waive_start) that are never closed with a matching on/waive_stop directive before the end of the file.", check: Check::Syntax(unclosed_block_waiver::unclosed_block_waiver) },
+        Rule { id: "SV-WVR-001", name: "UnclosedBlockWaiver", category: "Maintainability", severity: Severity::Warning, profiles: SOUNDNESS, guidelines: &[], experimental: false, native: true, about: "Flags scoped block waiver comments (svlang-lint:off, verissimo_lint: waive_start) that are never closed with a matching on/waive_stop directive before the end of the file.", check: Check::Syntax(unclosed_block_waiver::unclosed_block_waiver) },
+        Rule { id: "SV-STY-020", name: "InconsistentBlockIndentation", category: "Style", severity: Severity::Info, profiles: STYLE, guidelines: &[], experimental: false, native: true, about: "Flags multi-line begin/end, class, module, function, and task blocks whose direct child items have unindented or inconsistent column alignment.", check: Check::Syntax(inconsistent_block_indentation::inconsistent_block_indentation) },
+        Rule { id: "SV-STY-021", name: "MultipleDeclarationsPerLine", category: "Style", severity: Severity::Info, profiles: STYLE, guidelines: &[], experimental: false, native: true, about: "Flags multiple variable or property declarations placed on a single source line inside multi-line blocks, classes, or modules.", check: Check::Syntax(multiple_declarations_per_line::multiple_declarations_per_line) },
+        Rule { id: "SV-STY-022", name: "UnparenthesizedMacroArg", category: "Style", severity: Severity::Warning, profiles: STYLE, guidelines: &[], experimental: false, native: true, about: "Flags function-like expression macros whose formal parameters appear adjacent to operators in the macro body without enclosing parentheses.", check: Check::Syntax(unparenthesized_macro_arg::unparenthesized_macro_arg) },
+        Rule { id: "SV-STY-023", name: "UnusedIncludeDirective", category: "Style", severity: Severity::Info, profiles: STYLE, guidelines: &[], experimental: false, native: true, about: "Flags top-level `include directives outside package aggregation bodies whose included headers contribute no tokens or used macros.", check: Check::Syntax(unused_include_directive::unused_include_directive) },
+        Rule { id: "SV-STY-024", name: "ClassMemberOrdering", category: "Style", severity: Severity::Info, profiles: STYLE, guidelines: &[], experimental: false, native: true, about: "Enforces canonical class member ordering: typedefs and parameters, properties, constraints and covergroups, constructor new(), then methods.", check: Check::Syntax(class_member_ordering::class_member_ordering) },
     ]
 }

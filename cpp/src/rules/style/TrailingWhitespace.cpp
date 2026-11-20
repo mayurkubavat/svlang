@@ -1,9 +1,9 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
 #include "slang/syntax/SyntaxTree.h"
 #include "slang/text/SourceManager.h"
 
-namespace uvmcheck::rules::style {
+namespace svlang_lint::rules::style {
 
 class TrailingWhitespace : public Rule {
 public:
@@ -16,7 +16,7 @@ public:
     core::Severity getDefaultSeverity() const override { return core::Severity::Info; }
 
     void run(slang::ast::Compilation& compilation,
-             const uvmcheck::uvm::UvmModel& /*uvmModel*/,
+             const svlang_lint::uvm::UvmModel& /*uvmModel*/,
              core::DiagnosticEngine& diags) override {
         for (const auto& tree : compilation.getSyntaxTrees()) {
             if (!tree) continue;
@@ -76,12 +76,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::style
+} // namespace svlang_lint::rules::style
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createTrailingWhitespace() {
     return std::make_unique<style::TrailingWhitespace>();
 }
 }
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createTrailingWhitespace)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createTrailingWhitespace)

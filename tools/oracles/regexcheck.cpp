@@ -1,5 +1,5 @@
 // Reference regex results from std::regex (ECMAScript, the default grammar),
-// as uvmcheck matches waiver, header and naming patterns. For checking
+// as svlang-lint matches waiver, header and naming patterns. For checking
 // dv-lint's patterns (crates/dv-lint/src/pattern.rs, tools/gates/regex_gate.py).
 //
 // Each input line is PATTERN<TAB>FLAGS<TAB>TEXT, FLAGS empty or "i"; fields

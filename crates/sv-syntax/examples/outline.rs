@@ -1,8 +1,8 @@
 //! Prints a file's outline in the form of the Slang reference tool
-//! (build/uvmcheck_cst_outline), then `errors N`. With --check, also
+//! (build/svlang_cst_outline), then `errors N`. With --check, also
 //! verifies that every file round-trips through the tree byte for byte.
 //! With --exprs, prints the canonical operator expressions instead
-//! (the form of build/uvmcheck_cst_exprs).
+//! (the form of build/svlang_cst_exprs).
 //!
 //!     cargo run --release -p sv-syntax --example outline -- [+incdir+DIR]... [+define+X[=V]]... [--check] [--errors] [--exprs] [--dump] FILE
 use std::path::PathBuf;

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Regex gate: dv-lint's patterns (crates/dv-lint/src/pattern.rs) against std::regex.
 
-uvmcheck matches waiver messages, file headers and names with std::regex
+svlang-lint matches waiver messages, file headers and names with std::regex
 (ECMAScript). dv-lint matches them with the regex crate behind an ECMAScript
 check, which must never change what a pattern means. For each case
 (pattern, icase, text) both sides answer regex_search and regex_match, or
@@ -18,7 +18,7 @@ The cases: every pattern in the repository's configs, docs and tests and
 the default naming patterns, each against texts built from it, and a fuzzed
 set from a small grammar (--fuzz N, seeded, default 20000).
 
-    cmake --build build --target uvmcheck_regexcheck
+    cmake --build build --target svlang_regexcheck
     cargo build --release -p dv-lint --example regexcheck
     tools/gates/regex_gate.py [--fuzz N] [--seed S] [--write-vectors] [--show N]
 
@@ -30,7 +30,7 @@ A libstdc++ oracle on macOS, with Homebrew's GCC (its own libstdc++):
 
     g++-14 -std=c++17 -O2 -isysroot "$(xcrun --show-sdk-path)" -mmacosx-version-min=15.0 \
         -o /tmp/regexcheck_libstdcxx tools/oracles/regexcheck.cpp
-    UVMCHECK_REGEXCHECK=/tmp/regexcheck_libstdcxx tools/gates/regex_gate.py
+    SVLANG_LINT_REGEXCHECK=/tmp/regexcheck_libstdcxx tools/gates/regex_gate.py
 
 (otool -L shows libstdc++.6.dylib.) On Linux, g++ builds it as is. Runs of the
 default size agree in full (2026-11-08, GCC 14.2, seeds 1 and 7); with
@@ -41,7 +41,7 @@ import argparse, os, random, re, subprocess, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(os.path.dirname(HERE))
-ORACLE = os.environ.get('UVMCHECK_REGEXCHECK', os.path.join(REPO, 'build', 'uvmcheck_regexcheck'))
+ORACLE = os.environ.get('SVLANG_LINT_REGEXCHECK', os.path.join(REPO, 'build', 'svlang_regexcheck'))
 NATIVE = os.environ.get('DV_REGEXCHECK', os.path.join(REPO, 'target', 'release', 'examples', 'regexcheck'))
 VECTORS = os.path.join(REPO, 'testdata', 'regex', 'vectors.tsv')
 
@@ -66,7 +66,7 @@ def run(binary, lines):
 
 # Patterns written in the repository: config and waiver files, docs, tests.
 PATTERN_KEYS = re.compile(r'"(?:message|pattern|file_header_pattern)"\s*:\s*"((?:[^"\\]|\\.)*)"')
-INLINE = re.compile(r'uvmcheck:\s*waive\S*\s+\S+\s+"((?:[^"\\]|\\.)*)"')
+INLINE = re.compile(r'svlang-lint:\s*waive\S*\s+\S+\s+"((?:[^"\\]|\\.)*)"')
 
 
 def harvested():
@@ -149,7 +149,7 @@ def main():
     ap.add_argument('--write-vectors', action='store_true')
     ap.add_argument('--show', type=int, default=20)
     a = ap.parse_args()
-    for b, how in ((ORACLE, 'cmake --build build --target uvmcheck_regexcheck'),
+    for b, how in ((ORACLE, 'cmake --build build --target svlang_regexcheck'),
                    (NATIVE, 'cargo build --release -p dv-lint --example regexcheck')):
         if not os.access(b, os.X_OK):
             print(f'{b} is not built ({how})', file=sys.stderr)

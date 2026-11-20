@@ -10,34 +10,34 @@
   },
   "bare-value-param": {
    "accepts": false,
-   "message": "/home/user/UVMCheck-Linter/testdata/vendor/bare-value-param.sv:7: syntax error"
+   "message": "/home/user/svlang-lint/testdata/vendor/bare-value-param.sv:7: syntax error"
   },
   "cross-auto-bin-max": {
    "accepts": false,
-   "message": "/home/user/UVMCheck-Linter/testdata/vendor/cross-auto-bin-max.sv:5: syntax error"
+   "message": "/home/user/svlang-lint/testdata/vendor/cross-auto-bin-max.sv:5: syntax error"
   },
   "declarations-after-statements": {
    "accepts": false,
-   "message": "/home/user/UVMCheck-Linter/testdata/vendor/declarations-after-statements.sv:6: syntax error"
+   "message": "/home/user/svlang-lint/testdata/vendor/declarations-after-statements.sv:6: syntax error"
   },
   "genblk-reference": {
    "accepts": true
   },
   "hierarchical-const": {
    "accepts": false,
-   "message": "/home/user/UVMCheck-Linter/testdata/vendor/hierarchical-const.sv:8: error: A hierarchical reference (`u.P') is not allowed in a constant expression."
+   "message": "/home/user/svlang-lint/testdata/vendor/hierarchical-const.sv:8: error: A hierarchical reference (`u.P') is not allowed in a constant expression."
   },
   "merging-ansi-ports": {
    "accepts": false,
-   "message": "/home/user/UVMCheck-Linter/testdata/vendor/merging-ansi-ports.sv:4: error: 'a' has already been declared in this scope."
+   "message": "/home/user/svlang-lint/testdata/vendor/merging-ansi-ports.sv:4: error: 'a' has already been declared in this scope."
   },
   "relax-enum": {
    "accepts": false,
-   "message": "/home/user/UVMCheck-Linter/testdata/vendor/relax-enum.sv:7: error: This assignment requires an explicit cast."
+   "message": "/home/user/svlang-lint/testdata/vendor/relax-enum.sv:7: error: This assignment requires an explicit cast."
   },
   "relax-string": {
    "accepts": false,
-   "message": "/home/user/UVMCheck-Linter/testdata/vendor/relax-string.sv:6: error: The expression 's' cannot be implicitly cast to the target type."
+   "message": "/home/user/svlang-lint/testdata/vendor/relax-string.sv:6: error: The expression 's' cannot be implicitly cast to the target type."
   },
   "self-determined-stream": {
    "accepts": false,
@@ -45,7 +45,7 @@
   },
   "toplevel-iface-ports": {
    "accepts": false,
-   "message": "/home/user/UVMCheck-Linter/testdata/vendor/toplevel-iface-ports.sv:6: syntax error"
+   "message": "/home/user/svlang-lint/testdata/vendor/toplevel-iface-ports.sv:6: syntax error"
   },
   "use-before-declare": {
    "accepts": true

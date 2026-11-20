@@ -1,8 +1,8 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
-#include "uvmcheck/rules/SweSupport.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
+#include "svlang_lint/rules/SweSupport.h"
 
-namespace uvmcheck::rules::errors {
+namespace svlang_lint::rules::errors {
 
 using namespace slang::ast;
 
@@ -37,12 +37,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::errors
+} // namespace svlang_lint::rules::errors
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createProcessTerminationInClass() {
     return std::make_unique<errors::ProcessTerminationInClass>();
 }
 }
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createProcessTerminationInClass)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createProcessTerminationInClass)

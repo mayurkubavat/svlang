@@ -1,5 +1,5 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
 #include "slang/ast/ASTVisitor.h"
 #include "slang/ast/expressions/CallExpression.h"
 #include "slang/ast/expressions/ConversionExpression.h"
@@ -7,7 +7,7 @@
 #include "slang/syntax/AllSyntax.h"
 #include <string>
 
-namespace uvmcheck::rules::uvm {
+namespace svlang_lint::rules::uvm {
 
 class PSequencerCastVisitor : public engine::AstVisitor<PSequencerCastVisitor> {
 public:
@@ -87,12 +87,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::uvm
+} // namespace svlang_lint::rules::uvm
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createUncheckedPSequencerCast() {
     return std::make_unique<uvm::UncheckedPSequencerCast>();
 }
-} // namespace uvmcheck::rules
+} // namespace svlang_lint::rules
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createUncheckedPSequencerCast)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createUncheckedPSequencerCast)

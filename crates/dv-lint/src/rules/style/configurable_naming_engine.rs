@@ -18,7 +18,7 @@ enum Casing {
 }
 
 /// A naming pattern: its text, and compiled for `std::regex_match`
-/// ([`crate::pattern`]). None when it does not compile: uvmcheck then skips
+/// ([`crate::pattern`]). None when it does not compile: svlang-lint then skips
 /// the pattern check (the other requirements still apply).
 #[derive(Clone)]
 struct Pattern {
@@ -99,10 +99,10 @@ fn spec(kind: &str) -> Option<Spec> {
 
 /// Whether `naming.<kind>` (with `pattern`, empty when not set) can be
 /// checked here: a target the engine knows (VirtualInterface is known to
-/// uvmcheck but checks nothing there either), and a pattern that compiles.
+/// svlang-lint but checks nothing there either), and a pattern that compiles.
 pub(crate) fn target_supported(kind: &str, pattern: &str) -> bool {
-    if kind == "VirtualInterface" {
-        return true;
+    if matches!(kind, "VirtualInterface" | "Assertion") {
+        return pattern.is_empty() || crate::pattern::Pattern::new(pattern, false).is_ok();
     }
     default_spec(kind).is_some() && (pattern.is_empty() || crate::pattern::Pattern::new(pattern, false).is_ok())
 }
@@ -335,7 +335,7 @@ fn validate(kind: &str, name: &str) -> Option<(Spec, String)> {
     if let Some(p) = &sp.pattern {
         req.push(format!("must match pattern '{}'", p.text));
     }
-    // camelCase adds no requirement to the message, as in uvmcheck.
+    // camelCase adds no requirement to the message, as in svlang-lint.
     if !casing_ok(sp.casing, name) {
         match sp.casing {
             Casing::Snake => req.push("must follow snake_case".into()),

@@ -11,7 +11,7 @@ build = "build.rs"
 [features]
 default = []
 # `Design::load`: load designs through Slang over the C ABI (needs
-# libuvmcheck_model from `cmake --preset model`). Oracle and parity use only;
+# libsvlang_lint_model from `cmake --preset model`). Oracle and parity use only;
 # the native loader is `dv_model::load`. See third_party/slang/README.md.
 slang = ["dep:sv-slang"]
 

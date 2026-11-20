@@ -1,4 +1,4 @@
-#include "uvmcheck/style/NamingEngine.h"
+#include "svlang_lint/style/NamingEngine.h"
 #include "slang/ast/symbols/BlockSymbols.h"
 #include "slang/ast/symbols/ClassSymbols.h"
 #include "slang/ast/symbols/CompilationUnitSymbols.h"
@@ -12,7 +12,7 @@
 #include <cctype>
 #include <iostream>
 
-namespace uvmcheck::style {
+namespace svlang_lint::style {
 
 NamingEngine::NamingEngine() {
     loadDefaultRules();
@@ -564,4 +564,4 @@ void NamingEngine::run(slang::ast::Compilation& compilation,
     }
 }
 
-} // namespace uvmcheck::style
+} // namespace svlang_lint::style

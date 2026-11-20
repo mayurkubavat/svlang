@@ -1,7 +1,7 @@
 // UVM-BAN-003: calling a do_* hook directly instead of the public method.
 
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
 
 #include "slang/ast/ASTVisitor.h"
 #include "slang/ast/expressions/CallExpression.h"
@@ -10,7 +10,7 @@
 
 #include <map>
 
-namespace uvmcheck::rules::uvm {
+namespace svlang_lint::rules::uvm {
 
 using namespace slang::ast;
 
@@ -26,7 +26,7 @@ const std::map<std::string_view, std::string_view>& publicMethodFor() {
 
 class DoCallVisitor : public engine::AstVisitor<DoCallVisitor> {
 public:
-    DoCallVisitor(const uvmcheck::uvm::UvmModel& model, core::DiagnosticEngine& diags) : model(model), diags(diags) {}
+    DoCallVisitor(const svlang_lint::uvm::UvmModel& model, core::DiagnosticEngine& diags) : model(model), diags(diags) {}
 
     void handle(const CallExpression& call) {
         if (!call.isSystemCall()) {
@@ -50,7 +50,7 @@ public:
     }
 
 private:
-    const uvmcheck::uvm::UvmModel& model;
+    const svlang_lint::uvm::UvmModel& model;
     core::DiagnosticEngine& diags;
 };
 
@@ -74,12 +74,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::uvm
+} // namespace svlang_lint::rules::uvm
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createDirectDoMethodCall() {
     return std::make_unique<uvm::DirectDoMethodCall>();
 }
-} // namespace uvmcheck::rules
+} // namespace svlang_lint::rules
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createDirectDoMethodCall)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createDirectDoMethodCall)

@@ -1,5 +1,5 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
 #include "slang/ast/ASTVisitor.h"
 #include "slang/ast/symbols/CoverSymbols.h"
 #include "slang/ast/symbols/ClassSymbols.h"
@@ -10,7 +10,7 @@
 #include <algorithm>
 #include <cctype>
 
-namespace uvmcheck::rules::coverage {
+namespace svlang_lint::rules::coverage {
 
 class CovergroupUsageVisitor : public engine::AstVisitor<CovergroupUsageVisitor> {
 public:
@@ -145,12 +145,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::coverage
+} // namespace svlang_lint::rules::coverage
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createUnreferencedCovergroup() {
     return std::make_unique<coverage::UnreferencedCovergroup>();
 }
 }
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createUnreferencedCovergroup)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createUnreferencedCovergroup)

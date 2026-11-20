@@ -13,7 +13,7 @@ pub(crate) fn mismatched_end_label(c: &Cst, s: &mut Sink) {
         if l == name || name.ends_with(&format!("::{l}")) {
             continue;
         }
-        // The routine's own name: uvmcheck writes `cls::f` for an
+        // The routine's own name: svlang-lint writes `cls::f` for an
         // out-of-block method, which is not a legal end label.
         let fix = c.token_fix(label, label, name.rsplit("::").next().unwrap_or(&name), "Fix mismatched end label");
         s.add(

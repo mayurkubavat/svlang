@@ -10,7 +10,7 @@
 #include "slang/ast/expressions/LiteralExpressions.h"
 #include "slang/ast/statements/MiscStatements.h"
 
-namespace uvmcheck::rules::meth {
+namespace svlang_lint::rules::meth {
 
 using namespace slang::ast;
 
@@ -400,4 +400,4 @@ std::vector<FailureBranch> failureBranches(const Statement& stmt) {
     return std::move(v.found);
 }
 
-} // namespace uvmcheck::rules::meth
+} // namespace svlang_lint::rules::meth

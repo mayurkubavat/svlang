@@ -1,4 +1,4 @@
-#include "uvmcheck/plugins/PythonPluginManager.h"
+#include "svlang_lint/plugins/PythonPluginManager.h"
 
 #include <cerrno>
 #include <cstdio>
@@ -16,25 +16,25 @@
 #include "slang/ast/symbols/SubroutineSymbols.h"
 #include "slang/ast/symbols/VariableSymbols.h"
 #include "slang/text/SourceManager.h"
-#include "uvmcheck/core/ConfigManager.h"
-#include "uvmcheck/core/Json.h"
-#include "uvmcheck/core/Process.h"
-#include "uvmcheck/rules/SweSupport.h"
-#include "uvmcheck/uvm/ConfigDbGraph.h"
-#include "uvmcheck/uvm/TlmTopologyGraph.h"
+#include "svlang_lint/core/ConfigManager.h"
+#include "svlang_lint/core/Json.h"
+#include "svlang_lint/core/Process.h"
+#include "svlang_lint/rules/SweSupport.h"
+#include "svlang_lint/uvm/ConfigDbGraph.h"
+#include "svlang_lint/uvm/TlmTopologyGraph.h"
 #include "../rules/methodology/MethodologySupport.h"
 
 extern char** environ;
 
-#ifndef UVMCHECK_PYTHON_SDK_DIR
-#define UVMCHECK_PYTHON_SDK_DIR ""
+#ifndef SVLANG_LINT_PYTHON_SDK_DIR
+#define SVLANG_LINT_PYTHON_SDK_DIR ""
 #endif
 
-namespace uvmcheck::plugins {
+namespace svlang_lint::plugins {
 
 namespace fs = std::filesystem;
 using namespace slang::ast;
-namespace swe = uvmcheck::rules::swe;
+namespace swe = svlang_lint::rules::swe;
 
 namespace {
 
@@ -170,17 +170,17 @@ void writeClass(std::ostream& out, const slang::SourceManager* sm, const ClassTy
     out << "]}";
 }
 
-/// Directory holding the uvmcheck Python package (same lookup as the config loader).
+/// Directory holding the svlang-lint Python package (same lookup as the config loader).
 std::string sdkDir() {
-    if (const char* env = std::getenv("UVMCHECK_PYTHON_SDK"); env && *env) return env;
+    if (const char* env = std::getenv("SVLANG_LINT_PYTHON_SDK"); env && *env) return env;
     std::error_code ec;
     fs::path exe = fs::read_symlink("/proc/self/exe", ec);
     for (const fs::path& base : {exe.parent_path() / ".." / "python", exe.parent_path() / "python"}) {
-        if (!base.empty() && fs::exists(base / "uvmcheck" / "plugin_runner.py", ec))
+        if (!base.empty() && fs::exists(base / "svlang_lint" / "plugin_runner.py", ec))
             return base.lexically_normal().string();
     }
-    if (fs::exists(fs::path(UVMCHECK_PYTHON_SDK_DIR) / "uvmcheck" / "plugin_runner.py", ec))
-        return UVMCHECK_PYTHON_SDK_DIR;
+    if (fs::exists(fs::path(SVLANG_LINT_PYTHON_SDK_DIR) / "svlang_lint" / "plugin_runner.py", ec))
+        return SVLANG_LINT_PYTHON_SDK_DIR;
     return "";
 }
 
@@ -266,12 +266,12 @@ bool PythonPluginManager::runPythonRules(const std::string& rulesPath, Compilati
                                          const uvm::UvmModel& uvmModel, core::DiagnosticEngine& diags) {
     // 1. Model into a private temporary file.
     std::error_code ec;
-    std::string tmpl = (fs::temp_directory_path(ec) / "uvmcheck_model_XXXXXX").string();
+    std::string tmpl = (fs::temp_directory_path(ec) / "svlang_lint_model_XXXXXX").string();
     std::vector<char> pathBuf(tmpl.begin(), tmpl.end());
     pathBuf.push_back('\0');
     int fd = mkstemp(pathBuf.data());
     if (fd < 0) {
-        std::cerr << "[uvmcheck-plugins] Error: cannot create a temporary model file: " << std::strerror(errno) << "\n";
+        std::cerr << "[svlang-lint-plugins] Error: cannot create a temporary model file: " << std::strerror(errno) << "\n";
         return false;
     }
     close(fd);
@@ -281,8 +281,8 @@ bool PythonPluginManager::runPythonRules(const std::string& rulesPath, Compilati
         writeModel(out, compilation, uvmModel);
     }
 
-    // 2. Runner, with the SDK on PYTHONPATH wherever uvmcheck is run from.
-    const char* pyEnv = std::getenv("UVMCHECK_PYTHON");
+    // 2. Runner, with the SDK on PYTHONPATH wherever svlang-lint is run from.
+    const char* pyEnv = std::getenv("SVLANG_LINT_PYTHON");
     std::string python = (pyEnv && *pyEnv) ? pyEnv : "python3";
     std::vector<std::string> env;
     if (std::string sdk = sdkDir(); !sdk.empty()) {
@@ -290,14 +290,14 @@ bool PythonPluginManager::runPythonRules(const std::string& rulesPath, Compilati
         env.push_back("PYTHONPATH=" + sdk + (old && *old ? std::string(":") + old : ""));
     }
     std::string output;
-    int rc = core::runCapture({python, "-m", "uvmcheck.plugin_runner", "--rules", rulesPath, "--model", modelPath},
+    int rc = core::runCapture({python, "-m", "svlang_lint.plugin_runner", "--rules", rulesPath, "--model", modelPath},
                         env, output);
     fs::remove(modelPath, ec);
     // Exit code 2: some rule raised (the traceback is on stderr); the others still reported.
     if (rc == 2) {
-        std::cerr << "[uvmcheck-plugins] Some Python rules failed; their findings are missing\n";
+        std::cerr << "[svlang-lint-plugins] Some Python rules failed; their findings are missing\n";
     } else if (rc != 0) {
-        std::cerr << "[uvmcheck-plugins] Python rule runner failed (exit code " << rc << ")\n";
+        std::cerr << "[svlang-lint-plugins] Python rule runner failed (exit code " << rc << ")\n";
         return false;
     }
 
@@ -305,7 +305,7 @@ bool PythonPluginManager::runPythonRules(const std::string& rulesPath, Compilati
     core::json::ParseError pe;
     auto results = core::json::parse(output, pe);
     if (!results || !results->isArray()) {
-        std::cerr << "[uvmcheck-plugins] Python rule runner printed invalid JSON (" << pe.message << ")\n";
+        std::cerr << "[svlang-lint-plugins] Python rule runner printed invalid JSON (" << pe.message << ")\n";
         return false;
     }
     auto str = [](const core::json::Value& o, std::string_view k) {
@@ -347,4 +347,4 @@ bool PythonPluginManager::runPythonRules(const std::string& rulesPath, Compilati
     return true;
 }
 
-} // namespace uvmcheck::plugins
+} // namespace svlang_lint::plugins

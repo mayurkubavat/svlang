@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Parity of dv-lint (the ported rules in Rust) with uvmcheck's C++ rules.
+"""Parity of dv-lint (the ported rules in Rust) with svlang-lint's C++ rules.
 
-For each compile, runs `uvmcheck --preset all --experimental --json` and
+For each compile, runs `svlang-lint --preset all --experimental --json` and
 keeps the findings of the ported rules, then runs dv-lint on the native model
 (default) and, with --slang, on the slang-backed one (model rules only; syntax
 rules need the native trees). Findings are compared as multisets of (file
@@ -18,11 +18,11 @@ import collections, glob, json, os, re, subprocess, sys, tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(os.path.dirname(HERE))
-UVMCHECK = os.environ.get('UVMCHECK', os.path.join(REPO, 'build', 'uvmcheck'))
+SVLANG_LINT = os.environ.get('SVLANG_LINT', os.path.join(REPO, 'build', 'svlang-lint'))
 DVLINT = os.environ.get('DV_LINT', os.path.join(REPO, 'target', 'release', 'dv-lint'))
 LINE = re.compile(r'^(.*?):(\d+):(\d+): \[(\w+)\] (\S+) \((\w+)\): (.*)$')
 
-# `id name kind [native]`: native rules have no uvmcheck twin and are left out.
+# `id name kind [native]`: native rules have no svlang-lint twin and are left out.
 LISTED = [l.split() for l in subprocess.run([DVLINT, '--list'], capture_output=True, text=True).stdout.splitlines()]
 KINDS = dict((f[0], f[2]) for f in LISTED if 'native' not in f[3:])
 RULES = set(KINDS)
@@ -33,7 +33,7 @@ if '--slang' in sys.argv:
 def reference(args):
     with tempfile.TemporaryDirectory() as tmp:
         out = os.path.join(tmp, 'r.json')
-        subprocess.run([UVMCHECK, '--no-config', '--no-cache', '--preset', 'all', '--experimental',
+        subprocess.run([SVLANG_LINT, '--no-config', '--no-cache', '--preset', 'all', '--experimental',
                         '--json', out, *args], capture_output=True, text=True, errors='replace')
         try:
             data = json.load(open(out))
@@ -57,8 +57,8 @@ def files_with_errors(found):
 
 
 def ported(args, slang):
-    # Every rule, as the reference runs uvmcheck (--preset all --experimental),
-    # including library findings (--report-library) since C++ uvmcheck reports them.
+    # Every rule, as the reference runs svlang-lint (--preset all --experimental),
+    # including library findings (--report-library) since C++ svlang-lint reports them.
     res = subprocess.run([DVLINT, '--no-config', '--no-cache', '--report-library', '--preset', 'all', '--experimental', *(['--slang'] if slang else []), *args],
                          capture_output=True, text=True,
                          errors='replace')

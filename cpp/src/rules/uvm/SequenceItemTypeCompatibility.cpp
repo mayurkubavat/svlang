@@ -1,6 +1,6 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
-#include "uvmcheck/uvm/UvmModel.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
+#include "svlang_lint/uvm/UvmModel.h"
 #include "slang/ast/ASTVisitor.h"
 #include "slang/ast/symbols/ClassSymbols.h"
 #include "slang/ast/symbols/ParameterSymbols.h"
@@ -9,7 +9,7 @@
 #include "slang/ast/expressions/ConversionExpression.h"
 #include "slang/ast/types/Type.h"
 
-namespace uvmcheck::rules::uvm {
+namespace svlang_lint::rules::uvm {
 
 // Visits bad nodes too: against the real UVM library a mismatched connect() does not
 // type-check, so slang wraps the call and its statement in Invalid nodes.
@@ -102,7 +102,7 @@ public:
     core::Severity getDefaultSeverity() const override { return core::Severity::Warning; }
 
     void run(slang::ast::Compilation&,
-             const uvmcheck::uvm::UvmModel& uvmModel,
+             const svlang_lint::uvm::UvmModel& uvmModel,
              core::DiagnosticEngine& diags) override {
 
         ConnectCallVisitor visitor(diags);
@@ -120,12 +120,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::uvm
+} // namespace svlang_lint::rules::uvm
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createSequenceItemTypeCompatibility() {
     return std::make_unique<uvm::SequenceItemTypeCompatibility>();
 }
 }
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createSequenceItemTypeCompatibility)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createSequenceItemTypeCompatibility)

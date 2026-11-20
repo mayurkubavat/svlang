@@ -1,6 +1,6 @@
-#include "uvmcheck/compat/Overlay.h"
+#include "svlang_lint/compat/Overlay.h"
 
-#include "uvmcheck/core/ProjectConfig.h"
+#include "svlang_lint/core/ProjectConfig.h"
 
 #include "slang/ast/ASTContext.h"
 #include "slang/ast/Compilation.h"
@@ -8,7 +8,7 @@
 #include "slang/ast/expressions/MiscExpressions.h"
 #include "slang/syntax/AllSyntax.h"
 
-namespace uvmcheck::compat {
+namespace svlang_lint::compat {
 
 namespace {
 
@@ -92,4 +92,4 @@ std::unique_ptr<Override> createVendorSystemTasks() {
     return std::make_unique<VendorSystemTasks>();
 }
 
-} // namespace uvmcheck::compat
+} // namespace svlang_lint::compat

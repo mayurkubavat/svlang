@@ -1,19 +1,19 @@
 cmake_minimum_required(VERSION 3.28...3.31)
-project(uvmcheck VERSION 0.1.0 LANGUAGES CXX)
+project(svlang_lint VERSION 0.2.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-# The model facade is also built as a shared library (libuvmcheck_model) that
+# The model facade is also built as a shared library (libsvlang_lint_model) that
 # Rust and other tools load through its C ABI. Everything it links, slang
 # included, must then be position independent.
 # mimalloc is off in that build: slang links it statically, and a shared
 # library loaded into a host (Rust, Python) must not mix two allocators
 # (slang's own Python bindings turn it off for the same reason). The linter
 # CLI keeps both, so the default build leaves this OFF; use the "model" preset.
-option(UVMCHECK_BUILD_MODEL_LIB "Build the shared model library with a C ABI" OFF)
-if(UVMCHECK_BUILD_MODEL_LIB)
+option(SVLANG_LINT_BUILD_MODEL_LIB "Build the shared model library with a C ABI" OFF)
+if(SVLANG_LINT_BUILD_MODEL_LIB)
     set(CMAKE_POSITION_INDEPENDENT_CODE ON)
     set(SLANG_USE_MIMALLOC OFF CACHE BOOL "" FORCE)
 endif()
@@ -40,8 +40,8 @@ endif()
 # configure time, never edited in place. See third_party/slang/README.md.
 include(third_party/slang/slang.cmake)
 
-# Every binary and library lands at the top of the build tree (build/uvmcheck,
-# build-model/libuvmcheck_model.so), wherever its CMakeLists.txt lives.
+# Every binary and library lands at the top of the build tree (build/svlang-lint,
+# build-model/libsvlang_lint_model.so), wherever its CMakeLists.txt lives.
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
@@ -49,25 +49,25 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 enable_testing()
 find_package(Python3 COMPONENTS Interpreter REQUIRED)
 
-# The C++ engine (uvmcheck, libuvmcheck_model) and its tests.
+# The C++ engine (svlang-lint, libsvlang_lint_model) and its tests.
 add_subdirectory(cpp)
 
 # Reference dump of Slang's preprocessor, for checking crates/sv-preprocessor.
-add_executable(uvmcheck_pp_dump tools/oracles/pp_dump.cpp)
-target_link_libraries(uvmcheck_pp_dump PRIVATE slang::slang)
+add_executable(svlang_pp_dump tools/oracles/pp_dump.cpp)
+target_link_libraries(svlang_pp_dump PRIVATE slang::slang)
 
 # Reference outline from Slang's parser, for checking crates/sv-syntax.
-add_executable(uvmcheck_cst_outline tools/oracles/cst_outline.cpp)
-target_link_libraries(uvmcheck_cst_outline PRIVATE slang::slang)
-add_executable(uvmcheck_sym_dump tools/oracles/sym_dump.cpp)
-target_link_libraries(uvmcheck_sym_dump PRIVATE slang::slang)
-add_executable(uvmcheck_cst_exprs tools/oracles/cst_exprs.cpp)
-target_link_libraries(uvmcheck_cst_exprs PRIVATE slang::slang)
+add_executable(svlang_cst_outline tools/oracles/cst_outline.cpp)
+target_link_libraries(svlang_cst_outline PRIVATE slang::slang)
+add_executable(svlang_sym_dump tools/oracles/sym_dump.cpp)
+target_link_libraries(svlang_sym_dump PRIVATE slang::slang)
+add_executable(svlang_cst_exprs tools/oracles/cst_exprs.cpp)
+target_link_libraries(svlang_cst_exprs PRIVATE slang::slang)
 # Reference std::regex results, for checking dv-lint's patterns (tools/gates/regex_gate.py).
-add_executable(uvmcheck_regexcheck tools/oracles/regexcheck.cpp)
+add_executable(svlang_regexcheck tools/oracles/regexcheck.cpp)
 # Reference expression types, for checking dv-lint's typer (tools/gates/expr_gate.py).
-add_executable(uvmcheck_exprdump tools/oracles/exprdump.cpp)
-target_link_libraries(uvmcheck_exprdump PRIVATE slang::slang)
+add_executable(svlang_exprdump tools/oracles/exprdump.cpp)
+target_link_libraries(svlang_exprdump PRIVATE slang::slang)
 # Reference generic class specialization counts, for checking sv-semantic (tools/gates/spec_gate.py).
-add_executable(uvmcheck_specdump tools/oracles/specdump.cpp)
-target_link_libraries(uvmcheck_specdump PRIVATE slang::slang)
+add_executable(svlang_specdump tools/oracles/specdump.cpp)
+target_link_libraries(svlang_specdump PRIVATE slang::slang)

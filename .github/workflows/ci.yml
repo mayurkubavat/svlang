@@ -33,8 +33,8 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: uvmcheck
-          path: build/uvmcheck
+          name: svlang-lint
+          path: build/svlang-lint
           retention-days: 3
 
   test:
@@ -61,10 +61,10 @@ jobs:
 
       - uses: actions/download-artifact@v4
         with:
-          name: uvmcheck
+          name: svlang-lint
           path: build
 
-      - run: chmod +x build/uvmcheck
+      - run: chmod +x build/svlang-lint
 
       - name: Fetch uvm-core
         if: matrix.needs_uvm
@@ -72,7 +72,7 @@ jobs:
 
       - name: Rule tests
         if: ${{ !matrix.lsp && !matrix.tools }}
-        run: python3 cpp/tests/regression.py --binary build/uvmcheck ${{ matrix.args }}
+        run: python3 cpp/tests/regression.py --binary build/svlang-lint ${{ matrix.args }}
 
       - name: LSP test
         if: matrix.lsp
@@ -81,21 +81,21 @@ jobs:
       - name: Catalog, config, baseline, guide, history and engine checks
         if: matrix.tools
         run: |
-          python3 cpp/tests/test_catalog.py --binary build/uvmcheck
-          python3 cpp/tests/test_config.py --binary build/uvmcheck
-          python3 cpp/tests/test_baseline.py --binary build/uvmcheck
-          python3 cpp/tests/test_findings.py --binary build/uvmcheck
-          python3 cpp/tests/test_init.py --binary build/uvmcheck
-          python3 cpp/tests/test_waivers.py --binary build/uvmcheck
-          python3 cpp/tests/test_changed.py --binary build/uvmcheck
-          python3 cpp/tests/test_fix.py --binary build/uvmcheck
-          python3 cpp/tests/test_fix_invariants.py --binary build/uvmcheck
-          python3 cpp/tests/test_report.py --binary build/uvmcheck
-          python3 cpp/tests/test_precision.py --binary build/uvmcheck
-          python3 cpp/tests/test_map.py --binary build/uvmcheck
-          python3 cpp/tests/test_explain.py --binary build/uvmcheck
+          python3 cpp/tests/test_catalog.py --binary build/svlang-lint
+          python3 cpp/tests/test_config.py --binary build/svlang-lint
+          python3 cpp/tests/test_baseline.py --binary build/svlang-lint
+          python3 cpp/tests/test_findings.py --binary build/svlang-lint
+          python3 cpp/tests/test_init.py --binary build/svlang-lint
+          python3 cpp/tests/test_waivers.py --binary build/svlang-lint
+          python3 cpp/tests/test_changed.py --binary build/svlang-lint
+          python3 cpp/tests/test_fix.py --binary build/svlang-lint
+          python3 cpp/tests/test_fix_invariants.py --binary build/svlang-lint
+          python3 cpp/tests/test_report.py --binary build/svlang-lint
+          python3 cpp/tests/test_precision.py --binary build/svlang-lint
+          python3 cpp/tests/test_map.py --binary build/svlang-lint
+          python3 cpp/tests/test_explain.py --binary build/svlang-lint
           python3 cpp/tests/test_engine_gate.py
-          python3 python/tests/test_python_rules.py --binary build/uvmcheck
-          python3 cpp/tests/test_guidelines.py --binary build/uvmcheck
-          python3 cpp/tests/test_history.py --binary build/uvmcheck
-          python3 cpp/tests/engine_equivalence.py --binary build/uvmcheck
+          python3 python/tests/test_python_rules.py --binary build/svlang-lint
+          python3 cpp/tests/test_guidelines.py --binary build/svlang-lint
+          python3 cpp/tests/test_history.py --binary build/svlang-lint
+          python3 cpp/tests/engine_equivalence.py --binary build/svlang-lint

@@ -1,5 +1,5 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
 #include "slang/ast/ASTVisitor.h"
 #include "slang/ast/expressions/AssignmentExpressions.h"
 #include "slang/ast/expressions/MiscExpressions.h"
@@ -8,7 +8,7 @@
 #include "slang/ast/symbols/BlockSymbols.h"
 #include <unordered_set>
 
-namespace uvmcheck::rules::concurrency {
+namespace svlang_lint::rules::concurrency {
 
 class ForkExprVisitor : public slang::ast::ASTVisitor<ForkExprVisitor, slang::ast::VisitFlags::Expressions> {
 public:
@@ -106,12 +106,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::concurrency
+} // namespace svlang_lint::rules::concurrency
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createForkLoopVariableShared() {
     return std::make_unique<concurrency::ForkLoopVariableShared>();
 }
 }
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createForkLoopVariableShared)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createForkLoopVariableShared)

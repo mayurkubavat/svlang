@@ -1,11 +1,11 @@
-// The static type slang gives each expression, as uvmcheck's rules read it
+// The static type slang gives each expression, as svlang-lint's rules read it
 // (`Expression::type`): one line per expression the AST walk reaches,
 //   <file>:<line>:<col> <expression kind> <bits> <s|u> <4|2> <type>
 // with the type as `Type::toString()` prints it. Implicit conversions are not
 // printed (rules strip them); their operands are. Lines are unique and sorted,
 // so a body walked once per instance or specialization prints each distinct
 // type once. The reference for tools/gates/expr_gate.py.
-// Built as build/uvmcheck_exprdump.
+// Built as build/svlang_exprdump.
 #include <slang/ast/ASTVisitor.h>
 #include <slang/ast/Compilation.h>
 #include <slang/ast/expressions/ConversionExpression.h>

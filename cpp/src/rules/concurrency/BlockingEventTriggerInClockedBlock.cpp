@@ -1,11 +1,11 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
 #include "slang/syntax/AllSyntax.h"
 #include "slang/syntax/SyntaxTree.h"
 #include "slang/syntax/SyntaxVisitor.h"
 #include <string>
 
-namespace uvmcheck::rules::concurrency {
+namespace svlang_lint::rules::concurrency {
 
 class EventTriggerVisitor : public engine::SyntaxVisitor<EventTriggerVisitor> {
 public:
@@ -69,12 +69,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::concurrency
+} // namespace svlang_lint::rules::concurrency
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createBlockingEventTriggerInClockedBlock() {
     return std::make_unique<concurrency::BlockingEventTriggerInClockedBlock>();
 }
-} // namespace uvmcheck::rules
+} // namespace svlang_lint::rules
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createBlockingEventTriggerInClockedBlock)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createBlockingEventTriggerInClockedBlock)

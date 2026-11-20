@@ -1,5 +1,5 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
 #include "slang/ast/symbols/ClassSymbols.h"
 #include "slang/ast/types/AllTypes.h"
 #include "slang/syntax/AllSyntax.h"
@@ -7,7 +7,7 @@
 #include "slang/syntax/SyntaxVisitor.h"
 #include <string>
 
-namespace uvmcheck::rules::random {
+namespace svlang_lint::rules::random {
 
 class RandcSyntaxVisitor : public engine::SyntaxVisitor<RandcSyntaxVisitor> {
 public:
@@ -104,12 +104,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::random
+} // namespace svlang_lint::rules::random
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createRandcInDynamicContainer() {
     return std::make_unique<random::RandcInDynamicContainer>();
 }
-} // namespace uvmcheck::rules
+} // namespace svlang_lint::rules
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createRandcInDynamicContainer)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createRandcInDynamicContainer)

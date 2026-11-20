@@ -1,4 +1,4 @@
-//! Message, header and naming patterns, as uvmcheck reads them: ECMAScript
+//! Message, header and naming patterns, as svlang-lint reads them: ECMAScript
 //! regular expressions in `std::regex`'s default grammar, matched on bytes in
 //! the C locale.
 //!
@@ -9,7 +9,7 @@
 //! crate another (a leading `]` in a class, a nested `[`, `(?i)` flags,
 //! `\A`, `\x{..}`) is refused, as are the ECMAScript features the crate
 //! lacks (backreferences, lookahead). So a pattern either means what it
-//! means to uvmcheck or does not load: it never quietly matches something
+//! means to svlang-lint or does not load: it never quietly matches something
 //! else, and a waiver never hides findings its author did not name.
 //! `tools/gates/regex_gate.py` checks this against `std::regex`.
 //!

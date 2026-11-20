@@ -1,29 +1,29 @@
-#include "uvmcheck/core/Driver.h"
-#include "uvmcheck/rules/RuleRegistry.h"
-#include "uvmcheck/rules/CompilerDiagnostics.h"
-#include "uvmcheck/rules/BuiltinRules.h"
-#include "uvmcheck/waivers/WaiverEngine.h"
-#include "uvmcheck/reporting/SarifReporter.h"
-#include "uvmcheck/reporting/HtmlReporter.h"
-#include "uvmcheck/reporting/JsonReporter.h"
-#include "uvmcheck/reporting/Conformance.h"
-#include "uvmcheck/rules/Guidelines.h"
-#include "uvmcheck/rules/History.h"
-#include "uvmcheck/core/ConfigManager.h"
-#include "uvmcheck/plugins/PythonPluginManager.h"
-#include "uvmcheck/lsp/LspServer.h"
-#include "uvmcheck/core/ProjectSources.h"
-#include "uvmcheck/core/ProjectInit.h"
-#include "uvmcheck/core/ChangedLines.h"
-#include "uvmcheck/core/FixPlanner.h"
-#include "uvmcheck/core/ResultCache.h"
-#include "uvmcheck/reporting/TestbenchMap.h"
-#include "uvmcheck/rules/RuleExtras.h"
-#include "uvmcheck/rules/CodeMetrics.h"
-#include "uvmcheck/style/NamingEngine.h"
-#include "uvmcheck/engine/RuleEngine.h"
-#include "uvmcheck/compat/CrashGuard.h"
-#include "uvmcheck/uvm/ApiPack.h"
+#include "svlang_lint/core/Driver.h"
+#include "svlang_lint/rules/RuleRegistry.h"
+#include "svlang_lint/rules/CompilerDiagnostics.h"
+#include "svlang_lint/rules/BuiltinRules.h"
+#include "svlang_lint/waivers/WaiverEngine.h"
+#include "svlang_lint/reporting/SarifReporter.h"
+#include "svlang_lint/reporting/HtmlReporter.h"
+#include "svlang_lint/reporting/JsonReporter.h"
+#include "svlang_lint/reporting/Conformance.h"
+#include "svlang_lint/rules/Guidelines.h"
+#include "svlang_lint/rules/History.h"
+#include "svlang_lint/core/ConfigManager.h"
+#include "svlang_lint/plugins/PythonPluginManager.h"
+#include "svlang_lint/lsp/LspServer.h"
+#include "svlang_lint/core/ProjectSources.h"
+#include "svlang_lint/core/ProjectInit.h"
+#include "svlang_lint/core/ChangedLines.h"
+#include "svlang_lint/core/FixPlanner.h"
+#include "svlang_lint/core/ResultCache.h"
+#include "svlang_lint/reporting/TestbenchMap.h"
+#include "svlang_lint/rules/RuleExtras.h"
+#include "svlang_lint/rules/CodeMetrics.h"
+#include "svlang_lint/style/NamingEngine.h"
+#include "svlang_lint/engine/RuleEngine.h"
+#include "svlang_lint/compat/CrashGuard.h"
+#include "svlang_lint/uvm/ApiPack.h"
 #include "slang/diagnostics/TextDiagnosticClient.h"
 #include <functional>
 #include <iostream>
@@ -43,7 +43,7 @@
 
 namespace fs = std::filesystem;
 
-namespace uvmcheck::core {
+namespace svlang_lint::core {
 
 LinterDriver::LinterDriver() {
     rules::registerBuiltinRules();
@@ -67,8 +67,8 @@ LinterDriver::LinterDriver() {
     slangDriver.cmdLine.add("--baseline", baselineInputPath, "Filter out known technical debt matching baseline JSON", "<file>");
     slangDriver.cmdLine.add("--update-baseline", baselineOutputPath, "Snapshot current violations into baseline JSON file", "<file>");
     slangDriver.cmdLine.add("--waivers", waiversFilePath, "Load external waiver rules from JSON file", "<file>");
-    slangDriver.cmdLine.add("--config", configFilePath, "Load project configuration (Python .uvmcheck/config.py, uvmcheck_config.py, or JSON); default: auto-discover", "<file>");
-    slangDriver.cmdLine.add("--dump-config", dumpConfigPath, "Write a starter Python project configuration and exit (e.g. .uvmcheck/config.py)", "<file>");
+    slangDriver.cmdLine.add("--config", configFilePath, "Load project configuration (Python .svlang-lint/config.py, svlang_lint_config.py, or JSON); default: auto-discover", "<file>");
+    slangDriver.cmdLine.add("--dump-config", dumpConfigPath, "Write a starter Python project configuration and exit (e.g. .svlang-lint/config.py)", "<file>");
     slangDriver.cmdLine.add("--library", libraryPathArgs, "Treat files matching this glob as library code: compiled, never reported (repeatable)", "<glob>");
     slangDriver.cmdLine.add("--exclude", excludePathArgs, "Do not report violations in files matching this glob (repeatable)", "<glob>");
     slangDriver.cmdLine.add("--rule", ruleFilter, "Execute only the specified rule ID or rule name", "<rule>");
@@ -86,9 +86,9 @@ LinterDriver::LinterDriver() {
     slangDriver.cmdLine.add("--experimental", includeExperimental, "Also run experimental rules (new rules still being measured)");
     slangDriver.cmdLine.add("--no-config", noConfig, "Do not look for a project configuration (tests, one-off checks)");
     slangDriver.cmdLine.add("--no-cache", noCache, "Do not read or write the incremental result cache");
-    slangDriver.cmdLine.add("--cache-dir", cacheDirArg, "Directory for the incremental result cache (default: .uvmcheck_cache)", "<dir>");
+    slangDriver.cmdLine.add("--cache-dir", cacheDirArg, "Directory for the incremental result cache (default: .svlang_lint_cache)", "<dir>");
     slangDriver.cmdLine.add("--clear-cache", clearCache, "Delete the result cache, then run");
-    slangDriver.cmdLine.add("--init", initProject, "Set up this folder: find the sources and UVM, learn the naming conventions the code already follows, and write .uvmcheck/config.py and a first baseline");
+    slangDriver.cmdLine.add("--init", initProject, "Set up this folder: find the sources and UVM, learn the naming conventions the code already follows, and write .svlang-lint/config.py and a first baseline");
     slangDriver.cmdLine.add("--compat-profile", compatProfile, "Apply a slang overlay profile for this simulator's code and file lists: questa, xcelium, vcs, jasper or none (see --list-addons)", "<name>");
     slangDriver.cmdLine.add("--override", overrideArgs, "Turn a slang overlay override on (id or +id) or off (-id); repeatable, applied after the profile", "<id>");
     slangDriver.cmdLine.add("--list-addons,--list-overrides", listOverrides, "List the add-ons that extend slang (overlay overrides, compat profiles, UVM API packs) and exit");
@@ -158,7 +158,7 @@ int LinterDriver::explain(const std::string& query) const {
     const auto* extra = rules::findRuleExtra(id);
     if (!extra && sub) extra = rules::findRuleExtra(rule->getId());
     if (extra && !extra->options.empty()) {
-        std::cout << "\nOptions, set in .uvmcheck/config.py:\n    class " << rule->getName() << "(RuleConfig):\n";
+        std::cout << "\nOptions, set in .svlang-lint/config.py:\n    class " << rule->getName() << "(RuleConfig):\n";
         for (const auto& o : extra->options) {
             std::cout << "        " << o.key << " = " << o.defaultValue << "    # default\n";
         }
@@ -180,7 +180,7 @@ int LinterDriver::explain(const std::string& query) const {
         show("Flagged", std::string(extra->testDir) + "/bad.sv", extra->badExample);
         show("Not flagged", std::string(extra->testDir) + "/good.sv", extra->goodExample);
     }
-    std::cout << "\nWaive one finding with  // uvmcheck:waive " << id << " -- <reason>  on the flagged line.\n";
+    std::cout << "\nWaive one finding with  // svlang-lint:waive " << id << " -- <reason>  on the flagged line.\n";
     return 0;
 }
 
@@ -195,24 +195,24 @@ bool LinterDriver::loadProjectConfig() {
             std::cerr << "Error: " << cfgMgr.getLastError() << "\n";
             return false;
         }
-        info << "[uvmcheck] Loaded configuration from " << *configFilePath << "\n";
+        info << "[svlang-lint] Loaded configuration from " << *configFilePath << "\n";
     } else if (!noConfig.value_or(false)) {
         // From the working directory up; failing that, from the first source file up, so a
-        // run from a sim/ folder outside the tree still finds the project's .uvmcheck/.
+        // run from a sim/ folder outside the tree still finds the project's .svlang-lint/.
         bool found = cfgMgr.autoDiscover(".");
         if (!found && cfgMgr.getLastError().empty() && slangDriver.sourceLoader.hasFiles()) {
             auto files = slangDriver.sourceLoader.getFilePaths();
             if (!files.empty()) found = cfgMgr.autoDiscover(fs::absolute(files.front()).parent_path().string());
         }
         if (found) {
-            info << "[uvmcheck] Auto-discovered configuration: " << cfgMgr.getLoadedConfigPath() << "\n";
+            info << "[svlang-lint] Auto-discovered configuration: " << cfgMgr.getLoadedConfigPath() << "\n";
         } else if (!cfgMgr.getLastError().empty()) {
             std::cerr << "Error: " << cfgMgr.getLastError() << "\n";
             return false;
         }
     }
     if (cfgMgr.getLayers().size() > 1) {
-        info << "[uvmcheck] Configuration layers:";
+        info << "[svlang-lint] Configuration layers:";
         for (const auto& l : cfgMgr.getLayers()) info << " " << l;
         info << "\n";
     }
@@ -239,12 +239,12 @@ bool LinterDriver::loadProjectConfig() {
 
 int LinterDriver::run() {
     if (showHelp.value_or(false)) {
-        std::cout << slangDriver.cmdLine.getHelpText("uvmcheck - Advanced SystemVerilog & UVM Linter") << "\n";
+        std::cout << slangDriver.cmdLine.getHelpText("svlang-lint - Advanced SystemVerilog & UVM Linter") << "\n";
         return 0;
     }
 
     if (showVersion.value_or(false)) {
-        std::cout << "uvmcheck version 0.1.0 (powered by Slang)\n";
+        std::cout << "svlang-lint version 0.2.0 (powered by Slang)\n";
         return 0;
     }
 
@@ -260,7 +260,7 @@ int LinterDriver::run() {
             return 1;
         }
         ConfigManager::instance().dumpDefaultConfig(out);
-        std::cout << "[uvmcheck] Default configuration template written to: " << *dumpConfigPath << "\n";
+        std::cout << "[svlang-lint] Default configuration template written to: " << *dumpConfigPath << "\n";
         return 0;
     }
 
@@ -272,7 +272,7 @@ int LinterDriver::run() {
         compat::Overlay::list(std::cout);
         std::cout << "Profiles:";
         for (auto p : compat::Overlay::profileNames()) std::cout << " " << p;
-        std::cout << "\n\nUVM API packs (data/uvm-api; UVMCHECK_UVM_API_PACK=<file> replaces them):";
+        std::cout << "\n\nUVM API packs (data/uvm-api; SVLANG_LINT_UVM_API_PACK=<file> replaces them):";
         for (const auto& v : uvm::ApiPack::builtinVersions()) std::cout << " " << v;
         std::cout << "\n\nScripts: tools/quality/config_sweep.py (lint under several `ifdef configurations), "
                      "tools/quality/slang_canary.py (build and test against slang master)\n";
@@ -288,7 +288,7 @@ int LinterDriver::run() {
             }
             return 0;
         }
-        std::cout << "\n=== Registered UVMCheck Rules ===\n\n";
+        std::cout << "\n=== Registered svlang-lint Rules ===\n\n";
         std::cout << std::left << std::setw(15) << "Rule ID"
                   << std::setw(28) << "Name"
                   << std::setw(17) << "Category"
@@ -338,7 +338,7 @@ int LinterDriver::run() {
     if (initMode) {
         // A fresh project: ignore any config further up the tree.
         std::error_code ec;
-        for (const char* existing : {".uvmcheck/config.py", ".uvmcheck/config.json", "uvmcheck_config.py"}) {
+        for (const char* existing : {".svlang-lint/config.py", ".svlang-lint/config.json", "svlang_lint_config.py"}) {
             if (fs::exists(existing, ec)) {
                 std::cerr << "Error: " << existing << " already exists; remove it to run --init again\n";
                 return 2;
@@ -351,7 +351,7 @@ int LinterDriver::run() {
             std::cerr << "Error: no SystemVerilog sources found under " << discovery.root.string() << "\n";
             return 2;
         }
-        std::cout << "[uvmcheck] init: " << discovery.svFiles << " SystemVerilog files; "
+        std::cout << "[svlang-lint] init: " << discovery.svFiles << " SystemVerilog files; "
                   << (discovery.filelistsRel.empty() ? std::to_string(discovery.sourcesRel.size()) + " top-level sources"
                                                      : std::to_string(discovery.filelistsRel.size()) + " file list(s)")
                   << "; " << discovery.uvmNote << "\n";
@@ -426,7 +426,7 @@ int LinterDriver::run() {
     } else {
         fs::path root = ConfigManager::instance().getProjectRoot();
         if (root.empty()) root = fs::current_path();
-        cacheDir = root / ".uvmcheck_cache";
+        cacheDir = root / ".svlang_lint_cache";
     }
     if (clearCache.value_or(false)) cache::clear(cacheDir);
 
@@ -462,7 +462,7 @@ int LinterDriver::run() {
             if (root.empty()) root = fs::current_path();
             std::error_code ec;
             fs::path rel = fs::weakly_canonical(root, ec).lexically_proximate(fs::weakly_canonical(fs::current_path(), ec));
-            fs::path uvmDir = (rel == "." ? fs::path() : rel) / ".uvmcheck";
+            fs::path uvmDir = (rel == "." ? fs::path() : rel) / ".svlang-lint";
             if (waiversFilePath.has_value()) env.contentFiles.push_back(*waiversFilePath);
             else if (!noConfig.value_or(false)) env.contentFiles.push_back((uvmDir / "waivers.json").string());
             if (baselineInputPath.has_value()) env.contentFiles.push_back(*baselineInputPath);
@@ -500,7 +500,7 @@ int LinterDriver::run() {
             compileErrors = hit->compileErrors;
             waivedCount = hit->waivedCount;
             replayed = true;
-            info << "[uvmcheck] cache: " << cacheReq.primaries.size() << " compilation unit"
+            info << "[svlang-lint] cache: " << cacheReq.primaries.size() << " compilation unit"
                  << (cacheReq.primaries.size() == 1 ? "" : "s") << " served from cache\n";
         }
     }
@@ -523,7 +523,7 @@ int LinterDriver::run() {
             diags.getViolations() = {compat::CrashGuard::crashFinding(outcome, std::move(known), firstFile)};
             compileErrors = 1;
             replayed = true;
-            std::cerr << "[uvmcheck] crash-guard: " << diags.getViolations().front().message << "\n";
+            std::cerr << "[svlang-lint] crash-guard: " << diags.getViolations().front().message << "\n";
         }
     }
 
@@ -566,18 +566,18 @@ int LinterDriver::run() {
         }
         learntNaming = init::inferNaming(*uvmModel, ConfigManager::instance().getNamingEngine(), libraryDir);
         std::error_code ec;
-        fs::create_directories(".uvmcheck", ec);
+        fs::create_directories(".svlang-lint", ec);
         {
-            std::ofstream out(".uvmcheck/config.py");
+            std::ofstream out(".svlang-lint/config.py");
             out << init::renderConfig(discovery, learntNaming);
             if (!out) {
-                std::cerr << "Error: cannot write .uvmcheck/config.py\n";
+                std::cerr << "Error: cannot write .svlang-lint/config.py\n";
                 return 2;
             }
         }
-        configFilePath = ".uvmcheck/config.py";
+        configFilePath = ".svlang-lint/config.py";
         if (!loadProjectConfig()) return 2;
-        if (!baselineOutputPath.has_value()) baselineOutputPath = ".uvmcheck/baseline.json";
+        if (!baselineOutputPath.has_value()) baselineOutputPath = ".svlang-lint/baseline.json";
     }
     elaborateSeconds = std::chrono::duration<double>(Clock::now() - elaborateStart).count();
     } // !replayed (parse and elaborate)
@@ -742,7 +742,7 @@ int LinterDriver::run() {
 
     // Custom Python rules only read the UVM model, so they run alongside the built-in rules
     if (pythonRulesPath.has_value()) {
-        info << "[uvmcheck] Executing custom Python rules from: " << *pythonRulesPath << "\n";
+        info << "[svlang-lint] Executing custom Python rules from: " << *pythonRulesPath << "\n";
         ruleEngine.addExternalJob("python rules", [&](DiagnosticEngine& pyDiags) {
             plugins::PythonPluginManager::runPythonRules(*pythonRulesPath, *compilation, *uvmModel, pyDiags);
         });
@@ -760,12 +760,12 @@ int LinterDriver::run() {
     }
 
     // Process Waivers and Baseline. Paths are relative to the project root: the folder
-    // that holds .uvmcheck/ (or the loaded config file), else the working directory.
-    // --no-config also skips the default .uvmcheck/waivers.json and baseline.json.
+    // that holds .svlang-lint/ (or the loaded config file), else the working directory.
+    // --no-config also skips the default .svlang-lint/waivers.json and baseline.json.
     // Shown and opened relative to the working directory when the root is (or is under) it.
-    const fs::path uvmcheckDir = [&] {
+    const fs::path svlangLintDir = [&] {
         fs::path rel = fs::weakly_canonical(projectRoot).lexically_proximate(fs::weakly_canonical(fs::current_path()));
-        return (rel == "." ? fs::path() : rel) / ".uvmcheck";
+        return (rel == "." ? fs::path() : rel) / ".svlang-lint";
     }();
     for (const auto& cw : ConfigManager::instance().getWaivers()) {
         waivers::ExternalWaiver w;
@@ -790,8 +790,8 @@ int LinterDriver::run() {
         waiversPathToLoad = *waiversFilePath;
     } else if (!noConfig.value_or(false)) {
         std::error_code ec;
-        if (fs::exists(uvmcheckDir / "waivers.json", ec)) {
-            waiversPathToLoad = (uvmcheckDir / "waivers.json").generic_string();
+        if (fs::exists(svlangLintDir / "waivers.json", ec)) {
+            waiversPathToLoad = (svlangLintDir / "waivers.json").generic_string();
         }
     }
 
@@ -804,7 +804,7 @@ int LinterDriver::run() {
             }
             std::cerr << "Warning: Could not load waiver file: " << err << "\n";
         } else {
-            info << "[uvmcheck] Loaded external waivers from " << waiversPathToLoad << "\n";
+            info << "[svlang-lint] Loaded external waivers from " << waiversPathToLoad << "\n";
         }
     }
 
@@ -813,8 +813,8 @@ int LinterDriver::run() {
         baselinePathToLoad = *baselineInputPath;
     } else if (!noConfig.value_or(false)) {
         std::error_code ec;
-        if (fs::exists(uvmcheckDir / "baseline.json", ec)) {
-            baselinePathToLoad = (uvmcheckDir / "baseline.json").generic_string();
+        if (fs::exists(svlangLintDir / "baseline.json", ec)) {
+            baselinePathToLoad = (svlangLintDir / "baseline.json").generic_string();
         }
     }
 
@@ -822,7 +822,7 @@ int LinterDriver::run() {
         if (!waiverEngine.loadBaseline(baselinePathToLoad)) {
             std::cerr << "Warning: Could not load baseline file: " << waiverEngine.getLastError() << "\n";
         } else {
-            info << "[uvmcheck] Loaded baseline from " << baselinePathToLoad << "\n";
+            info << "[svlang-lint] Loaded baseline from " << baselinePathToLoad << "\n";
         }
     }
 
@@ -833,7 +833,7 @@ int LinterDriver::run() {
             fs::create_directories(p.parent_path(), ec);
         }
         if (waiverEngine.saveBaseline(*baselineOutputPath, diags.getViolations())) {
-            info << "[uvmcheck] Successfully saved " << diags.getViolations().size()
+            info << "[svlang-lint] Successfully saved " << diags.getViolations().size()
                       << " violations to baseline: " << *baselineOutputPath << "\n";
         } else {
             std::cerr << "Error: Failed to write baseline to: " << *baselineOutputPath << "\n";
@@ -844,10 +844,10 @@ int LinterDriver::run() {
     auto activeViolations = waiverEngine.filter(diags.getViolations());
     waivedCount = waiverEngine.getWaivedCount();
     if (size_t regraded = waiverEngine.getRegradedCount(); regraded > 0) {
-        info << "[uvmcheck] " << regraded << " finding(s) re-graded by waivers with a severity\n";
+        info << "[svlang-lint] " << regraded << " finding(s) re-graded by waivers with a severity\n";
     }
     if (size_t stale = waiverEngine.getStaleBaselineCount(); stale > 0 && !baselineOutputPath.has_value()) {
-        info << "[uvmcheck] " << stale << " baseline entr" << (stale == 1 ? "y" : "ies")
+        info << "[svlang-lint] " << stale << " baseline entr" << (stale == 1 ? "y" : "ies")
              << " matched no finding (fixed, or the flagged line changed); "
                 "run with --update-baseline to drop them\n";
     }
@@ -866,7 +866,7 @@ int LinterDriver::run() {
         std::erase_if(activeViolations, [&](const Violation& v) {
             return v.filePath.empty() || !changed.contains(v.filePath, v.line);
         });
-        info << "[uvmcheck] --changed-since " << *changedSince << ": " << activeViolations.size()
+        info << "[svlang-lint] --changed-since " << *changedSince << ": " << activeViolations.size()
              << " finding(s) on changed lines in " << changed.fileCount() << " changed file(s); "
              << before - activeViolations.size() << " elsewhere not shown\n";
         if (strictNewFiles.value_or(false)) {
@@ -876,7 +876,7 @@ int LinterDriver::run() {
             }
             if (inNew > 0) {
                 strictNewFailed = true;
-                info << "[uvmcheck] --strict-new-files: " << inNew
+                info << "[svlang-lint] --strict-new-files: " << inNew
                      << " finding(s) in files that did not exist at " << *changedSince << "\n";
             }
         }
@@ -962,7 +962,7 @@ int LinterDriver::run() {
             rep << "\n";
         }
         if (strictWaivers.value_or(false) && hygieneFailed) {
-            rep << "[uvmcheck] --strict-waivers: remove or fix the entries above (exit 4)\n";
+            rep << "[svlang-lint] --strict-waivers: remove or fix the entries above (exit 4)\n";
         }
         }
     }
@@ -1057,7 +1057,7 @@ int LinterDriver::run() {
             }
             // Write a sibling file and rename it over the original, so an
             // interrupted run never leaves a half-written source.
-            const fs::path tmp = fs::path(path).concat(".uvmcheck-fix.tmp");
+            const fs::path tmp = fs::path(path).concat(".svlang-lint-fix.tmp");
             {
                 std::ofstream out(tmp, std::ios::binary | std::ios::trunc);
                 out << plan.updated;
@@ -1084,10 +1084,10 @@ int LinterDriver::run() {
         if (applied > 0 || skipped > 0 || macroFixes > 0 || unsafeSkipped > 0 || brokenFixes > 0) {
             std::ostringstream line;
             if (unsafeSkipped > 0) {
-                line << "[uvmcheck] " << applied << (fixDryRun ? " fixes would be applied, " : " fixes applied, ")
+                line << "[svlang-lint] " << applied << (fixDryRun ? " fixes would be applied, " : " fixes applied, ")
                      << unsafeSkipped << " unsafe fixes skipped (use --unsafe-fixes)";
             } else {
-                line << "[uvmcheck] " << (fixDryRun ? "Would apply " : "Applied ") << applied << " fix-it(s) in "
+                line << "[svlang-lint] " << (fixDryRun ? "Would apply " : "Applied ") << applied << " fix-it(s) in "
                      << changedFiles << " file(s)";
             }
             if (skipped) line << "; " << skipped << " overlapping fix-it(s) " << (fixDryRun ? "left for another --fix run" : "deferred to the next pass");
@@ -1107,7 +1107,7 @@ int LinterDriver::run() {
     // Write SARIF report if requested
     if (sarifOutputPath.has_value()) {
         if (reporting::SarifReporter::writeSarif(*sarifOutputPath, diags.getViolations(), allRules)) {
-            info << "[uvmcheck] SARIF 2.1.0 report written to: " << *sarifOutputPath << "\n";
+            info << "[svlang-lint] SARIF 2.1.0 report written to: " << *sarifOutputPath << "\n";
         } else {
             std::cerr << "Error: Failed to write SARIF report to: " << *sarifOutputPath << "\n";
         }
@@ -1121,14 +1121,14 @@ int LinterDriver::run() {
                                                    overlay.activeIds())) {
             std::cerr << "Error: Failed to write JSON report to: " << *jsonOutputPath << "\n";
         } else if (!jsonToStdout) {
-            info << "[uvmcheck] JSON report written to: " << *jsonOutputPath << "\n";
+            info << "[svlang-lint] JSON report written to: " << *jsonOutputPath << "\n";
         }
     }
 
     if (mapOutputPath.has_value()) {
         if (compilation && uvmModel &&
             reporting::writeTestbenchMap(*mapOutputPath, *compilation, *uvmModel, diags.getViolations())) {
-            info << "[uvmcheck] Testbench map written to: " << *mapOutputPath << "\n";
+            info << "[svlang-lint] Testbench map written to: " << *mapOutputPath << "\n";
         } else {
             std::cerr << "Error: Failed to write testbench map to: " << *mapOutputPath << "\n";
         }
@@ -1143,14 +1143,14 @@ int LinterDriver::run() {
             }
         }
         if (reporting::HtmlReporter::writeHtml(*htmlOutputPath, diags.getViolations(), allRules, mostComplex)) {
-            info << "[uvmcheck] Interactive HTML dashboard generated: " << *htmlOutputPath << "\n";
+            info << "[svlang-lint] Interactive HTML dashboard generated: " << *htmlOutputPath << "\n";
         } else {
             std::cerr << "Error: Failed to write HTML report to: " << *htmlOutputPath << "\n";
         }
     }
 
     if (initMode) {
-        std::cout << "\n[uvmcheck] Wrote .uvmcheck/config.py";
+        std::cout << "\n[svlang-lint] Wrote .svlang-lint/config.py";
         if (learntNaming.empty()) {
             std::cout << " (the default naming conventions already fit this code)";
         }
@@ -1159,9 +1159,9 @@ int LinterDriver::run() {
             std::cout << "  naming " << n.target << ": "
                       << (n.disable ? "disabled" : "pattern " + n.pattern) << " (" << n.evidence << ")\n";
         }
-        std::cout << "[uvmcheck] Existing findings are in the baseline " << *baselineOutputPath
+        std::cout << "[svlang-lint] Existing findings are in the baseline " << *baselineOutputPath
                   << "; from now on only new findings are reported.\n"
-                  << "Review the config, then run `uvmcheck` from this folder.\n";
+                  << "Review the config, then run `svlang-lint` from this folder.\n";
         return 0;
     }
 
@@ -1172,7 +1172,7 @@ int LinterDriver::run() {
     }
 
     if (waivedCount > 0) {
-        info << "\033[2m[uvmcheck] " << waivedCount
+        info << "\033[2m[svlang-lint] " << waivedCount
                   << " violation(s) suppressed by inline waivers or baseline.\033[0m\n";
     }
 
@@ -1180,4 +1180,4 @@ int LinterDriver::run() {
     return strictWaivers.value_or(false) && hygieneFailed ? 4 : 0;
 }
 
-} // namespace uvmcheck::core
+} // namespace svlang_lint::core

@@ -87,7 +87,12 @@ impl Workspace {
         warnings.extend(suppress.warnings.iter().cloned());
         let mut session = Session::new();
         if let Some(c) = &config {
-            session.set_options(&c.options).set_style(&c.style).set_naming(&c.naming);
+            session
+                .set_options(&c.options)
+                .set_str_options(&c.str_options)
+                .set_list_options(&c.list_options)
+                .set_style(&c.style)
+                .set_naming(&c.naming);
         }
         // The command line's selection: the project's preset, else the
         // default profiles, plus the rules the config configures.
@@ -145,9 +150,9 @@ impl Workspace {
             return Ok(Checked { files: Vec::new(), findings: Vec::new(), waived: 0 });
         }
         let design = dv_model::design_of(&trees, 0.0);
-        let waived_before = crate::inline_waived();
+        self.session.reset_waivers();
         let (files, mut findings) = self.session.lint_all(&design, &trees, |id| self.keep.contains(id));
-        let inline = crate::inline_waived() - waived_before;
+        let inline = self.session.inline_waived();
         crate::fix::guard_macro_calls(&mut findings);
         // The editor shows the user's code: never the UVM library's findings.
         let sources: Vec<std::path::PathBuf> = trees.iter().filter_map(|t| t.files.first().cloned()).collect();
@@ -159,7 +164,7 @@ impl Workspace {
         if let Some(c) = &self.config {
             c.apply(&mut findings, &files);
         }
-        let waived = inline + self.suppress.apply(&mut findings, &files);
+        let waived = inline + self.suppress.apply_in_session(&self.session, &mut findings, &files);
         crate::expansions::name_macros(&mut findings, &files);
         Ok(Checked { files, findings, waived })
     }

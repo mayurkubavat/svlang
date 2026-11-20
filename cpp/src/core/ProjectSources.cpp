@@ -1,16 +1,16 @@
-#include "uvmcheck/core/ProjectSources.h"
+#include "svlang_lint/core/ProjectSources.h"
 
 #include "slang/driver/Driver.h"
 
 #include <iostream>
 
-namespace uvmcheck::core {
+namespace svlang_lint::core {
 
 bool applyBuildSettings(slang::driver::Driver& driver, const BuildSettings& build, bool addSources) {
     bool ok = true;
     for (const auto& dir : build.includeDirs) {
         if (auto ec = driver.sourceManager.addUserDirectories(dir)) {
-            std::cerr << "[uvmcheck] warning: include dir '" << dir << "': " << ec.message() << "\n";
+            std::cerr << "[svlang-lint] warning: include dir '" << dir << "': " << ec.message() << "\n";
         }
     }
     for (const auto& def : build.defines) driver.options.defines.push_back(def);
@@ -22,4 +22,4 @@ bool applyBuildSettings(slang::driver::Driver& driver, const BuildSettings& buil
     return ok;
 }
 
-} // namespace uvmcheck::core
+} // namespace svlang_lint::core

@@ -1,4 +1,4 @@
-#include "uvmcheck/waivers/WaiverEngine.h"
+#include "svlang_lint/waivers/WaiverEngine.h"
 
 #include <algorithm>
 #include <cstdint>
@@ -11,11 +11,11 @@
 #include <sstream>
 #include <tuple>
 
-#include "uvmcheck/core/Json.h"
+#include "svlang_lint/core/Json.h"
 
 namespace fs = std::filesystem;
 
-namespace uvmcheck::waivers {
+namespace svlang_lint::waivers {
 
 namespace {
 
@@ -190,14 +190,14 @@ std::vector<std::string> WaiverEngine::fingerprints(const std::vector<core::Viol
 }
 
 // On the finding's own line:
-//   // uvmcheck:waive RULE_ID     // uvmcheck:disable RULE_ID     // lint:off RULE_ID
+//   // svlang-lint:waive RULE_ID     // svlang-lint:disable RULE_ID     // lint:off RULE_ID
 // On the line above:
-//   // uvmcheck-disable-next-line RULE_ID     // uvmcheck:waive-next-line RULE_ID
-static constexpr std::string_view kSameLine[] = {"uvmcheck:waive", "uvmcheck:disable",
-                                                 "uvmcheck-disable", "lint:waive", "lint:off"};
-static constexpr std::string_view kNextLine[] = {"uvmcheck-disable-next-line",
-                                                 "uvmcheck:waive-next-line",
-                                                 "uvmcheck:disable-next-line"};
+//   // svlang-lint-disable-next-line RULE_ID     // svlang-lint:waive-next-line RULE_ID
+static constexpr std::string_view kSameLine[] = {"svlang-lint:waive", "svlang-lint:disable",
+                                                 "svlang-lint-disable", "lint:waive", "lint:off"};
+static constexpr std::string_view kNextLine[] = {"svlang-lint-disable-next-line",
+                                                 "svlang-lint:waive-next-line",
+                                                 "svlang-lint:disable-next-line"};
 
 const std::regex* WaiverEngine::messageRegexFor(const std::string& pattern, const std::string& file, size_t line) {
     auto it = compiledMessages.find(pattern);
@@ -226,13 +226,13 @@ bool WaiverEngine::commentWaives(std::string_view text, const core::Violation& v
     auto keywords = commentLine == v.line
                         ? std::vector<std::string_view>(std::begin(kSameLine), std::end(kSameLine))
                         : std::vector<std::string_view>(std::begin(kNextLine), std::end(kNextLine));
-    // `// uvmcheck: waive RULE "regex"` — a space after the colon, same as uvmcheck:waive.
-    keywords.push_back("uvmcheck: waive");
+    // `// svlang-lint: waive RULE "regex"` — a space after the colon, same as svlang-lint:waive.
+    keywords.push_back("svlang-lint: waive");
 
     for (auto kw : keywords) {
         for (size_t pos = text.find(kw); pos != std::string_view::npos; pos = text.find(kw, pos + 1)) {
             std::string_view rest = text.substr(pos + kw.size());
-            // "uvmcheck:waive" is a prefix of "uvmcheck:waive-next-line"; don't treat that as same-line.
+            // "svlang-lint:waive" is a prefix of "svlang-lint:waive-next-line"; don't treat that as same-line.
             if (!rest.empty() && (rest.front() == '-' || rest.front() == ':')) continue;
             if (rest.find(v.ruleId) == std::string_view::npos && rest.find('*') == std::string_view::npos) continue;
             std::string pattern, err;
@@ -499,4 +499,4 @@ bool WaiverEngine::saveBaseline(const std::string& path, const std::vector<core:
     return true;
 }
 
-} // namespace uvmcheck::waivers
+} // namespace svlang_lint::waivers

@@ -73,7 +73,7 @@ pub(crate) fn tlm_topology(d: &Design, csts: &[Cst], s: &mut Sink) {
 }
 
 /// A `connect()` call outside the UVM library: `a.b.port.connect(c.imp)`
-/// is source `a.b.port`, target `c.imp`, as uvmcheck's TlmTopologyGraph.
+/// is source `a.b.port`, target `c.imp`, as svlang-lint's TlmTopologyGraph.
 pub(crate) struct Connection {
     /// The class the call is in ("" outside a class).
     pub(crate) class: String,

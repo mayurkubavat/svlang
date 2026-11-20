@@ -1,5 +1,5 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
 #include "slang/ast/ASTVisitor.h"
 #include "slang/ast/symbols/ClassSymbols.h"
 #include "slang/ast/symbols/VariableSymbols.h"
@@ -7,7 +7,7 @@
 #include "slang/ast/expressions/AssignmentExpressions.h"
 #include <unordered_set>
 
-namespace uvmcheck::rules::smells {
+namespace svlang_lint::rules::smells {
 
 class ScratchpadVisitor : public engine::AstVisitor<ScratchpadVisitor> {
 public:
@@ -81,12 +81,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::smells
+} // namespace svlang_lint::rules::smells
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createScratchpadClassProperty() {
     return std::make_unique<smells::ScratchpadClassProperty>();
 }
 }
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createScratchpadClassProperty)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createScratchpadClassProperty)

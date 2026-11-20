@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Integration tests for the UVMCheck project config (uvmcheck_config.py / .uvmcheck.json):
+Integration tests for the svlang-lint project config (svlang_lint_config.py / .svlang-lint.json):
 library and exclude paths, per-rule settings and options, waivers, and error handling.
 
 Each case builds a small project in a temp directory with a "library" file and a
@@ -109,12 +109,12 @@ def case(binary, title, config_name, config_text, args=None, env=None, extra=Non
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--binary", default=str(REPO / "build" / "uvmcheck"))
+    ap.add_argument("--binary", default=str(REPO / "build" / "svlang-lint"))
     binary = os.path.abspath(ap.parse_args().binary)
 
     # 1. Python config, library path suppresses vendor file only.
-    t, rc, found, out, err = case(binary, "Python config: library_paths", "uvmcheck_config.py", """\
-        from uvmcheck.config import ProjectConfig
+    t, rc, found, out, err = case(binary, "Python config: library_paths", "svlang_lint_config.py", """\
+        from svlang_lint.config import ProjectConfig
         class Project(ProjectConfig):
             library_paths = ["lib"]
         """)
@@ -122,13 +122,13 @@ def main():
     check("summary counts library suppressions", "in library paths" in out, out)
 
     # 2. Same thing in JSON.
-    t, rc, found, out, err = case(binary, "JSON config: library_paths", ".uvmcheck.json",
+    t, rc, found, out, err = case(binary, "JSON config: library_paths", ".svlang-lint.json",
                                   '{ "library_paths": ["lib/**"], // comments allowed\n }')
     check("json library path suppresses vendor file", files_with(found, "SV-COR-008") == ["user_tb.sv"], out + err)
 
     # 3. Environment variables.
-    t, rc, found, out, err = case(binary, "Env var in library path", "uvmcheck_config.py", """\
-        from uvmcheck.config import ProjectConfig
+    t, rc, found, out, err = case(binary, "Env var in library path", "svlang_lint_config.py", """\
+        from svlang_lint.config import ProjectConfig
         class Project(ProjectConfig):
             library_paths = ["$VIP_HOME"]
         """, env={"VIP_HOME": "lib"})
@@ -138,8 +138,8 @@ def main():
     with tempfile.TemporaryDirectory() as alias_dir:
         alias = Path(alias_dir) / "alias"
         os.symlink(t.name, alias)
-        (Path(t.name) / "uvmcheck_config.py").write_text(textwrap.dedent("""\
-            from uvmcheck.config import ProjectConfig
+        (Path(t.name) / "svlang_lint_config.py").write_text(textwrap.dedent("""\
+            from svlang_lint.config import ProjectConfig
             class Project(ProjectConfig):
                 library_paths = ["$VIP_HOME"]
             """))
@@ -149,8 +149,8 @@ def main():
         check("symlinked library path suppresses vendor file",
               files_with(found, "SV-COR-008") == ["user_tb.sv"], out + err)
 
-    t, rc, found, out, err = case(binary, "Unset env var", "uvmcheck_config.py", """\
-        from uvmcheck.config import ProjectConfig
+    t, rc, found, out, err = case(binary, "Unset env var", "svlang_lint_config.py", """\
+        from svlang_lint.config import ProjectConfig
         class Project(ProjectConfig):
             library_paths = ["$UVM_HOME/**"]
         """)
@@ -159,8 +159,8 @@ def main():
           files_with(found, "SV-COR-008") == ["user_tb.sv", "vendor_vip.sv"], out)
 
     # 4. exclude_paths and per-rule exclude_paths.
-    t, rc, found, out, err = case(binary, "exclude_paths + rule exclude_paths", "uvmcheck_config.py", """\
-        from uvmcheck.config import ProjectConfig, RuleConfig
+    t, rc, found, out, err = case(binary, "exclude_paths + rule exclude_paths", "svlang_lint_config.py", """\
+        from svlang_lint.config import ProjectConfig, RuleConfig
         class Project(ProjectConfig):
             exclude_paths = ["vendor_vip.sv"]
             class MaxLineLength(RuleConfig):
@@ -171,22 +171,22 @@ def main():
           files_with(found, "SV-COR-008") == ["user_tb.sv"], out)
 
     # 4b. only_paths keeps a rule to some files; other rules still report everywhere.
-    t, rc, found, out, err = case(binary, "rule only_paths", "uvmcheck_config.py", """\
-        from uvmcheck.config import ProjectConfig, RuleConfig
+    t, rc, found, out, err = case(binary, "rule only_paths", "svlang_lint_config.py", """\
+        from svlang_lint.config import ProjectConfig, RuleConfig
         class Project(ProjectConfig):
             class SelfComparison(RuleConfig):
                 only_paths = ["lib/**"]
         """)
     check("only_paths keeps the rule to the listed files",
           files_with(found, "SV-COR-008") == ["vendor_vip.sv"], out + err)
-    t, rc, found, out, err = case(binary, "JSON rule only_paths", ".uvmcheck.json",
+    t, rc, found, out, err = case(binary, "JSON rule only_paths", ".svlang-lint.json",
                                   '{ "rules": { "SV-COR-008": { "only_paths": ["src/**"] } } }')
     check("JSON only_paths keeps the rule to the listed files",
           files_with(found, "SV-COR-008") == ["user_tb.sv"], out + err)
 
     # 5. Per-rule enable / severity / options, OOP inheritance from a shared base file.
     base = textwrap.dedent("""\
-        from uvmcheck.config import ProjectConfig, RuleConfig, Severity
+        from svlang_lint.config import ProjectConfig, RuleConfig, Severity
         class TeamBase(ProjectConfig):
             library_paths = ["lib"]
             class MaxLineLength(RuleConfig):
@@ -194,9 +194,9 @@ def main():
             class SelfComparison(RuleConfig):
                 severity = Severity.Info
         """)
-    t, rc, found, out, err = case(binary, "Inheritance, overrides and options", "uvmcheck_config.py", """\
+    t, rc, found, out, err = case(binary, "Inheritance, overrides and options", "svlang_lint_config.py", """\
         from team_base import TeamBase
-        from uvmcheck.config import RuleConfig
+        from svlang_lint.config import RuleConfig
         class Block(TeamBase):
             class MaxLineLength(TeamBase.MaxLineLength):
                 max_columns = 200
@@ -212,25 +212,25 @@ def main():
 
     # The default rule set has no style rules; a rule the config configures,
     # or the project's preset, brings them in.
-    t, rc, found, out, err = case(binary, "Default rule set", ".uvmcheck.json", "{}")
+    t, rc, found, out, err = case(binary, "Default rule set", ".svlang-lint.json", "{}")
     check("style rules are not in the default set", files_with(found, "SV-STY-016") == [], out)
     check("bug rules are", files_with(found, "SV-COR-008") == ["user_tb.sv", "vendor_vip.sv"], out)
-    t, rc, found, out, err = case(binary, "A configured rule runs", ".uvmcheck.json",
+    t, rc, found, out, err = case(binary, "A configured rule runs", ".svlang-lint.json",
                                   '{ "rules": { "SV-STY-016": { "severity": "warning" } } }')
     check("a configured style rule runs", files_with(found, "SV-STY-016") == ["user_tb.sv", "vendor_vip.sv"], out)
-    t, rc, found, out, err = case(binary, "Project preset", ".uvmcheck.json", '{ "preset": "style" }')
+    t, rc, found, out, err = case(binary, "Project preset", ".svlang-lint.json", '{ "preset": "style" }')
     check("the project's preset selects the rules",
           files_with(found, "SV-STY-016") == ["user_tb.sv", "vendor_vip.sv"] and files_with(found, "SV-COR-008") == [],
           out)
 
-    t, rc, found, out, err = case(binary, "Rule disabled by name, JSON shorthand", ".uvmcheck.json",
+    t, rc, found, out, err = case(binary, "Rule disabled by name, JSON shorthand", ".svlang-lint.json",
                                   '{ "preset": "all", "rules": { "TautologicalCheckCompare": "off", "SV-COR-008": "error" } }')
     check("control: other rules still fire", files_with(found, "SV-STY-016") == ["user_tb.sv", "vendor_vip.sv"], out)
     check("\"off\" disables by name", files_with(found, "SV-COR-001") == [], out)
     check("severity shorthand", {s for _, r, s in found if r == "SV-COR-008"} == {"ERROR"}, out)
 
-    t, rc, found, out, err = case(binary, "Rule option lowers threshold", "uvmcheck_config.py", """\
-        from uvmcheck.config import ProjectConfig, RuleConfig
+    t, rc, found, out, err = case(binary, "Rule option lowers threshold", "svlang_lint_config.py", """\
+        from svlang_lint.config import ProjectConfig, RuleConfig
         class Project(ProjectConfig):
             class MaxLineLength(RuleConfig):
                 max_columns = 100
@@ -238,15 +238,15 @@ def main():
     check("max_columns=100 reported in message", "threshold of 100 characters" in out, out)
 
     # 6. Waivers.
-    t, rc, found, out, err = case(binary, "Waivers", "uvmcheck_config.py", """\
-        from uvmcheck.config import ProjectConfig, Waiver
+    t, rc, found, out, err = case(binary, "Waivers", "svlang_lint_config.py", """\
+        from svlang_lint.config import ProjectConfig, Waiver
         class Project(ProjectConfig):
             waivers = [Waiver("SV-COR-008", path="src/user_tb.sv", line=4, reason="intentional")]
         """)
     check("waiver by path+line", files_with(found, "SV-COR-008") == ["vendor_vip.sv"], out + err)
 
-    t, rc, found, out, err = case(binary, "Class-style waivers", "uvmcheck_config.py", """\
-        from uvmcheck.config import ProjectConfig, Waiver
+    t, rc, found, out, err = case(binary, "Class-style waivers", "svlang_lint_config.py", """\
+        from svlang_lint.config import ProjectConfig, Waiver
         class VendorNoise(Waiver):
             rules = ["SelfComparison", "SV-STY-016"]
             paths = ["lib/**"]
@@ -265,8 +265,8 @@ def main():
     check("expired waiver no longer applies", files_with(found, "SV-COR-001") == ["user_tb.sv", "vendor_vip.sv"], out)
     check("expired waiver is reported", "expired on 2001-01-01 (owner" not in err and "Stale expired on 2001-01-01" in err, err)
 
-    t, rc, found, out, err = case(binary, "Waiver without reason", "uvmcheck_config.py", """\
-        from uvmcheck.config import ProjectConfig, Waiver
+    t, rc, found, out, err = case(binary, "Waiver without reason", "svlang_lint_config.py", """\
+        from svlang_lint.config import ProjectConfig, Waiver
         class Project(ProjectConfig):
             waivers = [Waiver("SV-COR-008", reason="")]
         """)
@@ -275,15 +275,15 @@ def main():
     # 7. Library macros expanded in user code.
     macro = {"lib/lib_macros.svh": LIB_MACRO, "src/user_macro.sv": USER_WITH_MACRO}
     cfg = """\
-        from uvmcheck.config import ProjectConfig
+        from svlang_lint.config import ProjectConfig
         class Project(ProjectConfig):
             library_paths = ["lib"]
             report_library_macro_expansions = {flag}
         """
-    t, rc, found, out, err = case(binary, "Library macro expansion (default)", "uvmcheck_config.py",
+    t, rc, found, out, err = case(binary, "Library macro expansion (default)", "svlang_lint_config.py",
                                   cfg.format(flag="False"), args=["src/user_macro.sv", "-I", "lib"], extra=macro)
     check("finding inside library macro suppressed", files_with(found, "SV-COR-008") == [], out + err)
-    t, rc, found, out, err = case(binary, "Library macro expansion (reported)", "uvmcheck_config.py",
+    t, rc, found, out, err = case(binary, "Library macro expansion (reported)", "svlang_lint_config.py",
                                   cfg.format(flag="True"), args=["src/user_macro.sv", "-I", "lib"], extra=macro)
     check("report_library_macro_expansions=True reports it",
           files_with(found, "SV-COR-008") == ["user_macro.sv"], out + err)
@@ -294,10 +294,10 @@ def main():
     check("--library glob", files_with(found, "SV-COR-008") == ["user_tb.sv"], out + err)
 
     # 9. Build settings: sources / filelists / defines from the config, paths
-    #    relative to the project root for a config inside .uvmcheck/.
+    #    relative to the project root for a config inside .svlang-lint/.
     t, rc, found, out, err = case(binary, "Config sources (no files on the command line)",
-                                  ".uvmcheck/config.py", """\
-        from uvmcheck.config import ProjectConfig
+                                  ".svlang-lint/config.py", """\
+        from svlang_lint.config import ProjectConfig
         class Project(ProjectConfig):
             sources = ["src/*.sv"]
             library_paths = ["lib"]
@@ -305,7 +305,7 @@ def main():
     check("config sources compiled when no files given", rc != 2 and files_with(found, "SV-COR-008") == ["user_tb.sv"],
           f"rc={rc}\n{out}{err}")
 
-    t, rc, found, out, err = case(binary, "Config filelist + define", ".uvmcheck/config.json",
+    t, rc, found, out, err = case(binary, "Config filelist + define", ".svlang-lint/config.json",
                                   '{"filelists": ["files.f"], "defines": ["WITH_EXTRA"]}', args=[],
                                   extra={"files.f": "src/user_tb.sv\nsrc/extra.sv\n",
                                          "src/extra.sv": "`ifdef WITH_EXTRA\nmodule extra; int x; initial x = x; endmodule\n`endif\n"})
@@ -313,26 +313,26 @@ def main():
     check("define applied (guarded module compiled)", "extra.sv" in {f for f, _, _ in found}, out + err)
 
     t, rc, found, out, err = case(binary, "Files on the command line win over config sources",
-                                  ".uvmcheck/config.json", '{"sources": ["lib/*.sv"]}',
+                                  ".svlang-lint/config.json", '{"sources": ["lib/*.sv"]}',
                                   args=["src/user_tb.sv"])
     check("config sources ignored when files are given", files_with(found, "SV-COR-008") == ["user_tb.sv"], out + err)
 
-    t, rc, found, out, err = case(binary, "Broken JSON", ".uvmcheck.json", '{\n  "library_paths": [lib]\n}')
+    t, rc, found, out, err = case(binary, "Broken JSON", ".svlang-lint.json", '{\n  "library_paths": [lib]\n}')
     check("invalid JSON fails with line:col", rc == 2 and ":2:" in err, f"rc={rc}\n{err}")
 
-    t, rc, found, out, err = case(binary, "Python exception", "uvmcheck_config.py", "raise RuntimeError('boom')\n")
+    t, rc, found, out, err = case(binary, "Python exception", "svlang_lint_config.py", "raise RuntimeError('boom')\n")
     check("python traceback surfaced, exit 2", rc == 2 and "boom" in err, f"rc={rc}\n{err}")
 
-    t, rc, found, out, err = case(binary, "Typo in rule key", "uvmcheck_config.py", """\
-        from uvmcheck.config import ProjectConfig, RuleConfig
+    t, rc, found, out, err = case(binary, "Typo in rule key", "svlang_lint_config.py", """\
+        from svlang_lint.config import ProjectConfig, RuleConfig
         class Project(ProjectConfig):
             class MaxLineLenght(RuleConfig):
                 enabled = False
         """)
     check("unknown rule warns", "'MaxLineLenght' does not match any rule" in err, err)
 
-    t, rc, found, out, err = case(binary, "Two candidate configs", "uvmcheck_config.py", """\
-        from uvmcheck.config import ProjectConfig
+    t, rc, found, out, err = case(binary, "Two candidate configs", "svlang_lint_config.py", """\
+        from svlang_lint.config import ProjectConfig
         class A(ProjectConfig):
             library_paths = ["lib"]
         class B(ProjectConfig):
@@ -340,8 +340,8 @@ def main():
         """)
     check("ambiguous config is an error", rc == 2 and "set 'config = " in err, err)
 
-    t, rc, found, out, err = case(binary, "Explicit config selection", "uvmcheck_config.py", """\
-        from uvmcheck.config import ProjectConfig
+    t, rc, found, out, err = case(binary, "Explicit config selection", "svlang_lint_config.py", """\
+        from svlang_lint.config import ProjectConfig
         class A(ProjectConfig):
             library_paths = ["lib"]
         class B(ProjectConfig):
@@ -350,36 +350,36 @@ def main():
         """)
     check("config = A picks A", files_with(found, "SV-COR-008") == ["user_tb.sv"], out + err)
 
-    # 17. Directory-scoped .uvmcheck/config.py auto-discovery
-    t, rc, found, out, err = case(binary, "Directory-scoped .uvmcheck/config.py auto-discovery", ".uvmcheck/config.py", """\
-        from uvmcheck.config import ProjectConfig
+    # 17. Directory-scoped .svlang-lint/config.py auto-discovery
+    t, rc, found, out, err = case(binary, "Directory-scoped .svlang-lint/config.py auto-discovery", ".svlang-lint/config.py", """\
+        from svlang_lint.config import ProjectConfig
         class Project(ProjectConfig):
             library_paths = ["lib"]
         """)
-    check("user file reported under .uvmcheck/config.py", files_with(found, "SV-COR-008") == ["user_tb.sv"], out + err)
-    check(".uvmcheck/config.py auto-discovered", ".uvmcheck/config.py" in out, out)
+    check("user file reported under .svlang-lint/config.py", files_with(found, "SV-COR-008") == ["user_tb.sv"], out + err)
+    check(".svlang-lint/config.py auto-discovered", ".svlang-lint/config.py" in out, out)
 
-    # 18. Auto-discovery of .uvmcheck/waivers.json
+    # 18. Auto-discovery of .svlang-lint/waivers.json
     waiver_json = json.dumps({
         "version": "1.0",
         "waivers": [
             {"rule": "SV-COR-008", "path": "src/user_tb.sv", "reason": "waived"}
         ]
     })
-    t, rc, found, out, err = case(binary, ".uvmcheck/waivers.json auto-discovery", None, "", extra={
-        ".uvmcheck/waivers.json": waiver_json
+    t, rc, found, out, err = case(binary, ".svlang-lint/waivers.json auto-discovery", None, "", extra={
+        ".svlang-lint/waivers.json": waiver_json
     })
-    check("violation waived by auto-discovered .uvmcheck/waivers.json", files_with(found, "SV-COR-008") == ["vendor_vip.sv"], out + err)
-    check("waiver file auto-loaded banner present", "Loaded external waivers from .uvmcheck/waivers.json" in out, out)
+    check("violation waived by auto-discovered .svlang-lint/waivers.json", files_with(found, "SV-COR-008") == ["vendor_vip.sv"], out + err)
+    check("waiver file auto-loaded banner present", "Loaded external waivers from .svlang-lint/waivers.json" in out, out)
 
     # 10. Discovery from the sources, and layered sub-tree configs.
     with tempfile.TemporaryDirectory() as d:
         root = Path(d) / "proj"
         root.mkdir()
         make_project(root)
-        (root / ".uvmcheck").mkdir()
-        (root / ".uvmcheck" / "config.py").write_text(textwrap.dedent("""\
-            from uvmcheck.config import ProjectConfig
+        (root / ".svlang-lint").mkdir()
+        (root / ".svlang-lint" / "config.py").write_text(textwrap.dedent("""\
+            from svlang_lint.config import ProjectConfig
             class Project(ProjectConfig):
                 library_paths = ["lib/**"]
             """))
@@ -391,9 +391,9 @@ def main():
               files_with(found, "SV-COR-008") == ["user_tb.sv"], out + err)
 
         blk = root / "blk"
-        (blk / ".uvmcheck").mkdir(parents=True)
-        (blk / ".uvmcheck" / "config.py").write_text(textwrap.dedent("""\
-            from uvmcheck.config import parent_project, RuleConfig
+        (blk / ".svlang-lint").mkdir(parents=True)
+        (blk / ".svlang-lint" / "config.py").write_text(textwrap.dedent("""\
+            from svlang_lint.config import parent_project, RuleConfig
             class Block(parent_project()):
                 class SelfComparison(RuleConfig):
                     enabled = False

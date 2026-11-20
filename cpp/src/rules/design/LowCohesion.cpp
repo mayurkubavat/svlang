@@ -1,9 +1,9 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
-#include "uvmcheck/rules/CodeMetrics.h"
-#include "uvmcheck/rules/SweSupport.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
+#include "svlang_lint/rules/CodeMetrics.h"
+#include "svlang_lint/rules/SweSupport.h"
 
-namespace uvmcheck::rules::design {
+namespace svlang_lint::rules::design {
 
 using namespace slang::ast;
 
@@ -113,9 +113,9 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::design
+} // namespace svlang_lint::rules::design
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createLowCohesion() {
     return std::make_unique<design::LowCohesion>();
 }
@@ -127,6 +127,6 @@ std::unique_ptr<Rule> createDeepInheritance() {
 }
 }
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createLowCohesion)
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createHighCoupling)
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createDeepInheritance)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createLowCohesion)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createHighCoupling)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createDeepInheritance)

@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-Integration test for the UVMCheck language server (uvmcheck --lsp).
+Integration test for the svlang-lint language server (svlang-lint --lsp).
 
 1. Standalone: a buffer with no project config is linted on its own
    (multi-line text, real ranges, diagnostics cleared on close).
-2. Project: a .uvmcheck/config.json names the sources and include dirs; an
+2. Project: a .svlang-lint/config.json names the sources and include dirs; an
    include-only file open in the editor is linted inside the full compile, so
    a rule that needs the UVM base classes declared elsewhere fires. The
    "waive" code action's edit, applied to the buffer, makes the finding go.
@@ -110,7 +110,7 @@ def test_standalone(binary, workdir):
         for d in diags:
             r = d["range"]
             assert r["end"]["character"] > r["start"]["character"], f"empty range: {d}"
-            assert d["source"] == "uvmcheck"
+            assert d["source"] == "svlang-lint"
         print(f"  [PASS] didOpen: {len(diags)} diagnostics, multi-line text, real ranges")
 
         # Compiler errors show up next to the lint findings.
@@ -175,11 +175,11 @@ PKG = '`include "uvm_mock.svh"\n`include "items.svh"\n`include "driver.svh"\n'
 
 def test_project(binary, workdir):
     proj = Path(workdir, "proj")
-    (proj / ".uvmcheck").mkdir(parents=True)
+    (proj / ".svlang-lint").mkdir(parents=True)
     (proj / "items.svh").write_text(ITEMS)
     (proj / "driver.svh").write_text(DRIVER)
     (proj / "tb_pkg.sv").write_text(PKG)
-    (proj / ".uvmcheck" / "config.json").write_text(json.dumps({
+    (proj / ".svlang-lint" / "config.json").write_text(json.dumps({
         "sources": ["tb_pkg.sv"],
         "include_dirs": [".", str(ROOT / "testdata" / "common")],
     }))
@@ -224,7 +224,7 @@ def test_project(binary, workdir):
         waive = [a for a in actions if a["title"].startswith("Waive UVM-FAC-005")]
         assert waive, f"expected a waive action, got {[a['title'] for a in actions]}"
         edit = waive[0]["edit"]["changes"][uri][0]
-        assert "uvmcheck:waive-next-line UVM-FAC-005" in edit["newText"]
+        assert "svlang-lint:waive-next-line UVM-FAC-005" in edit["newText"]
         assert edit["newText"].startswith("    //"), "waiver comment should keep the line's indent"
         waived = apply_edit(DRIVER, edit)
         client.notify("textDocument/didChange", {"textDocument": {"uri": uri, "version": 4},
@@ -239,11 +239,11 @@ def test_project(binary, workdir):
 
 
 def main():
-    binary = os.path.abspath(sys.argv[1] if len(sys.argv) > 1 else str(ROOT / "build" / "uvmcheck"))
+    binary = os.path.abspath(sys.argv[1] if len(sys.argv) > 1 else str(ROOT / "build" / "svlang-lint"))
     if not os.path.isfile(binary):
         print(f"Error: binary {binary} not found.")
         sys.exit(1)
-    print("[LSP TEST] uvmcheck --lsp")
+    print("[LSP TEST] svlang-lint --lsp")
     with tempfile.TemporaryDirectory() as tmp:
         standalone = Path(tmp, "standalone")
         standalone.mkdir()

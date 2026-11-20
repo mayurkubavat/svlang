@@ -1,7 +1,7 @@
 // SV-MAC-002: an expression macro that does not parenthesize its arguments or its body.
 
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
 
 #include "slang/parsing/LexerFacts.h"
 #include "slang/syntax/AllSyntax.h"
@@ -13,7 +13,7 @@
 #include <string>
 #include <vector>
 
-namespace uvmcheck::rules::readability {
+namespace svlang_lint::rules::readability {
 
 using namespace slang::syntax;
 using slang::parsing::Token;
@@ -135,12 +135,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::readability
+} // namespace svlang_lint::rules::readability
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createUnparenthesizedMacroArgument() {
     return std::make_unique<readability::UnparenthesizedMacroArgument>();
 }
-} // namespace uvmcheck::rules
+} // namespace svlang_lint::rules
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createUnparenthesizedMacroArgument)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createUnparenthesizedMacroArgument)

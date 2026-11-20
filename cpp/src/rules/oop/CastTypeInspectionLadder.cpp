@@ -1,10 +1,10 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
 #include "slang/syntax/AllSyntax.h"
 #include "slang/syntax/SyntaxTree.h"
 #include "slang/syntax/SyntaxVisitor.h"
 
-namespace uvmcheck::rules::oop {
+namespace svlang_lint::rules::oop {
 
 class CastInspectionLadderVisitor : public engine::SyntaxVisitor<CastInspectionLadderVisitor> {
 public:
@@ -68,12 +68,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::oop
+} // namespace svlang_lint::rules::oop
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createCastTypeInspectionLadder() {
     return std::make_unique<oop::CastTypeInspectionLadder>();
 }
 }
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createCastTypeInspectionLadder)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createCastTypeInspectionLadder)

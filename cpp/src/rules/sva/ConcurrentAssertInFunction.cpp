@@ -1,12 +1,12 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
 #include "slang/syntax/SyntaxVisitor.h"
 #include "slang/syntax/AllSyntax.h"
 #include "slang/syntax/SyntaxTree.h"
 #include <algorithm>
 #include <cctype>
 
-namespace uvmcheck::rules::sva {
+namespace svlang_lint::rules::sva {
 
 class ConcurrentInFuncCstVisitor : public slang::syntax::SyntaxVisitor<ConcurrentInFuncCstVisitor> {
 public:
@@ -66,7 +66,7 @@ public:
     core::Severity getDefaultSeverity() const override { return core::Severity::Error; }
 
     void run(slang::ast::Compilation& compilation,
-             const uvmcheck::uvm::UvmModel& /*uvmModel*/,
+             const svlang_lint::uvm::UvmModel& /*uvmModel*/,
              core::DiagnosticEngine& diags) override {
         ConcurrentInFuncCstVisitor visitor(diags);
         for (const auto& syntaxTree : compilation.getSyntaxTrees()) {
@@ -77,12 +77,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::sva
+} // namespace svlang_lint::rules::sva
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createConcurrentAssertInFunction() {
     return std::make_unique<sva::ConcurrentAssertInFunction>();
 }
 }
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createConcurrentAssertInFunction)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createConcurrentAssertInFunction)

@@ -139,7 +139,7 @@ def test_selection(binary):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--binary", default=str(REPO / "build" / "uvmcheck"))
+    parser.add_argument("--binary", default=str(REPO / "build" / "svlang-lint"))
     args = parser.parse_args()
     binary = str(Path(args.binary).resolve())
     test_mapping(binary)

@@ -1,11 +1,11 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
 #include "slang/syntax/AllSyntax.h"
 #include "slang/syntax/SyntaxTree.h"
 #include "slang/syntax/SyntaxVisitor.h"
 #include <string>
 
-namespace uvmcheck::rules::style {
+namespace svlang_lint::rules::style {
 
 class UvmTlmPortSuffixVisitor : public slang::syntax::SyntaxVisitor<UvmTlmPortSuffixVisitor> {
 public:
@@ -91,7 +91,7 @@ public:
     core::Severity getDefaultSeverity() const override { return core::Severity::Warning; }
 
     void run(slang::ast::Compilation& compilation,
-             const uvmcheck::uvm::UvmModel& /*uvmModel*/,
+             const svlang_lint::uvm::UvmModel& /*uvmModel*/,
              core::DiagnosticEngine& diags) override {
         UvmTlmPortSuffixVisitor visitor(diags);
         for (const auto& tree : compilation.getSyntaxTrees()) {
@@ -102,12 +102,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::style
+} // namespace svlang_lint::rules::style
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createUvmTlmPortSuffix() {
     return std::make_unique<style::UvmTlmPortSuffix>();
 }
 }
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createUvmTlmPortSuffix)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createUvmTlmPortSuffix)

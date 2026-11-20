@@ -1,4 +1,4 @@
-// How often uvmcheck's shared AST walk visits the body of each generic class:
+// How often svlang-lint's shared AST walk visits the body of each generic class:
 // once per specialization, after the engine's DefaultSpecializer (copied
 // from cpp/src/engine/RuleEngine.cpp) has made every default specialization.
 // Prints `<count> <name>@<file>:<line>`. The reference for tools/gates/spec_gate.py.

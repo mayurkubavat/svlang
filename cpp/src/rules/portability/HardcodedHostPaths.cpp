@@ -1,11 +1,11 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
 #include "slang/ast/ASTVisitor.h"
 #include "slang/ast/expressions/CallExpression.h"
 #include "slang/ast/expressions/LiteralExpressions.h"
 #include "slang/ast/expressions/ConversionExpression.h"
 
-namespace uvmcheck::rules::portability {
+namespace svlang_lint::rules::portability {
 
 class HardcodedPathsVisitor : public engine::AstVisitor<HardcodedPathsVisitor> {
 public:
@@ -70,12 +70,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::portability
+} // namespace svlang_lint::rules::portability
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createHardcodedHostPaths() {
     return std::make_unique<portability::HardcodedHostPaths>();
 }
 }
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createHardcodedHostPaths)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createHardcodedHostPaths)

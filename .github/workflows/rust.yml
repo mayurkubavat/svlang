@@ -47,8 +47,8 @@ jobs:
 
       - name: Rule docs are generated from the rules
         run: |
-          cargo build --locked -p dv-lint --bin uvmcheck
-          python3 tools/codegen/gen_rule_docs.py --binary target/debug/uvmcheck --check
+          cargo build --locked -p dv-lint --bin svlang-lint
+          python3 tools/codegen/gen_rule_docs.py --binary target/debug/svlang-lint --check
 
   msrv:
     name: test (MSRV 1.82, ${{ matrix.os }})
@@ -99,7 +99,7 @@ jobs:
       - name: Package and smoke test
         run: |
           tools/release/package.sh target/dist linux-x64 dist
-          tools/release/smoke.sh dist/uvmcheck-linux-x64.tar.gz
+          tools/release/smoke.sh dist/svlang-lint-linux-x64.tar.gz
 
   error-budget:
     # ERROR findings on reviewed, simulator-clean code (Accellera uvm-core)
@@ -128,7 +128,7 @@ jobs:
           restore-keys: cargo-${{ runner.os }}-budget-
 
       - name: Build
-        run: cargo build --locked --release -p dv-lint --bin uvmcheck
+        run: cargo build --locked --release -p dv-lint --bin svlang-lint
 
       - name: Fetch uvm-core
         run: git clone --depth 1 --branch "$UVM_CORE_REF" https://github.com/accellera-official/uvm-core.git uvm-core
@@ -136,7 +136,7 @@ jobs:
       - name: ERROR budget
         env:
           UVM_HOME: ${{ github.workspace }}/uvm-core
-        run: python3 tools/quality/error_budget.py --binary target/release/uvmcheck
+        run: python3 tools/quality/error_budget.py --binary target/release/svlang-lint
 
   playground:
     # The browser build (crates/svlang-wasm): svlang as WebAssembly, checked from Node.

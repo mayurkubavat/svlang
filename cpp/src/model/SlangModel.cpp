@@ -1,4 +1,4 @@
-#include "uvmcheck/model/SlangModel.h"
+#include "svlang_lint/model/SlangModel.h"
 
 #include <optional>
 #include <unordered_map>
@@ -19,9 +19,9 @@
 #include "slang/ast/symbols/VariableSymbols.h"
 #include "slang/ast/types/Type.h"
 #include "slang/text/SourceManager.h"
-#include "uvmcheck/uvm/UvmModel.h"
+#include "svlang_lint/uvm/UvmModel.h"
 
-namespace uvmcheck::model {
+namespace svlang_lint::model {
 
 namespace {
 
@@ -520,4 +520,4 @@ slang::SourceLocation toSlang(const Loc& loc) {
                                  loc.raw & 0xffffffffu);
 }
 
-} // namespace uvmcheck::model
+} // namespace svlang_lint::model

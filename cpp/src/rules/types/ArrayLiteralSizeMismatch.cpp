@@ -1,11 +1,11 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
 #include "slang/ast/ASTVisitor.h"
 #include "slang/ast/expressions/AssignmentExpressions.h"
 #include "slang/ast/types/AllTypes.h"
 #include "slang/diagnostics/ExpressionsDiags.h"
 
-namespace uvmcheck::rules::types {
+namespace svlang_lint::rules::types {
 
 class ArrayLiteralSizeVisitor : public engine::AstVisitor<ArrayLiteralSizeVisitor> {
 public:
@@ -70,12 +70,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::types
+} // namespace svlang_lint::rules::types
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createArrayLiteralSizeMismatch() {
     return std::make_unique<types::ArrayLiteralSizeMismatch>();
 }
-} // namespace uvmcheck::rules
+} // namespace svlang_lint::rules
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createArrayLiteralSizeMismatch)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createArrayLiteralSizeMismatch)

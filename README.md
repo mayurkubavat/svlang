@@ -108,13 +108,13 @@ how much open-source RTL lowers to a netlist, and what stops the rest.
 
 This repository also holds the DV tools that use the library:
 
-- **UVMCheck** (`uvmcheck`, also built as `dv-lint`): static analysis for
+- **svlang-lint** (`svlang-lint`, also built as `dv-lint`): static analysis for
   SystemVerilog and UVM testbenches, described below.
 - **dv-lsp**: a language server, with a [VS Code extension](editors/vscode/).
 - **dv-build**, **dv-map**, **dv-filelist**: compile checking, design
   mapping and filelist tools.
 
-# UVMCheck
+# svlang-lint
 
 Static analysis for SystemVerilog (IEEE 1800) and UVM (IEEE 1800.2)
 verification code: UVM methodology, OOP design, concurrency and delta-cycle
@@ -127,8 +127,8 @@ There are two engines that share one rule set and one test suite:
 
 | Engine | Where | Front end | Binary |
 |---|---|---|---|
-| **uvmcheck** (C++20) | [`cpp/`](cpp/) | [Slang](https://github.com/MikePopoloski/slang) | `build/uvmcheck` |
-| **dv-lint** and the DV tools (Rust): what releases ship | [`crates/`](crates/) | [`svlang`](crates/svlang/) — pure-Rust lexer, preprocessor, parser and elaborator (Slang only as an opt-in reference) | `target/release/uvmcheck` (also built as `dv-lint`), `dv-lsp`, `dv-build`, `dv-map`, `dv-filelist` |
+| **svlang-lint** (C++20) | [`cpp/`](cpp/) | [Slang](https://github.com/MikePopoloski/slang) | `build/svlang-lint` |
+| **dv-lint** and the DV tools (Rust): what releases ship | [`crates/`](crates/) | [`svlang`](crates/svlang/) — pure-Rust lexer, preprocessor, parser and elaborator (Slang only as an opt-in reference) | `target/release/svlang-lint` (also built as `dv-lint`), `dv-lsp`, `dv-build`, `dv-map`, `dv-filelist` |
 
 Every rule has a `bad.sv` / `good.sv` pair under [`testdata/rules/`](testdata/rules/)
 that both engines are tested against, and parity gates check that their
@@ -139,8 +139,8 @@ findings match on real code. The rule catalog is in
 
 **A release build.** Tagged
 [releases](https://github.com/mayurkubavat/svlang/releases) attach
-`uvmcheck-<platform>.tar.gz` for Linux x64 and arm64 (glibc 2.28 or later)
-and macOS arm64 and x64: `uvmcheck` (the native engine), `dv-lsp`,
+`svlang-lint-<platform>.tar.gz` for Linux x64 and arm64 (glibc 2.28 or later)
+and macOS arm64 and x64: `svlang-lint` (the native engine), `dv-lsp`,
 `dv-build`, `dv-map`, `dv-filelist` and the Python SDK. Unpack it and put
 its `bin/` on your `PATH`. The VS Code extension is attached too.
 
@@ -149,7 +149,7 @@ its `bin/` on your `PATH`. The VS Code extension is attached too.
 ```sh
 git clone https://github.com/mayurkubavat/svlang.git
 cd svlang
-cargo build --release            # -> target/release/uvmcheck (also as dv-lint), dv-lsp, dv-build, dv-map, dv-filelist
+cargo build --release            # -> target/release/svlang-lint (also as dv-lint), dv-lsp, dv-build, dv-map, dv-filelist
 ```
 
 The C++ reference engine on Slang is optional: the parity gates compare
@@ -160,17 +160,17 @@ Python 3.9+, and fetches Slang at configure time; `ccache` is recommended.
 
 ```sh
 cmake --preset reference
-cmake --build build -j 4         # -> build/uvmcheck
+cmake --build build -j 4         # -> build/svlang-lint
 ```
 
-In a checkout with both built, [`tools/front/uvmcheck`](tools/front/uvmcheck)
+In a checkout with both built, [`tools/front/svlang-lint`](tools/front/svlang-lint)
 runs the native engine and falls back to the C++ binary for those options.
 
 ## Quick start
 
 ```sh
 # Lint a testbench with the methodology profile
-uvmcheck tb/*.sv -I tb --preset methodology
+svlang-lint tb/*.sv -I tb --preset methodology
 
 # The same with dv-lint directly, as JSON or SARIF for CI
 target/release/dv-lint +incdir+tb tb/top.sv --preset methodology
@@ -181,7 +181,7 @@ target/release/dv-lint -f tb.f --preset all --experimental
 ```
 
 Both engines take simulator-style compile options (`-f`, `+incdir+`,
-`+define+`, `-top`), read `.uvmcheck/` project config, and honor waivers and
+`+define+`, `-top`), read `.svlang-lint/` project config, and honor waivers and
 baselines. The Rust tools reach Slang only for the parity gates, behind the
 `slang` Cargo feature (off by default); see
 [third_party/slang](third_party/slang/README.md).
@@ -208,14 +208,14 @@ severity, profiles and `bad.sv`/`good.sv` examples, and the
 [UVM Methodology Guide](docs/methodology/README.md) explains the reasoning
 behind the design rules.
 
-The full uvmcheck guide (profiles, fixes, reports, Python rules, baselines,
-waivers, CI) is [docs/guide/uvmcheck.md](docs/guide/uvmcheck.md). The Rust
+The full svlang-lint guide (profiles, fixes, reports, Python rules, baselines,
+waivers, CI) is [docs/guide/svlang-lint.md](docs/guide/svlang-lint.md). The Rust
 tools are described in [docs/architecture/rust.md](docs/architecture/rust.md).
 
 ## Repository layout
 
 ```
-cpp/               uvmcheck: src/, include/uvmcheck/, tests/ (drivers of the binary)
+cpp/               svlang-lint: src/, include/svlang-lint/, tests/ (drivers of the binary)
 crates/            Rust workspace members (Cargo.toml is at the root)
 crates/svlang-py/  pysvlang: Python bindings for the svlang front end (PyO3 + maturin)
 python/            Python SDK: rules, waivers and project config in Python (+ examples/, tests/)
@@ -228,7 +228,7 @@ tools/codegen/     generators run by the build and for the docs
 tools/quality/     precision, config sweep, AST coverage, Slang canary
 third_party/slang/ the Slang pin, local patches (none today) and how to update it
 docs/              guides, architecture, rule catalog, methodology guide
-.uvmcheck/         this repository's own lint config
+.svlang-lint/         this repository's own lint config
 ```
 
 [docs/README.md](docs/README.md) is the index of all documentation, and
@@ -239,12 +239,12 @@ the pieces fit together.
 
 The repository is a GitHub composite action ([action.yml](action.yml)) and a
 pre-commit hook ([.pre-commit-hooks.yaml](.pre-commit-hooks.yaml)); see
-[CI, pre-commit and editor](docs/guide/uvmcheck.md#ci-pre-commit-and-editor).
+[CI, pre-commit and editor](docs/guide/svlang-lint.md#ci-pre-commit-and-editor).
 
 ## Tests
 
 ```sh
-ctest --test-dir build                 # uvmcheck suites
+ctest --test-dir build                 # svlang-lint suites
 ctest --test-dir build-model           # + C ABI, Python binding, cargo test --features slang
 python3 cpp/tests/regression.py --rule UVM-CFG-002
 cargo test                             # Rust, native only

@@ -8,15 +8,15 @@
 // Option: allow_in_env = 1 also accepts overrides in uvm_env classes, for projects whose
 // top env acts as the test's configuration layer.
 
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
-#include "uvmcheck/rules/SweSupport.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
+#include "svlang_lint/rules/SweSupport.h"
 #include "../methodology/MethodologySupport.h"
 #include "slang/ast/expressions/CallExpression.h"
 #include "slang/ast/symbols/ClassSymbols.h"
 #include "slang/ast/symbols/SubroutineSymbols.h"
 
-namespace uvmcheck::rules::uvm {
+namespace svlang_lint::rules::uvm {
 
 using namespace slang::ast;
 
@@ -52,7 +52,7 @@ public:
     core::Severity getDefaultSeverity() const override { return core::Severity::Warning; }
 
     // Queries the class model only; it does not walk the design.
-    void run(Compilation&, const uvmcheck::uvm::UvmModel& model, core::DiagnosticEngine& diags) override {
+    void run(Compilation&, const svlang_lint::uvm::UvmModel& model, core::DiagnosticEngine& diags) override {
         const bool allowInEnv = swe::ruleOption(getId(), "allow_in_env", 0) != 0;
         for (const auto* cls : swe::userClasses(model)) {
             const swe::Role role = swe::classRole(*cls);
@@ -77,12 +77,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::uvm
+} // namespace svlang_lint::rules::uvm
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createGlobalFactoryOverridePollution() {
     return std::make_unique<uvm::GlobalFactoryOverridePollution>();
 }
-} // namespace uvmcheck::rules
+} // namespace svlang_lint::rules
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createGlobalFactoryOverridePollution)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createGlobalFactoryOverridePollution)

@@ -1,10 +1,10 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
 #include "slang/syntax/SyntaxTree.h"
 #include <unordered_set>
 #include <vector>
 
-namespace uvmcheck::rules::portability {
+namespace svlang_lint::rules::portability {
 
 class HeaderMacroLeak : public Rule {
 public:
@@ -21,7 +21,7 @@ public:
     }
 
     void run(slang::ast::Compilation& compilation,
-             const uvmcheck::uvm::UvmModel& /*uvmModel*/,
+             const svlang_lint::uvm::UvmModel& /*uvmModel*/,
              core::DiagnosticEngine& diags) override {
         const auto* sm = compilation.getSourceManager();
         if (!sm) return;
@@ -93,12 +93,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::portability
+} // namespace svlang_lint::rules::portability
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createHeaderMacroLeak() {
     return std::make_unique<portability::HeaderMacroLeak>();
 }
 }
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createHeaderMacroLeak)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createHeaderMacroLeak)

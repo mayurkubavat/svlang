@@ -1,5 +1,5 @@
 //! `--changed-since REF`: the lines added or changed since a git revision,
-//! as uvmcheck's ChangedLines reads them. `git diff --unified=0 REF --`
+//! as svlang-lint's ChangedLines reads them. `git diff --unified=0 REF --`
 //! (the working tree against REF, staged or not) gives the changed ranges
 //! of each file; untracked files (`git ls-files --others --exclude-standard`)
 //! count as changed throughout. A file that did not exist at REF (added in
@@ -68,7 +68,7 @@ impl ChangedLines {
         let mut current: Option<PathBuf> = None;
         let mut added = false;
         // `---`/`+++` are headers only before a file's first hunk: a removed
-        // line `-- x` reads `--- x` in a hunk (uvmcheck takes it for a header).
+        // line `-- x` reads `--- x` in a hunk (svlang-lint takes it for a header).
         let mut header = true;
         for line in diff.lines() {
             if line.starts_with("diff ") {

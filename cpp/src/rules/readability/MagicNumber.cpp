@@ -1,6 +1,6 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
-#include "uvmcheck/rules/SweSupport.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
+#include "svlang_lint/rules/SweSupport.h"
 #include "slang/ast/expressions/LiteralExpressions.h"
 #include "slang/ast/statements/MiscStatements.h"
 #include "slang/ast/symbols/VariableSymbols.h"
@@ -8,7 +8,7 @@
 
 #include <set>
 
-namespace uvmcheck::rules::readability {
+namespace svlang_lint::rules::readability {
 
 using namespace slang::ast;
 
@@ -88,12 +88,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::readability
+} // namespace svlang_lint::rules::readability
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createMagicNumber() {
     return std::make_unique<readability::MagicNumber>();
 }
 }
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createMagicNumber)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createMagicNumber)

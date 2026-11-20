@@ -436,12 +436,16 @@ impl Reader<'_> {
                     self.check_exists(&p, "include directory", &origin);
                     self.out.include_dirs.push(item(p));
                 }
-            } else if (xcelium && tok == "-incdir") || tok == "-I" {
+            } else if (xcelium && tok == "-incdir") || tok == "-I" || tok == "-i" {
                 if let Some(v) = value(&mut i, self) {
                     let p = self.path(&v, base);
                     self.check_exists(&p, "include directory", &origin);
                     self.out.include_dirs.push(item(p));
                 }
+            } else if let Some(rest) = tok.strip_prefix("-I").filter(|r| !r.is_empty()) {
+                let p = self.path(rest, base);
+                self.check_exists(&p, "include directory", &origin);
+                self.out.include_dirs.push(item(p));
             } else if let Some(defs) = plus_values(&tok, "+define+") {
                 for d in defs {
                     self.out.defines.push(Item { value: split_define(d), origin: origin.clone() });
@@ -498,14 +502,14 @@ impl Reader<'_> {
                 if let Some(v) = value(&mut i, self) {
                     self.out.timescale = Some(Item { value: v, origin: origin.clone() });
                 }
-            } else if xcelium && tok == "-uvm" {
+            } else if xcelium && (tok == "-uvm" || tok == "--uvm") {
                 self.out.uvm.requested = true;
-            } else if xcelium && tok == "-uvmhome" {
+            } else if xcelium && (tok == "-uvmhome" || tok == "--uvmhome") {
                 if let Some(v) = value(&mut i, self) {
                     self.out.uvm.requested = true;
                     self.out.uvm.home_or_version = Some(v);
                 }
-            } else if vcs && tok == "-ntb_opts" {
+            } else if vcs && (tok == "-ntb_opts" || tok == "--ntb_opts") {
                 if let Some(v) = value(&mut i, self) {
                     if let Some(u) = v.split('+').find(|o| o.starts_with("uvm")) {
                         self.out.uvm.requested = true;

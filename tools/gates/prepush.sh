@@ -18,9 +18,9 @@
 # them on purpose and says so.
 #
 # A fixture edit changes the all-rules baselines. Regenerate both with:
-#   python3 cpp/tests/regression.py --binary build/uvmcheck --mode all-rules \
+#   python3 cpp/tests/regression.py --binary build/svlang-lint --mode all-rules \
 #       --baseline cpp/tests/baselines/baseline_stub.json --update-baseline
-#   python3 cpp/tests/regression.py --binary build/uvmcheck --mode all-rules \
+#   python3 cpp/tests/regression.py --binary build/svlang-lint --mode all-rules \
 #       --uvm-home "$UVM_HOME" --baseline cpp/tests/baselines/baseline_uvm_core.json --update-baseline
 set -u
 # On the Linux box the whole gate is one job of the dvq build queue
@@ -89,18 +89,18 @@ if [ "$rust" = 1 ]; then
     step "cargo test" cargo test --locked
     step "netlist gate (dv-build --netlist, testdata/netlist)" sh -c \
         'cargo build --locked -q -p dv-build && DV_BUILD=target/debug/dv-build python3 tools/gates/netlist_gate.py'
-    step "rule docs are current" sh -c 'cargo build --locked -q -p dv-lint --bin uvmcheck && python3 tools/codegen/gen_rule_docs.py --binary target/debug/uvmcheck --check'
+    step "rule docs are current" sh -c 'cargo build --locked -q -p dv-lint --bin svlang-lint && python3 tools/codegen/gen_rule_docs.py --binary target/debug/svlang-lint --check'
     if [ "$quick" = 1 ]; then
         skip "release archive and smoke test" "skipped by --quick"
     else
         step "dist build" cargo build --locked --profile dist
         plat="$(uname -s | tr 'A-Z' 'a-z')-$(uname -m | sed 's/x86_64/x64/; s/aarch64/arm64/')"
         step "release archive and smoke test" sh -c \
-            "rm -rf '$log/dist' && tools/release/package.sh target/dist '$plat' '$log/dist' && tools/release/smoke.sh '$log/dist/uvmcheck-$plat.tar.gz'"
+            "rm -rf '$log/dist' && tools/release/package.sh target/dist '$plat' '$log/dist' && tools/release/smoke.sh '$log/dist/svlang-lint-$plat.tar.gz'"
     fi
-    step "build uvmcheck (release)" cargo build --locked --release -p dv-lint --bin uvmcheck
+    step "build svlang-lint (release)" cargo build --locked --release -p dv-lint --bin svlang-lint
     if uvm_ok; then
-        step "ERROR budget (uvm-core)" python3 tools/quality/error_budget.py --binary target/release/uvmcheck
+        step "ERROR budget (uvm-core)" python3 tools/quality/error_budget.py --binary target/release/svlang-lint
     else
         skip "ERROR budget (uvm-core)" "NOT RUN: no uvm-core 2020.3.1 checkout (UVM_HOME, or the fetch failed)"
         failed+=("ERROR budget (uvm-core): no uvm-core checkout")
@@ -111,7 +111,7 @@ if [ "$cpp" = 1 ]; then
     echo "C++ flow (ci.yml)"
     [ -f build/build.ninja ] || step "configure" cmake --preset reference
     step "build" cmake --build build -j "$jobs"
-    b=build/uvmcheck
+    b=build/svlang-lint
     step "rules, isolated, UVM stub" python3 cpp/tests/regression.py --binary $b --mode isolated
     step "rules, all rules, UVM stub" python3 cpp/tests/regression.py --binary $b --mode all-rules \
         --baseline cpp/tests/baselines/baseline_stub.json

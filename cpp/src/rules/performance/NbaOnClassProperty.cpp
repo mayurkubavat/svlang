@@ -1,10 +1,10 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
 #include "slang/ast/ASTVisitor.h"
 #include "slang/ast/expressions/AssignmentExpressions.h"
 #include "slang/ast/symbols/VariableSymbols.h"
 
-namespace uvmcheck::rules::performance {
+namespace svlang_lint::rules::performance {
 
 class NbaClassPropertyVisitor : public engine::AstVisitor<NbaClassPropertyVisitor> {
 public:
@@ -51,12 +51,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::performance
+} // namespace svlang_lint::rules::performance
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createNbaOnClassProperty() {
     return std::make_unique<performance::NbaOnClassProperty>();
 }
 }
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createNbaOnClassProperty)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createNbaOnClassProperty)

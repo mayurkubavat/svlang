@@ -1,10 +1,10 @@
 #include "slang/ast/ASTVisitor.h"
 #include "slang/ast/expressions/CallExpression.h"
 #include "slang/ast/statements/LoopStatements.h"
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
 
-namespace uvmcheck::rules::uvm {
+namespace svlang_lint::rules::uvm {
 
 class UvmObjectionInLoopVisitor
     : public slang::ast::ASTVisitor<UvmObjectionInLoopVisitor,
@@ -86,19 +86,19 @@ public:
   }
 
   void run(slang::ast::Compilation &compilation,
-           const uvmcheck::uvm::UvmModel & /*uvmModel*/,
+           const svlang_lint::uvm::UvmModel & /*uvmModel*/,
            core::DiagnosticEngine &diags) override {
     UvmObjectionInLoopVisitor visitor(diags);
     compilation.getRoot().visit(visitor);
   }
 };
 
-} // namespace uvmcheck::rules::uvm
+} // namespace svlang_lint::rules::uvm
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createUvmObjectionInLoop() {
   return std::make_unique<uvm::UvmObjectionInLoop>();
 }
-} // namespace uvmcheck::rules
+} // namespace svlang_lint::rules
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createUvmObjectionInLoop)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createUvmObjectionInLoop)

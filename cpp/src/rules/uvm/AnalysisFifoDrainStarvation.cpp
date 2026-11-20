@@ -1,6 +1,6 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
-#include "uvmcheck/uvm/UvmModel.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
+#include "svlang_lint/uvm/UvmModel.h"
 #include "slang/ast/ASTVisitor.h"
 #include "slang/ast/symbols/ClassSymbols.h"
 #include "slang/ast/symbols/SubroutineSymbols.h"
@@ -10,7 +10,7 @@
 #include <vector>
 #include <unordered_set>
 
-namespace uvmcheck::rules::uvm {
+namespace svlang_lint::rules::uvm {
 
 struct FifoDecl {
     std::string parentClassName;
@@ -31,7 +31,7 @@ public:
     core::Severity getDefaultSeverity() const override { return core::Severity::Warning; }
 
     void run(slang::ast::Compilation& compilation,
-             const uvmcheck::uvm::UvmModel& uvmModel,
+             const svlang_lint::uvm::UvmModel& uvmModel,
              core::DiagnosticEngine& diags) override {
 
         std::vector<FifoDecl> declaredFifos;
@@ -154,12 +154,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::uvm
+} // namespace svlang_lint::rules::uvm
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createAnalysisFifoDrainStarvation() {
     return std::make_unique<uvm::AnalysisFifoDrainStarvation>();
 }
 }
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createAnalysisFifoDrainStarvation)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createAnalysisFifoDrainStarvation)

@@ -1,11 +1,11 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
 #include "slang/ast/symbols/CompilationUnitSymbols.h"
 #include "slang/ast/symbols/VariableSymbols.h"
 #include "slang/ast/symbols/SubroutineSymbols.h"
 #include "slang/ast/types/AllTypes.h"
 
-namespace uvmcheck::rules::portability {
+namespace svlang_lint::rules::portability {
 
 class GlobalUnitPollution : public Rule {
 public:
@@ -22,7 +22,7 @@ public:
     }
 
     void run(slang::ast::Compilation& compilation,
-             const uvmcheck::uvm::UvmModel& /*uvmModel*/,
+             const svlang_lint::uvm::UvmModel& /*uvmModel*/,
              core::DiagnosticEngine& diags) override {
         const auto& root = compilation.getRoot();
         for (const auto& topMember : root.members()) {
@@ -56,12 +56,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::portability
+} // namespace svlang_lint::rules::portability
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createGlobalUnitPollution() {
     return std::make_unique<portability::GlobalUnitPollution>();
 }
 }
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createGlobalUnitPollution)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createGlobalUnitPollution)

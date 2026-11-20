@@ -5,7 +5,7 @@ below are fetched at build time, or are build-time inputs, and keep their own
 licenses. Binaries built from this repository include the components marked
 "linked"; when you redistribute such a binary, include the notices below.
 
-## Fetched and linked into the C++ engine (`uvmcheck`, `libuvmcheck_model`)
+## Fetched and linked into the C++ engine (`svlang-lint`, `libsvlang_lint_model`)
 
 CMake fetches these at configure time ([third_party/slang/slang.cmake](third_party/slang/slang.cmake)).
 The Rust tools built with default features (`cargo build`) link none of them.

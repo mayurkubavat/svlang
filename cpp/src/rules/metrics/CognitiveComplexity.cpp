@@ -1,10 +1,10 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
-#include "uvmcheck/rules/CodeMetrics.h"
-#include "uvmcheck/rules/SweSupport.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
+#include "svlang_lint/rules/CodeMetrics.h"
+#include "svlang_lint/rules/SweSupport.h"
 #include "slang/syntax/AllSyntax.h"
 
-namespace uvmcheck::rules::metrics {
+namespace svlang_lint::rules::metrics {
 
 using namespace slang::ast;
 
@@ -114,9 +114,9 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::metrics
+} // namespace svlang_lint::rules::metrics
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createCognitiveComplexity() {
     return std::make_unique<metrics::CognitiveComplexity>();
 }
@@ -124,6 +124,6 @@ std::unique_ptr<Rule> createLongTask() { return std::make_unique<metrics::LongTa
 std::unique_ptr<Rule> createRandFieldBudget() { return std::make_unique<metrics::RandFieldBudget>(); }
 }
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createCognitiveComplexity)
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createLongTask)
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createRandFieldBudget)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createCognitiveComplexity)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createLongTask)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createRandFieldBudget)

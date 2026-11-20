@@ -1,6 +1,6 @@
-#include "uvmcheck/uvm/ApiPack.h"
+#include "svlang_lint/uvm/ApiPack.h"
 
-#include "uvmcheck/core/Json.h"
+#include "svlang_lint/core/Json.h"
 
 #include <algorithm>
 #include <cstdlib>
@@ -13,7 +13,7 @@
 #include "slang/ast/symbols/CompilationUnitSymbols.h"
 #include "slang/ast/symbols/ParameterSymbols.h"
 
-namespace uvmcheck::uvm {
+namespace svlang_lint::uvm {
 
 // Generated at configure time from data/uvm-api/*.json (cmake/EmbedUvmApiPacks.cmake).
 struct EmbeddedPack {
@@ -65,12 +65,12 @@ const Packs& packs() {
     static Packs p = [] {
         Packs out;
         std::string error;
-        if (const char* path = std::getenv("UVMCHECK_UVM_API_PACK"); path && *path) {
+        if (const char* path = std::getenv("SVLANG_LINT_UVM_API_PACK"); path && *path) {
             std::ifstream in(path, std::ios::binary);
             std::stringstream buf;
             buf << in.rdbuf();
             if (auto pack = ApiPack::parse(buf.str(), error)) out.all.push_back(std::move(pack));
-            else std::cerr << "[uvmcheck] warning: UVMCHECK_UVM_API_PACK '" << path << "': " << error << "\n";
+            else std::cerr << "[svlang-lint] warning: SVLANG_LINT_UVM_API_PACK '" << path << "': " << error << "\n";
             return out;
         }
         for (size_t i = 0; i < kEmbeddedUvmApiPackCount; i++) {
@@ -195,4 +195,4 @@ std::unique_ptr<ApiPack> ApiPack::parse(std::string_view json, std::string& erro
     return pack;
 }
 
-} // namespace uvmcheck::uvm
+} // namespace svlang_lint::uvm

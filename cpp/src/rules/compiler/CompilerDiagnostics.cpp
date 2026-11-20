@@ -1,6 +1,6 @@
-#include "uvmcheck/rules/CompilerDiagnostics.h"
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
+#include "svlang_lint/rules/CompilerDiagnostics.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
 
 #include <atomic>
 #include <optional>
@@ -11,7 +11,7 @@
 #include "slang/diagnostics/DiagnosticEngine.h"
 #include "slang/text/SourceManager.h"
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 
 namespace {
 std::atomic<const slang::DiagnosticEngine*> compilerEngine{nullptr};
@@ -123,6 +123,6 @@ std::unique_ptr<Rule> createCompilerDiagnostics() {
     return std::make_unique<compiler::CompilerDiagnostics>();
 }
 
-} // namespace uvmcheck::rules
+} // namespace svlang_lint::rules
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createCompilerDiagnostics)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createCompilerDiagnostics)

@@ -1,6 +1,6 @@
 //! `--explain RULE`: what a rule checks, the guidelines it enforces, the
 //! options it reads, and its tested flagged and clean examples, in
-//! uvmcheck's `--explain` layout. A sub-rule (a naming or style finding ID
+//! svlang-lint's `--explain` layout. A sub-rule (a naming or style finding ID
 //! such as UVM-NAM-101) is explained with the rule that reports it.
 
 use crate::catalog;
@@ -58,7 +58,7 @@ pub fn explain(query: &str, bold: bool) -> Result<String, String> {
     let opts: Vec<&(&str, &str, &str)> = OPTIONS.iter().filter(|o| o.0 == opts_owner).collect();
     if !opts.is_empty() {
         let class = parent.map_or(name, |p| p.name);
-        out.push_str(&format!("\nOptions, set in .uvmcheck/config.py:\n    class {class}(RuleConfig):\n"));
+        out.push_str(&format!("\nOptions, set in .svlang-lint/config.py:\n    class {class}(RuleConfig):\n"));
         for (_, key, default) in opts {
             out.push_str(&format!("        {key} = {default}    # default\n"));
         }
@@ -68,7 +68,7 @@ pub fn explain(query: &str, bold: bool) -> Result<String, String> {
         show(&mut out, "Flagged", &format!("{dir}/bad.sv"), bad);
         show(&mut out, "Not flagged", &format!("{dir}/good.sv"), good);
     }
-    out.push_str(&format!("\nWaive one finding with  // uvmcheck:waive {id} -- <reason>  on the flagged line.\n"));
+    out.push_str(&format!("\nWaive one finding with  // svlang-lint:waive {id} -- <reason>  on the flagged line.\n"));
     Ok(out)
 }
 

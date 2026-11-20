@@ -1,11 +1,11 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
 #include "slang/syntax/AllSyntax.h"
 #include "slang/syntax/SyntaxTree.h"
 #include "slang/syntax/SyntaxVisitor.h"
 #include <unordered_set>
 
-namespace uvmcheck::rules::security {
+namespace svlang_lint::rules::security {
 
 class UncheckedFopenVisitor : public engine::SyntaxVisitor<UncheckedFopenVisitor> {
 public:
@@ -121,12 +121,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::security
+} // namespace svlang_lint::rules::security
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createUncheckedFopen() {
     return std::make_unique<security::UncheckedFopen>();
 }
 }
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createUncheckedFopen)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createUncheckedFopen)

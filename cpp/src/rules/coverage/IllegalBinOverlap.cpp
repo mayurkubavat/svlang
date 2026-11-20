@@ -1,5 +1,5 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
 #include "slang/syntax/AllSyntax.h"
 #include "slang/syntax/SyntaxTree.h"
 #include "slang/syntax/SyntaxVisitor.h"
@@ -9,7 +9,7 @@
 #include <unordered_set>
 #include <vector>
 
-namespace uvmcheck::rules::coverage {
+namespace svlang_lint::rules::coverage {
 
 class IllegalBinOverlapVisitor : public engine::SyntaxVisitor<IllegalBinOverlapVisitor> {
 public:
@@ -107,12 +107,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::coverage
+} // namespace svlang_lint::rules::coverage
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createIllegalBinOverlap() {
     return std::make_unique<coverage::IllegalBinOverlap>();
 }
 }
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createIllegalBinOverlap)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createIllegalBinOverlap)

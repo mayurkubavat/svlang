@@ -1,5 +1,5 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
 #include "slang/ast/ASTVisitor.h"
 #include "slang/ast/TimingControl.h"
 #include "slang/ast/symbols/ClassSymbols.h"
@@ -7,11 +7,11 @@
 #include "slang/ast/expressions/MiscExpressions.h"
 #include "slang/syntax/AllSyntax.h"
 
-namespace uvmcheck::rules::smells {
+namespace svlang_lint::rules::smells {
 
 class SequenceDelayVisitor : public slang::ast::ASTVisitor<SequenceDelayVisitor, slang::ast::VisitFlags::AllGood> {
 public:
-    explicit SequenceDelayVisitor(const uvmcheck::uvm::UvmModel& uvmModel, core::DiagnosticEngine& diags)
+    explicit SequenceDelayVisitor(const svlang_lint::uvm::UvmModel& uvmModel, core::DiagnosticEngine& diags)
         : uvmModel(uvmModel), diags(diags) {}
 
     void handle(const slang::ast::ClassType& cls) {
@@ -51,7 +51,7 @@ public:
 
 private:
     bool inSequence = false;
-    const uvmcheck::uvm::UvmModel& uvmModel;
+    const svlang_lint::uvm::UvmModel& uvmModel;
     core::DiagnosticEngine& diags;
 };
 
@@ -66,19 +66,19 @@ public:
     core::Severity getDefaultSeverity() const override { return core::Severity::Warning; }
 
     void run(slang::ast::Compilation& compilation,
-             const uvmcheck::uvm::UvmModel& uvmModel,
+             const svlang_lint::uvm::UvmModel& uvmModel,
              core::DiagnosticEngine& diags) override {
         SequenceDelayVisitor visitor(uvmModel, diags);
         compilation.getRoot().visit(visitor);
     }
 };
 
-} // namespace uvmcheck::rules::smells
+} // namespace svlang_lint::rules::smells
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createMagicDelayInSequence() {
     return std::make_unique<smells::MagicDelayInSequence>();
 }
 }
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createMagicDelayInSequence)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createMagicDelayInSequence)

@@ -1,10 +1,10 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
 #include "slang/syntax/SyntaxVisitor.h"
 #include "slang/syntax/SyntaxTree.h"
 #include "slang/syntax/AllSyntax.h"
 
-namespace uvmcheck::rules::deprecated {
+namespace svlang_lint::rules::deprecated {
 
 class ProceduralAssignVisitor : public engine::SyntaxVisitor<ProceduralAssignVisitor> {
 public:
@@ -47,12 +47,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::deprecated
+} // namespace svlang_lint::rules::deprecated
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createProceduralContinuousAssign() {
     return std::make_unique<deprecated::ProceduralContinuousAssign>();
 }
 }
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createProceduralContinuousAssign)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createProceduralContinuousAssign)

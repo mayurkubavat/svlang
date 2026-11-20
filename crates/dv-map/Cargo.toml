@@ -11,11 +11,11 @@ build = "build.rs"
 [dependencies]
 dv-model = { path = "../dv-model", default-features = false }
 svlang = { path = "../svlang" }
-# Only for the rpath to libuvmcheck_model (build.rs), with the slang feature.
+# Only for the rpath to libsvlang_lint_model (build.rs), with the slang feature.
 sv-slang = { path = "../sv-slang", optional = true }
 
 [features]
 default = []
 # `--slang`: build the map from the Slang-backed model instead of the native
-# one (needs libuvmcheck_model). Oracle and parity use only.
+# one (needs libsvlang_lint_model). Oracle and parity use only.
 slang = ["dep:sv-slang", "dv-model/slang"]

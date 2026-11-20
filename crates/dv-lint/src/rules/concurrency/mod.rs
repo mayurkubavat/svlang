@@ -13,12 +13,14 @@ mod disable_fork_without_scope;
 mod disable_named_block_in_class;
 mod driving_during_reset;
 mod event_trigger_in_always_comb;
+mod event_wait_vs_triggered_race;
 mod file_handle_not_closed;
 mod fork_inside_function;
 mod fork_loop_variable_capture;
 mod fork_loop_variable_shared;
 mod lock_not_released;
 mod mutex_try_get_without_check;
+mod nba_to_dynamic_container_or_handle;
 mod polling_loop;
 mod repeat_loop_without_timing;
 mod semaphore_zero_key;
@@ -93,5 +95,7 @@ pub(crate) fn rules() -> Vec<Rule> {
         },
         Rule { id: "SV-THR-003", name: "UnboundedThreadSpawn", category: "Concurrency", severity: Severity::Warning, profiles: SOUNDNESS, guidelines: &[], experimental: false, native: false, about: "Flags fork ... join_none inside forever or while loops with no wait fork, disable fork or semaphore get in the loop to bound outstanding threads (thread-leak checks).", check: Check::Syntax(unbounded_thread_spawn::unbounded_spawn),
         },
+        Rule { id: "SV-CON-016", name: "EventWaitVsTriggeredRace", category: "Concurrency", severity: Severity::Warning, profiles: SOUNDNESS, guidelines: &[], experimental: false, native: true, about: "Flags @(ev) event waits inside fork...join_none or join_any child threads that race with active-region '-> ev' triggers, recommending wait(ev.triggered).", check: Check::Syntax(event_wait_vs_triggered_race::event_wait_vs_triggered_race) },
+        Rule { id: "SV-CON-017", name: "NbaToDynamicContainerOrHandle", category: "Concurrency", severity: Severity::Error, profiles: SOUNDNESS, guidelines: &[], experimental: false, native: true, about: "Flags non-blocking assignments ('<=') to local or module-scope dynamic arrays, queues, associative arrays, and strings (IEEE 1800 §10.4.2).", check: Check::Syntax(nba_to_dynamic_container_or_handle::nba_to_dynamic_container_or_handle) },
     ]
 }

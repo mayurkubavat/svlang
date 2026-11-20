@@ -1,12 +1,12 @@
-# UVMCheck Python Plugin SDK
+# svlang-lint Python Plugin SDK
 
-The **UVMCheck Python Plugin SDK** allows verification and CAD teams to author custom, company-specific SystemVerilog and UVM static lint checks in pure Python, without modifying or recompiling the core C++ engine.
+The **svlang-lint Python Plugin SDK** allows verification and CAD teams to author custom, company-specific SystemVerilog and UVM static lint checks in pure Python, without modifying or recompiling the core C++ engine.
 
 ---
 
 ## Key Benefits
 
-- **Zero C++ Recompilation**: Write rules in Python and execute them immediately with `./build/uvmcheck --python-rules <path>`.
+- **Zero C++ Recompilation**: Write rules in Python and execute them immediately with `./build/svlang-lint --python-rules <path>`.
 - **Full Reporting Pipeline Integration**: Violations emitted by Python rules participate identically in:
   - Terminal colorized diagnostics
   - SARIF 2.1.0 output for CI/CD code scanning (`--sarif`)
@@ -31,7 +31,7 @@ Or run directly by keeping the repository's `python/` folder in your path.
 Create a Python file, e.g. `rules/company_rules.py`. A rule overrides only the hooks it needs:
 
 ```python
-from uvmcheck import Rule, Severity
+from svlang_lint import Rule, Severity
 
 
 class DriverPrefix(Rule):
@@ -79,7 +79,7 @@ subclass runs. Mark a rule meant purely as a base with `abstract = True`.
 config, keyed by rule ID or by the rule's class name:
 
 ```python
-# .uvmcheck/config.py
+# .svlang-lint/config.py
 class Project(ProjectConfig):
     class DriverPrefix(RuleConfig):
         rule = "COMP-DRV-001"
@@ -89,8 +89,8 @@ class Project(ProjectConfig):
 ### 3. Running Custom Rules
 
 ```bash
-uvmcheck tb/top.sv -I tb/include --python-rules rules/company_rules.py   # one file
-uvmcheck tb/top.sv -I tb/include --python-rules rules/                    # a directory
+svlang-lint tb/top.sv -I tb/include --python-rules rules/company_rules.py   # one file
+svlang-lint tb/top.sv -I tb/include --python-rules rules/                    # a directory
 ```
 
 Python findings take part in waivers, baselines, JSON, SARIF and HTML like built-in ones.
@@ -108,7 +108,7 @@ rule_tests/COMP-FAC-001/expect.json   {"bad.sv": [{"rule": "COMP-FAC-001", "line
 ```
 
 ```bash
-python3 -m uvmcheck.testing --rules rules/ --tests rule_tests/ --binary uvmcheck -- -I tb/include
+python3 -m svlang_lint.testing --rules rules/ --tests rule_tests/ --binary svlang-lint -- -I tb/include
 ```
 
 ---

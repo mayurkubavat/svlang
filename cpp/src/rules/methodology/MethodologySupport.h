@@ -18,9 +18,9 @@
 #include "slang/ast/symbols/VariableSymbols.h"
 #include "slang/syntax/SyntaxTree.h"
 #include "slang/text/SourceManager.h"
-#include "uvmcheck/rules/SweSupport.h"
+#include "svlang_lint/rules/SweSupport.h"
 
-namespace uvmcheck::rules::meth {
+namespace svlang_lint::rules::meth {
 
 /// String literal arguments ("vif"), looking through conversions.
 bool isStringLiteral(const slang::ast::Expression& e);
@@ -115,4 +115,4 @@ struct FailureBranch {
 /// Failure branches of checks anywhere inside a statement.
 std::vector<FailureBranch> failureBranches(const slang::ast::Statement& stmt);
 
-} // namespace uvmcheck::rules::meth
+} // namespace svlang_lint::rules::meth

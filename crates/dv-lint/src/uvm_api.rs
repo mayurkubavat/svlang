@@ -249,7 +249,7 @@ fn version_key(v: &str) -> Vec<u32> {
 fn packs() -> &'static [ApiPack] {
     static PACKS: OnceLock<Vec<ApiPack>> = OnceLock::new();
     PACKS.get_or_init(|| {
-        let mut v: Vec<ApiPack> = match std::env::var("UVMCHECK_UVM_API_PACK") {
+        let mut v: Vec<ApiPack> = match std::env::var("SVLANG_LINT_UVM_API_PACK") {
             Ok(path) if !path.is_empty() => {
                 std::fs::read_to_string(&path).ok().and_then(|t| parse(&t)).into_iter().collect()
             }

@@ -34,7 +34,7 @@ def check(cond, msg, detail=""):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--binary", default="build/uvmcheck")
+    ap.add_argument("--binary", default="build/svlang-lint")
     args = ap.parse_args()
     binary = str(Path(args.binary).resolve())
     print("[PRECISION TEST] tools/quality/precision.py")

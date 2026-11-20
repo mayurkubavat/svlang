@@ -1,11 +1,11 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
 #include "slang/syntax/AllSyntax.h"
 #include "slang/syntax/SyntaxTree.h"
 #include "slang/syntax/SyntaxVisitor.h"
 #include <string>
 
-namespace uvmcheck::rules::uvm {
+namespace svlang_lint::rules::uvm {
 
 class PhaseJumpVisitor : public engine::SyntaxVisitor<PhaseJumpVisitor> {
 public:
@@ -54,12 +54,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::uvm
+} // namespace svlang_lint::rules::uvm
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createUvmPhaseJumpHazard() {
     return std::make_unique<uvm::UvmPhaseJumpHazard>();
 }
 }
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createUvmPhaseJumpHazard)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createUvmPhaseJumpHazard)

@@ -1,5 +1,5 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
 #include "slang/ast/ASTVisitor.h"
 #include "slang/ast/expressions/OperatorExpressions.h"
 #include "slang/ast/expressions/LiteralExpressions.h"
@@ -7,7 +7,7 @@
 
 #include "slang/ast/expressions/ConversionExpression.h"
 
-namespace uvmcheck::rules::types {
+namespace svlang_lint::rules::types {
 
 class MixedSignVisitor : public engine::AstVisitor<MixedSignVisitor> {
 public:
@@ -105,12 +105,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::types
+} // namespace svlang_lint::rules::types
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createMixedSignComparison() {
     return std::make_unique<types::MixedSignComparison>();
 }
 }
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createMixedSignComparison)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createMixedSignComparison)

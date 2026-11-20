@@ -1,11 +1,11 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
 #include "slang/syntax/SyntaxTree.h"
 #include "slang/syntax/AllSyntax.h"
 #include "slang/parsing/PreprocessorMetadata.h"
 #include "slang/text/SourceManager.h"
 
-namespace uvmcheck::rules::style {
+namespace svlang_lint::rules::style {
 
 class MacroTrailingSemicolon : public Rule {
 public:
@@ -19,7 +19,7 @@ public:
     core::Severity getDefaultSeverity() const override { return core::Severity::Warning; }
 
     void run(slang::ast::Compilation& compilation,
-             const uvmcheck::uvm::UvmModel& /*uvmModel*/,
+             const svlang_lint::uvm::UvmModel& /*uvmModel*/,
              core::DiagnosticEngine& diags) override {
         const auto* sm = compilation.getSourceManager();
         if (!sm) return;
@@ -74,12 +74,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::style
+} // namespace svlang_lint::rules::style
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createMacroTrailingSemicolon() {
     return std::make_unique<style::MacroTrailingSemicolon>();
 }
 }
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createMacroTrailingSemicolon)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createMacroTrailingSemicolon)

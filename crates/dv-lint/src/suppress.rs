@@ -1,9 +1,9 @@
 //! Waivers and the baseline, applied after the project configuration as
-//! uvmcheck's WaiverEngine applies them: the config's waivers, then a
-//! waiver file's (`--waivers FILE`, else `.uvmcheck/waivers.json` under the
+//! svlang-lint's WaiverEngine applies them: the config's waivers, then a
+//! waiver file's (`--waivers FILE`, else `.svlang-lint/waivers.json` under the
 //! project root), the first match deciding (a waiver with a `severity`
 //! keeps the finding, re-graded); then the baseline (`--baseline FILE`,
-//! else `.uvmcheck/baseline.json`), whose entries are fingerprints of known
+//! else `.svlang-lint/baseline.json`), whose entries are fingerprints of known
 //! findings.
 //!
 //! A fingerprint is FNV-1a 64 of the rule, the file relative to the project
@@ -41,7 +41,7 @@ struct Stats {
     regraded: usize,
 }
 
-/// Waiver and baseline hygiene (`--waiver-report`), as uvmcheck's
+/// Waiver and baseline hygiene (`--waiver-report`), as svlang-lint's
 /// WaiverHygiene.
 #[derive(Default, Debug)]
 pub struct Hygiene {
@@ -130,7 +130,7 @@ impl Suppress {
         }
         // Waiver file entries are groups of their own, after the config's.
         let first_group = s.waivers.iter().map(|w| w.group + 1).max().unwrap_or(0);
-        let dot = root.join(".uvmcheck");
+        let dot = root.join(".svlang-lint");
         let pick = |given: Option<&str>, name: &str| -> Option<PathBuf> {
             match given {
                 Some(g) => Some(PathBuf::from(g)),
@@ -141,7 +141,7 @@ impl Suppress {
         if let Some(w) = pick(waivers, "waivers.json") {
             match crate::project::load_waiver_file(&w) {
                 Ok(list) => s.waivers.extend(list.into_iter().map(|w| Waiver { group: first_group + w.group, ..w })),
-                // A pattern that does not compile stops the run, as in uvmcheck;
+                // A pattern that does not compile stops the run, as in svlang-lint;
                 // a file that does not load is only a warning.
                 Err(e) if e.contains("invalid message regex") => return Err(e),
                 Err(e) => s.warnings.push(format!("Could not load waiver file: {e}")),
@@ -206,13 +206,27 @@ impl Suppress {
         out
     }
 
-    /// Drops waived and baselined findings and re-grades those a waiver with
-    /// a severity names; returns how many were dropped.
+    /// Drops waived and baselined findings using the active session's inline waiver records.
     pub fn apply(&self, found: &mut Vec<Finding>, files: &[String]) -> usize {
+        let state = crate::session::with(|s| s.waiver_state.clone());
+        self.apply_with_state(found, files, &state)
+    }
+
+    /// Drops waived and baselined findings using `session`'s inline waiver records.
+    pub fn apply_in_session(&self, session: &crate::Session, found: &mut Vec<Finding>, files: &[String]) -> usize {
+        self.apply_with_state(found, files, session.waiver_state())
+    }
+
+    fn apply_with_state(
+        &self,
+        found: &mut Vec<Finding>,
+        files: &[String],
+        waiver_state: &std::sync::Mutex<crate::waivers::WaiverState>,
+    ) -> usize {
         let mut stats = self.stats.lock().unwrap_or_else(|e| e.into_inner());
         // Findings an inline comment waived: a waiver that matches one too is
-        // used, as uvmcheck evaluates both.
-        let inline = crate::waivers::USED.lock().ok().and_then(|u| u.as_ref().map(|u| u.waived.clone()));
+        // used, as svlang-lint evaluates both.
+        let inline = waiver_state.lock().ok().map(|u| u.used.waived.clone());
         for (file, line, rule, message) in inline.unwrap_or_default() {
             let path = crate::project::normalized(&file);
             if let Some(w) = self.waivers.iter().find(|w| w.matches(rule, &path, &file, line, &message)) {
@@ -299,9 +313,10 @@ impl Suppress {
             }
         }
         let mut by_rule: HashMap<String, usize> = stats.by_rule.clone();
-        if let Ok(u) = crate::waivers::USED.lock() {
-            for (r, n) in u.as_ref().map(|u| u.by_rule.clone()).unwrap_or_default() {
-                *by_rule.entry(r).or_default() += n;
+        let state = crate::session::with(|s| s.waiver_state.clone());
+        if let Ok(u) = state.lock() {
+            for (r, n) in &u.used.by_rule {
+                *by_rule.entry(r.clone()).or_default() += *n;
             }
         }
         let most_first = |m: HashMap<String, usize>| {

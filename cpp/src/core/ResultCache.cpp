@@ -1,9 +1,9 @@
-#include "uvmcheck/core/ResultCache.h"
-#include "uvmcheck/core/Process.h"
+#include "svlang_lint/core/ResultCache.h"
+#include "svlang_lint/core/Process.h"
 
-#include "uvmcheck/core/Json.h"
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
+#include "svlang_lint/core/Json.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
 
 #include "slang/ast/ASTVisitor.h"
 #include "slang/ast/Compilation.h"
@@ -21,7 +21,7 @@
 #include <unordered_map>
 #include <unordered_set>
 
-namespace uvmcheck::core::cache {
+namespace svlang_lint::core::cache {
 
 namespace {
 
@@ -801,20 +801,20 @@ void updateAndStore(const Request& req, slang::ast::Compilation& compilation,
         if (!writeText(req.directory / "manifest.json", manifestText(manifest))) return;
 
         if (!sameEnv || hitPrimaries.empty()) {
-            info << "[uvmcheck] cache: stored " << units.size() << " compilation unit"
+            info << "[svlang-lint] cache: stored " << units.size() << " compilation unit"
                  << (units.size() == 1 ? "" : "s") << "\n";
         } else {
-            for (const auto& primary : hitPrimaries) info << "[uvmcheck] cache hit: " << baseName(primary) << "\n";
-            for (const auto& name : misses) info << "[uvmcheck] cache miss: " << name << "\n";
-            if (!wholeHit) info << "[uvmcheck] cache miss: whole-program rules\n";
+            for (const auto& primary : hitPrimaries) info << "[svlang-lint] cache hit: " << baseName(primary) << "\n";
+            for (const auto& name : misses) info << "[svlang-lint] cache miss: " << name << "\n";
+            if (!wholeHit) info << "[svlang-lint] cache miss: whole-program rules\n";
         }
     }
     catch (const std::exception& ex) {
-        info << "[uvmcheck] cache: ignored (" << ex.what() << "); results are from this run\n";
+        info << "[svlang-lint] cache: ignored (" << ex.what() << "); results are from this run\n";
     }
     catch (...) {
-        info << "[uvmcheck] cache: ignored (unreadable entry); results are from this run\n";
+        info << "[svlang-lint] cache: ignored (unreadable entry); results are from this run\n";
     }
 }
 
-} // namespace uvmcheck::core::cache
+} // namespace svlang_lint::core::cache

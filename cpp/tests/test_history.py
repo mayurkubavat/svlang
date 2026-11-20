@@ -2,7 +2,7 @@
 """
 Integration tests for the git-history rules: SV-EVO-001 (hotspots) and SV-EVO-002 (change
 coupling). Each case builds a small git repository in a temp directory, commits to it, and
-runs uvmcheck with --history. Without --history the rules must stay silent.
+runs svlang-lint with --history. Without --history the rules must stay silent.
 """
 
 import argparse
@@ -93,7 +93,7 @@ def hotspot_case(binary, work):
           any("changed in 4 of the last 4 commits" in l and "complexity 21" in l and "'decode'" in l
               for _, _, l in found), out)
 
-    cfg = root / ".uvmcheck.json"
+    cfg = root / ".svlang-lint.json"
     cfg.write_text('{ "rules": { "SV-EVO-001": { "options": { "min_commits": 1 } } } }')
     found, out = run(binary, root, srcs + ["--history", "--rule", "SV-EVO-001"])
     files = [f for f, r, _ in found if r == "SV-EVO-001"]
@@ -139,7 +139,7 @@ def coupling_case(binary, work):
     found, out = run(binary, root, names + ["--rule", "SV-EVO-002"])
     check("coupling: silent without --history", found == [], out)
 
-    cfg = root / ".uvmcheck.json"
+    cfg = root / ".svlang-lint.json"
     cfg.write_text('{ "rules": { "SV-EVO-002": { "options": { "max_commit_files": 4 } } } }')
     found, out = run(binary, root, names + ["--history", "--rule", "SV-EVO-002"])
     pairs = [l for f, r, l in found if r == "SV-EVO-002"]
@@ -157,7 +157,7 @@ def coupling_case(binary, work):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--binary", default=str(REPO / "build" / "uvmcheck"))
+    ap.add_argument("--binary", default=str(REPO / "build" / "svlang-lint"))
     args = ap.parse_args()
     binary = str(Path(args.binary).resolve())
     if shutil.which("git") is None:

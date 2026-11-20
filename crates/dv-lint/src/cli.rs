@@ -1,4 +1,4 @@
-//! The uvmcheck options the dv-lint binary takes beyond rule selection and
+//! The svlang-lint options the dv-lint binary takes beyond rule selection and
 //! reports: `--explain`, `--changed-since` / `--strict-new-files`, the
 //! waiver-hygiene reports (`--waiver-report`, `--report-unused-waivers`,
 //! `--strict-waivers`), the result cache (`--no-cache`, `--cache-dir`,
@@ -26,6 +26,11 @@ pub struct Extra {
     pub map: Option<String>,
     pub init: bool,
     pub python_rules: Option<String>,
+    pub guidelines: Vec<String>,
+    pub conformance: bool,
+    pub dump_config: Option<String>,
+    pub library_globs: Vec<String>,
+    pub exclude_globs: Vec<String>,
 }
 
 /// What [`Extra::after_suppress`] decided for the exit status.
@@ -38,7 +43,17 @@ pub struct Outcome {
     pub hygiene_failed: bool,
 }
 
-const VALUED: [&str; 5] = ["--explain", "--changed-since", "--cache-dir", "--map", "--python-rules"];
+const VALUED: [&str; 9] = [
+    "--explain",
+    "--changed-since",
+    "--cache-dir",
+    "--map",
+    "--python-rules",
+    "--guideline",
+    "--dump-config",
+    "--library",
+    "--exclude",
+];
 
 impl Extra {
     /// Takes `a` (with its value from `rest`) when it is one of these
@@ -55,6 +70,11 @@ impl Extra {
             "--cache-dir" => self.cache_dir = Some(value()?),
             "--map" => self.map = Some(value()?),
             "--python-rules" => self.python_rules = Some(value()?),
+            "--guideline" => self.guidelines.push(value()?),
+            "--dump-config" => self.dump_config = Some(value()?),
+            "--library" => self.library_globs.push(value()?),
+            "--exclude" => self.exclude_globs.push(value()?),
+            "--conformance" => self.conformance = true,
             "--strict-new-files" => self.strict_new_files = true,
             "--waiver-report" => self.waiver_report = true,
             "--report-unused-waivers" => self.report_unused_waivers = true,
@@ -80,10 +100,10 @@ impl Extra {
         Ok(())
     }
 
-    /// The cache folder: `--cache-dir`, else `.uvmcheck_cache` in the
+    /// The cache folder: `--cache-dir`, else `.svlang_lint_cache` in the
     /// project root.
     pub fn cache_folder(&self, root: &Path) -> PathBuf {
-        self.cache_dir.as_ref().map_or_else(|| root.join(".uvmcheck_cache"), PathBuf::from)
+        self.cache_dir.as_ref().map_or_else(|| root.join(".svlang_lint_cache"), PathBuf::from)
     }
 
     /// After the waivers and baseline: `--changed-since` keeps findings on
@@ -171,7 +191,7 @@ impl Extra {
     }
 }
 
-/// The `=== Waiver hygiene ===` report, as uvmcheck prints it.
+/// The `=== Waiver hygiene ===` report, as svlang-lint prints it.
 pub fn report(h: &crate::suppress::Hygiene, expired: &[String], strict_failed: bool) -> String {
     let mut o = String::from("\n=== Waiver hygiene ===\n");
     o.push_str(&format!(

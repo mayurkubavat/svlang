@@ -11,11 +11,11 @@ parameter value, ...). Its first line names the slang option that accepts it
 data/vendor/<tool>.json, with the tool's version and the date: a measured
 table, not one copied from documentation. `table` prints all measured tables
 side by side (Markdown). `slang-flags` prints the slang options that make
-uvmcheck accept what a measured tool accepts, for use as
+svlang-lint accept what a measured tool accepts, for use as
 
-    uvmcheck $(tools/quality/vendor_table.py slang-flags data/vendor/vcs.json) -f files.f
+    svlang-lint $(tools/quality/vendor_table.py slang-flags data/vendor/vcs.json) -f files.f
 
-  tools/quality/vendor_table.py measure verilator|iverilog|vcs|xcelium|questa|uvmcheck|dv-build [--out DIR]
+  tools/quality/vendor_table.py measure verilator|iverilog|vcs|xcelium|questa|svlang-lint|dv-build [--out DIR]
   tools/quality/vendor_table.py table [DIR]
   tools/quality/vendor_table.py slang-flags data/vendor/<tool>.json
 
@@ -37,7 +37,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[2]
 PROBES = REPO / "testdata" / "vendor"
 OUT = REPO / "data" / "vendor"
-UVMCHECK = os.environ.get("UVMCHECK", str(REPO / "build" / "uvmcheck"))
+SVLANG_LINT = os.environ.get("SVLANG_LINT", str(REPO / "build" / "svlang-lint"))
 DVBUILD = os.environ.get("DV_BUILD", str(REPO / "target" / "release" / "dv-build"))
 
 # tool -> (version command, compile command for one file; run in a scratch dir)
@@ -47,7 +47,7 @@ TOOLS = {
     "vcs": (["vcs", "-ID"], lambda f: ["vcs", "-full64", "-sverilog", "-top", "probe", "-o", "simv", f]),
     "xcelium": (["xrun", "-version"], lambda f: ["xrun", "-sv", "-elaborate", "-top", "probe", f]),
     "questa": (["qrun", "-version"], lambda f: ["qrun", "-sv", "-optimize", "-top", "probe", f]),
-    "uvmcheck": ([UVMCHECK, "--version"], lambda f: [UVMCHECK, "--no-config", "--no-cache", "--rule", "SV-CMP-001", f]),
+    "svlang-lint": ([SVLANG_LINT, "--version"], lambda f: [SVLANG_LINT, "--no-config", "--no-cache", "--rule", "SV-CMP-001", f]),
     "dv-build": ([DVBUILD, "--help"], lambda f: [DVBUILD, f]),
 }
 
@@ -64,7 +64,7 @@ def probes():
 
 def accepted(tool, res):
     text = res.stdout + res.stderr
-    if tool == "uvmcheck":
+    if tool == "svlang-lint":
         return "SV-CMP-001 (" not in text
     if tool == "dv-build":
         return res.returncode == 0
@@ -88,7 +88,7 @@ def measure(tool, out_dir):
         print(f"{tool}: cannot run {ver_cmd[0]}: {e}", file=sys.stderr)
         return 2
     version = (v.stdout or v.stderr).strip().splitlines()[0] if (v.stdout or v.stderr).strip() else "unknown"
-    if tool in ("dv-build", "uvmcheck"):
+    if tool in ("dv-build", "svlang-lint"):
         # Ours: the commit it was built from says more than a version number.
         g = subprocess.run(["git", "-C", str(REPO), "describe", "--always", "--dirty"], capture_output=True, text=True)
         version = f"{tool} at {g.stdout.strip() or 'unknown commit'}"

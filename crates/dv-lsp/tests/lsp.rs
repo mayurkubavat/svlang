@@ -288,7 +288,7 @@ fn diagnostics_and_quick_fixes() {
     let d = c.diagnostics(&file);
     // The blocking drive of a clocking block signal, on the `=` of line 11.
     assert!(d.contains(r#""code":"SV-INT-001""#), "{d}");
-    assert!(d.contains(r#""source":"uvmcheck""#) && d.contains(r#""severity":1"#), "{d}");
+    assert!(d.contains(r#""source":"svlang-lint""#) && d.contains(r#""severity":1"#), "{d}");
     let (line, col) = pos(DRIVE, "= 8'hFF", 0, 0);
     assert!(d.contains(&format!(r#""start":{{"line":{line},"character":{col}}}"#)), "{d}");
 
@@ -304,7 +304,7 @@ fn diagnostics_and_quick_fixes() {
     assert!(r.contains(&format!(r#""end":{{"line":{line},"character":{}}}"#, col + 1)), "{r}");
     // And the finding can be waived with a comment on the line above.
     assert!(r.contains(r#""title":"Waive SV-INT-001 on this line""#), "{r}");
-    assert!(r.contains(r#""newText":"    // uvmcheck-disable-next-line SV-INT-001\n""#), "{r}");
+    assert!(r.contains(r#""newText":"    // svlang-lint-disable-next-line SV-INT-001\n""#), "{r}");
 
     // Typing the fix clears it, without a save.
     let change = format!(
@@ -317,7 +317,7 @@ fn diagnostics_and_quick_fixes() {
     assert!(!d.contains(r#""code":"SV-INT-001""#), "{d}");
 
     // So does the waiver comment.
-    let waived = DRIVE.replace("    vif.cb", "    // uvmcheck-disable-next-line SV-INT-001\n    vif.cb");
+    let waived = DRIVE.replace("    vif.cb", "    // svlang-lint-disable-next-line SV-INT-001\n    vif.cb");
     let change = format!(
         r#"{{"textDocument":{{"uri":"file://{}","version":3}},"contentChanges":[{{"text":{}}}]}}"#,
         file.display(),

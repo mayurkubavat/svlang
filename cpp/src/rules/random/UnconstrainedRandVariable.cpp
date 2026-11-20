@@ -1,5 +1,5 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
 #include "slang/syntax/AllSyntax.h"
 #include "slang/syntax/SyntaxTree.h"
 #include "slang/syntax/SyntaxVisitor.h"
@@ -7,7 +7,7 @@
 #include <unordered_set>
 #include <string>
 
-namespace uvmcheck::rules::random {
+namespace svlang_lint::rules::random {
 
 class ConstraintIdentifierCollector : public slang::syntax::SyntaxVisitor<ConstraintIdentifierCollector> {
 public:
@@ -100,12 +100,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::random
+} // namespace svlang_lint::rules::random
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createUnconstrainedRandVariable() {
     return std::make_unique<random::UnconstrainedRandVariable>();
 }
 }
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createUnconstrainedRandVariable)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createUnconstrainedRandVariable)

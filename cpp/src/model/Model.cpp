@@ -1,6 +1,6 @@
-#include "uvmcheck/model/Model.h"
+#include "svlang_lint/model/Model.h"
 
-namespace uvmcheck::model {
+namespace svlang_lint::model {
 
 std::string_view toString(UvmKind kind) {
     switch (kind) {
@@ -158,7 +158,7 @@ void writeLoc(std::ostream& out, const Loc& loc) {
 } // namespace
 
 void Model::writeJson(std::ostream& out) const {
-    out << "{\"schema\":\"uvmcheck.model/1\",\"files\":[";
+    out << "{\"schema\":\"svlang_lint.model/1\",\"files\":[";
     for (size_t i = 0; i < files_.size(); ++i) {
         if (i) out << ',';
         writeString(out, files_[i]);
@@ -297,4 +297,4 @@ void Model::writeJson(std::ostream& out) const {
     out << "\n]}\n";
 }
 
-} // namespace uvmcheck::model
+} // namespace svlang_lint::model

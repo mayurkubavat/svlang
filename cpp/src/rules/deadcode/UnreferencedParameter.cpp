@@ -1,5 +1,5 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
 #include "slang/ast/ASTVisitor.h"
 #include "slang/syntax/AllSyntax.h"
 #include "slang/syntax/SyntaxVisitor.h"
@@ -10,7 +10,7 @@
 #include <unordered_set>
 #include <string>
 
-namespace uvmcheck::rules::deadcode {
+namespace svlang_lint::rules::deadcode {
 
 class ParamDeclVisitor : public engine::AstVisitor<ParamDeclVisitor> {
 public:
@@ -122,12 +122,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::deadcode
+} // namespace svlang_lint::rules::deadcode
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createUnreferencedParameter() {
     return std::make_unique<deadcode::UnreferencedParameter>();
 }
 }
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createUnreferencedParameter)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createUnreferencedParameter)

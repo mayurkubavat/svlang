@@ -1,7 +1,7 @@
-#include "uvmcheck/compat/Overlay.h"
+#include "svlang_lint/compat/Overlay.h"
 
-#include "uvmcheck/core/Diagnostic.h"
-#include "uvmcheck/rules/CompilerDiagnostics.h"
+#include "svlang_lint/core/Diagnostic.h"
+#include "svlang_lint/rules/CompilerDiagnostics.h"
 
 #include <map>
 #include <set>
@@ -15,7 +15,7 @@
 #include "slang/syntax/SyntaxVisitor.h"
 #include "slang/text/SourceManager.h"
 
-namespace uvmcheck::compat {
+namespace svlang_lint::compat {
 
 namespace {
 
@@ -94,4 +94,4 @@ std::unique_ptr<Override> createErrorTaint() {
     return std::make_unique<ErrorTaint>();
 }
 
-} // namespace uvmcheck::compat
+} // namespace svlang_lint::compat

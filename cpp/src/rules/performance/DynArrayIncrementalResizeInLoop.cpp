@@ -1,10 +1,10 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
 #include "slang/ast/ASTVisitor.h"
 #include "slang/ast/expressions/AssignmentExpressions.h"
 #include "slang/ast/statements/LoopStatements.h"
 
-namespace uvmcheck::rules::performance {
+namespace svlang_lint::rules::performance {
 
 class DynArrayResizeVisitor : public slang::ast::ASTVisitor<DynArrayResizeVisitor, slang::ast::VisitFlags::AllGood> {
 public:
@@ -66,19 +66,19 @@ public:
     core::Severity getDefaultSeverity() const override { return core::Severity::Warning; }
 
     void run(slang::ast::Compilation& compilation,
-             const uvmcheck::uvm::UvmModel&,
+             const svlang_lint::uvm::UvmModel&,
              core::DiagnosticEngine& diags) override {
         DynArrayResizeVisitor visitor(diags);
         compilation.getRoot().visit(visitor);
     }
 };
 
-} // namespace uvmcheck::rules::performance
+} // namespace svlang_lint::rules::performance
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createDynArrayIncrementalResizeInLoop() {
     return std::make_unique<performance::DynArrayIncrementalResizeInLoop>();
 }
 }
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createDynArrayIncrementalResizeInLoop)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createDynArrayIncrementalResizeInLoop)

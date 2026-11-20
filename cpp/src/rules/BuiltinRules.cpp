@@ -1,10 +1,10 @@
-#include "uvmcheck/rules/BuiltinRules.h"
+#include "svlang_lint/rules/BuiltinRules.h"
 
 #include <algorithm>
 
-#include "uvmcheck/rules/RuleRegistry.h"
+#include "svlang_lint/rules/RuleRegistry.h"
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 
 std::vector<RuleFactory>& ruleFactories() {
     static std::vector<RuleFactory> factories;
@@ -23,4 +23,4 @@ void registerBuiltinRules() {
     reg.sortById();
 }
 
-} // namespace uvmcheck::rules
+} // namespace svlang_lint::rules

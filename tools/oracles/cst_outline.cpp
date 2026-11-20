@@ -3,7 +3,7 @@
 // then "errors <n>" for the parse diagnostics. The reference that
 // crates/sv-syntax's outline is checked against (tools/gates/cst_parity.py).
 //
-//   uvmcheck_cst_outline [+incdir+DIR]... [+define+NAME[=VALUE]]... FILE
+//   svlang_cst_outline [+incdir+DIR]... [+define+NAME[=VALUE]]... FILE
 #include <cstdio>
 #include <cstdlib>
 #include <string>

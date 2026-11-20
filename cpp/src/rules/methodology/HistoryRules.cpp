@@ -2,10 +2,10 @@
 // coupling). Both read git through rules::history and do nothing unless --history is given.
 
 #include "MethodologySupport.h"
-#include "uvmcheck/rules/CodeMetrics.h"
-#include "uvmcheck/rules/History.h"
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
+#include "svlang_lint/rules/CodeMetrics.h"
+#include "svlang_lint/rules/History.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
 
 #include "slang/ast/symbols/CompilationUnitSymbols.h"
 
@@ -13,7 +13,7 @@
 #include <map>
 #include <set>
 
-namespace uvmcheck::rules::methodology {
+namespace svlang_lint::rules::methodology {
 
 using namespace slang::ast;
 
@@ -191,12 +191,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::methodology
+} // namespace svlang_lint::rules::methodology
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createHotspot() { return std::make_unique<methodology::Hotspot>(); }
 std::unique_ptr<Rule> createChangeCoupling() { return std::make_unique<methodology::ChangeCoupling>(); }
 }
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createHotspot)
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createChangeCoupling)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createHotspot)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createChangeCoupling)

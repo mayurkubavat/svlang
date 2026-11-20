@@ -125,7 +125,7 @@ fn macros_expand_inside_the_tree() {
     assert_eq!(decls, 2);
 }
 
-/// Canonical forms checked against Slang (build/uvmcheck_cst_exprs).
+/// Canonical forms checked against Slang (build/svlang_cst_exprs).
 #[test]
 fn expressions_match_slang() {
     let src = r#"module m;
@@ -206,7 +206,7 @@ fn begin_keywords_makes_identifiers() {
 }
 
 /// Constraints, covergroups, assertions, clocking, headers: canonical
-/// forms checked against Slang (build/uvmcheck_cst_exprs).
+/// forms checked against Slang (build/svlang_cst_exprs).
 #[test]
 fn slice3_matches_slang() {
     let src = r#"module m(input logic clk, rst, a, b, input logic [3:0] c);

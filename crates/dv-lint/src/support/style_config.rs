@@ -1,4 +1,4 @@
-//! uvmcheck's default style configuration, for the configurable style engine
+//! svlang-lint's default style configuration, for the configurable style engine
 //! (SV-STY-100 and its sub-rules SV-STY-101..106).
 
 use svlang::syntax::NodeId;

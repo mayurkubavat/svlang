@@ -2,7 +2,7 @@
 
 Most rules exist in both engines. The rules below are in the native engine
 only: the catalog ([README.md](README.md)) marks them **Native**,
-`uvmcheck --list` prints `native` after them, and the parity gates
+`svlang-lint --list` prints `native` after them, and the parity gates
 (`tools/gates/lint_parity.py`) leave them out.
 
 | Rule | Name | Severity | What it flags |

@@ -1,4 +1,4 @@
-#include "uvmcheck/reporting/Conformance.h"
+#include "svlang_lint/reporting/Conformance.h"
 
 #include <iomanip>
 #include <ostream>
@@ -6,7 +6,7 @@
 #include <unordered_map>
 #include <unordered_set>
 
-namespace uvmcheck::reporting {
+namespace svlang_lint::reporting {
 
 std::vector<GuidelineResult> computeConformance(const std::vector<rules::Rule*>& activeRules,
                                                 const std::vector<core::Violation>& violations) {
@@ -58,4 +58,4 @@ void printConformance(std::ostream& os, const std::vector<GuidelineResult>& resu
     flush();
 }
 
-} // namespace uvmcheck::reporting
+} // namespace svlang_lint::reporting

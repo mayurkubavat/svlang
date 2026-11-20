@@ -1,5 +1,5 @@
-#include "uvmcheck/rules/SweSupport.h"
-#include "uvmcheck/core/ConfigManager.h"
+#include "svlang_lint/rules/SweSupport.h"
+#include "svlang_lint/core/ConfigManager.h"
 
 #include <cctype>
 #include <unordered_set>
@@ -18,7 +18,7 @@
 #include "slang/syntax/SyntaxNode.h"
 #include "slang/text/SourceManager.h"
 
-namespace uvmcheck::rules::swe {
+namespace svlang_lint::rules::swe {
 
 using namespace slang::ast;
 
@@ -612,9 +612,9 @@ size_t lineOf(const Compilation& comp, slang::SourceLocation loc) {
     return sm->getLineNumber(sm->getFullyExpandedLoc(loc));
 }
 
-} // namespace uvmcheck::rules::swe
+} // namespace svlang_lint::rules::swe
 
-namespace uvmcheck::rules::swe {
+namespace svlang_lint::rules::swe {
 
 int positionalArgCount(const CallExpression& call) {
     const auto* syntax = call.syntax;
@@ -652,9 +652,9 @@ const Symbol* rootSymbol(const Expression& expr) {
     return nullptr;
 }
 
-} // namespace uvmcheck::rules::swe
+} // namespace svlang_lint::rules::swe
 
-namespace uvmcheck::rules::swe {
+namespace svlang_lint::rules::swe {
 
 namespace {
 
@@ -752,9 +752,9 @@ bool isSemaphoreGet(const CallExpression& call) {
     return c && c->name == "semaphore";
 }
 
-} // namespace uvmcheck::rules::swe
+} // namespace svlang_lint::rules::swe
 
-namespace uvmcheck::rules::swe {
+namespace svlang_lint::rules::swe {
 
 static bool isReportQuery(std::string_view n) {
     return n == "uvm_report_enabled" || n == "get_report_verbosity_level" || n == "get_report_action" ||
@@ -795,4 +795,4 @@ bool isReportScaffolding(const Statement& s) {
     return false;
 }
 
-} // namespace uvmcheck::rules::swe
+} // namespace svlang_lint::rules::swe

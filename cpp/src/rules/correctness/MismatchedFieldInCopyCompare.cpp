@@ -1,13 +1,13 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
-#include "uvmcheck/rules/SweSupport.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
+#include "svlang_lint/rules/SweSupport.h"
 #include "slang/ast/expressions/AssignmentExpressions.h"
 #include "slang/ast/expressions/MiscExpressions.h"
 #include "slang/ast/expressions/OperatorExpressions.h"
 #include "slang/ast/expressions/SelectExpressions.h"
 #include "slang/ast/symbols/ClassSymbols.h"
 
-namespace uvmcheck::rules::correctness {
+namespace svlang_lint::rules::correctness {
 
 using namespace slang::ast;
 
@@ -144,12 +144,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::correctness
+} // namespace svlang_lint::rules::correctness
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createMismatchedFieldInCopyCompare() {
     return std::make_unique<correctness::MismatchedFieldInCopyCompare>();
 }
 }
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createMismatchedFieldInCopyCompare)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createMismatchedFieldInCopyCompare)

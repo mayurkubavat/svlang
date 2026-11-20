@@ -1,4 +1,4 @@
-#include "uvmcheck/core/Process.h"
+#include "svlang_lint/core/Process.h"
 
 #include <cerrno>
 #include <filesystem>
@@ -14,7 +14,7 @@
 
 extern char** environ;
 
-namespace uvmcheck::core {
+namespace svlang_lint::core {
 
 /// Runs argv without a shell; returns the exit code and stdout.
 int runCapture(const std::vector<std::string>& argv, const std::vector<std::string>& extraEnv,
@@ -72,4 +72,4 @@ std::string selfExecutablePath(const std::string& fallback) {
     return fallback;
 }
 
-} // namespace uvmcheck::core
+} // namespace svlang_lint::core

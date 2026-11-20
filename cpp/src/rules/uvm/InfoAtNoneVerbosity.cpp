@@ -1,7 +1,7 @@
 // UVM-REP-009: `uvm_info at UVM_NONE, which no verbosity setting can silence.
 
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
 
 #include "slang/ast/ASTVisitor.h"
 #include "slang/ast/expressions/CallExpression.h"
@@ -10,7 +10,7 @@
 
 #include <optional>
 
-namespace uvmcheck::rules::uvm {
+namespace svlang_lint::rules::uvm {
 
 using namespace slang::ast;
 
@@ -68,12 +68,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::uvm
+} // namespace svlang_lint::rules::uvm
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createInfoAtNoneVerbosity() {
     return std::make_unique<uvm::InfoAtNoneVerbosity>();
 }
-} // namespace uvmcheck::rules
+} // namespace svlang_lint::rules
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createInfoAtNoneVerbosity)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createInfoAtNoneVerbosity)

@@ -32,7 +32,7 @@ class MyEnv extends uvm_component;
         // VIOLATION UVM-FAC-001: Direct instantiation via new instead of factory create()
         driver = new("driver", this);
         // Compliant inline waiver test: This violation is waived!
-        monitor = new("monitor", this); // uvmcheck:waive UVM-FAC-001 [legacy VIP monitor]
+        monitor = new("monitor", this); // svlang-lint:waive UVM-FAC-001 [legacy VIP monitor]
 
         // VIOLATION SV-OOP-002: Unchecked $cast wrapped in void'
         void'($cast(driver, base_drv));

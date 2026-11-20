@@ -1,10 +1,10 @@
-//! `--python-rules PATH`: custom rules written against the uvmcheck Python
-//! SDK (python/uvmcheck), run as uvmcheck runs them. The design is written
+//! `--python-rules PATH`: custom rules written against the svlang-lint Python
+//! SDK (python/svlang_lint), run as svlang-lint runs them. The design is written
 //! as the SDK's model JSON (version 2: user classes with their UVM role,
 //! bases, properties, methods, arguments and calls; config_db accesses; TLM
 //! ports and connections; component paths; per-rule options from the
 //! project config) to a private temporary file, `python3 -m
-//! uvmcheck.plugin_runner --rules PATH --model FILE` runs the rules, and the
+//! svlang_lint.plugin_runner --rules PATH --model FILE` runs the rules, and the
 //! findings it prints become findings of this run.
 //!
 //! The native model does not keep the text of a call's arguments, so each
@@ -201,7 +201,7 @@ pub fn model_json(design: &Design, graph: &Graph, options: &[(String, String)]) 
     .to_string()
 }
 
-/// uvmcheck's component paths (UvmModel::buildComponentDag): each
+/// svlang-lint's component paths (UvmModel::buildComponentDag): each
 /// component-typed property of every component class, as `name`,
 /// `uvm_test_top.name` and `uvm_test_top.m_env.name`.
 fn component_paths(design: &Design) -> Vec<String> {
@@ -229,7 +229,7 @@ impl PushField for Json {
 
 /// Runs the Python rules at `path` on `design` and returns their findings,
 /// numbering new files in `files`. Failures are reported on stderr, as
-/// uvmcheck's (`[uvmcheck-plugins] ...`), and give what the rules that ran
+/// svlang-lint's (`[svlang-lint-plugins] ...`), and give what the rules that ran
 /// found.
 pub fn run(
     path: &str,
@@ -241,12 +241,12 @@ pub fn run(
     let graph = Graph::build(design, trees, files);
     let model = std::env::temp_dir().join(format!("dv_lint_model_{}.json", std::process::id()));
     if let Err(e) = std::fs::write(&model, model_json(design, &graph, options)) {
-        eprintln!("[uvmcheck-plugins] Error: cannot write a temporary model file: {e}");
+        eprintln!("[svlang-lint-plugins] Error: cannot write a temporary model file: {e}");
         return Vec::new();
     }
-    let python = std::env::var("UVMCHECK_PYTHON").unwrap_or_else(|_| "python3".into());
+    let python = std::env::var("SVLANG_LINT_PYTHON").unwrap_or_else(|_| "python3".into());
     let mut cmd = std::process::Command::new(&python);
-    cmd.args(["-m", "uvmcheck.plugin_runner", "--rules", path, "--model"]).arg(&model);
+    cmd.args(["-m", "svlang_lint.plugin_runner", "--rules", path, "--model"]).arg(&model);
     if let Some(sdk) = crate::project::python_sdk() {
         let mut pp = sdk.into_os_string();
         if let Some(old) = std::env::var_os("PYTHONPATH").filter(|o| !o.is_empty()) {
@@ -261,27 +261,27 @@ pub fn run(
     let out = match out {
         Ok(o) => o,
         Err(e) => {
-            eprintln!("[uvmcheck-plugins] Python rule runner failed: cannot start {python}: {e}");
+            eprintln!("[svlang-lint-plugins] Python rule runner failed: cannot start {python}: {e}");
             return Vec::new();
         }
     };
     match out.status.code() {
         Some(0) => {}
         // Some rule raised (its traceback is on stderr); the others reported.
-        Some(2) => eprintln!("[uvmcheck-plugins] Some Python rules failed; their findings are missing"),
+        Some(2) => eprintln!("[svlang-lint-plugins] Some Python rules failed; their findings are missing"),
         c => {
-            eprintln!("[uvmcheck-plugins] Python rule runner failed (exit code {})", c.unwrap_or(-1));
+            eprintln!("[svlang-lint-plugins] Python rule runner failed (exit code {})", c.unwrap_or(-1));
             return Vec::new();
         }
     }
     match parse(&String::from_utf8_lossy(&out.stdout)) {
         Ok(Json::Arr(items)) => items.iter().filter_map(|r| finding(r, files)).collect(),
         Ok(_) => {
-            eprintln!("[uvmcheck-plugins] Python rule runner printed invalid JSON (expected a list)");
+            eprintln!("[svlang-lint-plugins] Python rule runner printed invalid JSON (expected a list)");
             Vec::new()
         }
         Err(e) => {
-            eprintln!("[uvmcheck-plugins] Python rule runner printed invalid JSON ({e})");
+            eprintln!("[svlang-lint-plugins] Python rule runner printed invalid JSON ({e})");
             Vec::new()
         }
     }

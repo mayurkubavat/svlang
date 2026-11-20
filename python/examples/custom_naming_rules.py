@@ -1,9 +1,9 @@
 """
-Example Custom Python Verification Rules for UVMCheck
+Example Custom Python Verification Rules for svlang-lint
 Demonstrates how verification teams can author proprietary checks in pure Python.
 """
 
-from uvmcheck import Rule, Severity, Context, ClassInfo
+from svlang_lint import Rule, Severity, Context, ClassInfo
 
 class CompanyDriverPrefixRule(Rule):
     """Enforces that all driver components begin with the company prefix 'cdrv_'."""

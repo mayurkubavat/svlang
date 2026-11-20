@@ -1,4 +1,4 @@
-#include "uvmcheck/style/StyleEngine.h"
+#include "svlang_lint/style/StyleEngine.h"
 #include "slang/syntax/AllSyntax.h"
 #include "slang/syntax/SyntaxTree.h"
 #include "slang/syntax/SyntaxVisitor.h"
@@ -7,7 +7,7 @@
 #include <sstream>
 #include <filesystem>
 
-namespace uvmcheck::style {
+namespace svlang_lint::style {
 
 StyleEngine::StyleEngine() {}
 
@@ -248,4 +248,4 @@ void StyleEngine::run(slang::ast::Compilation& compilation,
     }
 }
 
-} // namespace uvmcheck::style
+} // namespace svlang_lint::style

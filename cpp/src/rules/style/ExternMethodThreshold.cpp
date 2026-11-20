@@ -1,10 +1,10 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
 #include "slang/syntax/SyntaxVisitor.h"
 #include "slang/syntax/SyntaxTree.h"
 #include "slang/syntax/AllSyntax.h"
 
-namespace uvmcheck::rules::style {
+namespace svlang_lint::rules::style {
 
 class ExternMethodVisitor : public slang::syntax::SyntaxVisitor<ExternMethodVisitor> {
 public:
@@ -62,7 +62,7 @@ public:
     core::Severity getDefaultSeverity() const override { return core::Severity::Warning; }
 
     void run(slang::ast::Compilation& compilation,
-             const uvmcheck::uvm::UvmModel&,
+             const svlang_lint::uvm::UvmModel&,
              core::DiagnosticEngine& diags) override {
         ExternMethodVisitor visitor(*compilation.getSourceManager(), diags, 5);
         for (const auto& tree : compilation.getSyntaxTrees()) {
@@ -71,12 +71,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::style
+} // namespace svlang_lint::rules::style
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createExternMethodThreshold() {
     return std::make_unique<style::ExternMethodThreshold>();
 }
 }
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createExternMethodThreshold)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createExternMethodThreshold)

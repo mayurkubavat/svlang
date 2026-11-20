@@ -1,10 +1,10 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
 #include "slang/syntax/SyntaxVisitor.h"
 #include "slang/syntax/SyntaxTree.h"
 #include "slang/syntax/AllSyntax.h"
 
-namespace uvmcheck::rules::style {
+namespace svlang_lint::rules::style {
 
 class BannerFormattingVisitor : public engine::SyntaxVisitor<BannerFormattingVisitor> {
 public:
@@ -105,7 +105,7 @@ public:
     core::Severity getDefaultSeverity() const override { return core::Severity::Info; }
 
     void run(slang::ast::Compilation& compilation,
-             const uvmcheck::uvm::UvmModel&,
+             const svlang_lint::uvm::UvmModel&,
              core::DiagnosticEngine& diags) override {
         BannerFormattingVisitor visitor(diags, false, true);
         for (const auto& tree : compilation.getSyntaxTrees()) {
@@ -114,9 +114,9 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::style
+} // namespace svlang_lint::rules::style
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createMethodBannerStyle() {
     return std::make_unique<style::MethodBannerStyle>();
 }
@@ -125,5 +125,5 @@ std::unique_ptr<Rule> createSectionHeaderBanner() {
 }
 }
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createMethodBannerStyle)
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createSectionHeaderBanner)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createMethodBannerStyle)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createSectionHeaderBanner)

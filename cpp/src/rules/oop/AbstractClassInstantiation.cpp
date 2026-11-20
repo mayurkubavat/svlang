@@ -1,12 +1,12 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
 #include "slang/ast/ASTVisitor.h"
 #include "slang/ast/symbols/ClassSymbols.h"
 #include "slang/ast/expressions/AssignmentExpressions.h"
 #include "slang/ast/types/AllTypes.h"
 #include "slang/diagnostics/ExpressionsDiags.h"
 
-namespace uvmcheck::rules::oop {
+namespace svlang_lint::rules::oop {
 
 class AbstractClassVisitor : public engine::AstVisitor<AbstractClassVisitor> {
 public:
@@ -71,12 +71,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::oop
+} // namespace svlang_lint::rules::oop
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createAbstractClassInstantiation() {
     return std::make_unique<oop::AbstractClassInstantiation>();
 }
-} // namespace uvmcheck::rules
+} // namespace svlang_lint::rules
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createAbstractClassInstantiation)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createAbstractClassInstantiation)

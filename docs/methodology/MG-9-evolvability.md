@@ -25,7 +25,7 @@ SV-EVO-001 scores each file as its number of commits times the summed cyclomatic
 SV-EVO-002 reports two files in different packages that changed together in at least three commits (`min_shared_commits`) and in at least half of the commits touching either (`min_degree`, in percent). Commits touching more than 30 files (`max_commit_files`), such as reformatting or licence updates, are left out. Packages that keep changing together share knowledge their imports do not show.
 
 ```
-uvmcheck --history --guideline MG-9.2 -f tb.f
+svlang-lint --history --guideline MG-9.2 -f tb.f
 ```
 
 Enforced by: `SV-EVO-001`, `SV-EVO-002`

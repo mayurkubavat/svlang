@@ -1,6 +1,6 @@
 """Rules used by python/tests/test_python_rules.py to exercise the Python rule API."""
 
-from uvmcheck import Rule, Severity
+from svlang_lint import Rule, Severity
 
 
 class OverrideOutsideTest(Rule):

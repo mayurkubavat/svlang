@@ -1,4 +1,4 @@
-#include "uvmcheck/model/Session.h"
+#include "svlang_lint/model/Session.h"
 
 #include <chrono>
 #include <cstdlib>
@@ -7,15 +7,15 @@
 
 #include "slang/ast/Compilation.h"
 #include "slang/diagnostics/DiagnosticEngine.h"
-#include "uvmcheck/engine/RuleEngine.h"
+#include "svlang_lint/engine/RuleEngine.h"
 #include "slang/driver/Driver.h"
 #include "slang/util/OS.h"
-#include "uvmcheck/compat/Overlay.h"
-#include "uvmcheck/core/ConfigManager.h"
-#include "uvmcheck/model/SlangModel.h"
-#include "uvmcheck/uvm/UvmModel.h"
+#include "svlang_lint/compat/Overlay.h"
+#include "svlang_lint/core/ConfigManager.h"
+#include "svlang_lint/model/SlangModel.h"
+#include "svlang_lint/uvm/UvmModel.h"
 
-namespace uvmcheck::model {
+namespace svlang_lint::model {
 
 struct Session::Impl {
     slang::driver::Driver driver;
@@ -45,7 +45,7 @@ std::unique_ptr<Session> Session::load(const std::vector<std::string>& args) {
         auto& d = s->impl_->driver;
         d.addStandardArgs();
         compat::VendorArgs vendor;
-        std::vector<const char*> argv{"uvmcheck-model"};
+        std::vector<const char*> argv{"svlang-lint-model"};
         for (const auto& a : args) argv.push_back(a.c_str());
         if (!d.parseCommandLine(static_cast<int>(argv.size()), argv.data())) {
             s->error_ = withDetail("invalid compile options");
@@ -97,4 +97,4 @@ std::unique_ptr<Session> Session::load(const std::vector<std::string>& args) {
     return s;
 }
 
-} // namespace uvmcheck::model
+} // namespace svlang_lint::model

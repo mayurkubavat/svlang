@@ -1,12 +1,12 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
 #include "slang/syntax/SyntaxTree.h"
 #include "slang/syntax/AllSyntax.h"
 #include "slang/text/SourceManager.h"
 #include <cctype>
 #include <filesystem>
 
-namespace uvmcheck::rules::style {
+namespace svlang_lint::rules::style {
 
 // Wraps the whole file in `ifndef/`define/`endif as one edit, so the opening and closing
 // halves can never be applied apart. Unsafe: a header meant to be included more than once
@@ -35,7 +35,7 @@ public:
     core::Severity getDefaultSeverity() const override { return core::Severity::Error; }
 
     void run(slang::ast::Compilation& compilation,
-             const uvmcheck::uvm::UvmModel&,
+             const svlang_lint::uvm::UvmModel&,
              core::DiagnosticEngine& diags) override {
         const auto* sm = compilation.getSourceManager();
         if (!sm) return;
@@ -71,12 +71,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::style
+} // namespace svlang_lint::rules::style
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createIncludeGuard() {
     return std::make_unique<style::IncludeGuard>();
 }
 }
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createIncludeGuard)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createIncludeGuard)

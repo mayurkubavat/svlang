@@ -1,6 +1,6 @@
-//! The uvmcheck options dv-lint ported last: --explain, --changed-since,
+//! The svlang-lint options dv-lint ported last: --explain, --changed-since,
 //! the waiver-hygiene reports, the result cache, --map, --init and
-//! --python-rules (cpp/tests/test_*.py check the same against uvmcheck).
+//! --python-rules (cpp/tests/test_*.py check the same against svlang-lint).
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
@@ -91,15 +91,15 @@ fn changed_since_keeps_changed_lines_and_untracked_files() {
 #[test]
 fn waiver_hygiene_reports_and_strict_exit() {
     let d = tmp("hygiene");
-    std::fs::create_dir_all(d.join(".uvmcheck")).unwrap();
+    std::fs::create_dir_all(d.join(".svlang-lint")).unwrap();
     // Line 4 is waived inline; the comment on line 2 names SV-COR-008 and waives nothing.
     std::fs::write(
         d.join("tb.sv"),
-        "module tb;\n  int a; // uvmcheck:waive SV-COR-008 -- stale\n  initial begin\n    if (a == a) $display(\"x\"); // uvmcheck:waive SV-COR-008 -- known\n  end\nendmodule : tb\n",
+        "module tb;\n  int a; // svlang-lint:waive SV-COR-008 -- stale\n  initial begin\n    if (a == a) $display(\"x\"); // svlang-lint:waive SV-COR-008 -- known\n  end\nendmodule : tb\n",
     )
     .unwrap();
     std::fs::write(
-        d.join(".uvmcheck/waivers.json"),
+        d.join(".svlang-lint/waivers.json"),
         r#"{"waivers": [{"rule": "SV-COR-001", "path": "tb.sv", "reason": "x", "owner": "dv"},
                         {"rule": "SV-NOPE-001", "reason": "never matches"}]}"#,
     )
@@ -110,7 +110,7 @@ fn waiver_hygiene_reports_and_strict_exit() {
     assert!(out.contains("Waivers: 2 written, 1 matched nothing, 0 expired, 1 without an owner"), "{out}");
     assert!(out.contains("unused:  waivers.json #2 (SV-NOPE-001)"), "{out}");
     assert!(out.contains("Waiver comments: 2 in source, 1 waive nothing"), "{out}");
-    assert!(out.contains("tb.sv:2: // uvmcheck:waive SV-COR-008 -- stale"), "{out}");
+    assert!(out.contains("tb.sv:2: // svlang-lint:waive SV-COR-008 -- stale"), "{out}");
     assert!(out.contains("Waived findings by rule: SV-COR-001 1, SV-COR-008 1"), "{out}");
     assert!(out.contains("Waived findings by owner: (inline comment) 1, dv 1"), "{out}");
     assert_eq!(o.status.code(), Some(0), "the report alone does not fail");
@@ -135,7 +135,7 @@ fn the_cache_replays_until_a_source_changes() {
     let args = ["--no-config", "--rule", "SV-COR-008", "tb.sv", "--json"];
     let first = run(&d, &[&args[..], &["a.json"]].concat());
     assert!(text(&first).contains("cache: stored 1 compilation unit"), "{}", text(&first));
-    assert!(d.join(".uvmcheck_cache/native/manifest.json").is_file());
+    assert!(d.join(".svlang_lint_cache/native/manifest.json").is_file());
     // Another report file: the same lint, served from the cache.
     let second = run(&d, &[&args[..], &["b.json"]].concat());
     assert!(text(&second).contains("served from cache"), "{}", text(&second));
@@ -154,7 +154,7 @@ fn the_cache_replays_until_a_source_changes() {
     // --no-cache neither reads nor writes; --clear-cache starts afresh.
     let fresh = run(&d, &[&args[..], &["d.json", "--no-cache"]].concat());
     assert!(!text(&fresh).contains("cache"), "{}", text(&fresh));
-    std::fs::write(d.join(".uvmcheck_cache/native/manifest.json"), "{ not json").unwrap();
+    std::fs::write(d.join(".svlang_lint_cache/native/manifest.json"), "{ not json").unwrap();
     let corrupt = run(&d, &[&args[..], &["e.json"]].concat());
     assert!(text(&corrupt).contains("cache: stored"), "a corrupt cache is a full run: {}", text(&corrupt));
     let cleared = run(&d, &[&args[..], &["f.json", "--clear-cache", "--cache-dir", "elsewhere"]].concat());
@@ -204,21 +204,21 @@ fn init_learns_naming_and_writes_config_and_baseline() {
     let o = Command::new(env!("CARGO_BIN_EXE_dv-lint"))
         .arg("--init")
         .current_dir(&d)
-        .env("UVMCHECK_PYTHON_SDK", repo().join("python"))
+        .env("SVLANG_LINT_PYTHON_SDK", repo().join("python"))
         .env_remove("UVM_HOME")
         .output()
         .unwrap();
     assert_eq!(o.status.code(), Some(0), "{}", text(&o));
-    let cfg = std::fs::read_to_string(d.join(".uvmcheck/config.py")).unwrap();
+    let cfg = std::fs::read_to_string(d.join(".svlang-lint/config.py")).unwrap();
     assert!(cfg.contains("\"tb/tb_classes.sv\"") && cfg.contains("\"tb/tb_top.sv\""), "{cfg}");
     assert!(cfg.contains("\"UvmDriver\": {\"pattern\": r\"^[A-Za-z0-9_]*(_bfm)$\""), "{cfg}");
-    assert!(d.join(".uvmcheck/baseline.json").is_file(), "{}", text(&o));
-    let base = std::fs::read_to_string(d.join(".uvmcheck/baseline.json")).unwrap();
+    assert!(d.join(".svlang-lint/baseline.json").is_file(), "{}", text(&o));
+    let base = std::fs::read_to_string(d.join(".svlang-lint/baseline.json")).unwrap();
     assert!(!base.contains("UVM-NAM-101"), "the learnt naming applies: {base}");
     // A plain run now reports nothing new.
     let o = Command::new(env!("CARGO_BIN_EXE_dv-lint"))
         .current_dir(&d)
-        .env("UVMCHECK_PYTHON_SDK", repo().join("python"))
+        .env("SVLANG_LINT_PYTHON_SDK", repo().join("python"))
         .output()
         .unwrap();
     assert!(String::from_utf8_lossy(&o.stdout).trim().is_empty(), "{}", text(&o));
@@ -235,7 +235,7 @@ fn python_rules_report_findings() {
     let d = tmp("python");
     std::fs::write(
         d.join("rules.py"),
-        "from uvmcheck.rule import Rule, Severity\n\
+        "from svlang_lint.rule import Rule, Severity\n\
          class NoDrv(Rule):\n    id = 'PY-DRV-001'\n    name = 'NoDrv'\n    default_severity = Severity.Error\n\
          \x20   def analyze(self, ctx):\n        for c in ctx.classes:\n            if c.role == 'driver':\n                self.report(ctx, f'driver {c.name} in {c.uvm_base}', at=c)\n",
     )
@@ -246,7 +246,7 @@ fn python_rules_report_findings() {
     let o = Command::new(env!("CARGO_BIN_EXE_dv-lint"))
         .args(["--no-config", "--no-cache", "--python-rules", "rules.py", "--rule", "PY-DRV-001", &tb, "-I", &inc])
         .current_dir(&d)
-        .env("UVMCHECK_PYTHON_SDK", r.join("python"))
+        .env("SVLANG_LINT_PYTHON_SDK", r.join("python"))
         .output()
         .unwrap();
     let out = String::from_utf8_lossy(&o.stdout);
@@ -255,18 +255,18 @@ fn python_rules_report_findings() {
 }
 
 #[test]
-fn the_uvmcheck_front_runs_these_options_natively() {
+fn the_svlang_lint_front_runs_these_options_natively() {
     let d = tmp("front");
     std::fs::write(d.join("tb.sv"), TB).unwrap();
-    let front = repo().join("tools/front/uvmcheck");
+    let front = repo().join("tools/front/svlang-lint");
     let go = |args: &[&str]| {
         Command::new("sh")
             .arg(&front)
             .args(args)
             .current_dir(&d)
-            .env("UVMCHECK_NATIVE", env!("CARGO_BIN_EXE_dv-lint"))
-            .env("UVMCHECK_SLANG", "/nonexistent/uvmcheck-slang")
-            .env_remove("UVMCHECK_ENGINE")
+            .env("SVLANG_LINT_NATIVE", env!("CARGO_BIN_EXE_dv-lint"))
+            .env("SVLANG_LINT_SLANG", "/nonexistent/svlang-lint-slang")
+            .env_remove("SVLANG_LINT_ENGINE")
             .output()
             .unwrap()
     };
@@ -389,11 +389,11 @@ fn a_report_to_standard_output_replaces_the_text() {
     assert!(!out.contains("[ERROR]"), "{out}");
 }
 
-/// `uvmcheck --lsp` hands the editor to the language server next to it.
+/// `svlang-lint --lsp` hands the editor to the language server next to it.
 #[test]
 fn lsp_starts_the_language_server() {
     use std::io::{Read, Write};
-    let exe = std::path::Path::new(env!("CARGO_BIN_EXE_uvmcheck"));
+    let exe = std::path::Path::new(env!("CARGO_BIN_EXE_svlang-lint"));
     // Built with the workspace; a run of this package alone may not have it.
     if !exe.with_file_name("dv-lsp").is_file() {
         return;
@@ -488,5 +488,61 @@ fn the_uvm_library_is_left_out_beside_user_code() {
     let alone = lint(&[]);
     assert_eq!(lines(&alone).len(), 1, "{alone}");
     assert!(alone.contains("uvm_object.svh:4"), "{alone}");
+    let _ = std::fs::remove_dir_all(&d);
+}
+
+#[test]
+fn native_cli_guideline_conformance_dump_globs_and_uvm_flags() {
+    let d = tmp("native-cli");
+    library_and_testbench(&d);
+
+    // --dump-config writes starter config and exits 0.
+    let dumped = d.join("out_cfg.py");
+    let o = run(&d, &["--dump-config", dumped.to_str().unwrap()]);
+    assert_eq!(o.status.code(), Some(0));
+    assert!(std::fs::read_to_string(&dumped).unwrap().contains("class Project(ProjectConfig):"));
+
+    // --exclude and --library globs work natively even under --no-config.
+    std::fs::write(d.join("skip_me.sv"), TB).unwrap();
+    let o = run(
+        &d,
+        &[
+            "--no-config",
+            "--no-cache",
+            "--rule",
+            "SV-COR-008",
+            "--exclude",
+            "skip_me.sv",
+            "skip_me.sv",
+            "tb.sv",
+            "+incdir+uvm/src",
+            "uvm/src/uvm_pkg.sv",
+        ],
+    );
+    let out = text(&o);
+    assert!(!out.contains("skip_me.sv:"), "{out}");
+    assert!(out.contains("tb.sv:"), "{out}");
+
+    // -uvmhome / -uvm / -ntb_opts uvm resolve UVM automatically without explicit +incdir+ / uvm_pkg.sv.
+    let o = Command::new(env!("CARGO_BIN_EXE_dv-lint"))
+        .current_dir(&d)
+        .env("UVM_HOME", d.join("uvm"))
+        .args([
+            "--no-config",
+            "--no-cache",
+            "--compat-profile",
+            "vcs",
+            "-ntb_opts",
+            "uvm",
+            "--rule",
+            "SV-COR-008",
+            "tb.sv",
+        ])
+        .output()
+        .unwrap();
+    let out = text(&o);
+    assert_eq!(o.status.code(), Some(1), "{out}");
+    assert!(out.contains("tb.sv:6:11"), "{out}");
+
     let _ = std::fs::remove_dir_all(&d);
 }

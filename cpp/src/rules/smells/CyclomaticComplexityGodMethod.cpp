@@ -1,13 +1,13 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
-#include "uvmcheck/core/ConfigManager.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
+#include "svlang_lint/core/ConfigManager.h"
 #include "slang/ast/ASTVisitor.h"
 #include "slang/ast/symbols/SubroutineSymbols.h"
 #include "slang/ast/statements/ConditionalStatements.h"
 #include "slang/ast/statements/LoopStatements.h"
 #include "slang/ast/expressions/OperatorExpressions.h"
 
-namespace uvmcheck::rules::smells {
+namespace svlang_lint::rules::smells {
 
 class ComplexityCounter : public slang::ast::ASTVisitor<ComplexityCounter, slang::ast::VisitFlags::AllGood> {
 public:
@@ -118,12 +118,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::smells
+} // namespace svlang_lint::rules::smells
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createCyclomaticComplexityGodMethod() {
     return std::make_unique<smells::CyclomaticComplexityGodMethod>();
 }
 }
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createCyclomaticComplexityGodMethod)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createCyclomaticComplexityGodMethod)

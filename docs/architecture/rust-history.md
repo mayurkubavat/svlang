@@ -2,7 +2,7 @@
 
 A native SystemVerilog/UVM front end in Rust and the DV tools built on it:
 lexer, preprocessor, lossless parser, semantic layer (class model,
-elaboration, compiler checks), and the linter (`dv-lint`, every uvmcheck
+elaboration, compiler checks), and the linter (`dv-lint`, every svlang-lint
 rule), builder (`dv-build`), language server (`dv-lsp`), `dv-map` and
 `dv-filelist`. Slang stays reachable behind a C ABI as the reference the
 parity gates compare against.
@@ -21,24 +21,24 @@ model and rules, N0-N6 builder phases), with what was measured then.
 ### The slang bridge (R0)
 
 ```
-tools                                                      Python: uvmcheck.model
+tools                                                      Python: svlang_lint.model
   └─ dv-model     safe, owned Rust snapshot of the design
-       └─ sv-slang   raw FFI to libuvmcheck_model (C ABI)  <- Python uses the same ABI
-            └─ uvmcheck::model  (C++ facade, cpp/include/uvmcheck/model/)
+       └─ sv-slang   raw FFI to libsvlang_lint_model (C ABI)  <- Python uses the same ABI
+            └─ svlang_lint::model  (C++ facade, cpp/include/svlang-lint/model/)
                  └─ slang
 ```
 
 The model holds every class, parameterized ones included (one entry per
 definition; `uvm_driver #(pkt)` points at `uvm_driver`).
 
-`uvmcheck::model` is also what new C++ rules read (`UvmModel::facade()`), so
+`svlang_lint::model` is also what new C++ rules read (`UvmModel::facade()`), so
 rules and Rust tools see the same data. SV-OOP-007 and UVM-SEQ-002 already run
 on it.
 
 ## Build
 
 ```sh
-cmake --preset model && cmake --build build-model   # libuvmcheck_model.so + model_capi_smoke
+cmake --preset model && cmake --build build-model   # libsvlang_lint_model.so + model_capi_smoke
 cargo test && cargo build --release                  # native only, no C++ needed
 cargo test --workspace --features slang              # + the Slang bridge and oracle paths
 cargo doc --workspace --no-deps --open               # API docs of every crate
@@ -46,7 +46,7 @@ cargo doc --workspace --no-deps --open               # API docs of every crate
 
 The `model` preset is a separate build: it compiles slang position independent
 and without mimalloc, which a shared library needs, while the default preset
-keeps the linter CLI as it was. `UVMCHECK_BUILD_DIR` points the Rust build at
+keeps the linter CLI as it was. `SVLANG_LINT_BUILD_DIR` points the Rust build at
 another directory.
 
 ## dv-map
@@ -67,7 +67,7 @@ Slang): document outline, workspace symbols, go to definition / declaration /
 type definition, references, highlights, hover (declaration plus its doc
 comment) and completion (scope names with inherited class members, `obj.` and
 `Class::`/`pkg::` members, `` ` `` macros, `$` system tasks, `type_id::`).
-Lint diagnostics and quick fixes stay with `uvmcheck --lsp`; the VS Code
+Lint diagnostics and quick fixes stay with `svlang-lint --lsp`; the VS Code
 extension (editors/vscode) runs both.
 
 ```sh
@@ -87,7 +87,7 @@ the workspace; references are textual matches of the name.
 
 ```sh
 target/release/dv-filelist -f top.f                # summary + every problem as file:line
-target/release/dv-filelist --args -f top.f > flat.f  # normalized, flat list uvmcheck reads
+target/release/dv-filelist --args -f top.f > flat.f  # normalized, flat list svlang-lint reads
 target/release/dv-filelist --json --dialect xcelium -f top.f
 target/release/dv-filelist --load -f top.f          # also compile it through dv-model
 ```
@@ -101,7 +101,7 @@ options (`-l run.log`, `+acc`) as ignored. Exit status 1 means problems found.
 ## Python
 
 ```python
-from uvmcheck.model import Design      # python/uvmcheck/model.py, standard library only
+from svlang_lint.model import Design      # python/svlang_lint/model.py, standard library only
 d = Design.load(["-f", "files.f"])
 ```
 
@@ -143,7 +143,7 @@ cargo run --release -p sv-preproc --example ppdump -- +incdir+DIR... FILE
 ```
 
 Parity with Slang is checked token for token by `tools/gates/pp_parity.py`
-against the `uvmcheck_pp_dump` reference tool. Measured 2026-11-03:
+against the `svlang_pp_dump` reference tool. Measured 2026-11-03:
 uvm-core's `uvm_pkg.sv` (278,335 tokens) is identical, and so are all 949
 sv-tests files that are meant to pass (79 skipped as should-fail).
 
@@ -168,7 +168,7 @@ cargo run --release -p sv-syntax --example outline -- --check +incdir+DIR FILE
 
 `tools/gates/cst_parity.py` compares the outline (design units, classes,
 functions, tasks, typedefs, constraints, covergroups, in order) with
-Slang's parser via `uvmcheck_cst_outline`, and checks the round trip.
+Slang's parser via `svlang_cst_outline`, and checks the round trip.
 Measured on slice 1: uvm-core's `uvm_pkg.sv` (168 files, 5,402 entries)
 identical with no errors in about 100 ms including preprocessing; all 849
 sv-tests files Slang parses cleanly identical; all 772 of this repo's test
@@ -181,7 +181,7 @@ and declarations (enums, structs, parameters, instantiations, gates,
 non-ANSI ports) and statements built on them. `begin_keywords` is
 honored by the preprocessor. `tools/gates/cst_parity.py --exprs` compares every
 top-level operator expression in prefix form, `(+ a (* b c))`, with
-Slang's (`uvmcheck_cst_exprs`): uvm-core (8,849 expressions), all 849
+Slang's (`svlang_cst_exprs`): uvm-core (8,849 expressions), all 849
 clean sv-tests files and all 772 clean repo test inputs are identical,
 with no parse errors; uvm_pkg.sv preprocesses and parses in about 120 ms.
 Constraint bodies, covergroups, assertions, timing controls and
@@ -320,19 +320,19 @@ packages, `$unit` and nested classes, and so does sv-sema.
 The C++ rules that read only the model facade (`UvmModel::facade()`), ported
 line for line with their messages verbatim. `dv-lint` runs them on a design
 built natively by sv-sema, or through Slang with `--slang`, and prints findings
-in uvmcheck's text form:
+in svlang-lint's text form:
 
 ```
 cargo build --release -p dv-lint                     # add --features slang for --slang
 target/release/dv-lint [--slang] [--rule ID]... [--list] <compile options>
 ```
 
-As in uvmcheck, a finding on code from a macro is reported at the line of the
+As in svlang-lint, a finding on code from a macro is reported at the line of the
 outermost expansion with column 0, and nothing is reported in the test
 `uvm_mock.svh`. For that, `Loc` carries the expansion site (`expansion` in
 Rust, `exp_file`/`exp_line` in the C ABI, now version 6).
 
-`tools/gates/lint_parity.py` runs `uvmcheck --preset all --experimental --json`,
+`tools/gates/lint_parity.py` runs `svlang-lint --preset all --experimental --json`,
 keeps the findings of the 27 rules, and compares them with dv-lint's as
 multisets of file name, line, column, rule and message:
 
@@ -410,7 +410,7 @@ order. Each builder phase (scopes for every design unit, types, constants,
 elaboration, type checking) adds its checks here.
 
 `tools/gates/ieee_gate.py SV_TESTS` runs every sv-tests file through dv-build and
-through uvmcheck (Slang) and reports per IEEE 1800 clause how many legal
+through svlang-lint (Slang) and reports per IEEE 1800 clause how many legal
 tests each accepts and how many `should_fail` tests each rejects; `--gaps`
 lists the ones only Slang rejects. Set `UVM_SRC` so UVM tests compile
 `uvm_pkg.sv` first, as the sv-tests runner does. Baseline 2026-11-05: legal
@@ -429,7 +429,7 @@ genvars, sequences, properties, lets, net types, specparams, instances,
 `bind` instances in their target). Generate and statement blocks are
 elaboration's (N4). `dv-build --symbols` prints it as sorted
 `<scope path> <kind> <name>` lines, the form of the Slang reference
-`build/uvmcheck_sym_dump` (tools/oracles/sym_dump.cpp, which default-instantiates
+`build/svlang_sym_dump` (tools/oracles/sym_dump.cpp, which default-instantiates
 every definition). `tools/gates/sym_gate.py SV_TESTS` and
 `tools/gates/sym_gate.py --repo UVM_SRC` compare the two: 949/949 legal sv-tests
 and 783/783 repo files identical.
@@ -451,7 +451,7 @@ type engine (types.rs), which now also has scopes for modules, interfaces
 and programs (`Builder::designs`, header imports, `type` parameters in
 bodies). Parameters declared without a type take their value's; nets of a
 user net type take its data type. `dv-build --types` prints the dump with
-` : <type>`; `build/uvmcheck_sym_dump --types` is the reference and
+` : <type>`; `build/svlang_sym_dump --types` is the reference and
 `tools/gates/sym_gate.py ... --types` compares them: 943/949 legal sv-tests and
 779/783 repo files identical. The rest need `type(expr)`, constant
 functions or replications (N3), x/z enum values, and `weak_reference`.
@@ -482,7 +482,7 @@ undefined parameters in typedef ranges.
 
 `dv-build --values` prints the value of every parameter, localparam,
 specparam and enum value the way slang prints its `ConstantValue`
-(`uvmcheck_sym_dump --values` is the reference; `tools/gates/sym_gate.py
+(`svlang_sym_dump --values` is the reference; `tools/gates/sym_gate.py
 --values` compares them). Besides expressions, `sv-sema::consteval` runs
 constant functions (13.4.3) on a small interpreter (declarations,
 assignments, `if`, blocks, `for`, `while`, `repeat`, `return`), and
@@ -495,7 +495,7 @@ sv-tests 949/949, repo 783/783.
 ### Phase N4: elaboration
 
 `dv-build --hier` prints the elaborated design the way
-`uvmcheck_sym_dump --hier` prints Slang's: from each top module and program
+`svlang_sym_dump --hier` prints Slang's: from each top module and program
 down, every instance (instance arrays expanded), every generate block that
 is taken (loops unrolled, `if` and `case` decided, unnamed blocks named
 `genblk<n>`, a directly nested `if` kept in its construct) and every value

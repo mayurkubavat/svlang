@@ -7,15 +7,16 @@ use std::collections::HashMap;
 
 use std::path::{Path, PathBuf};
 
-use std::sync::atomic::{AtomicBool, Ordering};
-
 use std::sync::{Arc, Mutex, OnceLock};
 
-pub(crate) static HISTORY: AtomicBool = AtomicBool::new(false);
-
-/// Turns on the git-history rules (uvmcheck's `--history`).
+/// Turns on the git-history rules (svlang-lint's `--history`) in the process session.
 pub fn set_history(on: bool) {
-    HISTORY.store(on, Ordering::Relaxed);
+    crate::session::change_process(|s| s.history = on);
+}
+
+/// True when `--history` is active in the current session.
+pub(crate) fn enabled() -> bool {
+    crate::session::with(|s| s.history)
 }
 
 /// The commits of a repository, newest first.
@@ -93,7 +94,7 @@ pub(crate) fn normalize(p: &Path) -> String {
 
 /// The log of the repository holding `path` (canonical), if any.
 pub(crate) fn log_for(path: &str, max: usize) -> Option<Arc<Log>> {
-    if !HISTORY.load(Ordering::Relaxed) {
+    if !crate::session::with(|s| s.history) {
         return None;
     }
     let dir = Path::new(path).parent()?.to_string_lossy().into_owned();

@@ -1,12 +1,12 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
-#include "uvmcheck/rules/SweSupport.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
+#include "svlang_lint/rules/SweSupport.h"
 #include "slang/ast/statements/ConditionalStatements.h"
 #include "slang/ast/statements/MiscStatements.h"
 
 #include <unordered_set>
 
-namespace uvmcheck::rules::correctness {
+namespace svlang_lint::rules::correctness {
 
 using namespace slang::ast;
 
@@ -120,12 +120,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::correctness
+} // namespace svlang_lint::rules::correctness
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createIdenticalBranches() {
     return std::make_unique<correctness::IdenticalBranches>();
 }
 }
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createIdenticalBranches)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createIdenticalBranches)

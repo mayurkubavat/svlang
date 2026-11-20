@@ -1,10 +1,10 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
 #include "slang/syntax/SyntaxVisitor.h"
 #include "slang/syntax/AllSyntax.h"
 #include "slang/syntax/SyntaxTree.h"
 
-namespace uvmcheck::rules::dpi {
+namespace svlang_lint::rules::dpi {
 
 class DpiTypeVisitor : public engine::SyntaxVisitor<DpiTypeVisitor> {
 public:
@@ -55,12 +55,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::dpi
+} // namespace svlang_lint::rules::dpi
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createDpiTypeWidthAlignment() {
     return std::make_unique<dpi::DpiTypeWidthAlignment>();
 }
 }
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createDpiTypeWidthAlignment)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createDpiTypeWidthAlignment)

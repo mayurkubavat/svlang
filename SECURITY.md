@@ -17,16 +17,16 @@ fix or a plan within 30 days.
 
 ## Scope
 
-UVMCheck reads untrusted SystemVerilog sources, file lists and project
+svlang-lint reads untrusted SystemVerilog sources, file lists and project
 configuration. In scope:
 
 - crashes, hangs or unbounded memory use on crafted input (`dv-lint`,
-  `dv-lsp`, `uvmcheck`);
+  `dv-lsp`, `svlang-lint`);
 - reading or writing files outside the paths a run was given, other than the
   report and cache paths it was told to write;
 - the language server or VS Code extension running commands it was not
   configured to run.
 
-Out of scope: `.uvmcheck/config.py` and Python rule plugins are code by
+Out of scope: `.svlang-lint/config.py` and Python rule plugins are code by
 design and run with the user's privileges, as a build script would. Only
 lint projects whose configuration you trust.

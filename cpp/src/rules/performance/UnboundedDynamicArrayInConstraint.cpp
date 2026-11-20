@@ -1,12 +1,12 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
 #include "slang/syntax/AllSyntax.h"
 #include "slang/syntax/SyntaxTree.h"
 #include "slang/syntax/SyntaxVisitor.h"
 #include <string>
 #include <algorithm>
 
-namespace uvmcheck::rules::performance {
+namespace svlang_lint::rules::performance {
 
 class ArraySizeConstraintVisitor : public engine::SyntaxVisitor<ArraySizeConstraintVisitor> {
 public:
@@ -71,12 +71,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::performance
+} // namespace svlang_lint::rules::performance
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createUnboundedDynamicArrayInConstraint() {
     return std::make_unique<performance::UnboundedDynamicArrayInConstraint>();
 }
-} // namespace uvmcheck::rules
+} // namespace svlang_lint::rules
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createUnboundedDynamicArrayInConstraint)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createUnboundedDynamicArrayInConstraint)

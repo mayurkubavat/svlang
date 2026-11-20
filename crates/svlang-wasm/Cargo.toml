@@ -13,4 +13,4 @@ publish = false
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-svlang = { version = "0.1.1", path = "../svlang" }
+svlang = { version = "0.2.0", path = "../svlang" }

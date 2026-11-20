@@ -1,9 +1,9 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
-#include "uvmcheck/rules/SweSupport.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
+#include "svlang_lint/rules/SweSupport.h"
 #include "slang/ast/expressions/AssignmentExpressions.h"
 
-namespace uvmcheck::rules::correctness {
+namespace svlang_lint::rules::correctness {
 
 using namespace slang::ast;
 
@@ -58,12 +58,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::correctness
+} // namespace svlang_lint::rules::correctness
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createSelfAssignment() {
     return std::make_unique<correctness::SelfAssignment>();
 }
 }
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createSelfAssignment)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createSelfAssignment)

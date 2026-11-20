@@ -1,10 +1,10 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
 #include "slang/syntax/SyntaxTree.h"
 #include "slang/text/SourceManager.h"
-#include "uvmcheck/core/ConfigManager.h"
+#include "svlang_lint/core/ConfigManager.h"
 
-namespace uvmcheck::rules::style {
+namespace svlang_lint::rules::style {
 
 class MaxLineLength : public Rule {
 public:
@@ -17,7 +17,7 @@ public:
     core::Severity getDefaultSeverity() const override { return core::Severity::Info; }
 
     void run(slang::ast::Compilation& compilation,
-             const uvmcheck::uvm::UvmModel& /*uvmModel*/,
+             const svlang_lint::uvm::UvmModel& /*uvmModel*/,
              core::DiagnosticEngine& diags) override {
         const auto& cfg = core::ConfigManager::instance().getProjectConfig();
         const size_t kMaxColumns = static_cast<size_t>(
@@ -63,12 +63,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::style
+} // namespace svlang_lint::rules::style
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createMaxLineLength() {
     return std::make_unique<style::MaxLineLength>();
 }
 }
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createMaxLineLength)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createMaxLineLength)

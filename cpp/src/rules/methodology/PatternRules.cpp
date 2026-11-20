@@ -2,8 +2,8 @@
 // UVM-PAT-001, RAL-ADP-001, UVM-REP-007 and UVM-REP-008.
 
 #include "MethodologySupport.h"
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
 
 #include "slang/ast/ASTVisitor.h"
 #include "slang/ast/expressions/AssignmentExpressions.h"
@@ -14,7 +14,7 @@
 
 #include <cctype>
 
-namespace uvmcheck::rules::methodology {
+namespace svlang_lint::rules::methodology {
 
 using namespace slang::ast;
 
@@ -337,9 +337,9 @@ private:
     }
 };
 
-} // namespace uvmcheck::rules::methodology
+} // namespace svlang_lint::rules::methodology
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createCallbackNotRegistered() { return std::make_unique<methodology::CallbackNotRegistered>(); }
 std::unique_ptr<Rule> createIncompleteRegAdapter() { return std::make_unique<methodology::IncompleteRegAdapter>(); }
 std::unique_ptr<Rule> createCheckFailureAsWarning() { return std::make_unique<methodology::CheckFailureAsWarning>(); }
@@ -347,8 +347,8 @@ std::unique_ptr<Rule> createFatalInCheckerPath() { return std::make_unique<metho
 std::unique_ptr<Rule> createHandRolledSingleton() { return std::make_unique<methodology::HandRolledSingleton>(); }
 }
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createCallbackNotRegistered)
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createIncompleteRegAdapter)
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createCheckFailureAsWarning)
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createFatalInCheckerPath)
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createHandRolledSingleton)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createCallbackNotRegistered)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createIncompleteRegAdapter)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createCheckFailureAsWarning)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createFatalInCheckerPath)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createHandRolledSingleton)

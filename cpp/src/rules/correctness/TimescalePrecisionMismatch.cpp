@@ -1,10 +1,10 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
 #include "slang/syntax/SyntaxTree.h"
 #include <string>
 #include <string_view>
 
-namespace uvmcheck::rules::correctness {
+namespace svlang_lint::rules::correctness {
 
 static int parseTimeUnitExponent(std::string_view s) {
     while (!s.empty() && (s.front() == ' ' || s.front() == '\t')) s.remove_prefix(1);
@@ -41,7 +41,7 @@ public:
     core::Severity getDefaultSeverity() const override { return core::Severity::Error; }
 
     void run(slang::ast::Compilation& compilation,
-             const uvmcheck::uvm::UvmModel& /*uvmModel*/,
+             const svlang_lint::uvm::UvmModel& /*uvmModel*/,
              core::DiagnosticEngine& diags) override {
         const auto* sm = compilation.getSourceManager();
         if (!sm) return;
@@ -94,12 +94,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::correctness
+} // namespace svlang_lint::rules::correctness
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createTimescalePrecisionMismatch() {
     return std::make_unique<correctness::TimescalePrecisionMismatch>();
 }
 }
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createTimescalePrecisionMismatch)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createTimescalePrecisionMismatch)

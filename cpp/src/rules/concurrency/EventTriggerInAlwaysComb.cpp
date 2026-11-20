@@ -1,11 +1,11 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
 #include "slang/ast/ASTVisitor.h"
 #include "slang/ast/symbols/BlockSymbols.h"
 #include "slang/ast/statements/MiscStatements.h"
 #include <string>
 
-namespace uvmcheck::rules::concurrency {
+namespace svlang_lint::rules::concurrency {
 
 class EventTriggerVisitor : public engine::AstVisitor<EventTriggerVisitor> {
 public:
@@ -56,12 +56,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::concurrency
+} // namespace svlang_lint::rules::concurrency
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createEventTriggerInAlwaysComb() {
     return std::make_unique<concurrency::EventTriggerInAlwaysComb>();
 }
-} // namespace uvmcheck::rules
+} // namespace svlang_lint::rules
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createEventTriggerInAlwaysComb)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createEventTriggerInAlwaysComb)

@@ -1,11 +1,11 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
 #include "slang/ast/ASTVisitor.h"
 #include "slang/ast/expressions/CallExpression.h"
 #include "slang/ast/expressions/ConversionExpression.h"
 #include "slang/ast/statements/MiscStatements.h"
 
-namespace uvmcheck::rules::concurrency {
+namespace svlang_lint::rules::concurrency {
 
 class TryPutIgnoredVisitor : public slang::ast::ASTVisitor<TryPutIgnoredVisitor, slang::ast::VisitFlags::AllGood> {
 public:
@@ -59,19 +59,19 @@ public:
     core::Severity getDefaultSeverity() const override { return core::Severity::Warning; }
 
     void run(slang::ast::Compilation& compilation,
-             const uvmcheck::uvm::UvmModel& /*uvmModel*/,
+             const svlang_lint::uvm::UvmModel& /*uvmModel*/,
              core::DiagnosticEngine& diags) override {
         TryPutIgnoredVisitor visitor(diags);
         compilation.getRoot().visit(visitor);
     }
 };
 
-} // namespace uvmcheck::rules::concurrency
+} // namespace svlang_lint::rules::concurrency
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createTryPutIgnoredReturn() {
     return std::make_unique<concurrency::TryPutIgnoredReturn>();
 }
 }
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createTryPutIgnoredReturn)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createTryPutIgnoredReturn)

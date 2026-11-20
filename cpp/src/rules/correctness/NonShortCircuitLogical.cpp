@@ -1,11 +1,11 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
 #include "slang/syntax/AllSyntax.h"
 #include "slang/syntax/SyntaxTree.h"
 #include "slang/syntax/SyntaxVisitor.h"
 #include <string>
 
-namespace uvmcheck::rules::correctness {
+namespace svlang_lint::rules::correctness {
 
 class NonShortCircuitVisitor : public engine::SyntaxVisitor<NonShortCircuitVisitor> {
 public:
@@ -126,12 +126,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::correctness
+} // namespace svlang_lint::rules::correctness
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createNonShortCircuitLogical() {
     return std::make_unique<correctness::NonShortCircuitLogical>();
 }
 }
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createNonShortCircuitLogical)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createNonShortCircuitLogical)

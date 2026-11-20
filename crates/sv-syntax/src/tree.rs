@@ -89,6 +89,12 @@ pub struct Tree {
     pub pp_diagnostics: Vec<sv_preprocessor::Diagnostic>,
     /// Macros used in the source text, in order (see `sv_preprocessor::Output`).
     pub macro_uses: Vec<sv_preprocessor::MacroUse>,
+    /// Macro definitions (`define) encountered in source text, in order.
+    pub macro_defs: Vec<sv_preprocessor::MacroDef>,
+    /// Resolved `include directive edges, in order.
+    pub includes: Vec<sv_preprocessor::IncludeEdge>,
+    /// Conditional compilation directive events (`ifdef, `ifndef, `elsif, `else, `endif).
+    pub conditionals: Vec<sv_preprocessor::CondEvent>,
     /// Conditional branches not taken: (file, start, end) byte ranges.
     pub skipped: Vec<(u32, u32, u32)>,
     /// `timescale units by token index (see `sv_preprocessor::Output`).

@@ -21,7 +21,7 @@ REPO = Path(__file__).resolve().parents[2]
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--binary", default=str(REPO / "build" / "uvmcheck"))
+    ap.add_argument("--binary", default=str(REPO / "build" / "svlang-lint"))
     args = ap.parse_args()
     binary = str(Path(args.binary).resolve())
     failures = []

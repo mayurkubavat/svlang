@@ -1,14 +1,14 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
 #include "slang/syntax/AllSyntax.h"
 #include "slang/syntax/SyntaxTree.h"
 #include "slang/syntax/SyntaxVisitor.h"
 
-namespace uvmcheck::rules::uvm {
+namespace svlang_lint::rules::uvm {
 
 class SuperBuildPhaseOrderVisitor : public slang::syntax::SyntaxVisitor<SuperBuildPhaseOrderVisitor> {
 public:
-    explicit SuperBuildPhaseOrderVisitor(core::DiagnosticEngine& diags, const uvmcheck::uvm::UvmModel& uvmModel)
+    explicit SuperBuildPhaseOrderVisitor(core::DiagnosticEngine& diags, const svlang_lint::uvm::UvmModel& uvmModel)
         : diags(diags), uvmModel(uvmModel) {}
 
     void handle(const slang::syntax::ClassDeclarationSyntax& clsNode) {
@@ -127,7 +127,7 @@ private:
     }
 
     core::DiagnosticEngine& diags;
-    const uvmcheck::uvm::UvmModel& uvmModel;
+    const svlang_lint::uvm::UvmModel& uvmModel;
     std::string currentClass;
     bool currentIsComp = false;
 };
@@ -144,7 +144,7 @@ public:
     core::Severity getDefaultSeverity() const override { return core::Severity::Warning; }
 
     void run(slang::ast::Compilation& compilation,
-             const uvmcheck::uvm::UvmModel& uvmModel,
+             const svlang_lint::uvm::UvmModel& uvmModel,
              core::DiagnosticEngine& diags) override {
         SuperBuildPhaseOrderVisitor visitor(diags, uvmModel);
         for (const auto& tree : compilation.getSyntaxTrees()) {
@@ -153,12 +153,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::uvm
+} // namespace svlang_lint::rules::uvm
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createSuperBuildPhaseOrder() {
     return std::make_unique<uvm::SuperBuildPhaseOrder>();
 }
 }
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createSuperBuildPhaseOrder)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createSuperBuildPhaseOrder)

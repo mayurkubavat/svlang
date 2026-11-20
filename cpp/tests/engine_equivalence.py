@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-UVMCheck Engine Equivalence Check
+svlang-lint Engine Equivalence Check
 
 Runs every input with all rules enabled under the reference engine
 (--engine isolated: one walk per rule, sequential) and under the default
@@ -69,7 +69,7 @@ def check(binary, args, thread_counts):
 def main():
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--binary", default="build/uvmcheck")
+    parser.add_argument("--binary", default="build/svlang-lint")
     parser.add_argument("--rules-dir", default="testdata/rules")
     parser.add_argument("--common-dir", default="testdata/common")
     parser.add_argument("--threads", default="1,4",

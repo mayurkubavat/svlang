@@ -2,7 +2,7 @@
 """Symbol gate for builder phase N1: the scopes dv-build builds against Slang's.
 
 For every legal sv-tests file (or each file given with --files), runs
-`dv-build --symbols` and build/uvmcheck_sym_dump on the same options and
+`dv-build --symbols` and build/svlang_sym_dump on the same options and
 compares the sorted `<scope path> <kind> <name>` lines. Prints per clause
 how many files match, then the most common differing lines (--show=N
 prints the first N differing files in full). --types also compares each
@@ -10,7 +10,7 @@ value's and typedef's type (builder phase N2); --values each parameter's,
 specparam's and enum value's value (phase N3). --hier compares the
 elaborated design instead (`dv-build --hier`, phase N4).
 
-    cmake --build build --target uvmcheck_sym_dump && cargo build --release -p dv-build
+    cmake --build build --target svlang_sym_dump && cargo build --release -p dv-build
     UVM_SRC=uvm-core/src tools/gates/sym_gate.py ~/sv-tests [--types] [--values] [--hier] [--show=N] [chapter-8]
     tools/gates/sym_gate.py --repo UVM_SRC [--show=N]      # each repo test and example alone
     tools/gates/sym_gate.py --files [options] FILE...      # one design
@@ -24,13 +24,13 @@ SPECS = '--specs' in sys.argv
 
 
 def _default_symdump():
-    order = (('build-dev', 'uvmcheck_sym_dump'), ('build', 'uvmcheck_sym_dump')) if SPECS else (
-        ('build', 'uvmcheck_sym_dump'), ('build-dev', 'uvmcheck_sym_dump'))
+    order = (('build-dev', 'svlang_sym_dump'), ('build', 'svlang_sym_dump')) if SPECS else (
+        ('build', 'svlang_sym_dump'), ('build-dev', 'svlang_sym_dump'))
     for rel in order:
         p = os.path.join(REPO, *rel)
         if os.path.isfile(p) and os.access(p, os.X_OK):
             return p
-    return os.path.join(REPO, 'build', 'uvmcheck_sym_dump')
+    return os.path.join(REPO, 'build', 'svlang_sym_dump')
 
 
 SYMDUMP = os.environ.get('SYM_DUMP', _default_symdump())

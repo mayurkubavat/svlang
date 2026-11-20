@@ -1,10 +1,10 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
 #include "slang/ast/ASTVisitor.h"
 #include "slang/ast/statements/ConditionalStatements.h"
 #include "slang/ast/statements/LoopStatements.h"
 
-namespace uvmcheck::rules::deadcode {
+namespace svlang_lint::rules::deadcode {
 
 class EmptyConditionalVisitor : public engine::AstVisitor<EmptyConditionalVisitor> {
 public:
@@ -63,12 +63,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::deadcode
+} // namespace svlang_lint::rules::deadcode
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createAccidentalEmptyConditional() {
     return std::make_unique<deadcode::AccidentalEmptyConditional>();
 }
 }
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createAccidentalEmptyConditional)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createAccidentalEmptyConditional)

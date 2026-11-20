@@ -5,6 +5,7 @@ use crate::profile::*;
 use crate::{Check, Rule, Severity};
 
 mod defparam_deprecation;
+mod deprecated_starting_phase;
 mod legacy_always_block;
 mod legacy_reg_wire_in_testbench;
 mod non_ansi_port_list;
@@ -43,6 +44,8 @@ pub(crate) fn rules() -> Vec<Rule> {
         Rule { id: "UVM-DEP-003", name: "UvmDeprecatedPrinterKnobs", category: "Deprecated", severity: Severity::Warning, profiles: METHODOLOGY, guidelines: &["MG-6.3"], experimental: false, native: false, about: "Disallow direct access to 'printer.knobs' (IEEE 1800.2 § 5.5.2). Use accessor methods on uvm_printer.", check: Check::Syntax(uvm_deprecated_printer_knobs::deprecated_printer_knobs),
         },
         Rule { id: "UVM-DEP-004", name: "UvmDeprecatedTestDone", category: "Deprecated", severity: Severity::Error, profiles: METHODOLOGY, guidelines: &["MG-6.3"], experimental: false, native: false, about: "Disallow obsolete OVM 'uvm_test_done' objection handle (IEEE 1800.2 Annex H). Attach objections to the active phase parameter.", check: Check::Syntax(uvm_deprecated_test_done::deprecated_test_done),
+        },
+        Rule { id: "UVM-DEP-005", name: "DeprecatedStartingPhase", category: "Deprecated", severity: Severity::Warning, profiles: METHODOLOGY, guidelines: &[], experimental: false, native: true, about: "Flags direct reads and writes of the deprecated 'starting_phase' field in UVM sequences (IEEE 1800.2-2020 §14.2.2) in favor of get_starting_phase() and set_starting_phase().", check: Check::Syntax(deprecated_starting_phase::deprecated_starting_phase),
         },
     ]
 }

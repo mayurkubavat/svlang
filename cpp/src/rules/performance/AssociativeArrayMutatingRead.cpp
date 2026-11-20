@@ -1,5 +1,5 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
 #include "slang/syntax/AllSyntax.h"
 #include "slang/syntax/SyntaxTree.h"
 #include "slang/syntax/SyntaxVisitor.h"
@@ -7,7 +7,7 @@
 #include <cctype>
 #include <unordered_set>
 
-namespace uvmcheck::rules::performance {
+namespace svlang_lint::rules::performance {
 
 class AssocDeclCollector : public slang::syntax::SyntaxVisitor<AssocDeclCollector> {
 public:
@@ -113,7 +113,7 @@ public:
     core::Severity getDefaultSeverity() const override { return core::Severity::Warning; }
 
     void run(slang::ast::Compilation& compilation,
-             const uvmcheck::uvm::UvmModel& /*uvmModel*/,
+             const svlang_lint::uvm::UvmModel& /*uvmModel*/,
              core::DiagnosticEngine& diags) override {
         AssocDeclCollector collector;
         for (const auto& tree : compilation.getSyntaxTrees()) {
@@ -127,12 +127,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::performance
+} // namespace svlang_lint::rules::performance
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createAssociativeArrayMutatingRead() {
     return std::make_unique<performance::AssociativeArrayMutatingRead>();
 }
 }
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createAssociativeArrayMutatingRead)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createAssociativeArrayMutatingRead)

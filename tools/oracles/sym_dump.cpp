@@ -19,7 +19,7 @@
 //     <path> generate <name>              (instantiated blocks only)
 //     <path> parameter <name> = <value>   (value parameters)
 //
-//   uvmcheck_sym_dump [--types] [--values] [--hier] [slang options: +incdir+DIR +define+X -f FILE ...] FILE...
+//   svlang_sym_dump [--types] [--values] [--hier] [slang options: +incdir+DIR +define+X -f FILE ...] FILE...
 #include <algorithm>
 #include <cstdio>
 #include <string>

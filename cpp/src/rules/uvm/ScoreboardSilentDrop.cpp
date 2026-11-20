@@ -1,12 +1,12 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
 #include "slang/ast/ASTVisitor.h"
 #include "slang/ast/statements/ConditionalStatements.h"
 #include "slang/ast/symbols/ClassSymbols.h"
 #include "slang/ast/symbols/SubroutineSymbols.h"
 #include "slang/syntax/AllSyntax.h"
 
-namespace uvmcheck::rules::uvm {
+namespace svlang_lint::rules::uvm {
 
 class SilentDropVisitor : public slang::ast::ASTVisitor<SilentDropVisitor, slang::ast::VisitFlags::AllGood> {
 public:
@@ -73,7 +73,7 @@ public:
     core::Severity getDefaultSeverity() const override { return core::Severity::Error; }
 
     void run(slang::ast::Compilation&,
-             const uvmcheck::uvm::UvmModel& uvmModel,
+             const svlang_lint::uvm::UvmModel& uvmModel,
              core::DiagnosticEngine& diags) override {
         for (const auto* cls : uvmModel.getAllClasses()) {
             if (!cls) continue;
@@ -104,12 +104,12 @@ private:
     }
 };
 
-} // namespace uvmcheck::rules::uvm
+} // namespace svlang_lint::rules::uvm
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createScoreboardSilentDrop() {
     return std::make_unique<uvm::ScoreboardSilentDrop>();
 }
 }
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createScoreboardSilentDrop)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createScoreboardSilentDrop)

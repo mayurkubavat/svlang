@@ -1,6 +1,6 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
-#include "uvmcheck/rules/SweSupport.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
+#include "svlang_lint/rules/SweSupport.h"
 #include "slang/ast/ASTVisitor.h"
 #include "slang/ast/TimingControl.h"
 #include "slang/ast/expressions/MiscExpressions.h"
@@ -11,7 +11,7 @@
 #include <optional>
 #include <string>
 
-namespace uvmcheck::rules::concurrency {
+namespace svlang_lint::rules::concurrency {
 
 using namespace slang::ast;
 
@@ -202,16 +202,16 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::concurrency
+} // namespace svlang_lint::rules::concurrency
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createDisableNamedBlockInClass() {
     return std::make_unique<concurrency::DisableNamedBlockInClass>();
 }
 std::unique_ptr<Rule> createUnguardedBlockingWait() {
     return std::make_unique<concurrency::UnguardedBlockingWait>();
 }
-} // namespace uvmcheck::rules
+} // namespace svlang_lint::rules
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createDisableNamedBlockInClass)
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createUnguardedBlockingWait)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createDisableNamedBlockInClass)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createUnguardedBlockingWait)

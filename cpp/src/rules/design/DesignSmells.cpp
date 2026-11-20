@@ -1,6 +1,6 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
-#include "uvmcheck/rules/SweSupport.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
+#include "svlang_lint/rules/SweSupport.h"
 #include "slang/ast/ASTVisitor.h"
 #include "slang/ast/Constraints.h"
 #include "slang/ast/TimingControl.h"
@@ -16,7 +16,7 @@
 #include <string>
 #include <vector>
 
-namespace uvmcheck::rules::design {
+namespace svlang_lint::rules::design {
 
 using namespace slang::ast;
 
@@ -350,9 +350,9 @@ private:
     };
 };
 
-} // namespace uvmcheck::rules::design
+} // namespace svlang_lint::rules::design
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createPrimitiveObsession() {
     return std::make_unique<design::PrimitiveObsession>();
 }
@@ -368,10 +368,10 @@ std::unique_ptr<Rule> createDataClumps() {
 std::unique_ptr<Rule> createProceduralTimeoutInMonitor() {
     return std::make_unique<design::ProceduralTimeoutInMonitor>();
 }
-} // namespace uvmcheck::rules
+} // namespace svlang_lint::rules
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createPrimitiveObsession)
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createFatalStubOverride)
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createNeverSetClassParameter)
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createDataClumps)
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createProceduralTimeoutInMonitor)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createPrimitiveObsession)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createFatalStubOverride)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createNeverSetClassParameter)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createDataClumps)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createProceduralTimeoutInMonitor)

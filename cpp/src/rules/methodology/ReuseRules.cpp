@@ -1,8 +1,8 @@
 // Methodology guide chapter MG-4, reusable verification components: UVM-RUS-001 to UVM-RUS-006.
 
 #include "MethodologySupport.h"
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
 
 #include "slang/ast/ASTVisitor.h"
 #include "slang/ast/expressions/LiteralExpressions.h"
@@ -13,7 +13,7 @@
 #include <map>
 #include <set>
 
-namespace uvmcheck::rules::methodology {
+namespace svlang_lint::rules::methodology {
 
 using namespace slang::ast;
 
@@ -353,9 +353,9 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::methodology
+} // namespace svlang_lint::rules::methodology
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createAgentIgnoresIsActive() { return std::make_unique<methodology::AgentIgnoresIsActive>(); }
 std::unique_ptr<Rule> createAgentWithoutConfigObject() { return std::make_unique<methodology::AgentWithoutConfigObject>(); }
 std::unique_ptr<Rule> createHardcodedTopology() { return std::make_unique<methodology::HardcodedTopology>(); }
@@ -364,9 +364,9 @@ std::unique_ptr<Rule> createOverrideByNameString() { return std::make_unique<met
 std::unique_ptr<Rule> createIncompleteItemContract() { return std::make_unique<methodology::IncompleteItemContract>(); }
 }
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createAgentIgnoresIsActive)
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createAgentWithoutConfigObject)
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createHardcodedTopology)
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createAbsoluteConfigDbPath)
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createOverrideByNameString)
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createIncompleteItemContract)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createAgentIgnoresIsActive)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createAgentWithoutConfigObject)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createHardcodedTopology)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createAbsoluteConfigDbPath)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createOverrideByNameString)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createIncompleteItemContract)

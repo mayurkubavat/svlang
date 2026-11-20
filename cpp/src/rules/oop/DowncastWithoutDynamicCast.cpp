@@ -1,5 +1,5 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
 #include "slang/syntax/AllSyntax.h"
 #include "slang/syntax/SyntaxTree.h"
 #include "slang/syntax/SyntaxVisitor.h"
@@ -8,11 +8,11 @@
 #include <utility>
 #include <vector>
 
-namespace uvmcheck::rules::oop {
+namespace svlang_lint::rules::oop {
 
 class DowncastVisitor : public engine::SyntaxVisitor<DowncastVisitor> {
 public:
-    explicit DowncastVisitor(core::DiagnosticEngine& diags, const uvmcheck::uvm::UvmModel& uvmModel)
+    explicit DowncastVisitor(core::DiagnosticEngine& diags, const svlang_lint::uvm::UvmModel& uvmModel)
         : diags(diags) {
         for (const auto* cls : uvmModel.getAllClasses()) {
             if (cls) {
@@ -106,12 +106,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::oop
+} // namespace svlang_lint::rules::oop
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createDowncastWithoutDynamicCast() {
     return std::make_unique<oop::DowncastWithoutDynamicCast>();
 }
 }
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createDowncastWithoutDynamicCast)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createDowncastWithoutDynamicCast)

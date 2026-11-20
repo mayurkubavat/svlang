@@ -1,10 +1,10 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
 #include "slang/syntax/AllSyntax.h"
 #include "slang/syntax/SyntaxTree.h"
 #include "slang/syntax/SyntaxVisitor.h"
 
-namespace uvmcheck::rules::concurrency {
+namespace svlang_lint::rules::concurrency {
 
 class TimingCheckerVisitor : public slang::syntax::SyntaxVisitor<TimingCheckerVisitor> {
 public:
@@ -114,7 +114,7 @@ public:
     core::Severity getDefaultSeverity() const override { return core::Severity::Warning; }
 
     void run(slang::ast::Compilation& compilation,
-             const uvmcheck::uvm::UvmModel& /*uvmModel*/,
+             const svlang_lint::uvm::UvmModel& /*uvmModel*/,
              core::DiagnosticEngine& diags) override {
         RepeatLoopVisitor visitor(diags);
         for (const auto& tree : compilation.getSyntaxTrees()) {
@@ -125,12 +125,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::concurrency
+} // namespace svlang_lint::rules::concurrency
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createRepeatLoopWithoutTiming() {
     return std::make_unique<concurrency::RepeatLoopWithoutTiming>();
 }
 }
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createRepeatLoopWithoutTiming)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createRepeatLoopWithoutTiming)

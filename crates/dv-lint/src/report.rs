@@ -1,4 +1,4 @@
-//! Report formats besides the text listing: SARIF 2.1.0, as uvmcheck's
+//! Report formats besides the text listing: SARIF 2.1.0, as svlang-lint's
 //! SarifReporter writes it (the rule table, then one result per finding
 //! with its level, message, remediation estimate, location, related
 //! locations and fixes), and the HTML dashboard.
@@ -18,7 +18,7 @@ fn level(sev: Severity) -> &'static str {
     }
 }
 
-/// uvmcheck's remediation estimate, in minutes.
+/// svlang-lint's remediation estimate, in minutes.
 fn remediation(f: &Finding) -> u32 {
     match f.rule {
         "SV-SML-004" => 60,
@@ -41,7 +41,7 @@ pub fn sarif(files: &[String], found: &[Finding]) -> String {
         "{\n  \"$schema\": \"https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json\",\n  \"version\": \"2.1.0\",\n  \"runs\": [\n    {\n      \"tool\": {\n        \"driver\": {\n",
     );
     o.push_str(&format!(
-        "          \"name\": \"dv-lint\",\n          \"version\": {},\n          \"informationUri\": \"https://github.com/uvmcheck/uvmcheck\",\n          \"rules\": [\n",
+        "          \"name\": \"dv-lint\",\n          \"version\": {},\n          \"informationUri\": \"https://github.com/svlang-lint/svlang-lint\",\n          \"rules\": [\n",
         s(env!("CARGO_PKG_VERSION"))
     ));
     let docs = crate::rules();
@@ -135,7 +135,7 @@ fn now_utc() -> String {
     format!("{y:04}-{m:02}-{d:02} {:02}:{:02}:{:02} UTC", rem / 3600, rem / 60 % 60, rem % 60)
 }
 
-/// The HTML quality dashboard of `found`, as uvmcheck's HtmlReporter writes
+/// The HTML quality dashboard of `found`, as svlang-lint's HtmlReporter writes
 /// it: KPI cards (findings, maintainability grade from the remediation
 /// estimate, technical debt, errors and warnings, files), findings by
 /// category and the top rules, then a filterable table with each finding's
@@ -176,13 +176,13 @@ pub fn html(files: &[String], found: &[Finding]) -> String {
         _ => ("A", "#10b981"),
     };
     let mut o = String::new();
-    o.push_str("<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n  <meta charset=\"UTF-8\">\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n  <title>UVMCheck Quality Dashboard</title>\n  <style>\n");
+    o.push_str("<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n  <meta charset=\"UTF-8\">\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n  <title>svlang-lint Quality Dashboard</title>\n  <style>\n");
     o.push_str(include_str!("report_html.css"));
     o.push_str(
         "  </style>\n</head>\n<body>\n  <div class=\"container\">\n    <header>\n      <div class=\"logo-group\">\n",
     );
     o.push_str(&format!(
-        "        <h1>UVMCheck Quality Dashboard <span class=\"badge-pill\">dv-lint {}</span></h1>\n        <div class=\"meta-time\">SystemVerilog &amp; UVM Static Analysis &bull; Generated {}</div>\n      </div>\n    </header>\n\n",
+        "        <h1>svlang-lint Quality Dashboard <span class=\"badge-pill\">dv-lint {}</span></h1>\n        <div class=\"meta-time\">SystemVerilog &amp; UVM Static Analysis &bull; Generated {}</div>\n      </div>\n    </header>\n\n",
         env!("CARGO_PKG_VERSION"),
         now_utc()
     ));

@@ -1,17 +1,17 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
-#include "uvmcheck/rules/SweSupport.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
+#include "svlang_lint/rules/SweSupport.h"
 #include "slang/ast/expressions/CallExpression.h"
 #include "slang/ast/symbols/VariableSymbols.h"
 #include "slang/syntax/AllSyntax.h"
 #include "slang/syntax/SyntaxTree.h"
 #include "slang/syntax/SyntaxVisitor.h"
 
-namespace uvmcheck::rules::uvm {
+namespace svlang_lint::rules::uvm {
 
 class EmptySequenceBodyVisitor : public slang::syntax::SyntaxVisitor<EmptySequenceBodyVisitor> {
 public:
-    explicit EmptySequenceBodyVisitor(core::DiagnosticEngine& diags, const uvmcheck::uvm::UvmModel& uvmModel)
+    explicit EmptySequenceBodyVisitor(core::DiagnosticEngine& diags, const svlang_lint::uvm::UvmModel& uvmModel)
         : diags(diags), uvmModel(uvmModel) {}
 
     void handle(const slang::syntax::ClassDeclarationSyntax& clsNode) {
@@ -81,7 +81,7 @@ public:
 
 private:
     core::DiagnosticEngine& diags;
-    const uvmcheck::uvm::UvmModel& uvmModel;
+    const svlang_lint::uvm::UvmModel& uvmModel;
     std::string currentClass;
     bool currentIsSeq = false;
 };
@@ -98,7 +98,7 @@ public:
     core::Severity getDefaultSeverity() const override { return core::Severity::Warning; }
 
     void run(slang::ast::Compilation& compilation,
-             const uvmcheck::uvm::UvmModel& uvmModel,
+             const svlang_lint::uvm::UvmModel& uvmModel,
              core::DiagnosticEngine& diags) override {
         EmptySequenceBodyVisitor visitor(diags, uvmModel);
         for (const auto& tree : compilation.getSyntaxTrees()) {
@@ -148,14 +148,14 @@ bool mentionedFrom(const ClassType& target, const ClassType& host) {
     return false;
 }
 
-bool mentionedAnywhere(const ClassType& target, const ::uvmcheck::uvm::UvmModel& model) {
+bool mentionedAnywhere(const ClassType& target, const ::svlang_lint::uvm::UvmModel& model) {
     for (const auto* cls : swe::userClasses(model)) {
         if (mentionedFrom(target, *cls)) return true;
     }
     return false;
 }
 
-bool compilationHasTest(const ::uvmcheck::uvm::UvmModel& model) {
+bool compilationHasTest(const ::svlang_lint::uvm::UvmModel& model) {
     for (const auto* cls : swe::userClasses(model)) {
         if (swe::classRole(*cls) == swe::Role::Test) return true;
     }
@@ -171,7 +171,7 @@ public:
     RuleMaturity getMaturity() const override { return RuleMaturity::Experimental; }
 
 protected:
-    void report(const ::uvmcheck::uvm::UvmModel& model, core::DiagnosticEngine& diags, swe::Role role,
+    void report(const ::svlang_lint::uvm::UvmModel& model, core::DiagnosticEngine& diags, swe::Role role,
                 std::string_view id, std::string_view name, std::string_view noun) {
         if (!compilationHasTest(model)) return;
         for (const auto* cls : swe::userClasses(model)) {
@@ -196,7 +196,7 @@ public:
         return "Flags a sequence that no other class in the compilation names, when the run also "
                "contains a test. Experimental: the sequence may be started from a file that was not linted.";
     }
-    void run(slang::ast::Compilation&, const ::uvmcheck::uvm::UvmModel& model, core::DiagnosticEngine& diags) override {
+    void run(slang::ast::Compilation&, const ::svlang_lint::uvm::UvmModel& model, core::DiagnosticEngine& diags) override {
         report(model, diags, swe::Role::Sequence, "UVM-SEQ-014", "UnusedSequence", "Sequence");
     }
 };
@@ -209,14 +209,14 @@ public:
         return "Flags a sequence item that no other class in the compilation names, when the run also "
                "contains a test. Experimental: the item may be created from a file that was not linted.";
     }
-    void run(slang::ast::Compilation&, const ::uvmcheck::uvm::UvmModel& model, core::DiagnosticEngine& diags) override {
+    void run(slang::ast::Compilation&, const ::svlang_lint::uvm::UvmModel& model, core::DiagnosticEngine& diags) override {
         report(model, diags, swe::Role::Item, "UVM-SEQ-015", "UnusedSequenceItem", "Sequence item");
     }
 };
 
-} // namespace uvmcheck::rules::uvm
+} // namespace svlang_lint::rules::uvm
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createEmptySequenceBody() {
     return std::make_unique<uvm::EmptySequenceBody>();
 }
@@ -224,6 +224,6 @@ std::unique_ptr<Rule> createUnusedSequence() { return std::make_unique<uvm::Unus
 std::unique_ptr<Rule> createUnusedSequenceItem() { return std::make_unique<uvm::UnusedSequenceItem>(); }
 }
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createEmptySequenceBody)
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createUnusedSequence)
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createUnusedSequenceItem)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createEmptySequenceBody)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createUnusedSequence)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createUnusedSequenceItem)

@@ -1,8 +1,8 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
-#include "uvmcheck/uvm/ObjectionControlFlow.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
+#include "svlang_lint/uvm/ObjectionControlFlow.h"
 
-namespace uvmcheck::rules::uvm {
+namespace svlang_lint::rules::uvm {
 
 class ObjectionControlFlowMismatch : public Rule {
 public:
@@ -17,7 +17,7 @@ public:
     core::Severity getDefaultSeverity() const override { return core::Severity::Error; }
 
     void run(slang::ast::Compilation& /*compilation*/,
-             const uvmcheck::uvm::UvmModel& uvmModel,
+             const svlang_lint::uvm::UvmModel& uvmModel,
              core::DiagnosticEngine& diags) override {
         for (const auto* cls : uvmModel.getAllClasses()) {
             if (!cls) continue;
@@ -32,7 +32,7 @@ public:
                 const auto& sub = member.as<slang::ast::SubroutineSymbol>();
                 if (sub.flags.has(slang::ast::MethodFlags::BuiltIn)) continue;
 
-                auto violations = uvmcheck::uvm::ObjectionControlFlowAnalyzer::analyzeSubroutine(sub, cls->name);
+                auto violations = svlang_lint::uvm::ObjectionControlFlowAnalyzer::analyzeSubroutine(sub, cls->name);
                 for (const auto& v : violations) {
                     diags.addViolation(v.ruleId, v.ruleName, v.message, v.severity, v.location);
                 }
@@ -41,12 +41,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::uvm
+} // namespace svlang_lint::rules::uvm
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createObjectionControlFlowMismatch() {
     return std::make_unique<uvm::ObjectionControlFlowMismatch>();
 }
 }
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createObjectionControlFlowMismatch)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createObjectionControlFlowMismatch)

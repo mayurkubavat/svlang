@@ -1,5 +1,5 @@
 //! Elaboration (builder phase N4). The hierarchy is checked against
-//! Slang's (`uvmcheck_sym_dump --hier`) on sv-tests and the repo by
+//! Slang's (`svlang_sym_dump --hier`) on sv-tests and the repo by
 //! tools/gates/sym_gate.py --hier; these cases pin the rules that decide it.
 
 fn trees(src: &str) -> Vec<sv_syntax::Tree> {

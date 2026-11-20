@@ -10,9 +10,9 @@
 
 ## Using the linter
 
-- [uvmcheck guide](guide/uvmcheck.md): building, running, profiles, fixes,
+- [svlang-lint guide](guide/svlang-lint.md): building, running, profiles, fixes,
   reports, Python rules, LSP, CI, baselines and waivers.
-- [Project configuration](guide/project_config.md): `.uvmcheck/config.py`,
+- [Project configuration](guide/project_config.md): `.svlang-lint/config.py`,
   library paths, per-rule options and waivers in Python.
 - [Python rule SDK](guide/python_rule_sdk.md): writing rules in Python.
 - [Result cache](guide/result_cache.md): how incremental runs reuse results.

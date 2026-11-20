@@ -159,7 +159,7 @@ def extract_diff(stdout):
     for line in stdout.splitlines():
         if line.startswith("--- a/"):
             inside = True
-        if line.startswith("[uvmcheck]"):
+        if line.startswith("[svlang-lint]"):
             inside = False
         if inside:
             lines.append(line)
@@ -168,7 +168,7 @@ def extract_diff(stdout):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--binary", default="build/uvmcheck")
+    ap.add_argument("--binary", default="build/svlang-lint")
     args = ap.parse_args()
     binary = str(Path(args.binary).resolve())
     print("[FIX TEST] --fix / --fix-dry-run")
@@ -287,7 +287,7 @@ def main():
         mp.mkdir()
         (mp / "top.sv").write_text(MULTIPASS)
         res = run(binary, mp, "--fix", "--fix-rule", "SV-RND-011,SV-STY-015,SV-STY-102")
-        applied = [l for l in res.stdout.splitlines() if l.startswith("[uvmcheck] Applied ")]
+        applied = [l for l in res.stdout.splitlines() if l.startswith("[svlang-lint] Applied ")]
         check(len(applied) == 2, "a fix that uncovers another finding gets a second pass", res.stdout)
         res = run(binary, mp, "--fix", "--fix-rule", "SV-RND-011,SV-STY-015,SV-STY-102")
         check("fix-it" not in res.stdout, "after one --fix run there is nothing left to fix", res.stdout)

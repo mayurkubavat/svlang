@@ -1,9 +1,9 @@
-#include "uvmcheck/reporting/TestbenchMap.h"
+#include "svlang_lint/reporting/TestbenchMap.h"
 
-#include "uvmcheck/rules/SweSupport.h"
-#include "uvmcheck/uvm/ConfigDbGraph.h"
-#include "uvmcheck/uvm/TlmTopologyGraph.h"
-#include "uvmcheck/uvm/UvmModel.h"
+#include "svlang_lint/rules/SweSupport.h"
+#include "svlang_lint/uvm/ConfigDbGraph.h"
+#include "svlang_lint/uvm/TlmTopologyGraph.h"
+#include "svlang_lint/uvm/UvmModel.h"
 
 #include "slang/ast/Compilation.h"
 #include "slang/ast/symbols/ClassSymbols.h"
@@ -18,7 +18,7 @@
 #include <set>
 #include <sstream>
 
-namespace uvmcheck::reporting {
+namespace svlang_lint::reporting {
 
 namespace fs = std::filesystem;
 using namespace slang::ast;
@@ -344,4 +344,4 @@ bool writeTestbenchMap(const std::string& path, Compilation& compilation, const 
     return ok && static_cast<bool>(out);
 }
 
-} // namespace uvmcheck::reporting
+} // namespace svlang_lint::reporting

@@ -1,11 +1,11 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
-#include "uvmcheck/rules/SweSupport.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
+#include "svlang_lint/rules/SweSupport.h"
 #include "slang/ast/expressions/OperatorExpressions.h"
 #include "slang/ast/statements/ConditionalStatements.h"
 #include "slang/ast/statements/MiscStatements.h"
 
-namespace uvmcheck::rules::errors {
+namespace svlang_lint::rules::errors {
 
 using namespace slang::ast;
 
@@ -155,12 +155,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::errors
+} // namespace svlang_lint::rules::errors
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createFailureNotReported() {
     return std::make_unique<errors::FailureNotReported>();
 }
 }
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createFailureNotReported)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createFailureNotReported)

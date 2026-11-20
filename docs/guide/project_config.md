@@ -1,31 +1,31 @@
 # Project Configuration
 
-A project config tells UVMCheck which code is yours and how each rule should
+A project config tells svlang-lint which code is yours and how each rule should
 behave. It is written in Python as ordinary classes, so a team can keep a
 shared base config and each block can override just what it needs.
 
 ```bash
 # Write a starter config, then edit it
-./build/uvmcheck --dump-config .uvmcheck/config.py
+./build/svlang-lint --dump-config .svlang-lint/config.py
 ```
 
-UVMCheck looks for configuration files in the working directory and its parents (first hit wins):
-1. `.uvmcheck/config.py`
-2. `.uvmcheck/config.json`
-3. `uvmcheck_config.py`
-4. `.uvmcheck.py`
-5. `.uvmcheck.json`
-6. `uvmcheck.json`
+svlang-lint looks for configuration files in the working directory and its parents (first hit wins):
+1. `.svlang-lint/config.py`
+2. `.svlang-lint/config.json`
+3. `svlang_lint_config.py`
+4. `.svlang-lint.py`
+5. `.svlang-lint.json`
+6. `svlang-lint.json`
 
 You can also specify `--config <file>` explicitly. A config that fails to load stops the run with exit
 code 2 instead of silently linting with defaults.
 
-In addition, `.uvmcheck/waivers.json` and `.uvmcheck/baseline.json` are automatically discovered if present.
+In addition, `.svlang-lint/waivers.json` and `.svlang-lint/baseline.json` are automatically discovered if present.
 
 ## Example
 
 ```python
-from uvmcheck.config import ProjectConfig, RuleConfig, Waiver, Severity
+from svlang_lint.config import ProjectConfig, RuleConfig, Waiver, Severity
 
 
 class Project(ProjectConfig):
@@ -79,7 +79,7 @@ class CompanyBase(ProjectConfig):
     class MaxLineLength(RuleConfig):
         max_columns = 120
 
-# uvmcheck_config.py
+# svlang_lint_config.py
 from team_base import CompanyBase
 
 class DmaBlock(CompanyBase):
@@ -100,20 +100,20 @@ with `config = DmaBlock`. For anything dynamic, override `rule_configs()` or
 
 ## Where the config is found, and sub-tree configs
 
-uvmcheck looks for `.uvmcheck/config.py` (and the other names above) from the
+svlang-lint looks for `.svlang-lint/config.py` (and the other names above) from the
 working directory upwards; if there is none, from the folder of the first
 source file upwards, so a run started in a separate `sim/` folder still finds
-the project's config. `.uvmcheck/waivers.json` and `.uvmcheck/baseline.json`
+the project's config. `.svlang-lint/waivers.json` and `.svlang-lint/baseline.json`
 are read from the same project root. `--no-config` skips the search.
 
 A sub-tree such as a VIP or a block-level env can keep its own
-`.uvmcheck/config.py` that builds on the project's. `parent_project()` returns
-the project class of the next `.uvmcheck/config.py` further up, with its
+`.svlang-lint/config.py` that builds on the project's. `parent_project()` returns
+the project class of the next `.svlang-lint/config.py` further up, with its
 relative paths anchored to the parent's root:
 
 ```python
-# blocks/dma/.uvmcheck/config.py
-from uvmcheck.config import parent_project, RuleConfig
+# blocks/dma/.svlang-lint/config.py
+from svlang_lint.config import parent_project, RuleConfig
 
 class DmaBlock(parent_project()):
     exclude_paths = parent_project().exclude_paths + ["gen/**"]
@@ -128,7 +128,7 @@ Running from `blocks/dma/` prints the layers that were loaded.
 
 | Setting | Meaning |
 | :--- | :--- |
-| `sources` | Files or globs to compile when the command line names none (`uvmcheck` alone then lints the project). The language server compiles these around the file you are editing. |
+| `sources` | Files or globs to compile when the command line names none (`svlang-lint` alone then lints the project). The language server compiles these around the file you are editing. |
 | `filelists` | `.f` file lists (paths inside are relative to the list), as with `-F`. |
 | `include_dirs` | `+incdir` directories; apply to every run, also when files are given on the command line. |
 | `defines` | `"NAME"` or `"NAME=VALUE"` macro definitions; apply to every run. |
@@ -151,14 +151,14 @@ its folder, that folder is library code: nothing is reported in its files, nor f
 code (the routines of `` `uvm_object_utils ``, the method of `` `uvm_field_int ``), and a note says how many
 findings were left out. `--report-library` shows them. A compile of the library alone reports everything, and
 `report_library_macro_expansions = True` keeps the macro expansions. Other libraries (VIP) are named with
-`library_paths`. The C++ engine (`uvmcheck-slang`) leaves the UVM library out only when `library_paths` names it.
+`library_paths`. The C++ engine (`svlang-lint-slang`) leaves the UVM library out only when `library_paths` names it.
 
 Unknown rule names produce a warning so typos do not go unnoticed.
 
 ### Path globs
 
 * Relative paths are relative to the config file, or to the project root (the
-  folder holding `.uvmcheck/`) for a config inside `.uvmcheck/`. `--library` /
+  folder holding `.svlang-lint/`) for a config inside `.svlang-lint/`. `--library` /
   `--exclude` on the command line are relative to the working directory.
 * `*` and `?` match within one folder name, `**` matches any number of folders.
 * A pattern naming a folder covers everything under it (`"ip/vip"` = `"ip/vip/**"`).
@@ -169,14 +169,14 @@ Unknown rule names produce a warning so typos do not go unnoticed.
 ### Command line
 
 ```bash
-./build/uvmcheck tb/top.sv -I $UVM_HOME/src --library '$UVM_HOME' --exclude 'tb/gen/**'
+./build/svlang-lint tb/top.sv -I $UVM_HOME/src --library '$UVM_HOME' --exclude 'tb/gen/**'
 ```
 
 A waiver comment can carry the same expression in quotes. It is searched, not matched against the whole message:
 
 ```systemverilog
-if (a == a) $display("one"); // uvmcheck:waive SV-COR-008 "expression 'a'"
-// uvmcheck: waive SV-COR-008 "expression 'b'"
+if (a == a) $display("one"); // svlang-lint:waive SV-COR-008 "expression 'a'"
+// svlang-lint: waive SV-COR-008 "expression 'b'"
 if (b == b) $display("two");
 ```
 
@@ -184,7 +184,7 @@ if (b == b) $display("two");
 
 ### JSON form
 
-The same settings are accepted as JSON (`.uvmcheck.json`), which is also what
+The same settings are accepted as JSON (`.svlang-lint.json`), which is also what
 the Python config is converted to internally. Comments and trailing commas are
 allowed. Rules may use a shorthand: `"SV-COR-009": "error"`, `"MaxLineLength": "off"`.
 
@@ -205,6 +205,6 @@ allowed. Rules may use a shorthand: `"SV-COR-009": "error"`, `"MaxLineLength": "
 
 ### Environment
 
-* `UVMCHECK_PYTHON` selects the interpreter (default `python3`).
-* `UVMCHECK_PYTHON_SDK` points at the folder holding the `uvmcheck` package if
+* `SVLANG_LINT_PYTHON` selects the interpreter (default `python3`).
+* `SVLANG_LINT_PYTHON_SDK` points at the folder holding the `svlang-lint` package if
   it is not installed and not next to the binary.

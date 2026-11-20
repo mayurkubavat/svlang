@@ -1,8 +1,8 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
-#include "uvmcheck/model/SlangModel.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
+#include "svlang_lint/model/SlangModel.h"
 
-namespace uvmcheck::rules::performance {
+namespace svlang_lint::rules::performance {
 
 class PassArrayByValue : public Rule {
 public:
@@ -15,9 +15,9 @@ public:
     std::string_view getCategory() const override { return "Performance"; }
     core::Severity getDefaultSeverity() const override { return core::Severity::Warning; }
 
-    // Reads only uvmcheck::model, not slang's AST.
+    // Reads only svlang_lint::model, not slang's AST.
     void run(slang::ast::Compilation&,
-             const uvmcheck::uvm::UvmModel& uvmModel,
+             const svlang_lint::uvm::UvmModel& uvmModel,
              core::DiagnosticEngine& diags) override {
         for (const model::Class& cls : uvmModel.facade().classes()) {
             if (cls.isParameterized) continue;
@@ -40,12 +40,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::performance
+} // namespace svlang_lint::rules::performance
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createPassArrayByValue() {
     return std::make_unique<performance::PassArrayByValue>();
 }
 }
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createPassArrayByValue)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createPassArrayByValue)

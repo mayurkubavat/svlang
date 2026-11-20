@@ -39,7 +39,7 @@ def lint(binary, case, rule, tmp):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--binary", default=str(REPO / "build" / "uvmcheck"))
+    ap.add_argument("--binary", default=str(REPO / "build" / "svlang-lint"))
     binary = str(Path(ap.parse_args().binary).resolve())
 
     with tempfile.TemporaryDirectory() as tmp:

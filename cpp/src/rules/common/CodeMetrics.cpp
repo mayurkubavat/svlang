@@ -1,4 +1,4 @@
-#include "uvmcheck/rules/CodeMetrics.h"
+#include "svlang_lint/rules/CodeMetrics.h"
 
 #include <algorithm>
 #include <map>
@@ -15,9 +15,9 @@
 #include "slang/ast/statements/MiscStatements.h"
 #include "slang/ast/symbols/MemberSymbols.h"
 #include "slang/ast/symbols/VariableSymbols.h"
-#include "uvmcheck/rules/SweSupport.h"
+#include "svlang_lint/rules/SweSupport.h"
 
-namespace uvmcheck::rules::metrics {
+namespace svlang_lint::rules::metrics {
 
 using namespace slang::ast;
 
@@ -454,4 +454,4 @@ const std::vector<ClassMetrics>& classMetrics(Compilation& comp, const uvm::UvmM
     return cache;
 }
 
-} // namespace uvmcheck::rules::metrics
+} // namespace svlang_lint::rules::metrics

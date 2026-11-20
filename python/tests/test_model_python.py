@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""uvmcheck.model (Python over the C ABI) reads the same design as dv-model."""
+"""svlang_lint.model (Python over the C ABI) reads the same design as dv-model."""
 import argparse
 import sys
 from pathlib import Path
@@ -10,12 +10,12 @@ sys.path.insert(0, str(REPO / "python"))
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--lib", help="path to libuvmcheck_model")
+    ap.add_argument("--lib", help="path to libsvlang_lint_model")
     a = ap.parse_args()
     if a.lib:
         import os
-        os.environ["UVMCHECK_MODEL_LIB"] = a.lib
-    from uvmcheck.model import Design, ModelError
+        os.environ["SVLANG_LINT_MODEL_LIB"] = a.lib
+    from svlang_lint.model import Design, ModelError
 
     failures = []
 

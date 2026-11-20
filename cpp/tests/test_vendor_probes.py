@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Each testdata/vendor probe is rejected by uvmcheck as written and accepted
+"""Each testdata/vendor probe is rejected by svlang-lint as written and accepted
 with the slang option its first line names, so the measured tables
 (tools/quality/vendor_table.py) measure the construct they say they do."""
 

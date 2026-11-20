@@ -1,6 +1,6 @@
 {
-  "name": "uvmcheck-vscode",
-  "displayName": "UVMCheck SystemVerilog & UVM Linter",
+  "name": "svlang-lint-vscode",
+  "displayName": "svlang-lint SystemVerilog & UVM Linter",
   "description": "SystemVerilog and UVM linter and code browser: live diagnostics, quick fixes, go to definition, outline, completion and UVM snippets",
   "version": "0.2.0",
   "publisher": "mayurkubavat",
@@ -28,29 +28,29 @@
   "contributes": {
     "configuration": {
       "type": "object",
-      "title": "UVMCheck Configuration",
+      "title": "svlang-lint Configuration",
       "properties": {
-        "uvmcheck.enable": {
+        "svlang-lint.enable": {
           "type": "boolean",
           "default": true,
-          "description": "Lint as you type: diagnostics and quick fixes from the UVMCheck language server (`dv-lsp`), under the project's `.uvmcheck` config, waivers and baseline."
+          "description": "Lint as you type: diagnostics and quick fixes from the svlang-lint language server (`dv-lsp`), under the project's `.svlang-lint` config, waivers and baseline."
         },
-        "uvmcheck.executablePath": {
+        "svlang-lint.executablePath": {
           "type": "string",
           "default": "",
-          "description": "Only to lint with the Slang reference engine instead: the path of a `uvmcheck-slang` binary, run with `--lsp` next to `dv-lsp`. Leave empty for the native engine."
+          "description": "Only to lint with the Slang reference engine instead: the path of a `svlang-lint-slang` binary, run with `--lsp` next to `dv-lsp`. Leave empty for the native engine."
         },
-        "uvmcheck.navigation.enable": {
+        "svlang-lint.navigation.enable": {
           "type": "boolean",
           "default": true,
           "description": "Code browsing from the language server: outline, go to definition, references, hover and completion."
         },
-        "uvmcheck.navigation.serverPath": {
+        "svlang-lint.navigation.serverPath": {
           "type": "string",
           "default": "dv-lsp",
           "description": "Path to the `dv-lsp` executable (lint and code browsing). Left as `dv-lsp`, the binary bundled with the extension is used, else the one on PATH."
         },
-        "uvmcheck.navigation.libraryPaths": {
+        "svlang-lint.navigation.libraryPaths": {
           "type": "array",
           "items": {
             "type": "string"
@@ -58,12 +58,12 @@
           "default": [],
           "description": "Extra source trees to index for navigation, such as a UVM or VIP install ($VARS and ~ are expanded)."
         },
-        "uvmcheck.navigation.useUvmHome": {
+        "svlang-lint.navigation.useUvmHome": {
           "type": "boolean",
           "default": true,
           "description": "Also index $UVM_HOME/src when UVM_HOME is set."
         },
-        "uvmcheck.navigation.exclude": {
+        "svlang-lint.navigation.exclude": {
           "type": "array",
           "items": {
             "type": "string"
@@ -71,7 +71,7 @@
           "default": [],
           "description": "Directory names (or path endings) to skip when indexing the workspace, e.g. `sim_build` or `vendor/old_vip`."
         },
-        "uvmcheck.trace.server": {
+        "svlang-lint.trace.server": {
           "type": "string",
           "default": "off",
           "enum": [
@@ -79,14 +79,14 @@
             "messages",
             "verbose"
           ],
-          "description": "Traces the communication between VS Code / Cursor and the UVMCheck language server daemon."
+          "description": "Traces the communication between VS Code / Cursor and the svlang-lint language server daemon."
         }
       }
     },
     "commands": [
       {
-        "command": "uvmcheck.restartServer",
-        "title": "UVMCheck: Restart Language Servers"
+        "command": "svlang-lint.restartServer",
+        "title": "svlang-lint: Restart Language Servers"
       }
     ],
     "languages": [
@@ -105,8 +105,8 @@
         ],
         "configuration": "./language-configuration.json",
         "icon": {
-          "light": "./images/uvmcheck.svg",
-          "dark": "./images/uvmcheck.svg"
+          "light": "./images/svlang-lint.svg",
+          "dark": "./images/svlang-lint.svg"
         }
       },
       {
@@ -131,7 +131,7 @@
       },
       {
         "language": "verilog",
-        "scopeName": "source.verilog.uvmcheck",
+        "scopeName": "source.verilog.svlang-lint",
         "path": "./syntaxes/verilog.tmLanguage.json"
       }
     ],
@@ -160,7 +160,7 @@
   "dependencies": {
     "vscode-languageclient": "^9.0.1"
   },
-  "icon": "images/uvmcheck.png",
+  "icon": "images/svlang-lint.png",
   "license": "SEE LICENSE IN LICENSE",
   "repository": {
     "type": "git",

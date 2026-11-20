@@ -1,12 +1,12 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
 #include "slang/ast/ASTVisitor.h"
 #include "slang/ast/expressions/MiscExpressions.h"
 #include "slang/ast/symbols/ClassSymbols.h"
 #include "slang/ast/symbols/VariableSymbols.h"
 #include "slang/syntax/AllSyntax.h"
 
-namespace uvmcheck::rules::oop {
+namespace svlang_lint::rules::oop {
 
 static bool hasNestedClassHandle(const slang::ast::ClassType& classType) {
     const auto* curr = &classType;
@@ -70,12 +70,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::oop
+} // namespace svlang_lint::rules::oop
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createClassShallowCopyAliasing() {
     return std::make_unique<oop::ClassShallowCopyAliasing>();
 }
 }
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createClassShallowCopyAliasing)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createClassShallowCopyAliasing)

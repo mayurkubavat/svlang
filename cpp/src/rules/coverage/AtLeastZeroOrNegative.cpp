@@ -1,10 +1,10 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
 #include "slang/syntax/AllSyntax.h"
 #include "slang/syntax/SyntaxTree.h"
 #include "slang/syntax/SyntaxVisitor.h"
 
-namespace uvmcheck::rules::coverage {
+namespace svlang_lint::rules::coverage {
 
 class AtLeastZeroOrNegativeVisitor : public slang::syntax::SyntaxVisitor<AtLeastZeroOrNegativeVisitor> {
 public:
@@ -96,7 +96,7 @@ public:
     core::Severity getDefaultSeverity() const override { return core::Severity::Warning; }
 
     void run(slang::ast::Compilation& compilation,
-             const uvmcheck::uvm::UvmModel& /*uvmModel*/,
+             const svlang_lint::uvm::UvmModel& /*uvmModel*/,
              core::DiagnosticEngine& diags) override {
         AtLeastZeroOrNegativeVisitor visitor(diags);
         for (const auto& tree : compilation.getSyntaxTrees()) {
@@ -107,12 +107,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::coverage
+} // namespace svlang_lint::rules::coverage
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createAtLeastZeroOrNegative() {
     return std::make_unique<coverage::AtLeastZeroOrNegative>();
 }
 }
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createAtLeastZeroOrNegative)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createAtLeastZeroOrNegative)

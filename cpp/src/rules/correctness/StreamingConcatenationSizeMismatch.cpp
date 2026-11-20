@@ -1,10 +1,10 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
 #include "slang/syntax/AllSyntax.h"
 #include "slang/syntax/SyntaxTree.h"
 #include "slang/syntax/SyntaxVisitor.h"
 
-namespace uvmcheck::rules::correctness {
+namespace svlang_lint::rules::correctness {
 
 class StreamingConcatenationVisitor : public engine::SyntaxVisitor<StreamingConcatenationVisitor> {
 public:
@@ -48,12 +48,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::correctness
+} // namespace svlang_lint::rules::correctness
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createStreamingConcatenationSizeMismatch() {
     return std::make_unique<correctness::StreamingConcatenationSizeMismatch>();
 }
 }
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createStreamingConcatenationSizeMismatch)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createStreamingConcatenationSizeMismatch)

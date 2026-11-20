@@ -1,10 +1,10 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
-#include "uvmcheck/rules/SweSupport.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
+#include "svlang_lint/rules/SweSupport.h"
 #include "slang/ast/expressions/AssignmentExpressions.h"
 #include "slang/ast/statements/MiscStatements.h"
 
-namespace uvmcheck::rules::design {
+namespace svlang_lint::rules::design {
 
 using namespace slang::ast;
 
@@ -120,9 +120,9 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::design
+} // namespace svlang_lint::rules::design
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createOverrideOnlyCallsSuper() {
     return std::make_unique<design::OverrideOnlyCallsSuper>();
 }
@@ -131,5 +131,5 @@ std::unique_ptr<Rule> createEmptyOverrideOfConcrete() {
 }
 }
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createOverrideOnlyCallsSuper)
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createEmptyOverrideOfConcrete)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createOverrideOnlyCallsSuper)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createEmptyOverrideOfConcrete)

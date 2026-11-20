@@ -1,9 +1,9 @@
 // Rules driven by the UVM API pack of the UVM version being compiled
 // (uvm::ApiPack, data/uvm-api/). They hold no API names of their own: a new
 // UVM release only needs its pack.
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
-#include "uvmcheck/uvm/ApiPack.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
+#include "svlang_lint/uvm/ApiPack.h"
 #include "../methodology/MethodologySupport.h"
 #include "slang/ast/ASTVisitor.h"
 #include "slang/ast/expressions/CallExpression.h"
@@ -14,7 +14,7 @@
 #include <set>
 #include <string>
 
-namespace uvmcheck::rules::uvmapi {
+namespace svlang_lint::rules::uvmapi {
 
 using namespace slang::ast;
 using slang::parsing::Token;
@@ -184,16 +184,16 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::uvmapi
+} // namespace svlang_lint::rules::uvmapi
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createAccelleraOnlyApi() {
     return std::make_unique<uvmapi::AccelleraOnlyApi>();
 }
 std::unique_ptr<Rule> createDeprecatedUvmMacro() {
     return std::make_unique<uvmapi::DeprecatedUvmMacro>();
 }
-} // namespace uvmcheck::rules
+} // namespace svlang_lint::rules
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createAccelleraOnlyApi)
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createDeprecatedUvmMacro)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createAccelleraOnlyApi)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createDeprecatedUvmMacro)

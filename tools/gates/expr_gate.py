@@ -14,7 +14,7 @@ import collections, concurrent.futures, glob, os, subprocess, sys, tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(os.path.dirname(HERE))
-EXPRDUMP = os.environ.get('EXPRDUMP', os.path.join(REPO, 'build', 'uvmcheck_exprdump'))
+EXPRDUMP = os.environ.get('EXPRDUMP', os.path.join(REPO, 'build', 'svlang_exprdump'))
 DVLINT = os.environ.get('DV_LINT', os.path.join(REPO, 'target', 'release', 'dv-lint'))
 
 

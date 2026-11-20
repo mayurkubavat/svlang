@@ -9,7 +9,7 @@ use SyntaxKind::*;
 pub(crate) fn program_block(c: &Cst, s: &mut Sink) {
     for n in c.nodes(ProgramDecl) {
         let Some(kw) = c.tok(n, "program") else { continue };
-        // A program with no name is a syntax error that uvmcheck reports
+        // A program with no name is a syntax error that svlang-lint reports
         // nothing else on.
         let name = c.tree.child(n, Name).map(|x| c.tree.bare_text(x)).unwrap_or_default();
         if name.is_empty() {

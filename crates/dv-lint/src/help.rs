@@ -2,16 +2,16 @@
 //! new user needs it. A test checks that every option listed here is one the
 //! program accepts, so the text cannot drift from the parser.
 
-/// The name the program was started under (`uvmcheck` or `dv-lint`).
+/// The name the program was started under (`svlang-lint` or `dv-lint`).
 pub fn program() -> String {
     std::env::args()
         .next()
         .and_then(|a| std::path::Path::new(&a).file_stem().map(|s| s.to_string_lossy().into_owned()))
         .filter(|s| !s.is_empty())
-        .unwrap_or_else(|| "uvmcheck".into())
+        .unwrap_or_else(|| "svlang-lint".into())
 }
 
-/// `uvmcheck 0.1.0`.
+/// `svlang-lint 0.2.0`.
 pub fn version() -> String {
     format!("{} {}", program(), env!("CARGO_PKG_VERSION"))
 }
@@ -30,7 +30,7 @@ const SUMMARY: &str = "Static analysis for SystemVerilog and UVM verification co
 
 /// The options, as `--help` prints them.
 pub const OPTIONS: &str = "
-With no sources, the project's .uvmcheck/config.py (or config.json) names
+With no sources, the project's .svlang-lint/config.py (or config.json) names
 them. Start a project with --init.
 
 Compile options (as a simulator takes them):
@@ -43,6 +43,9 @@ Compile options (as a simulator takes them):
   -v FILE, -y DIR          Library file or directory, searched for modules
                            the sources instantiate (+libext+.sv+.v)
   --single-unit            Compile all files as one compilation unit
+  --separate-units         Compile each file as an isolated 1800-2023 §3.12.1 unit
+  --compat-profile NAME    Simulator file-list dialect: vcs, xcelium, questa,
+                           jasper, verilator, any or none
   --skip-libraries         Report nothing in -v and -y library files
   --report-library         Report in the UVM library too; beside your own
                            files its findings are left out
@@ -54,6 +57,8 @@ Rules:
                            uvm-1800.2 or all. The default is soundness,
                            methodology, performance and security, plus any
                            rule the project config configures
+  --guideline IDS          Run only rules enforcing these guidelines (e.g. MG-4)
+  --conformance            Report pass/fail per methodology guideline
   --rule ID                Run only this rule (repeatable)
   --experimental           Also run experimental rules
   --python-rules PATH      Also run rules written with the Python SDK
@@ -66,10 +71,13 @@ Rules:
   --explain RULE           Describe a rule, with its example, and exit
 
 Project:
-  --init                   Write a starter .uvmcheck/config.py and exit
+  --init                   Write a starter .svlang-lint/config.py and exit
+  --dump-config FILE       Write a starter .svlang-lint/config.py to FILE
   --config FILE            Use this project config
   --no-config              Ignore the project config
-  --waivers FILE           Waiver file (default: .uvmcheck/waivers.json)
+  --library GLOB           Treat matching files as library code (repeatable)
+  --exclude GLOB           Do not report findings in matching files (repeatable)
+  --waivers FILE           Waiver file (default: .svlang-lint/waivers.json)
   --baseline FILE          Report only findings not in this baseline
   --update-baseline FILE   Write the current findings as the baseline
   --changed-since REF      Report only findings on lines changed since REF
@@ -100,7 +108,7 @@ Waiver hygiene:
 Cache:
   --no-cache               Always analyze
   --cache-dir DIR          Where the result cache lives
-                           (default: .uvmcheck_cache)
+                           (default: .svlang_lint_cache)
   --clear-cache            Delete the cache, then run
 
   -h, --help               Print this help and exit
@@ -110,7 +118,7 @@ Cache:
 Exit status: 0 no ERROR finding remains, 1 an ERROR finding remains,
 2 a load or configuration error, 4 --strict-waivers found stale waivers.
 
-Environment: DV_LINT_JOBS (threads; default every core), UVMCHECK_PYTHON
+Environment: DV_LINT_JOBS (threads; default every core), SVLANG_LINT_PYTHON
 (the interpreter for config.py and Python rules).
 
 Guide and rule catalog: https://github.com/mayurkubavat/svlang

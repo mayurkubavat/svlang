@@ -1,6 +1,6 @@
-#include "uvmcheck/compat/Overlay.h"
+#include "svlang_lint/compat/Overlay.h"
 
-#include "uvmcheck/rules/CompilerDiagnostics.h"
+#include "svlang_lint/rules/CompilerDiagnostics.h"
 
 #include "slang/ast/Compilation.h"
 #include "slang/ast/Scope.h"
@@ -10,7 +10,7 @@
 #include "slang/diagnostics/Diagnostics.h"
 #include "slang/text/SourceManager.h"
 
-namespace uvmcheck::compat {
+namespace svlang_lint::compat {
 
 namespace {
 
@@ -93,4 +93,4 @@ std::unique_ptr<Override> createErrorAnchor() {
     return std::make_unique<ErrorAnchor>();
 }
 
-} // namespace uvmcheck::compat
+} // namespace svlang_lint::compat

@@ -1,0 +1,28 @@
+#pragma once
+
+#include <string_view>
+#include <vector>
+
+namespace svlang_lint::rules {
+
+struct RuleOptionDoc {
+    std::string_view key;
+    std::string_view defaultValue; // as written in the rule source
+};
+
+/// The tested example and options of a rule, compiled in from testdata/rules/
+/// and the rule sources (tools/codegen/gen_rule_extras.py).
+struct RuleExtra {
+    std::string_view ruleId;
+    std::string_view testDir; // e.g. "testdata/rules/correctness/SV-COR-008"
+    std::string_view badExample;
+    std::string_view goodExample;
+    std::vector<RuleOptionDoc> options;
+};
+
+const std::vector<RuleExtra>& ruleExtras();
+
+/// The extras for one rule, or nullptr.
+const RuleExtra* findRuleExtra(std::string_view ruleId);
+
+} // namespace svlang_lint::rules

@@ -1,10 +1,10 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
 #include "slang/syntax/SyntaxVisitor.h"
 #include "slang/syntax/AllSyntax.h"
 #include "slang/syntax/SyntaxTree.h"
 
-namespace uvmcheck::rules::correctness {
+namespace svlang_lint::rules::correctness {
 
 class OffByOneQueueVisitor : public engine::SyntaxVisitor<OffByOneQueueVisitor> {
 public:
@@ -62,12 +62,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::correctness
+} // namespace svlang_lint::rules::correctness
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createOffByOneQueueIndex() {
     return std::make_unique<correctness::OffByOneQueueIndex>();
 }
 }
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createOffByOneQueueIndex)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createOffByOneQueueIndex)

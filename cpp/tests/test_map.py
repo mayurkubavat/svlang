@@ -28,7 +28,7 @@ def check(cond, msg, detail=""):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--binary", default=str(REPO / "build" / "uvmcheck"))
+    ap.add_argument("--binary", default=str(REPO / "build" / "svlang-lint"))
     binary = str(Path(ap.parse_args().binary).resolve())
     with tempfile.TemporaryDirectory() as tmp:
         base = [binary, "--no-config", str(REPO / "testdata/map/map_tb.sv"), "-I", str(REPO / "testdata/common")]

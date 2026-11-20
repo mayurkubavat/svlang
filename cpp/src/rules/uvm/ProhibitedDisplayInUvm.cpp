@@ -1,5 +1,5 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
 #include "slang/ast/ASTVisitor.h"
 #include "slang/ast/expressions/CallExpression.h"
 #include "slang/ast/symbols/SubroutineSymbols.h"
@@ -8,7 +8,7 @@
 #include "slang/ast/expressions/LiteralExpressions.h"
 #include "slang/text/SourceManager.h"
 
-namespace uvmcheck::rules::uvm {
+namespace svlang_lint::rules::uvm {
 
 class DisplayCallVisitor : public slang::ast::ASTVisitor<DisplayCallVisitor, slang::ast::VisitFlags::AllGood> {
 public:
@@ -83,7 +83,7 @@ public:
     core::Severity getDefaultSeverity() const override { return core::Severity::Warning; }
 
     void run(slang::ast::Compilation& compilation,
-             const uvmcheck::uvm::UvmModel& uvmModel,
+             const svlang_lint::uvm::UvmModel& uvmModel,
              core::DiagnosticEngine& diags) override {
         for (const auto* classType : uvmModel.getAllClasses()) {
             if (!classType) continue;
@@ -103,12 +103,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::uvm
+} // namespace svlang_lint::rules::uvm
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createProhibitedDisplayInUvm() {
     return std::make_unique<uvm::ProhibitedDisplayInUvm>();
 }
 }
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createProhibitedDisplayInUvm)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createProhibitedDisplayInUvm)

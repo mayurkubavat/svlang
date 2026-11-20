@@ -1,6 +1,6 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
-#include "uvmcheck/rules/SweSupport.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
+#include "svlang_lint/rules/SweSupport.h"
 #include "slang/ast/ASTVisitor.h"
 #include "slang/ast/statements/MiscStatements.h"
 #include <algorithm>
@@ -8,7 +8,7 @@
 #include <unordered_set>
 #include <vector>
 
-namespace uvmcheck::rules::sva {
+namespace svlang_lint::rules::sva {
 
 using namespace slang::ast;
 
@@ -89,12 +89,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::sva
+} // namespace svlang_lint::rules::sva
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createSideEffectInAssertionAction() {
     return std::make_unique<sva::SideEffectInAssertionAction>();
 }
-} // namespace uvmcheck::rules
+} // namespace svlang_lint::rules
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createSideEffectInAssertionAction)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createSideEffectInAssertionAction)

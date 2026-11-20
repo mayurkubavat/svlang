@@ -1,6 +1,6 @@
-#include "uvmcheck/compat/Overlay.h"
+#include "svlang_lint/compat/Overlay.h"
 
-#include "uvmcheck/core/ProjectConfig.h"
+#include "svlang_lint/core/ProjectConfig.h"
 
 #include <algorithm>
 #include <filesystem>
@@ -12,7 +12,7 @@
 
 namespace fs = std::filesystem;
 
-namespace uvmcheck::compat {
+namespace svlang_lint::compat {
 
 std::unique_ptr<Override> createVendorSystemTasks();
 std::unique_ptr<Override> createErrorTaint();
@@ -77,7 +77,7 @@ public:
     bool configureDriver(DriverContext& ctx) override {
         for (const auto& dir : ctx.vendor.includeDirs) {
             if (auto ec = ctx.driver.sourceManager.addUserDirectories(dir))
-                ctx.log << "[uvmcheck] warning: include dir '" << dir << "': " << ec.message() << "\n";
+                ctx.log << "[svlang-lint] warning: include dir '" << dir << "': " << ec.message() << "\n";
         }
         return true;
     }
@@ -101,16 +101,16 @@ public:
 
         auto dir = uvmSourceDir(ctx.uvmHome);
         if (!dir) {
-            ctx.log << "[uvmcheck] warning: auto-uvm: the sources use UVM but no uvm_pkg.sv was found"
+            ctx.log << "[svlang-lint] warning: auto-uvm: the sources use UVM but no uvm_pkg.sv was found"
                     << (ctx.uvmHome.empty() ? std::string() : " under '" + ctx.uvmHome + "'")
                     << "; set compat.uvm_home, -uvmhome or $UVM_HOME\n";
             return true;
         }
         if (auto ec = ctx.driver.sourceManager.addUserDirectories(dir->string()))
-            ctx.log << "[uvmcheck] warning: auto-uvm: include dir '" << dir->string() << "': " << ec.message()
+            ctx.log << "[svlang-lint] warning: auto-uvm: include dir '" << dir->string() << "': " << ec.message()
                     << "\n";
         ctx.driver.sourceLoader.addFiles((*dir / "uvm_pkg.sv").string());
-        ctx.log << "[uvmcheck] auto-uvm: compiling " << (*dir / "uvm_pkg.sv").string() << "\n";
+        ctx.log << "[svlang-lint] auto-uvm: compiling " << (*dir / "uvm_pkg.sv").string() << "\n";
         return true;
     }
 };
@@ -319,4 +319,4 @@ void Overlay::list(std::ostream& os) {
     }
 }
 
-} // namespace uvmcheck::compat
+} // namespace svlang_lint::compat

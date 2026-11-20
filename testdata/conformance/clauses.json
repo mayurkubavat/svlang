@@ -1,5 +1,5 @@
 {
-  "_doc": "IEEE 1800-2023 clauses and the conformance probe that exercises each. A clause marked out_of_scope has no compile-time meaning slang or uvmcheck can check (see docs/conformance.md).",
+  "_doc": "IEEE 1800-2023 clauses and the conformance probe that exercises each. A clause marked out_of_scope has no compile-time meaning slang or svlang-lint can check (see docs/conformance.md).",
   "clauses": {
     "5": "lrm/ch05_lexical.sv",
     "6": "lrm/ch06_data_types.sv",

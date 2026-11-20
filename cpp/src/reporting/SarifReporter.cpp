@@ -1,8 +1,8 @@
-#include "uvmcheck/reporting/SarifReporter.h"
+#include "svlang_lint/reporting/SarifReporter.h"
 #include <fstream>
 #include <sstream>
 
-namespace uvmcheck::reporting {
+namespace svlang_lint::reporting {
 
 static std::string escapeJson(std::string_view s) {
     std::string out;
@@ -39,9 +39,9 @@ bool SarifReporter::writeSarif(const std::string& outputPath,
          << "    {\n"
          << "      \"tool\": {\n"
          << "        \"driver\": {\n"
-         << "          \"name\": \"uvmcheck\",\n"
-         << "          \"version\": \"0.1.0\",\n"
-         << "          \"informationUri\": \"https://github.com/uvmcheck/uvmcheck\",\n"
+         << "          \"name\": \"svlang-lint\",\n"
+         << "          \"version\": \"0.2.0\",\n"
+         << "          \"informationUri\": \"https://github.com/svlang-lint/svlang-lint\",\n"
          << "          \"rules\": [\n";
 
     for (size_t i = 0; i < rules.size(); ++i) {
@@ -137,4 +137,4 @@ bool SarifReporter::writeSarif(const std::string& outputPath,
     return true;
 }
 
-} // namespace uvmcheck::reporting
+} // namespace svlang_lint::reporting

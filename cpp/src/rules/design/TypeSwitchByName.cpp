@@ -1,10 +1,10 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
-#include "uvmcheck/rules/SweSupport.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
+#include "svlang_lint/rules/SweSupport.h"
 #include "slang/ast/expressions/OperatorExpressions.h"
 #include "slang/ast/statements/ConditionalStatements.h"
 
-namespace uvmcheck::rules::design {
+namespace svlang_lint::rules::design {
 
 using namespace slang::ast;
 
@@ -75,12 +75,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::design
+} // namespace svlang_lint::rules::design
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createTypeSwitchByName() {
     return std::make_unique<design::TypeSwitchByName>();
 }
 }
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createTypeSwitchByName)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createTypeSwitchByName)

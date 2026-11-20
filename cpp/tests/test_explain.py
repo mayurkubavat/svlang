@@ -19,7 +19,7 @@ def check(cond, msg, detail=""):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--binary", default=str(REPO / "build" / "uvmcheck"))
+    ap.add_argument("--binary", default=str(REPO / "build" / "svlang-lint"))
     binary = str(Path(ap.parse_args().binary).resolve())
     run = lambda *a: subprocess.run([binary, *a], capture_output=True, text=True)
 

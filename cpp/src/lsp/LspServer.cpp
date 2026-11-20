@@ -1,13 +1,13 @@
-#include "uvmcheck/rules/CompilerDiagnostics.h"
-#include "uvmcheck/lsp/LspServer.h"
-#include "uvmcheck/core/ConfigManager.h"
-#include "uvmcheck/core/Json.h"
-#include "uvmcheck/core/ProjectSources.h"
-#include "uvmcheck/engine/RuleEngine.h"
-#include "uvmcheck/rules/BuiltinRules.h"
-#include "uvmcheck/rules/RuleRegistry.h"
-#include "uvmcheck/uvm/UvmModel.h"
-#include "uvmcheck/waivers/WaiverEngine.h"
+#include "svlang_lint/rules/CompilerDiagnostics.h"
+#include "svlang_lint/lsp/LspServer.h"
+#include "svlang_lint/core/ConfigManager.h"
+#include "svlang_lint/core/Json.h"
+#include "svlang_lint/core/ProjectSources.h"
+#include "svlang_lint/engine/RuleEngine.h"
+#include "svlang_lint/rules/BuiltinRules.h"
+#include "svlang_lint/rules/RuleRegistry.h"
+#include "svlang_lint/uvm/UvmModel.h"
+#include "svlang_lint/waivers/WaiverEngine.h"
 
 #include "slang/ast/Compilation.h"
 #include "slang/driver/Driver.h"
@@ -22,7 +22,7 @@
 #include <set>
 #include <sstream>
 
-namespace uvmcheck::lsp {
+namespace svlang_lint::lsp {
 
 namespace fs = std::filesystem;
 namespace json = core::json;
@@ -176,9 +176,9 @@ void LspServer::loadProjectConfig() {
     auto& cfg = core::ConfigManager::instance();
     if (cfg.hasLoadedConfig() || rootPath.empty()) return;
     if (cfg.autoDiscover(rootPath)) {
-        std::cerr << "[uvmcheck-lsp] loaded configuration from " << cfg.getLoadedConfigPath() << "\n";
+        std::cerr << "[svlang-lint-lsp] loaded configuration from " << cfg.getLoadedConfigPath() << "\n";
     } else if (!cfg.getLastError().empty()) {
-        std::cerr << "[uvmcheck-lsp] config error: " << cfg.getLastError() << "\n";
+        std::cerr << "[svlang-lint-lsp] config error: " << cfg.getLastError() << "\n";
     }
 }
 
@@ -200,7 +200,7 @@ std::string LspServer::processMessage(const std::string& rawJson) {
         return response(id, "{\"capabilities\":{"
                             "\"textDocumentSync\":{\"openClose\":true,\"change\":1,\"save\":true},"
                             "\"codeActionProvider\":{\"codeActionKinds\":[\"quickfix\"]}},"
-                            "\"serverInfo\":{\"name\":\"uvmcheck-lsp\",\"version\":\"0.2.0\"}}");
+                            "\"serverInfo\":{\"name\":\"svlang-lint-lsp\",\"version\":\"0.2.0\"}}");
     }
 
     if (method == "textDocument/didOpen") {
@@ -291,12 +291,12 @@ std::map<std::string, std::vector<LspDiagnostic>> LspServer::lintOpenDocuments()
         try {
             overlayByPath[p] = sm.assignText(p, text);
         } catch (const std::exception& e) {
-            std::cerr << "[uvmcheck-lsp] " << p << ": " << e.what() << "\n";
+            std::cerr << "[svlang-lint-lsp] " << p << ": " << e.what() << "\n";
         }
     }
 
     if (!driver.processOptions(/* checkFiles */ false)) {
-        std::cerr << "[uvmcheck-lsp] invalid build settings in project config\n";
+        std::cerr << "[svlang-lint-lsp] invalid build settings in project config\n";
     }
     (void)driver.parseAllSources();
 
@@ -337,7 +337,7 @@ std::map<std::string, std::vector<LspDiagnostic>> LspServer::lintOpenDocuments()
     fs::path projectRoot = rootPath.empty() ? fs::current_path() : fs::path(rootPath);
     if (cfgMgr.hasLoadedConfig()) {
         fs::path dir = fs::absolute(cfgMgr.getLoadedConfigPath()).parent_path();
-        projectRoot = dir.filename() == ".uvmcheck" ? dir.parent_path() : dir;
+        projectRoot = dir.filename() == ".svlang-lint" ? dir.parent_path() : dir;
     }
     waivers::WaiverEngine waiverEngine(sm);
     waiverEngine.setProjectRoot(projectRoot);
@@ -354,11 +354,11 @@ std::map<std::string, std::vector<LspDiagnostic>> LspServer::lintOpenDocuments()
         waiverEngine.addWaiver(std::move(w));
     }
     std::error_code ec;
-    if (fs::exists(projectRoot / ".uvmcheck/waivers.json", ec)) {
-        (void)waiverEngine.loadWaivers((projectRoot / ".uvmcheck/waivers.json").string());
+    if (fs::exists(projectRoot / ".svlang-lint/waivers.json", ec)) {
+        (void)waiverEngine.loadWaivers((projectRoot / ".svlang-lint/waivers.json").string());
     }
-    if (fs::exists(projectRoot / ".uvmcheck/baseline.json", ec)) {
-        (void)waiverEngine.loadBaseline((projectRoot / ".uvmcheck/baseline.json").string());
+    if (fs::exists(projectRoot / ".svlang-lint/baseline.json", ec)) {
+        (void)waiverEngine.loadBaseline((projectRoot / ".svlang-lint/baseline.json").string());
     }
 
     // Map each finding to an open document; inline waivers on the line above
@@ -424,7 +424,7 @@ void LspServer::publishDiagnostics(const std::string& uri, const std::vector<Lsp
         const auto& d = diags[i];
         ss << (i ? "," : "") << "{\"range\":" << rangeJson(d.line, d.startChar, d.line, d.endChar)
            << ",\"severity\":" << d.severity << ",\"code\":" << quote(d.code)
-           << ",\"source\":\"uvmcheck\",\"message\":" << quote(d.message);
+           << ",\"source\":\"svlang-lint\",\"message\":" << quote(d.message);
         if (!d.related.empty()) {
             ss << ",\"relatedInformation\":[";
             for (size_t r = 0; r < d.related.size(); ++r) {
@@ -454,7 +454,7 @@ std::string LspServer::codeActions(const std::string& uri, int firstLine, int la
     };
     auto diagJson = [&](const LspDiagnostic& d) {
         return "{\"range\":" + rangeJson(d.line, d.startChar, d.line, d.endChar) +
-               ",\"code\":" + quote(d.code) + ",\"source\":\"uvmcheck\",\"message\":" + quote(d.message) + "}";
+               ",\"code\":" + quote(d.code) + ",\"source\":\"svlang-lint\",\"message\":" + quote(d.message) + "}";
     };
 
     std::vector<std::string> actions;
@@ -472,7 +472,7 @@ std::string LspServer::codeActions(const std::string& uri, int firstLine, int la
                                               ? 0 : line.find_first_not_of(" \t")));
         LspEdit e;
         e.startLine = e.endLine = d.line;
-        e.newText = indent + "// uvmcheck:waive-next-line " + d.code + " -- reason: \n";
+        e.newText = indent + "// svlang-lint:waive-next-line " + d.code + " -- reason: \n";
         actions.push_back("{\"title\":" + quote("Waive " + d.code + " on this line") +
                           ",\"kind\":\"quickfix\",\"diagnostics\":[" + diagJson(d) + "],\"edit\":" +
                           editJson(e) + "}");
@@ -482,4 +482,4 @@ std::string LspServer::codeActions(const std::string& uri, int firstLine, int la
     return out + "]";
 }
 
-} // namespace uvmcheck::lsp
+} // namespace svlang_lint::lsp

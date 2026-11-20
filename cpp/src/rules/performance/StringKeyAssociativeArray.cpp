@@ -1,10 +1,10 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
 #include "slang/ast/ASTVisitor.h"
 #include "slang/ast/symbols/VariableSymbols.h"
 #include "slang/ast/types/AllTypes.h"
 
-namespace uvmcheck::rules::performance {
+namespace svlang_lint::rules::performance {
 
 class StringKeyAssocArrayVisitor : public slang::ast::ASTVisitor<StringKeyAssocArrayVisitor, slang::ast::VisitFlags::Symbols> {
 public:
@@ -43,19 +43,19 @@ public:
     core::Severity getDefaultSeverity() const override { return core::Severity::Warning; }
 
     void run(slang::ast::Compilation& compilation,
-             const uvmcheck::uvm::UvmModel& /*uvmModel*/,
+             const svlang_lint::uvm::UvmModel& /*uvmModel*/,
              core::DiagnosticEngine& diags) override {
         StringKeyAssocArrayVisitor visitor(diags);
         compilation.getRoot().visit(visitor);
     }
 };
 
-} // namespace uvmcheck::rules::performance
+} // namespace svlang_lint::rules::performance
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createStringKeyAssociativeArray() {
     return std::make_unique<performance::StringKeyAssociativeArray>();
 }
 }
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createStringKeyAssociativeArray)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createStringKeyAssociativeArray)

@@ -1,12 +1,12 @@
 // Methodology guide chapter MG-3, cohesion and component roles: UVM-ROL-001 to UVM-ROL-005.
 
 #include "MethodologySupport.h"
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
 
 #include <cctype>
 
-namespace uvmcheck::rules::methodology {
+namespace svlang_lint::rules::methodology {
 
 using namespace slang::ast;
 
@@ -227,9 +227,9 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::methodology
+} // namespace svlang_lint::rules::methodology
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createDriverGeneratesStimulus() { return std::make_unique<methodology::DriverGeneratesStimulus>(); }
 std::unique_ptr<Rule> createCoverageOutsideObservers() { return std::make_unique<methodology::CoverageOutsideObservers>(); }
 std::unique_ptr<Rule> createDutCheckingInAgent() { return std::make_unique<methodology::DutCheckingInAgent>(); }
@@ -237,8 +237,8 @@ std::unique_ptr<Rule> createTestBuildsLeafComponents() { return std::make_unique
 std::unique_ptr<Rule> createMonitorDependsOnActivePath() { return std::make_unique<methodology::MonitorDependsOnActivePath>(); }
 }
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createDriverGeneratesStimulus)
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createCoverageOutsideObservers)
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createDutCheckingInAgent)
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createTestBuildsLeafComponents)
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createMonitorDependsOnActivePath)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createDriverGeneratesStimulus)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createCoverageOutsideObservers)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createDutCheckingInAgent)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createTestBuildsLeafComponents)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createMonitorDependsOnActivePath)

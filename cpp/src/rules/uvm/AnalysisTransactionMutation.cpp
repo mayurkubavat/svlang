@@ -1,13 +1,13 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
-#include "uvmcheck/uvm/UvmModel.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
+#include "svlang_lint/uvm/UvmModel.h"
 #include "slang/ast/ASTVisitor.h"
 #include "slang/ast/symbols/ClassSymbols.h"
 #include "slang/ast/symbols/SubroutineSymbols.h"
 #include "slang/ast/symbols/VariableSymbols.h"
 #include "slang/ast/expressions/MiscExpressions.h"
 
-namespace uvmcheck::rules::uvm {
+namespace svlang_lint::rules::uvm {
 
 class AnalysisTransactionMutation : public Rule {
 public:
@@ -22,17 +22,17 @@ public:
     core::Severity getDefaultSeverity() const override { return core::Severity::Warning; }
 
     void run(slang::ast::Compilation& compilation,
-             const uvmcheck::uvm::UvmModel& uvmModel,
+             const svlang_lint::uvm::UvmModel& uvmModel,
              core::DiagnosticEngine& diags) override {
 
         class WriteMethodMutationVisitor : public slang::ast::ASTVisitor<WriteMethodMutationVisitor, slang::ast::VisitFlags::AllGood> {
         public:
-            const uvmcheck::uvm::UvmModel& model;
+            const svlang_lint::uvm::UvmModel& model;
             core::DiagnosticEngine& diags;
             std::string currentParamName;
             bool insideWriteMethod = false;
 
-            WriteMethodMutationVisitor(const uvmcheck::uvm::UvmModel& m, core::DiagnosticEngine& d)
+            WriteMethodMutationVisitor(const svlang_lint::uvm::UvmModel& m, core::DiagnosticEngine& d)
                 : model(m), diags(d) {}
 
             void handle(const slang::ast::SubroutineSymbol& sub) {
@@ -87,12 +87,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::uvm
+} // namespace svlang_lint::rules::uvm
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createAnalysisTransactionMutation() {
     return std::make_unique<uvm::AnalysisTransactionMutation>();
 }
 }
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createAnalysisTransactionMutation)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createAnalysisTransactionMutation)

@@ -8,12 +8,17 @@
 use crate::session;
 use std::collections::HashMap;
 
-/// Options by (rule ID, key), with rule names resolved to IDs.
-pub(crate) fn resolved(options: &[(String, String, i64)]) -> HashMap<(String, String), i64> {
+/// Resolves `(rule ID or name, key, value)` entries to canonical rule IDs.
+pub(crate) fn resolved_map<V: Clone>(options: &[(String, String, V)]) -> HashMap<(String, String), V> {
     let rules = crate::rules();
     let id_of =
         |k: &str| -> String { rules.iter().find(|r| r.name == k).map_or_else(|| k.to_string(), |r| r.id.to_string()) };
-    options.iter().map(|(r, k, v)| ((id_of(r), k.clone()), *v)).collect()
+    options.iter().map(|(r, k, v)| ((id_of(r), k.clone()), v.clone())).collect()
+}
+
+/// Options by (rule ID, key), with rule names resolved to IDs.
+pub(crate) fn resolved(options: &[(String, String, i64)]) -> HashMap<(String, String), i64> {
+    resolved_map(options)
 }
 
 /// Sets the options: (rule ID or name, key, value). Names are resolved to
@@ -23,9 +28,34 @@ pub fn set(options: &[(String, String, i64)]) {
     session::change_process(|s| s.options = m);
 }
 
+/// Sets string per-rule options: (rule ID or name, key, value).
+pub fn set_str(options: &[(String, String, String)]) {
+    let m = resolved_map(options);
+    session::change_process(|s| s.str_options = m);
+}
+
+/// Sets string-list per-rule options: (rule ID or name, key, values).
+pub fn set_list(options: &[(String, String, Vec<String>)]) {
+    let m = resolved_map(options);
+    session::change_process(|s| s.list_options = m);
+}
+
 /// The value of option `key` of rule `id`, else `default`.
 pub(crate) fn get(id: &str, key: &str, default: i64) -> i64 {
     session::with(|s| s.options.get(&(id.to_string(), key.to_string())).copied()).unwrap_or(default)
+}
+
+/// String option `key` of rule `id`, else `default`.
+#[allow(dead_code)]
+pub(crate) fn get_str(id: &str, key: &str, default: &str) -> String {
+    session::with(|s| s.str_options.get(&(id.to_string(), key.to_string())).cloned())
+        .unwrap_or_else(|| default.to_string())
+}
+
+/// String-list option `key` of rule `id`, else empty.
+#[allow(dead_code)]
+pub(crate) fn get_list(id: &str, key: &str) -> Vec<String> {
+    session::with(|s| s.list_options.get(&(id.to_string(), key.to_string())).cloned()).unwrap_or_default()
 }
 
 /// A `style` setting from the project configuration.
@@ -36,7 +66,7 @@ pub enum StyleValue {
     Str(String),
 }
 
-/// Sets the `style` block (key, value), as uvmcheck's StyleConfiguration.
+/// Sets the `style` block (key, value), as svlang-lint's StyleConfiguration.
 pub fn set_style(style: &[(String, StyleValue)]) {
     session::change_process(|s| s.style = style.iter().cloned().collect());
 }

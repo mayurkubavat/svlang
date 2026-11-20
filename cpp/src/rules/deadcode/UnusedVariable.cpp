@@ -1,12 +1,12 @@
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
 #include "slang/ast/ASTVisitor.h"
 #include "slang/ast/expressions/MiscExpressions.h"
 #include "slang/ast/symbols/VariableSymbols.h"
 #include "slang/ast/symbols/SubroutineSymbols.h"
 #include <unordered_set>
 
-namespace uvmcheck::rules::deadcode {
+namespace svlang_lint::rules::deadcode {
 
 class VariableReferenceVisitor : public slang::ast::ASTVisitor<VariableReferenceVisitor, slang::ast::VisitFlags::AllGood> {
 public:
@@ -30,7 +30,7 @@ public:
     core::Severity getDefaultSeverity() const override { return core::Severity::Info; }
 
     void run(slang::ast::Compilation& /*compilation*/,
-             const uvmcheck::uvm::UvmModel& uvmModel,
+             const svlang_lint::uvm::UvmModel& uvmModel,
              core::DiagnosticEngine& diags) override {
         for (const auto* cls : uvmModel.getAllClasses()) {
             if (!cls) continue;
@@ -75,12 +75,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::deadcode
+} // namespace svlang_lint::rules::deadcode
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createUnusedVariable() {
     return std::make_unique<deadcode::UnusedVariable>();
 }
 }
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createUnusedVariable)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createUnusedVariable)

@@ -1,0 +1,43 @@
+#pragma once
+
+#include <optional>
+#include <string_view>
+
+namespace slang {
+class Diagnostic;
+class DiagnosticEngine;
+struct SourceLocation;
+}
+
+namespace svlang_lint::rules {
+
+/// The compiler front end's diagnostic engine (with its -W options and
+/// compatibility settings). SV-CMP-001/002 classify and word the compiler's
+/// diagnostics through it, so the findings match what the compiler reports.
+/// Without one, slang's defaults apply.
+void setCompilerDiagnosticEngine(const slang::DiagnosticEngine* engine);
+
+/// Registers an engine for the lifetime of the scope.
+class CompilerDiagnosticEngineScope {
+public:
+    explicit CompilerDiagnosticEngineScope(const slang::DiagnosticEngine& engine) {
+        setCompilerDiagnosticEngine(&engine);
+    }
+    ~CompilerDiagnosticEngineScope() { setCompilerDiagnosticEngine(nullptr); }
+    CompilerDiagnosticEngineScope(const CompilerDiagnosticEngineScope&) = delete;
+    CompilerDiagnosticEngineScope& operator=(const CompilerDiagnosticEngineScope&) = delete;
+};
+
+/// Picks where a compiler error is reported instead of where slang raised it,
+/// e.g. the user's `uvm_component_utils line for an error inside
+/// uvm_registry.svh. Returns nothing to keep slang's location. Set by the
+/// anchor-to-user-code override (compat/Overlay.h); null by default.
+using CompilerErrorAnchor = std::optional<slang::SourceLocation> (*)(const slang::Diagnostic&);
+void setCompilerErrorAnchor(CompilerErrorAnchor anchor);
+
+/// True when a finding with this rule id is one of the compiler's own diagnostics.
+inline bool isCompilerDiagnosticRule(std::string_view id) {
+    return id == "SV-CMP-001" || id == "SV-CMP-002";
+}
+
+} // namespace svlang_lint::rules

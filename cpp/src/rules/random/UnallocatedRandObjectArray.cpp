@@ -1,7 +1,7 @@
 // SV-RND-023: a rand array of class handles whose elements are never created.
 
-#include "uvmcheck/rules/Rule.h"
-#include "uvmcheck/rules/RuleRegistry.h"
+#include "svlang_lint/rules/Rule.h"
+#include "svlang_lint/rules/RuleRegistry.h"
 
 #include "slang/ast/ASTVisitor.h"
 #include "slang/ast/expressions/AssignmentExpressions.h"
@@ -13,7 +13,7 @@
 #include <unordered_set>
 #include <vector>
 
-namespace uvmcheck::rules::random {
+namespace svlang_lint::rules::random {
 
 using namespace slang::ast;
 
@@ -84,12 +84,12 @@ public:
     }
 };
 
-} // namespace uvmcheck::rules::random
+} // namespace svlang_lint::rules::random
 
-namespace uvmcheck::rules {
+namespace svlang_lint::rules {
 std::unique_ptr<Rule> createUnallocatedRandObjectArray() {
     return std::make_unique<random::UnallocatedRandObjectArray>();
 }
-} // namespace uvmcheck::rules
+} // namespace svlang_lint::rules
 
-UVMCHECK_REGISTER_RULE(uvmcheck::rules::createUnallocatedRandObjectArray)
+SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createUnallocatedRandObjectArray)

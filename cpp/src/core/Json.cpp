@@ -1,8 +1,8 @@
-#include "uvmcheck/core/Json.h"
+#include "svlang_lint/core/Json.h"
 #include <charconv>
 #include <cstdint>
 
-namespace uvmcheck::core::json {
+namespace svlang_lint::core::json {
 
 const Value* Value::find(std::string_view key) const {
     if (!isObject()) return nullptr;
@@ -252,4 +252,4 @@ std::optional<Value> parse(std::string_view text, ParseError& error) {
     return p.parseDocument();
 }
 
-} // namespace uvmcheck::core::json
+} // namespace svlang_lint::core::json
