@@ -173,6 +173,7 @@ def test_compile_properties():
         "module cp(input logic clk, a, b);\n"
         " a_next: assert property (@(posedge clk) a |=> b);\n"
         " a_rng: assert property (@(posedge clk) a |-> ##[1:$] b);\n"
+        " a_noclk: assert property (a |-> b);\n"
         " c_ab: cover property (@(posedge clk) a ##1 b);\n"
         "endmodule\n"
     )
@@ -180,13 +181,14 @@ def test_compile_properties():
     assert comp.lower_netlist().properties == [
         ("cp.a_next", "assert", False),
         ("cp.a_rng", "assert", False),
+        ("cp.a_noclk", "assert", False),
         ("cp.c_ab", "cover", False),
     ]
     nl = comp.lower_netlist(compile_properties=True)
-    assert [done for _, _, done in nl.properties] == [True, False, True]
+    assert [done for _, _, done in nl.properties] == [True, True, False, True]
     text, notes = nl.to_btor2(covers=True)
     bad = [line.split()[-1] for line in text.splitlines() if " bad " in line]
-    assert bad == ["cp.a_next", "cp.c_ab"]
+    assert bad == ["cp.a_next", "cp.a_rng", "cp.c_ab"]
     assert any(n.startswith("1 concurrent") for n in notes)
 
 
@@ -412,3 +414,32 @@ def test_stubs_match_module():
             continue
         real = {m for m in vars(cls) if not m.startswith("_")}
         assert members - ignore == real, name
+
+
+def test_separate_units_and_formal_lowering_options(tmp_path):
+    f1 = tmp_path / "u1.sv"
+    f2 = tmp_path / "u2.sv"
+    f1.write_text("`define ONLY_U1 1\nmodule u1; endmodule\n")
+    f2.write_text("`ifdef ONLY_U1\nmodule leaked; endmodule\n`else\nmodule clean; endmodule\n`endif\n")
+    isolated = pysvlang.Compilation([str(f1), str(f2)], separate_units=True)
+    mods = [n.child("Name").bare_text for t in isolated.trees for n in t.root.find_all("ModuleDecl")]
+    assert mods == ["u1", "clean"]
+
+    rtl = (
+        "module top(input logic clk, a, b, output logic y);\n"
+        "  initial assert (a);\n"
+        "  assign y = $isunknown(a) ? 1'b0 : b;\n"
+        "  ap: assert property (@(posedge clk) a |-> b);\n"
+        "endmodule\n"
+    )
+    nl = pysvlang.Compilation.from_source(rtl, "top.sv").lower_netlist(
+        skip_initial_checks=True,
+        isunknown_is_false=True,
+        compile_properties=True,
+        precondition_covers=True,
+        witness_covers=True,
+    )
+    labels = {c.label: c.kind for c in nl.checks()}
+    assert labels["top.ap"] == "assert"
+    assert labels["top.ap:precondition"] == "cover"
+    assert labels["top.ap:witness"] == "cover"

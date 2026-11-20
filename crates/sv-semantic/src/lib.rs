@@ -1083,6 +1083,8 @@ struct Builder<'t> {
     frames: std::cell::RefCell<Vec<HashMap<String, types::CVal>>>,
     /// The declared types of those locals (with "" for the return value).
     ftypes: std::cell::RefCell<Vec<HashMap<String, packed::Ty>>>,
+    /// Active dimension nodes being evaluated, breaking mutual dim/func cycles.
+    dim_visiting: std::cell::RefCell<fx::FxSet<NodeRef>>,
     /// Set when an evaluation met an invalid constant (a zero replication
     /// or a cast to zero width): slang leaves such a value `<unset>`.
     invalid: std::cell::Cell<bool>,
@@ -1139,6 +1141,7 @@ impl<'t> Builder<'t> {
             block_consts: false,
             frames: Default::default(),
             ftypes: Default::default(),
+            dim_visiting: Default::default(),
             invalid: Default::default(),
             inst: Default::default(),
         }

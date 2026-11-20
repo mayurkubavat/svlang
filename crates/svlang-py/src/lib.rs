@@ -183,7 +183,7 @@ fn str_pairs(d: Option<&Bound<'_, PyDict>>) -> PyResult<Vec<(String, Option<Stri
 #[pymethods]
 impl Compilation {
     #[new]
-    #[pyo3(signature = (files = Vec::new(), *, include_dirs = Vec::new(), defines = None, top = Vec::new(), params = None, sources = None, single_unit = false))]
+    #[pyo3(signature = (files = Vec::new(), *, include_dirs = Vec::new(), defines = None, top = Vec::new(), params = None, sources = None, single_unit = false, separate_units = false))]
     #[allow(clippy::too_many_arguments)]
     fn new(
         py: Python<'_>,
@@ -194,8 +194,9 @@ impl Compilation {
         params: Option<&Bound<'_, PyDict>>,
         sources: Option<&Bound<'_, PyDict>>,
         single_unit: bool,
+        separate_units: bool,
     ) -> PyResult<Self> {
-        let mut d = Driver::new().single_unit(single_unit);
+        let mut d = Driver::new().single_unit(single_unit).separate_units(separate_units);
         for f in files {
             d = d.add_file(f);
         }
@@ -288,7 +289,7 @@ impl Compilation {
     /// Raises ``LowerError`` when the design has errors or uses constructs
     /// outside the synthesizable/formal subset.
     #[allow(clippy::too_many_arguments)]
-    #[pyo3(signature = (*, top = None, max_loop_iters = 65_536, blast_memories_up_to = None, allow_four_state_ops = false, cut_points = Vec::new(), black_box_modules = Vec::new(), black_box_instances = Vec::new(), compile_properties = false, skip_cycles = 0))]
+    #[pyo3(signature = (*, top = None, max_loop_iters = 65_536, blast_memories_up_to = None, allow_four_state_ops = false, cut_points = Vec::new(), black_box_modules = Vec::new(), black_box_instances = Vec::new(), skip_initial_checks = false, isunknown_is_false = false, compile_properties = false, skip_cycles = 0, precondition_covers = false, witness_covers = false))]
     fn lower_netlist(
         &self,
         py: Python<'_>,
@@ -299,8 +300,12 @@ impl Compilation {
         cut_points: Vec<String>,
         black_box_modules: Vec<String>,
         black_box_instances: Vec<String>,
+        skip_initial_checks: bool,
+        isunknown_is_false: bool,
         compile_properties: bool,
         skip_cycles: u32,
+        precondition_covers: bool,
+        witness_covers: bool,
     ) -> PyResult<Netlist> {
         // `..Default::default()` keeps this building when svlang adds a LowerConfig option.
         #[allow(clippy::needless_update)]
@@ -312,6 +317,8 @@ impl Compilation {
             cut_points,
             black_box_modules,
             black_box_instances,
+            skip_initial_checks,
+            isunknown_is_false,
             ..Default::default()
         };
         let comp = self.inner.clone();
@@ -320,6 +327,8 @@ impl Compilation {
             if let (svlang::LowerOutcome::Lowered(nl), true) = (&mut outcome, compile_properties) {
                 let mut opts = svlang::netlist::PropertyOptions::default();
                 opts.skip_cycles = skip_cycles;
+                opts.precondition_covers = precondition_covers;
+                opts.witness_covers = witness_covers;
                 nl.compile_properties(&opts);
             }
             outcome

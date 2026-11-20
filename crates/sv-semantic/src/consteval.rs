@@ -79,7 +79,7 @@ impl Builder<'_> {
             if let Some(d) = dt {
                 types.insert(n.clone(), Ty::of(d, fscope));
             }
-            frame.insert(n, self.fit(v, dt, fscope, env));
+            frame.insert(n, self.fit(v, dt, fscope, env, depth + 1));
         }
         let ret_dt = self.child(decl, ReturnType).and_then(|r| self.child(r, DataType));
         let (fname, _) = self.name_of(decl)?;
@@ -87,9 +87,13 @@ impl Builder<'_> {
             types.insert(fname.clone(), Ty::of(d, fscope));
             types.insert(String::new(), Ty::of(d, fscope));
         }
-        frame.insert(fname.clone(), self.fit(CVal::int(0), ret_dt, fscope, env));
+        frame.insert(fname.clone(), CVal::int(0));
         self.frames.borrow_mut().push(frame);
         self.ftypes.borrow_mut().push(types);
+        let init_ret = self.fit(CVal::int(0), ret_dt, fscope, env, depth + 1);
+        if let Some(top) = self.frames.borrow_mut().last_mut() {
+            top.insert(fname.clone(), init_ret);
+        }
         let mut steps = 0;
         let flow = self.exec_list(&self.children(body), fscope, env, depth + 1, &mut steps);
         self.ftypes.borrow_mut().pop();
@@ -98,12 +102,12 @@ impl Builder<'_> {
             Flow::Return(Some(v)) => v,
             _ => frame.get(&fname)?.clone(),
         };
-        Some(self.fit(v, ret_dt, fscope, env))
+        Some(self.fit(v, ret_dt, fscope, env, depth + 1))
     }
 
     /// A value cast to a declared integral type (unchanged when not one).
-    fn fit(&self, v: CVal, dt: Option<NodeRef>, scope: usize, env: &Env) -> CVal {
-        match dt.and_then(|d| self.int_shape(d, scope, env, 0)) {
+    fn fit(&self, v: CVal, dt: Option<NodeRef>, scope: usize, env: &Env, depth: usize) -> CVal {
+        match dt.and_then(|d| self.int_shape(d, scope, env, depth + 1)) {
             Some((w, s)) => v.cast(w, s),
             None if dt.is_none() => v,
             None => v,
@@ -193,7 +197,7 @@ impl Builder<'_> {
                         (Some(e), None) => self.eval(e, scope, env, depth + 1)?,
                         (None, _) => CVal::int(0),
                     };
-                    let v = self.fit(v, dt, scope, env);
+                    let v = self.fit(v, dt, scope, env, depth + 1);
                     if let Some(d) = dt {
                         self.ftypes.borrow_mut().last_mut()?.insert(n.clone(), Ty::of(d, scope));
                     }

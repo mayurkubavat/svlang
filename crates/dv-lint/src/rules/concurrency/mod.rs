@@ -16,6 +16,7 @@ mod event_trigger_in_always_comb;
 mod event_wait_vs_triggered_race;
 mod file_handle_not_closed;
 mod fork_inside_function;
+mod fork_join_none_ref_or_output_capture;
 mod fork_loop_variable_capture;
 mod fork_loop_variable_shared;
 mod lock_not_released;
@@ -97,5 +98,6 @@ pub(crate) fn rules() -> Vec<Rule> {
         },
         Rule { id: "SV-CON-016", name: "EventWaitVsTriggeredRace", category: "Concurrency", severity: Severity::Warning, profiles: SOUNDNESS, guidelines: &[], experimental: false, native: true, about: "Flags @(ev) event waits inside fork...join_none or join_any child threads that race with active-region '-> ev' triggers, recommending wait(ev.triggered).", check: Check::Syntax(event_wait_vs_triggered_race::event_wait_vs_triggered_race) },
         Rule { id: "SV-CON-017", name: "NbaToDynamicContainerOrHandle", category: "Concurrency", severity: Severity::Error, profiles: SOUNDNESS, guidelines: &[], experimental: false, native: true, about: "Flags non-blocking assignments ('<=') to local or module-scope dynamic arrays, queues, associative arrays, and strings (IEEE 1800 §10.4.2).", check: Check::Syntax(nba_to_dynamic_container_or_handle::nba_to_dynamic_container_or_handle) },
+        Rule { id: "SV-CON-018", name: "ForkJoinNoneRefOrOutputCapture", category: "Concurrency", severity: Severity::Warning, profiles: SOUNDNESS, guidelines: &[], experimental: false, native: true, about: "Flags detached 'fork ... join_none' background threads that capture ref, const ref, output, or inout arguments whose caller lifetime may end before the child thread finishes.", check: Check::Syntax(fork_join_none_ref_or_output_capture::fork_join_none_ref_or_output_capture) },
     ]
 }

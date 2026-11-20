@@ -47,6 +47,9 @@ fn super_call_fix(c: &crate::syntax::Cst, decl: svlang::syntax::NodeId, name: &s
     if !matches!(c.kind(decl), FunctionDecl | TaskDecl) {
         return None;
     }
+    if c.trimmed(decl).replace(' ', "").contains(&format!("super.{name}(")) {
+        return None;
+    }
     let ports = c.tree.child(decl, PortList)?;
     let args: Vec<_> = c.tree.children(ports).filter(|&p| c.kind(p) == Port).collect();
     let [port] = args[..] else { return None };

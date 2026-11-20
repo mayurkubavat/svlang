@@ -66,6 +66,9 @@ def test_mapping(binary):
     guidelines = guide(binary)
     check(len(guidelines) > 0, "guide is empty")
     known = registered_rules(binary)
+    published = json.loads((REPO / "docs" / "rules" / "catalog.json").read_text())
+    native_ids = {r["id"] for r in published["rules"] if r.get("engine") == "native"}
+    has_native = bool(native_ids & known)
     docs = documented_rules()
     readme = (DOCS / "README.md").read_text()
     for g in guidelines:
@@ -73,8 +76,11 @@ def test_mapping(binary):
             check(rule in known, f"{g['id']} names unknown rule {rule}")
         check(g["id"] in docs, f"{g['id']} has no 'Enforced by' line in docs/methodology")
         # The docs are generated from the native engine, which lists rules by ID.
-        check(sorted(docs.get(g["id"], [])) == sorted(g["rules"]),
-              f"{g['id']}: docs list {docs.get(g['id'])}, linter maps {g['rules']}")
+        expected_doc_rules = docs.get(g["id"], [])
+        if not has_native:
+            expected_doc_rules = [r for r in expected_doc_rules if r not in native_ids]
+        check(sorted(expected_doc_rules) == sorted(g["rules"]),
+              f"{g['id']}: docs list {expected_doc_rules}, linter maps {g['rules']}")
         check(g["id"] in readme, f"{g['id']} missing from docs/methodology/README.md")
     for gid in docs:
         check(any(g["id"] == gid for g in guidelines), f"docs describe {gid}, which the linter does not know")

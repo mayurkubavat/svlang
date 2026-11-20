@@ -591,5 +591,59 @@ fn verissimo_native_fixes_preserve_semantics() {
     assert!(fixed_seq.contains("if (get_starting_phase() != null) begin"), "{fixed_seq}");
     assert!(fixed_seq.contains("get_starting_phase().raise_objection(this, \"r\");"), "{fixed_seq}");
     assert!(fixed_seq.contains("get_starting_phase().drop_objection(this, \"r\");"), "{fixed_seq}");
+
+    // 3. SV-API-001 + SV-STY-025 safe fixes (`ref` -> `const ref`, tabular port alignment).
+    std::fs::write(
+        dir.join("align_and_ref.sv"),
+        "`timescale 1ns/1ps\nmodule aligned_ports (\n    input  logic       clk,\n    input  logic       rst_n,\n    input  logic [7:0] din,\n    output logic [7:0]   dout\n);\n    assign dout = din ^ {8{clk & rst_n}};\nendmodule\nclass ref_helper;\n    function int peek_first(ref int arr[]);\n        return arr.size();\n    endfunction\nendclass\n",
+    )
+    .unwrap();
+    let o = std::process::Command::new(env!("CARGO_BIN_EXE_dv-lint"))
+        .current_dir(&dir)
+        .args([
+            "--no-config",
+            "--no-cache",
+            "--preset",
+            "all",
+            "--fix",
+            "--fix-rule",
+            "SV-API-001,SV-STY-025",
+            "align_and_ref.sv",
+        ])
+        .output()
+        .unwrap();
+    assert!(o.status.code().is_some_and(|c| c <= 1), "{}", String::from_utf8_lossy(&o.stdout));
+    let fixed_ar = std::fs::read_to_string(dir.join("align_and_ref.sv")).unwrap();
+    assert!(fixed_ar.contains("    output logic [7:0] dout\n"), "{fixed_ar}");
+    assert!(fixed_ar.contains("function int peek_first(const ref int arr[]);"), "{fixed_ar}");
+
+    // 4. SV-PRF-001, SV-CON-012, and UVM-SEQ-018 `--unsafe-fixes` rewrites.
+    std::fs::write(
+        dir.join("unsafe_fixes.sv"),
+        "`include \"uvm_mock.svh\"\nclass pkt_helper extends uvm_sequence #(uvm_sequence_item);\n  `uvm_object_utils(pkt_helper)\n  function new(string name = \"pkt_helper\"); super.new(name); endfunction\n  function int count_bytes(byte payload[]);\n    return payload.size();\n  endfunction\n  task body();\n    starting_phase.raise_objection(this, \"go\");\n    for (int i = 0; i < 2; i++) begin\n      fork\n        #1 $display(\"%0d\", i);\n      join_none\n    end\n    starting_phase.drop_objection(this, \"done\");\n  endtask\nendclass\n",
+    )
+    .unwrap();
+    let o = std::process::Command::new(env!("CARGO_BIN_EXE_dv-lint"))
+        .current_dir(&dir)
+        .args([
+            "--no-config",
+            "--no-cache",
+            "-I",
+            repo.join("testdata/common").to_str().unwrap(),
+            "--fix",
+            "--unsafe-fixes",
+            "--fix-rule",
+            "SV-PRF-001,SV-CON-012,UVM-SEQ-018",
+            "unsafe_fixes.sv",
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(o.status.code(), Some(0), "{}", String::from_utf8_lossy(&o.stdout));
+    let fixed_u = std::fs::read_to_string(dir.join("unsafe_fixes.sv")).unwrap();
+    assert!(fixed_u.contains("function int count_bytes(const ref byte payload[]);"), "{fixed_u}");
+    assert!(fixed_u.contains("automatic int __i = i;"), "{fixed_u}");
+    assert!(fixed_u.contains("#1 $display(\"%0d\", __i);"), "{fixed_u}");
+    assert!(fixed_u.contains("if (starting_phase != null) starting_phase.raise_objection"), "{fixed_u}");
+    assert!(fixed_u.contains("if (starting_phase != null) starting_phase.drop_objection"), "{fixed_u}");
     let _ = std::fs::remove_dir_all(&dir);
 }

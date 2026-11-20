@@ -774,3 +774,48 @@ fn ieee1800_2023_conformance_suite_positive_and_negative() {
         assert!(cls_msgs.iter().any(|m| m.contains(needle)), "missing {needle:?} in {cls_msgs:?}");
     }
 }
+
+#[test]
+fn mutual_param_function_dim_cycle_terminates_and_extra_sema_checks() {
+    // Regression test for mutual parameter/function return-dimension cycle stack overflow.
+    let cyc_src = r#"
+module M;
+    localparam logic [bar()-1:0] foo = 1;
+    function logic [$bits(foo)-1:0] bar;
+        return 1;
+    endfunction
+endmodule
+"#;
+    let comp = Compilation::from_source("mutual_cycle.sv", cyc_src);
+    // Must terminate cleanly without stack overflow and emit a diagnostic on unresolved dimension/cycle.
+    let _ = comp.diagnostics();
+
+    // defparam on non-parameter, subroutine net port, covergroup sample rules, empty #(,).
+    let neg_src = r#"
+module sub; endmodule
+module top;
+    int not_a_param;
+    defparam not_a_param = 1;
+    function void bad_fn;
+        input wire w;
+    endfunction
+    covergroup cg1 (int x) with function sample(bit a, output int y);
+        coverpoint x;
+    endgroup
+    covergroup cg2 with function not_sample;
+    endgroup
+    sub #(,) u_sub();
+endmodule
+"#;
+    let neg = Compilation::from_source("extra_sema_neg.sv", neg_src);
+    let msgs: Vec<String> = neg.diagnostics().iter().map(|d| d.message.clone()).collect();
+    for needle in [
+        "defparam target 'not_a_param' is not a parameter",
+        "subroutine port cannot have a net type",
+        "covergroup sample argument cannot be 'output' or 'inout'",
+        "covergroup 'with function' must name 'sample'",
+        "empty positional parameter assignment is not allowed",
+    ] {
+        assert!(msgs.iter().any(|m| m.contains(needle)), "missing {needle:?} in {msgs:?}");
+    }
+}

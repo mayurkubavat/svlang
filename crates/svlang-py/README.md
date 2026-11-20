@@ -87,7 +87,12 @@ that both exporters write, and the notes say how many were left out. A
 concurrent assumption that could not be compiled raises `SvlangError`.
 
 ```python
-nl = comp.lower_netlist(compile_properties=True, skip_cycles=1)
+nl = comp.lower_netlist(
+    compile_properties=True,
+    skip_cycles=1,
+    precondition_covers=True,
+    witness_covers=True,
+)
 text, notes = nl.to_btor2(covers=True)
 ```
 
@@ -132,10 +137,10 @@ pytest tests
 ## Releasing
 
 The Python workflow builds and tests the wheels on every change. Pushing a
-tag `pysvlang-vX.Y.Z`, where `X.Y.Z` is the workspace version in the root
-`Cargo.toml`, also publishes the wheels and sdist to PyPI through trusted
-publishing (repository `mayurkubavat/svlang`, workflow `python.yml`,
-environment `pypi`).
+release tag `vX.Y.Z` (or `pysvlang-vX.Y.Z`), where `X.Y.Z` is the workspace
+version in the root `Cargo.toml`, also publishes the wheels and sdist to PyPI
+through trusted publishing (repository `mayurkubavat/svlang`, workflow
+`python.yml`, environment `pypi`).
 
 ## License
 

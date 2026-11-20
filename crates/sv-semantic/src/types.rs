@@ -512,7 +512,7 @@ impl<'t> Builder<'t> {
                     // `pkg::t [N-1:0]`: the use site's own packed dimensions.
                     for d in self.children(dt) {
                         if self.kind(d) == Dim {
-                            let (a, b) = self.dim_range(d, scope, env)?;
+                            let (a, b) = self.dim_range_depth(d, scope, env, depth + 1)?;
                             let cnt = range_len_u32(a, b, MAX_BIT_WIDTH)?;
                             w = w.checked_mul(cnt).filter(|&tw| tw <= MAX_BIT_WIDTH)?;
                         }
@@ -540,7 +540,7 @@ impl<'t> Builder<'t> {
                 let mut w = w.max(1);
                 for d in self.children(dt) {
                     if self.kind(d) == Dim {
-                        let (a, b) = self.dim_range(d, scope, env)?;
+                        let (a, b) = self.dim_range_depth(d, scope, env, depth + 1)?;
                         let cnt = range_len_u32(a, b, MAX_BIT_WIDTH)?;
                         w = w.checked_mul(cnt).filter(|&tw| tw <= MAX_BIT_WIDTH)?;
                     }
@@ -564,7 +564,7 @@ impl<'t> Builder<'t> {
         }
         for d in self.children(dt) {
             if self.kind(d) == Dim {
-                let (a, b) = self.dim_range(d, scope, env)?;
+                let (a, b) = self.dim_range_depth(d, scope, env, depth + 1)?;
                 let cnt = range_len_u32(a, b, MAX_BIT_WIDTH)?;
                 w = w.checked_mul(cnt).filter(|&tw| tw <= MAX_BIT_WIDTH)?;
             }
@@ -616,15 +616,29 @@ impl<'t> Builder<'t> {
     }
 
     pub(crate) fn dim_range(&self, d: NodeRef, scope: usize, env: &Env) -> Option<(i128, i128)> {
+        self.dim_range_depth(d, scope, env, 0)
+    }
+
+    pub(crate) fn dim_range_depth(&self, d: NodeRef, scope: usize, env: &Env, depth: usize) -> Option<(i128, i128)> {
+        if depth > MAX_EVAL_DEPTH || !self.dim_visiting.borrow_mut().insert(d) {
+            return None;
+        }
         let exprs: Vec<NodeRef> = self.children(d).into_iter().filter(|c| body_is_expr(self.kind(*c))).collect();
         let own = self.own_tokens(d);
-        match exprs.as_slice() {
-            [a, b] if own.contains(&":") => {
-                Some((dim_bound(self.eval(*a, scope, env, 0)?)?, dim_bound(self.eval(*b, scope, env, 0)?)?))
+        let out = match exprs.as_slice() {
+            [a, b] if own.contains(&":") => (|| {
+                Some((
+                    dim_bound(self.eval(*a, scope, env, depth + 1)?)?,
+                    dim_bound(self.eval(*b, scope, env, depth + 1)?)?,
+                ))
+            })(),
+            [n] if !own.contains(&":") => {
+                self.eval(*n, scope, env, depth + 1).and_then(dim_bound).map(|hi| (0, hi - 1))
             }
-            [n] if !own.contains(&":") => Some((0, dim_bound(self.eval(*n, scope, env, 0)?)? - 1)),
             _ => None,
-        }
+        };
+        self.dim_visiting.borrow_mut().remove(&d);
+        out
     }
 
     /// A named constant seen from `scope`: a parameter or localparam, with

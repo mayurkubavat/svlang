@@ -736,6 +736,18 @@ impl Ctx<'_> {
                 }
             }
             ParamDecl => {
+                if toks(t, n).first() == Some(&"defparam") {
+                    let kids: Vec<NodeId> = t.children(n).filter(|&k| t.kind(k) != Attribute).collect();
+                    for pair in kids.chunks_exact(2) {
+                        let target = pair[0];
+                        if let Some(dc) = self.name_decl(ix, t, target, parent) {
+                            if dc.kind != SymKind::Parameter {
+                                err(target, format!("defparam target '{}' is not a parameter", t.bare_text(target)));
+                            }
+                        }
+                    }
+                    return;
+                }
                 self.constant_context(ix, t, n, parent, &mut err);
                 for d in t.children(n).filter(|&c| t.kind(c) == Declarator) {
                     let mut stack: Vec<NodeId> = t.children(d).filter(|&c| t.kind(c) != Name).collect();
@@ -749,6 +761,50 @@ impl Ctx<'_> {
                             }
                         }
                         stack.extend(t.children(e));
+                    }
+                }
+            }
+            FunctionDecl | TaskDecl | MethodPrototype => {
+                const NET_KWS: &[&str] = &[
+                    "wire", "tri", "wand", "wor", "triand", "trior", "tri0", "tri1", "trireg", "uwire", "supply0",
+                    "supply1",
+                ];
+                if let Some(pl) = t.child(n, PortList) {
+                    for p in t.children(pl).filter(|&c| t.kind(c) == Port) {
+                        if toks(t, p).iter().any(|k| NET_KWS.contains(k)) {
+                            err(p, "subroutine port cannot have a net type".into());
+                        }
+                    }
+                }
+                if let Some(body) = t.child(n, Body) {
+                    for d in t.children(body).filter(|&c| t.kind(c) == DataDecl) {
+                        let own = toks(t, d);
+                        if own.first().is_some_and(|k| matches!(*k, "input" | "output" | "inout" | "ref"))
+                            && own.iter().any(|k| NET_KWS.contains(k))
+                        {
+                            err(d, "subroutine port cannot have a net type".into());
+                        }
+                    }
+                }
+            }
+            CovergroupDecl => {
+                if let Some(wc) = t.child(n, WithClause) {
+                    let own = toks(t, wc);
+                    if let Some(fpos) = own.iter().position(|&k| k == "function") {
+                        let fn_name = own.get(fpos + 1).copied().unwrap_or("");
+                        if fn_name != "sample" {
+                            err(wc, "covergroup 'with function' must name 'sample'".into());
+                        }
+                        match t.child(wc, PortList) {
+                            None => err(wc, "covergroup 'with function sample' requires a port list".into()),
+                            Some(pl) => {
+                                for p in t.children(pl).filter(|&c| t.kind(c) == Port) {
+                                    if toks(t, p).iter().any(|&k| matches!(k, "output" | "inout")) {
+                                        err(p, "covergroup sample argument cannot be 'output' or 'inout'".into());
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -780,7 +836,24 @@ impl Ctx<'_> {
             }
             ModuleDecl | InterfaceDecl => self.check_clocking_scope(t, n, &mut err),
             GateInst => self.check_gate_udnt(ix, t, n, parent, &mut err),
-            Instantiation => self.check_udp_udnt(ix, t, n, parent, &mut err),
+            Instantiation => {
+                self.check_udp_udnt(ix, t, n, parent, &mut err);
+                if let Some(pl) = t.child(n, DataType).and_then(|dt| t.child(dt, ParamList)) {
+                    let al = t.child(pl, ArgList).unwrap_or(pl);
+                    if toks(t, al).contains(&",") {
+                        let args: Vec<NodeId> = t.children(al).filter(|&a| t.kind(a) == Arg).collect();
+                        if args.is_empty()
+                            || args.iter().any(|&a| {
+                                toks(t, a).first() != Some(&".")
+                                    && t.children(a).all(|c| t.kind(c) == Attribute)
+                                    && toks(t, a).is_empty()
+                            })
+                        {
+                            err(pl, "empty positional parameter assignment is not allowed".into());
+                        }
+                    }
+                }
+            }
             SpecparamDecl => self.constant_context(ix, t, n, parent, &mut err),
             PathDecl => self.check_specify_path(ix, t, n, parent, &mut err),
             TimingCheck => self.check_timing_check(ix, t, n, parent, &mut err),

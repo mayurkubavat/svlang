@@ -13,7 +13,7 @@ import concurrent.futures, glob, os, subprocess, sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(os.path.dirname(HERE))
 def _default_specdump():
-    for rel in (('build', 'svlang_specdump'), ('build-dev', 'svlang_specdump'),
+    for rel in (('build', 'svlang_specdump'), ('build-model', 'svlang_specdump'), ('build-dev', 'svlang_specdump'),
                 ('build', 'specdump'), ('build-dev', 'specdump')):
         p = os.path.join(REPO, *rel)
         if os.path.isfile(p) and os.access(p, os.X_OK):

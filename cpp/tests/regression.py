@@ -277,7 +277,8 @@ def main():
                         help="Rewrite --baseline from the current results")
     parser.add_argument("--update-expectations", action="store_true",
                         help="Rewrite each expect.json from the current isolated results")
-    parser.add_argument("-j", "--jobs", type=int, default=os.cpu_count() or 1,
+    default_jobs = int(os.environ.get("GATE_JOBS", 2 if sys.platform == "darwin" else (os.cpu_count() or 1)))
+    parser.add_argument("-j", "--jobs", type=int, default=default_jobs,
                         help="Parallel linter processes")
     parser.add_argument("-v", "--verbose", action="store_true", help="Show passing tests and linter output")
     parser.add_argument("--rules-dir", default=str(DATA_DIR / "rules"), help="Path to testdata/rules directory")

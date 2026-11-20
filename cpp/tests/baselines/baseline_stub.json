@@ -5627,11 +5627,13 @@
     "SV-STY-104@15"
   ],
   "oop/SV-OOP-007/good.sv": [
+    "SV-RDB-010@12",
     "SV-STY-005@8",
     "SV-STY-005@9",
     "SV-STY-104@8",
     "SV-STY-104@9",
-    "UVM-FAC-003@5"
+    "UVM-FAC-003@5",
+    "UVM-FAC-003@12"
   ],
   "oop/SV-OOP-008/bad.sv": [
     "COMPILE:UndeclaredIdentifier@9",
@@ -8070,19 +8072,22 @@
   ],
   "uvm/UVM-FAC-001/good.sv": [
     "SV-DED-005@14",
+    "SV-DED-005@15",
     "SV-RDB-010@4",
     "SV-RDB-010@12",
     "SV-STY-001@14",
+    "SV-STY-001@15",
     "SV-STY-005@9",
     "SV-STY-005@10",
-    "SV-STY-005@18",
-    "SV-STY-005@24",
-    "SV-STY-005@25",
+    "SV-STY-005@19",
+    "SV-STY-005@26",
+    "SV-STY-005@27",
+    "SV-STY-009@21",
     "SV-STY-104@9",
     "SV-STY-104@10",
-    "SV-STY-104@18",
-    "SV-STY-104@24",
-    "SV-STY-104@25"
+    "SV-STY-104@19",
+    "SV-STY-104@26",
+    "SV-STY-104@27"
   ],
   "uvm/UVM-FAC-002/bad.sv": [
     "SV-STY-005@10",
@@ -8309,6 +8314,7 @@
   ],
   "uvm/UVM-OBJ-004/bad.sv": [
     "SV-DED-006@7",
+    "SV-OOP-004@7",
     "SV-RDB-010@4",
     "SV-SML-002@18",
     "SV-STY-005@11",
@@ -8327,6 +8333,7 @@
   ],
   "uvm/UVM-OBJ-004/good.sv": [
     "SV-DED-006@7",
+    "SV-OOP-004@7",
     "SV-RDB-010@4",
     "SV-SML-002@18",
     "SV-STY-005@11",
@@ -9374,7 +9381,6 @@
     "SV-STY-104@45",
     "SV-STY-104@46",
     "SV-TIM-002@29",
-    "UVM-FAC-001@24",
     "UVM-PHS-001@27",
     "UVM-TLM-001@11",
     "UVM-TST-001@18"
@@ -9411,7 +9417,6 @@
     "SV-STY-104@41",
     "SV-STY-104@46",
     "SV-STY-104@47",
-    "UVM-FAC-001@24",
     "UVM-PHS-001@27",
     "UVM-TLM-001@11",
     "UVM-TST-001@18"

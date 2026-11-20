@@ -2,11 +2,15 @@
 //! in a uvm_component subclass is shared across all instances simulation-wide.
 
 use crate::{Severity, Sink};
-use dv_model::Design;
+use dv_model::{Design, Visibility};
 
 pub(crate) fn static_member_in_uvm_component(d: &Design, out: &mut Sink) {
     for cls in d.classes() {
-        if cls.is_parameterized || !cls.uvm.is_component() {
+        if cls.is_parameterized || !cls.uvm.is_component() || cls.name == "uvm_component" {
+            continue;
+        }
+        // Dedicated singleton services restrict direct construction (`local`/`protected` new()).
+        if cls.methods.iter().any(|m| !m.is_builtin && m.name == "new" && m.visibility != Visibility::Public) {
             continue;
         }
         for p in &cls.properties {

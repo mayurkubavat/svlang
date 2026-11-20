@@ -1,6 +1,7 @@
 [package]
 name = "sv-lexer"
 description = "Lossless SystemVerilog lexer (IEEE 1800-2023): every byte of the input is in exactly one token"
+readme = "../../README.md"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

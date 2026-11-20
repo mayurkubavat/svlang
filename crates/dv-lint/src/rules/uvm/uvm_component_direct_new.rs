@@ -23,9 +23,25 @@ pub(crate) fn component_direct_new(c: &Cst, s: &mut Sink) {
     let classes = Classes::new(c);
     let g = crate::support::class_metrics::globals(c);
     let is_component = |i: usize| classes.chain(i).iter().any(|(n, _)| n == "uvm_component");
+    let is_non_factory_infra = |i: usize| {
+        classes.chain(i).iter().any(|(n, _)| {
+            matches!(
+                n.as_str(),
+                "uvm_tlm_fifo"
+                    | "uvm_tlm_fifo_base"
+                    | "uvm_tlm_analysis_fifo"
+                    | "uvm_port_component"
+                    | "uvm_port_component_base"
+                    | "uvm_root"
+            )
+        })
+    };
     for nx in c.nodes(NewExpr) {
         // `new[n]` makes an array; `new obj` copies.
         if c.tok(nx, "[").is_some() || (c.tree.child(nx, ArgList).is_none() && c.tree.children(nx).next().is_some()) {
+            continue;
+        }
+        if classes.enclosing(c, nx).is_some_and(|ec| classes.list[ec].name == "uvm_component_registry") {
             continue;
         }
         let Some(p) = c.parent(nx) else { continue };
@@ -72,7 +88,7 @@ pub(crate) fn component_direct_new(c: &Cst, s: &mut Sink) {
             }
             continue;
         };
-        if !is_component(k) {
+        if !is_component(k) || is_non_factory_infra(k) {
             continue;
         }
         // Some elaborated copy holds the `new`: a specialization of the

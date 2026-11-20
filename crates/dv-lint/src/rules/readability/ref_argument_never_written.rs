@@ -63,6 +63,21 @@ fn ref_ports(c: &Cst, decl: NodeId) -> Vec<String> {
     out
 }
 
+/// If port `name` in `decl` has its own `ref` keyword and a single declarator,
+/// returns that `ref` token so `--fix` can safely rewrite `ref` -> `const ref`.
+fn fixable_ref_tok(c: &Cst, decl: NodeId, name: &str) -> Option<u32> {
+    let list = c.tree.child(decl, PortList)?;
+    for p in c.tree.children(list).filter(|&p| c.kind(p) == Port) {
+        let decls: Vec<NodeId> = c.tree.children(p).filter(|&d| c.kind(d) == Declarator).collect();
+        let [d] = decls.as_slice() else { continue };
+        let nm = c.tree.child(*d, Name)?;
+        if c.tree.bare_text(nm) == name {
+            return c.tok(p, "ref");
+        }
+    }
+    None
+}
+
 pub(crate) fn ref_argument_never_written(c: &Cst, s: &mut Sink) {
     let classes = Classes::new(c);
     let g = crate::support::class_metrics::globals(c);
@@ -87,6 +102,8 @@ pub(crate) fn ref_argument_never_written(c: &Cst, s: &mut Sink) {
                 continue;
             }
             let Some(tok) = port_tok(c, decl, &a) else { continue };
+            let fix = fixable_ref_tok(c, decl, &a)
+                .and_then(|rt| c.token_fix(rt, rt, "const ref", "Declare read-only ref argument as 'const ref'"));
             for _ in 0..r.times {
                 s.add(
                     "SV-API-001",
@@ -97,7 +114,9 @@ pub(crate) fn ref_argument_never_written(c: &Cst, s: &mut Sink) {
                         r.name
                     ),
                     c.loc(tok),
-                );
+                )
+                .fixes
+                .extend(fix.clone());
             }
         }
     }

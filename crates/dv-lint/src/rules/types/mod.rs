@@ -8,6 +8,7 @@ mod array_literal_size_mismatch;
 mod mixed_sign_comparison;
 mod out_of_domain_enum_cast;
 mod redundant_cast_to_same_type;
+mod struct_pattern_field_order_mismatch;
 mod task_with_non_void_return_type;
 mod unsigned_loop_downcount_hazard;
 
@@ -24,5 +25,6 @@ pub(crate) fn rules() -> Vec<Rule> {
         },
         Rule { id: "SV-TYP-011", name: "OutOfDomainEnumCast", category: "Types", severity: Severity::Warning, profiles: SOUNDNESS, guidelines: &[], experimental: false, native: true, about: "Flags static casts of constant integer literals into an enum type when the literal does not match any declared enumerator value.", check: Check::Syntax(out_of_domain_enum_cast::out_of_domain_enum_cast) },
         Rule { id: "SV-TYP-012", name: "UnsignedLoopDowncountHazard", category: "Types", severity: Severity::Error, profiles: SOUNDNESS, guidelines: &[], experimental: false, native: true, about: "Flags for-loops whose unsigned loop control variable is tested with '>= 0' while decrementing, causing infinite wrap-around execution.", check: Check::Syntax(unsigned_loop_downcount_hazard::unsigned_loop_downcount_hazard) },
+        Rule { id: "SV-TYP-013", name: "StructPatternFieldOrderMismatch", category: "Types", severity: Severity::Warning, profiles: SOUNDNESS, guidelines: &[], experimental: false, native: true, about: "Flags named struct assignment patterns whose explicit field keys appear out of declared struct member order or omit fields without a default: key.", check: Check::Syntax(struct_pattern_field_order_mismatch::struct_pattern_field_order_mismatch) },
     ]
 }

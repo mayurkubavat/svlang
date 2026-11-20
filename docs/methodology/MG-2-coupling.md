@@ -45,7 +45,7 @@ Write:
 @(posedge vif.irq);   // vif from uvm_config_db
 ```
 
-Enforced by: `SV-OOP-008`, `UVM-CPL-004`
+Enforced by: `SV-OOP-008`, `UVM-CPL-004`, `UVM-PHS-013`
 
 ## MG-2.3 (Should)
 

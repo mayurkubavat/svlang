@@ -9,11 +9,13 @@ mod class_member_prefix;
 pub(crate) mod configurable_naming_engine;
 mod configurable_style_engine;
 mod constraint_name_suffix;
+mod duplicate_macro_redefinition;
 mod explicit_literal_width;
 mod extern_method_threshold;
 mod include_guard;
 mod inconsistent_block_indentation;
 mod interface_naming_convention;
+mod macro_naming_convention;
 mod macro_trailing_semicolon;
 mod mandatory_matching_end_label;
 mod max_line_length;
@@ -22,6 +24,7 @@ mod mismatched_end_label;
 mod multiple_declarations_per_line;
 mod one_statement_per_line;
 mod package_naming_convention;
+mod port_and_param_column_alignment;
 mod section_header_banner;
 mod space_keyword_paren;
 mod todo_comment_tracker;
@@ -89,5 +92,8 @@ pub(crate) fn rules() -> Vec<Rule> {
         Rule { id: "SV-STY-022", name: "UnparenthesizedMacroArg", category: "Style", severity: Severity::Warning, profiles: STYLE, guidelines: &[], experimental: false, native: true, about: "Flags function-like expression macros whose formal parameters appear adjacent to operators in the macro body without enclosing parentheses.", check: Check::Syntax(unparenthesized_macro_arg::unparenthesized_macro_arg) },
         Rule { id: "SV-STY-023", name: "UnusedIncludeDirective", category: "Style", severity: Severity::Info, profiles: STYLE, guidelines: &[], experimental: false, native: true, about: "Flags top-level `include directives outside package aggregation bodies whose included headers contribute no tokens or used macros.", check: Check::Syntax(unused_include_directive::unused_include_directive) },
         Rule { id: "SV-STY-024", name: "ClassMemberOrdering", category: "Style", severity: Severity::Info, profiles: STYLE, guidelines: &[], experimental: false, native: true, about: "Enforces canonical class member ordering: typedefs and parameters, properties, constraints and covergroups, constructor new(), then methods.", check: Check::Syntax(class_member_ordering::class_member_ordering) },
+        Rule { id: "SV-STY-025", name: "PortAndParamColumnAlignment", category: "Style", severity: Severity::Info, profiles: STYLE, guidelines: &[], experimental: false, native: true, about: "Flags port and parameter identifiers in tabular-aligned multi-line module or interface headers that drift out of column alignment.", check: Check::Syntax(port_and_param_column_alignment::port_and_param_column_alignment) },
+        Rule { id: "SV-STY-026", name: "MacroNamingConvention", category: "Naming", severity: Severity::Info, profiles: STYLE, guidelines: &[], experimental: false, native: true, about: "Enforces UPPER_SNAKE_CASE naming on user-defined preprocessor macros (option: allow_prefix), exempting standard UVM and compiler macros.", check: Check::Syntax(macro_naming_convention::macro_naming_convention) },
+        Rule { id: "SV-STY-027", name: "DuplicateMacroRedefinition", category: "Maintainability", severity: Severity::Warning, profiles: SOUNDNESS, guidelines: &[], experimental: false, native: true, about: "Flags redefining an already-defined macro in the same file with a different replacement body without an intervening `undef or mutually exclusive conditional branch.", check: Check::Syntax(duplicate_macro_redefinition::duplicate_macro_redefinition) },
     ]
 }

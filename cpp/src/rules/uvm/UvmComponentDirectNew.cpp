@@ -58,8 +58,24 @@ public:
         visitDefault(v);
     }
 
+    static bool isNonFactoryInfra(const svlang_lint::uvm::UvmModel& m, const slang::ast::Type& ty) {
+        return m.isDerivedFrom(ty, "uvm_tlm_fifo") ||
+               m.isDerivedFrom(ty, "uvm_tlm_fifo_base") ||
+               m.isDerivedFrom(ty, "uvm_tlm_analysis_fifo") ||
+               m.isDerivedFrom(ty, "uvm_port_component") ||
+               m.isDerivedFrom(ty, "uvm_port_component_base") ||
+               m.isDerivedFrom(ty, "uvm_root");
+    }
+
+    void handle(const slang::ast::ClassType& cls) {
+        std::string_view name = cls.genericClass ? cls.genericClass->name : cls.name;
+        if (name == "uvm_component_registry") return;
+        visitDefault(cls);
+    }
+
     void handle(const slang::ast::NewClassExpression& expr) {
-        if (!expr.isSuperClass && uvmModel.isUvmComponent(*expr.type)) {
+        if (!expr.isSuperClass && uvmModel.isUvmComponent(*expr.type) &&
+            !isNonFactoryInfra(uvmModel, *expr.type)) {
             auto it = written.find(&expr);
             diags.addViolation(
                 "UVM-FAC-001",

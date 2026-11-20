@@ -7,3 +7,11 @@ class compliant_staticmemberinuvmcomponent extends uvm_object;
         super.new(name);
     endfunction
 endclass
+
+// Singleton service with restricted constructor (`protected function new`)
+class singleton_root_service extends uvm_component;
+    static bit m_initialized = 0;
+    protected function new(string name = "singleton_root_service", uvm_component parent = null);
+        super.new(name, parent);
+    endfunction : new
+endclass : singleton_root_service

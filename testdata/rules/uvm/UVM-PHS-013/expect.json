@@ -1,0 +1,5 @@
+{
+  "bad.sv": [
+    {"rule": "UVM-PHS-013", "line": 13}
+  ]
+}

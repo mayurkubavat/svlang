@@ -271,6 +271,7 @@ class Compilation:
         params: Optional[Mapping[str, object]] = None,
         sources: Optional[Mapping[str, str]] = None,
         single_unit: bool = False,
+        separate_units: bool = False,
     ) -> None: ...
     @staticmethod
     def from_source(text: str, name: str = "source.sv") -> Compilation: ...
@@ -295,6 +296,10 @@ class Compilation:
         cut_points: Sequence[str] = ...,
         black_box_modules: Sequence[str] = ...,
         black_box_instances: Sequence[str] = ...,
+        skip_initial_checks: bool = False,
+        isunknown_is_false: bool = False,
         compile_properties: bool = False,
         skip_cycles: int = 0,
+        precondition_covers: bool = False,
+        witness_covers: bool = False,
     ) -> Netlist: ...

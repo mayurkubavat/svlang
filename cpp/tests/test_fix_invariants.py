@@ -164,7 +164,8 @@ def main():
     parser.add_argument("--sample", type=int, default=40, help="files to mutate (0 = all)")
     parser.add_argument("--seed", default="svlang-lint")
     parser.add_argument("--timeout", type=int, default=60)
-    parser.add_argument("-j", "--jobs", type=int, default=8)
+    default_jobs = int(os.environ.get("GATE_JOBS", 2 if sys.platform == "darwin" else 8))
+    parser.add_argument("-j", "--jobs", type=int, default=default_jobs)
     args = parser.parse_args()
     binary = str(Path(args.binary).resolve())
 

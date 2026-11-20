@@ -46,6 +46,7 @@ mod sequence_item_default_new;
 mod sequence_item_type_compatibility;
 mod sequence_priority_range;
 mod sequence_start_on_null_sequencer;
+mod starting_phase_without_null_guard;
 mod super_build_phase_order;
 mod time_in_non_time_phase;
 pub(crate) mod tlm_topology_checker;
@@ -73,6 +74,7 @@ mod uvm_tlm_try_get_unchecked;
 mod uvm_transaction_aliasing;
 mod uvm_unconnected_tlm_port;
 mod uvm_unpaired_objection;
+mod virtual_interface_access_in_build_phase;
 mod virtual_interface_modport_drive_inversion;
 mod virtual_sequencer_wiring_checker;
 
@@ -212,5 +214,7 @@ pub(crate) fn rules() -> Vec<Rule> {
         Rule { id: "UVM-SEQ-017", name: "PSequencerTypeMismatch", category: "UVM", severity: Severity::Warning, profiles: METHODOLOGY, guidelines: &[], experimental: false, native: true, about: "Flags sequence .start(seqr) calls where the target sequencer's static class type is incompatible with the p_sequencer type declared by the sequence.", check: Check::Mixed(p_sequencer_type_mismatch::p_sequencer_type_mismatch) },
         Rule { id: "UVM-CBK-001", name: "UnregisteredUvmCallback", category: "UVM", severity: Severity::Warning, profiles: METHODOLOGY, guidelines: &[], experimental: false, native: true, about: "Flags uvm_callbacks#(T, CB)::add calls where the callback class CB lacks a matching `uvm_register_cb(T, CB) registration.", check: Check::Mixed(unregistered_uvm_callback::unregistered_uvm_callback) },
         Rule { id: "UVM-PRF-001", name: "ConfigDbGetInRunPhaseLoop", category: "Performance", severity: Severity::Warning, profiles: PERFORMANCE, guidelines: &[], experimental: false, native: true, about: "Flags uvm_config_db::get() calls inside loops in runtime task phases or sequence body() tasks, which scan the global resource table on every iteration.", check: Check::Syntax(config_db_get_in_run_phase_loop::config_db_get_in_run_phase_loop) },
+        Rule { id: "UVM-PHS-013", name: "VirtualInterfaceAccessInBuildPhase", category: "UVM", severity: Severity::Warning, profiles: METHODOLOGY, guidelines: &["MG-2.2"], experimental: false, native: true, about: "Flags reading or driving virtual interface signals inside new() or build_phase() (or helpers called from them) before connect_phase / run_phase.", check: Check::Mixed(virtual_interface_access_in_build_phase::virtual_interface_access_in_build_phase) },
+        Rule { id: "UVM-SEQ-018", name: "StartingPhaseWithoutNullGuard", category: "UVM", severity: Severity::Warning, profiles: METHODOLOGY, guidelines: &[], experimental: false, native: true, about: "Flags dereferencing starting_phase inside a uvm_sequence without an enclosing 'if (starting_phase != null)' guard.", check: Check::Mixed(starting_phase_without_null_guard::starting_phase_without_null_guard) },
     ]
 }

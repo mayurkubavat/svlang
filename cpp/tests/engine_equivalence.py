@@ -87,7 +87,9 @@ def main():
 
     failures = 0
     total = 0
-    with concurrent.futures.ThreadPoolExecutor(max_workers=os.cpu_count()) as pool:
+    default_workers = 2 if sys.platform == "darwin" else (os.cpu_count() or 2)
+    workers = int(os.environ.get("GATE_JOBS", default_workers))
+    with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
         futures = {pool.submit(check, binary, case, thread_counts): case for case in cases}
         for fut in concurrent.futures.as_completed(futures):
             case = futures[fut]

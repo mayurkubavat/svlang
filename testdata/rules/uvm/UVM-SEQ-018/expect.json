@@ -1,0 +1,6 @@
+{
+  "bad.sv": [
+    {"rule": "UVM-SEQ-018", "line": 8},
+    {"rule": "UVM-SEQ-018", "line": 9}
+  ]
+}

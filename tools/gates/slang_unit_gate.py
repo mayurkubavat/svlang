@@ -10,12 +10,24 @@ options or use several trees are skipped.
 
     tools/gates/slang_unit_gate.py [--list=gap|false|hang] [Assertion Cover ...]
 """
-import collections, concurrent.futures, glob, json, os, re, resource, subprocess, sys, tempfile
+import collections, concurrent.futures, glob, json, os, re, resource, signal, subprocess, sys, tempfile, time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(os.path.dirname(HERE))
-SVLANG_LINT = os.environ.get('SVLANG_LINT', os.path.join(REPO, 'build', 'svlang-lint'))
-DVBUILD = os.environ.get('DV_BUILD', os.path.join(REPO, 'target', 'release', 'dv-build'))
+
+
+def _default_bin(env_key, candidates):
+    if env_key in os.environ:
+        return os.environ[env_key]
+    for rel in candidates:
+        p = os.path.join(REPO, *rel)
+        if os.path.isfile(p) and os.access(p, os.X_OK):
+            return p
+    return os.path.join(REPO, *candidates[0])
+
+
+SVLANG_LINT = _default_bin('SVLANG_LINT', [('build', 'svlang-lint'), ('build-model', 'svlang-lint')])
+DVBUILD = _default_bin('DV_BUILD', [('target', 'release', 'dv-build'), ('target', 'debug', 'dv-build')])
 
 
 def _default_tests():
@@ -49,11 +61,61 @@ def cases(path):
         yield name, texts, is_2023
 
 
+MAX_RSS_KB = int(os.environ.get('GATE_MAX_RSS_MB', '1536')) * 1024
+
+
 def limit():
     try:
         resource.setrlimit(resource.RLIMIT_AS, (4 << 30, 4 << 30))
     except (ValueError, OSError):
         pass
+
+
+def _pgid_rss_kb(pgid):
+    try:
+        r = subprocess.run(['ps', '-o', 'rss=', '-g', str(pgid)], capture_output=True, text=True, timeout=2)
+        return sum(int(x) for x in r.stdout.split() if x.isdigit())
+    except Exception:
+        return 0
+
+
+def run_bounded(cmd, timeout=20):
+    """Run cmd in its own process group, killing the group on timeout or >MAX_RSS_KB RSS."""
+    proc = subprocess.Popen(
+        cmd,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=True,
+        preexec_fn=limit if sys.platform != 'darwin' else None,
+    )
+    deadline = time.monotonic() + timeout
+    try:
+        while True:
+            rc = proc.poll()
+            if rc is not None:
+                return rc
+            if time.monotonic() >= deadline:
+                try:
+                    os.killpg(proc.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                proc.wait()
+                return 'hang'
+            if _pgid_rss_kb(proc.pid) > MAX_RSS_KB:
+                try:
+                    os.killpg(proc.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                proc.wait()
+                return 'oom'
+            time.sleep(0.1)
+    finally:
+        if proc.poll() is None:
+            try:
+                os.killpg(proc.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            proc.wait()
 
 
 def verdicts(texts, is_2023):
@@ -64,16 +126,15 @@ def verdicts(texts, is_2023):
             open(f, 'w').write(text)
             files.append(f)
         nat_flags = ['--separate-units'] if len(files) > 1 else []
-        try:
-            nat = subprocess.run([DVBUILD, '--quiet', *nat_flags, *files], capture_output=True, timeout=30, preexec_fn=limit).returncode != 0
-        except subprocess.TimeoutExpired:
-            nat = 'hang'
+        nat_rc = run_bounded([DVBUILD, '--quiet', *nat_flags, *files], timeout=20)
+        nat = nat_rc if isinstance(nat_rc, str) else (nat_rc != 0)
         out = os.path.join(tmp, 'r.json')
         sl_flags = ['--std', '1800-2023'] if is_2023 else []
-        try:
-            subprocess.run([SVLANG_LINT, '--no-config', '--no-cache', *sl_flags, '--json', out, *files], capture_output=True, timeout=30, preexec_fn=limit)
-        except subprocess.TimeoutExpired:
-            pass
+        # Only compiler diagnostics are checked here: skip all lint rules and CrashGuard forking.
+        run_bounded(
+            [SVLANG_LINT, '--no-config', '--no-cache', '--rule', 'SV-CMP-001', '--override', '-crash-guard', *sl_flags, '--json', out, *files],
+            timeout=20,
+        )
         try:
             sl = json.load(open(out)).get('compileErrors', 0) > 0
         except (OSError, ValueError):
@@ -93,13 +154,14 @@ def main():
     if not jobs:
         print(f'FAIL: no Slang unit test cases found under {TESTS}', file=sys.stderr)
         return 1
-    workers = int(os.environ.get('GATE_JOBS', min(2, os.cpu_count() or 2)))
+    default_jobs = 1 if sys.platform == 'darwin' else min(2, os.cpu_count() or 2)
+    workers = int(os.environ.get('GATE_JOBS', default_jobs))
     with concurrent.futures.ThreadPoolExecutor(workers) as pool:
         rows = list(pool.map(lambda j: (j[0], j[1], *verdicts(j[2], j[3])), jobs))
     t = collections.defaultdict(collections.Counter)
     hangs = 0
     for area, name, nat, sl in rows:
-        if nat == 'hang':
+        if nat in ('hang', 'oom'):
             hangs += 1
         t[area]['ok' if not nat and not sl else 'reject' if nat and sl else 'gap' if sl else 'false'] += 1
     print(f'{"area":<14} {"both ok":>8} {"both reject":>12} {"gap":>6} {"false":>6}')
@@ -110,7 +172,7 @@ def main():
         print(f'{area:<14} {c["ok"]:>8} {c["reject"]:>12} {c["gap"]:>6} {c["false"]:>6}')
     print(f'{"total":<14} {tot["ok"]:>8} {tot["reject"]:>12} {tot["gap"]:>6} {tot["false"]:>6}')
     for area, name, nat, sl in rows:
-        kind = 'hang' if nat == 'hang' else 'gap' if sl and not nat else 'false' if nat and not sl else ''
+        kind = nat if nat in ('hang', 'oom') else 'gap' if sl and not nat else 'false' if nat and not sl else ''
         if kind and kind == show:
             print(kind.upper(), area, '|', name)
     if hangs:

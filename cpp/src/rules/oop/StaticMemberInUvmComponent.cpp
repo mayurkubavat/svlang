@@ -21,7 +21,15 @@ public:
              core::DiagnosticEngine& diags) override {
         const model::Model& design = uvmModel.facade();
         for (const model::Class& cls : design.classes()) {
-            if (cls.isParameterized || !model::isComponent(cls.uvm)) continue;
+            if (cls.isParameterized || !model::isComponent(cls.uvm) || cls.name == "uvm_component") continue;
+            bool restrictedNew = false;
+            for (const model::Method& m : cls.methods) {
+                if (!m.isBuiltIn && m.name == "new" && m.visibility != model::Visibility::Public) {
+                    restrictedNew = true;
+                    break;
+                }
+            }
+            if (restrictedNew) continue;
             for (const model::Property& prop : cls.properties) {
                 if (!prop.isStatic || prop.isConst) continue;
                 diags.addViolation(
