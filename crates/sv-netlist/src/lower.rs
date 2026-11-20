@@ -5,7 +5,8 @@ use sv_semantic::expr::{is_streaming_concat_node, resolve_interface_port};
 use sv_semantic::fx::{FxMap, FxSet};
 use sv_semantic::{
     BoundProperty, CVal, ElabItemKind, ElaboratedDesign, ExprArena, ExprBinder, ExprId, ExprKind, InstanceId, Loc,
-    PortConn, PortDir, PropExpr, RtlType, SeqExpr, SvaBinder, SvaClock, SvaEdge, SymbolId, SymbolKind,
+    LocalBinding, LocalId, PortConn, PortDir, PropExpr, RtlType, SeqExpr, SvaBinder, SvaClock, SvaEdge, SymbolId,
+    SymbolKind,
 };
 use sv_syntax::{Child, NodeId, SyntaxKind, Tree};
 
@@ -28,6 +29,23 @@ pub(crate) struct PendingAlias {
     pub lo_b: u32,
     pub width: u32,
     pub loc: Loc,
+}
+
+pub(crate) type ProcRootInfo = (usize, NodeId, InstanceId, String, Vec<(String, CVal)>);
+
+#[derive(Clone)]
+pub(crate) struct UnrolledProcAssert {
+    pub tree_idx: usize,
+    pub node: NodeId,
+    pub inst_id: InstanceId,
+    pub scope_prefix: String,
+    pub gen_consts: Vec<(String, CVal)>,
+    pub local_decls: FxMap<String, LocalBinding>,
+    pub local_typedefs: FxMap<String, RtlType>,
+    pub local_vals: FxMap<LocalId, ObjVal>,
+    pub proc_root: Option<ProcRootInfo>,
+    pub loc: Loc,
+    pub reach: ValueId,
 }
 
 pub(crate) struct DesignLowerer<'a> {
@@ -53,6 +71,10 @@ pub(crate) struct DesignLowerer<'a> {
     /// Path condition of each concurrent assertion in procedural code, by instance,
     /// generate scope and location (constant 1 when it is always reached).
     pub proc_assert_enables: Vec<(InstanceId, String, Loc, ValueId)>,
+    /// Concurrent assertions encountered inside unrolled procedural loops or inlined tasks.
+    pub proc_unrolled_asserts: Vec<UnrolledProcAssert>,
+    /// Enclosing procedural block CST node while lowering a `ProceduralBlock`.
+    pub cur_proc_root: Option<ProcRootInfo>,
     /// Enclosing `(instance, scope_prefix)` for each entry pushed to `builder.checks`.
     pub check_scopes: Vec<(InstanceId, String)>,
 }
@@ -98,6 +120,8 @@ pub fn lower_design(trees: &[Tree], design: &ElaboratedDesign, config: &LowerCon
         cut_seen: Default::default(),
         boxed: Default::default(),
         proc_assert_enables: Vec::new(),
+        proc_unrolled_asserts: Vec::new(),
+        cur_proc_root: None,
         check_scopes: Vec::new(),
     };
     if let Err(diag) = lowerer.mark_black_boxes(top_id) {
@@ -133,10 +157,13 @@ pub fn lower_design(trees: &[Tree], design: &ElaboratedDesign, config: &LowerCon
     let mut sva_arena = ExprArena::new();
     let mut properties = Vec::new();
     lowerer.collect_sva_recursive(top_id, &mut sva_arena, &mut properties);
+    let mut prop_locals: Vec<Option<FxMap<LocalId, ObjVal>>> = vec![None; properties.len()];
+    let mut unrolled_enables: Vec<Option<ValueId>> = vec![None; properties.len()];
+    lowerer.collect_unrolled_sva(&mut sva_arena, &mut properties, &mut prop_locals, &mut unrolled_enables);
     if !lowerer.builder.diags.is_empty() {
         return classify_diags(lowerer.builder.diags);
     }
-    let prop_expr_values = lowerer.lower_sva_properties(&sva_arena, &properties);
+    let prop_expr_values = lowerer.lower_sva_properties(&sva_arena, &properties, &prop_locals);
     if !lowerer.builder.diags.is_empty() {
         return classify_diags(lowerer.builder.diags);
     }
@@ -145,14 +172,17 @@ pub fn lower_design(trees: &[Tree], design: &ElaboratedDesign, config: &LowerCon
     // The path condition of a property in procedural code, matched by where it stands.
     let property_enables: Vec<Option<ValueId>> = properties
         .iter()
-        .map(|p| {
-            lowerer
-                .proc_assert_enables
-                .iter()
-                .find(|(inst, scope, loc, _)| *inst == p.instance && *scope == p.scope_prefix && *loc == p.loc)
-                .map(|e| e.3)
-                // Always reached: no condition to keep.
-                .filter(|&en| !lowerer.builder.const_cval(en).is_some_and(|c| c.known() && c.is_true()))
+        .enumerate()
+        .map(|(idx, p)| {
+            let raw_en = unrolled_enables.get(idx).copied().flatten().or_else(|| {
+                lowerer
+                    .proc_assert_enables
+                    .iter()
+                    .find(|(inst, scope, loc, _)| *inst == p.instance && *scope == p.scope_prefix && *loc == p.loc)
+                    .map(|e| e.3)
+            });
+            // Always reached: no condition to keep.
+            raw_en.filter(|&en| !lowerer.builder.const_cval(en).is_some_and(|c| c.known() && c.is_true()))
         })
         .collect();
     let mut read_by_properties = prop_expr_values.clone();
@@ -2324,7 +2354,51 @@ impl<'a> DesignLowerer<'a> {
         }
     }
 
-    fn lower_sva_properties(&mut self, sva_arena: &ExprArena, properties: &[BoundProperty]) -> Vec<Option<ValueId>> {
+    fn collect_unrolled_sva(
+        &mut self,
+        sva_arena: &mut ExprArena,
+        properties: &mut Vec<BoundProperty>,
+        prop_locals: &mut Vec<Option<FxMap<LocalId, ObjVal>>>,
+        unrolled_enables: &mut Vec<Option<ValueId>>,
+    ) {
+        if self.proc_unrolled_asserts.is_empty() {
+            return;
+        }
+        let unrolled = std::mem::take(&mut self.proc_unrolled_asserts);
+        for ua in unrolled {
+            if self.boxed.contains(&ua.inst_id) {
+                continue;
+            }
+            let mut binder = SvaBinder::new(self.trees, self.design, sva_arena);
+            binder.extra_local_decls = ua.local_decls;
+            binder.extra_local_typedefs = ua.local_typedefs;
+            let inherited_clk = ua.proc_root.as_ref().and_then(|(ptree, pnode, pinst, pscope, pgens)| {
+                binder.extract_procedural_clock(*ptree, *pnode, *pinst, pscope, pgens)
+            });
+            let bound = binder.bind_concurrent_assert(
+                ua.tree_idx,
+                ua.node,
+                ua.inst_id,
+                &ua.scope_prefix,
+                &ua.gen_consts,
+                inherited_clk,
+            );
+            let diags = binder.diags;
+            self.flush_expr_diags(diags);
+            if let Some(bp) = bound {
+                properties.push(bp);
+                prop_locals.push(Some(ua.local_vals));
+                unrolled_enables.push(Some(ua.reach));
+            }
+        }
+    }
+
+    fn lower_sva_properties(
+        &mut self,
+        sva_arena: &ExprArena,
+        properties: &[BoundProperty],
+        prop_locals: &[Option<FxMap<LocalId, ObjVal>>],
+    ) -> Vec<Option<ValueId>> {
         let mut out = vec![None; sva_arena.exprs.len()];
         let empty_syms = FxMap::default();
         let empty_locals = FxMap::default();
@@ -2333,7 +2407,8 @@ impl<'a> DesignLowerer<'a> {
         let config = self.config;
         let mut builder = std::mem::replace(&mut self.builder, NetBuilder::new(String::new(), Vec::new()));
 
-        for prop in properties {
+        for (idx, prop) in properties.iter().enumerate() {
+            let cur_locals = prop_locals.get(idx).and_then(|o| o.as_ref()).unwrap_or(&empty_locals);
             lower_bound_property_exprs(
                 sva_arena,
                 prop,
@@ -2341,7 +2416,7 @@ impl<'a> DesignLowerer<'a> {
                 &sym_slots,
                 &placeholders,
                 &empty_syms,
-                &empty_locals,
+                cur_locals,
                 self,
                 &mut builder,
                 &mut out,
@@ -2570,6 +2645,7 @@ fn assign_check_and_property_names(
 
 pub(crate) fn lower_external_property_on_netlist(
     nl: &mut Netlist,
+    trees: &[Tree],
     design: &ElaboratedDesign,
     arena: &ExprArena,
     prop: &BoundProperty,
@@ -2656,21 +2732,77 @@ pub(crate) fn lower_external_property_on_netlist(
     let config = LowerConfig { allow_four_state_ops, ..LowerConfig::default() };
     let empty_syms = FxMap::default();
     let empty_locals = FxMap::default();
-    let mut inliner = ExternalPropInliner;
     let mut lowered_map: Vec<Option<ValueId>> = vec![None; arena.exprs.len()];
 
-    lower_bound_property_exprs(
-        arena,
-        prop,
-        &config,
-        &sym_slots,
-        &placeholders,
-        &empty_syms,
-        &empty_locals,
-        &mut inliner,
-        &mut builder,
-        &mut lowered_map,
-    );
+    if trees.is_empty() {
+        let mut inliner = ExternalPropInliner;
+        lower_bound_property_exprs(
+            arena,
+            prop,
+            &config,
+            &sym_slots,
+            &placeholders,
+            &empty_syms,
+            &empty_locals,
+            &mut inliner,
+            &mut builder,
+            &mut lowered_map,
+        );
+    } else {
+        let slots: Vec<SignalSlot> = placeholders
+            .iter()
+            .map(|&vid| {
+                let vn = nl.value(vid);
+                SignalSlot {
+                    name: vn.name.clone().unwrap_or_default(),
+                    width: vn.width,
+                    signed: vn.signed,
+                    four_state: vn.four_state,
+                    is_net: false,
+                    placeholder: vid,
+                    init: None,
+                    loc: vn.loc,
+                    drivers: Vec::new(),
+                    free: FreeKind::Undriven,
+                    pull: None,
+                }
+            })
+            .collect();
+        let sym_rc = std::rc::Rc::new(sym_slots);
+        let ph_rc = std::rc::Rc::new(placeholders);
+        let mut lowerer = DesignLowerer {
+            trees,
+            design,
+            config: &config,
+            builder: NetBuilder::new(nl.top.clone(), Vec::new()),
+            slots,
+            slot_placeholders: std::rc::Rc::clone(&ph_rc),
+            sym_slots: std::rc::Rc::clone(&sym_rc),
+            eligible_memories: FxSet::default(),
+            pending_aliases: Vec::new(),
+            next_local_id: 0,
+            call_stack: Vec::new(),
+            free_attrs: None,
+            cut_seen: Default::default(),
+            boxed: Default::default(),
+            proc_assert_enables: Vec::new(),
+            proc_unrolled_asserts: Vec::new(),
+            cur_proc_root: None,
+            check_scopes: Vec::new(),
+        };
+        lower_bound_property_exprs(
+            arena,
+            prop,
+            &config,
+            &sym_rc,
+            &ph_rc,
+            &empty_syms,
+            &empty_locals,
+            &mut lowerer,
+            &mut builder,
+            &mut lowered_map,
+        );
+    }
 
     if !builder.diags.is_empty() {
         return Err(builder.diags);

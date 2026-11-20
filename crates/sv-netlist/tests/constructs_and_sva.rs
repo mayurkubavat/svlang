@@ -903,7 +903,9 @@ endmodule
     assert!(cond_nl.dump().contains(" when=v"), "{}", cond_nl.dump());
     let loop_ca =
         "module m (input logic clk, a); always_ff @(posedge clk) for (int i=0;i<2;i++) assert property (a); endmodule";
-    assert!(matches!(lower_src(loop_ca), LowerOutcome::Unsupported(_)));
+    let loop_nl = lower_src(loop_ca).unwrap_netlist();
+    assert_eq!(loop_nl.properties.len(), 2);
+    assert_eq!(loop_nl.property_names, ["m._assert_1", "m._assert_2"]);
     let init_ca = "module m (input logic clk, a); initial assert property (@(posedge clk) a); endmodule";
     assert!(matches!(lower_src(init_ca), LowerOutcome::Unsupported(_)));
 
@@ -1532,4 +1534,96 @@ endmodule
     assert!(branch_covs >= 2, "at least one true/false branch cover pair synthesized");
     let toggle_covs = nl.add_toggle_covers(1);
     assert!(toggle_covs >= 2, "rise/fall toggle covers synthesized on registers");
+}
+
+#[test]
+fn tier4_unrolled_loop_task_concurrent_sva_and_external_prop_user_functions() {
+    let src = r#"
+package pkt_pkg;
+  function automatic logic is_valid_pair(input logic [3:0] hdr, input logic [3:0] mask);
+    logic [3:0] masked;
+    masked = hdr & mask;
+    return ^masked;
+  endfunction
+endpackage
+
+module lane_chk (
+  input  logic       clk,
+  input  logic       rst_n,
+  input  logic [2:0] en,
+  input  logic [2:0] req,
+  input  logic [2:0] gnt,
+  input  logic [3:0] hdr,
+  input  logic [3:0] mask,
+  output logic       parity_q
+);
+  import pkt_pkg::*;
+
+  function automatic logic local_check(input logic [3:0] h, input logic [3:0] m);
+    return is_valid_pair(h, m);
+  endfunction
+
+  task automatic check_one_lane(input int idx, input logic gate);
+    if (gate)
+      t_chk: assert property (@(posedge clk) disable iff (!rst_n) req[idx] |-> ##1 gnt[idx]);
+  endtask
+
+  always_ff @(posedge clk or negedge rst_n) begin
+    if (!rst_n) begin
+      parity_q <= 1'b0;
+    end else begin
+      parity_q <= local_check(hdr, mask);
+      for (int i = 0; i < 3; i++) begin
+        if (en[i])
+          a_loop: assert property (disable iff (!rst_n) req[i] |-> ##1 gnt[i]);
+      end
+      check_one_lane(0, en[0]);
+      check_one_lane(2, en[2]);
+    end
+  end
+endmodule
+"#;
+    let tree = sv_syntax::parse_source(src, "tier4.sv", sv_syntax::Options::default());
+    assert!(tree.errors.is_empty(), "{:?}", tree.errors);
+    let trees = vec![tree];
+    let elab = sv_semantic::elaborate_with_options(&trees, &["lane_chk".to_string()], &[], &[]);
+    assert!(elab.diags.is_empty(), "{:?}", elab.diags);
+    let mut nl = expect_lowered(sv_netlist::lower_design(&trees, &elab.design, &LowerConfig::default()));
+
+    // 3 unrolled `for` iterations + 2 task calls = 5 concurrent properties, each gated by `rst_n && en[i]`.
+    assert_eq!(nl.properties.len(), 5);
+    assert_eq!(
+        nl.property_names,
+        ["lane_chk.a_loop", "lane_chk.a_loop_2", "lane_chk.a_loop_3", "lane_chk.t_chk", "lane_chk.t_chk_2"]
+    );
+    assert!(nl.property_enables.iter().all(|e| e.is_some()), "all 5 unrolled properties keep reachability enables");
+    let outcomes = nl.compile_properties(&sv_netlist::PropertyOptions::default());
+    assert!(outcomes.iter().all(|o| matches!(o, sv_netlist::PropertyOutcome::Compiled { .. })), "{outcomes:?}");
+
+    // External CLI property calling both module function `local_check` and package function `pkt_pkg::is_valid_pair`:
+    let ext_src =
+        "module __ext; assert property (@(posedge clk) disable iff (!rst_n) (local_check(hdr, mask) |=> parity_q == $past(pkt_pkg::is_valid_pair(hdr, mask)))); endmodule";
+    let ext_tree = sv_syntax::parse_source(ext_src, "<ext>", sv_syntax::Options::default());
+    let ca_node =
+        ext_tree.preorder().into_iter().find(|&n| ext_tree.kind(n) == sv_syntax::SyntaxKind::ConcurrentAssert).unwrap();
+    let mut ext_arena = sv_semantic::ExprArena::new();
+    let mut binder = sv_semantic::SvaBinder::new(&trees, &elab.design, &mut ext_arena).with_extra_tree(&ext_tree);
+    let top_id = elab.design.tops[0];
+    let ext_prop = binder.bind_concurrent_assert(trees.len(), ca_node, top_id, "", &[], None).unwrap();
+    assert!(binder.diags.is_empty(), "{:?}", binder.diags);
+
+    // Without `trees`, `lower_external_property` still rejects non-constant user functions cleanly;
+    // with `trees`, `compile_external_properties_with_trees` inlines both functions!
+    assert!(nl.lower_external_property(&elab.design, &ext_arena, &ext_prop, false).is_err());
+    let ext_res = nl.compile_external_properties_with_trees(
+        &trees,
+        &elab.design,
+        &[sv_netlist::ExternalProperty {
+            arena: &ext_arena,
+            property: &ext_prop,
+            name: "lane_chk.ext_fn_prop".to_string(),
+        }],
+        &sv_netlist::PropertyOptions::default(),
+    );
+    assert!(matches!(ext_res.as_slice(), [Ok(sv_netlist::Compiled::Check(_))]), "{ext_res:?}");
 }

@@ -5,18 +5,23 @@ use crate::profile::*;
 use crate::{Check, Rule, Severity};
 
 mod assert_without_else;
+mod assume_on_output_or_state;
 mod concurrent_assert_in_function;
+mod constant_or_contradictory_assume;
 mod disable_iff_complex_expression;
 mod disable_iff_reset;
+mod formal_assert_missing_disable_iff;
 mod immediate_assert_in_combinatorial_logic;
 mod implication_in_cover_property;
 mod mixed_clock_edges_in_property;
 mod multi_clock_concurrent_assertion_domain;
 mod non_consecutive_repetition_zero_bound;
+mod resetless_flop_feeds_control;
 mod side_effect_in_assertion_action;
 mod sva_unbounded_delay;
 mod sva_vacuous_antecedent;
 mod time_in_assertion_action;
+mod unboxed_wide_arith_or_memory;
 mod unlabeled_assertion;
 
 /// Every rule of this category.
@@ -48,5 +53,10 @@ pub(crate) fn rules() -> Vec<Rule> {
         Rule { id: "SVA-VAC-001", name: "SvaVacuousAntecedent", category: "SVA", severity: Severity::Error, profiles: SOUNDNESS, guidelines: &[], experimental: false, native: false, about: "Detects constant-false antecedents in assertion implications (0 |-> ...). False antecedents cause vacuous passes, giving a false 100% pass metric while never verifying DUT behavior.", check: Check::Syntax(sva_vacuous_antecedent::vacuous_antecedent),
         },
         Rule { id: "SV-SVA-007", name: "ImplicationInCoverProperty", category: "SVA", severity: Severity::Warning, profiles: SOUNDNESS, guidelines: &[], experimental: false, native: true, about: "Flags cover property statements that use implication ('|->' or '|=>'), which succeed vacuously whenever the antecedent is false instead of covering sequence completion.", check: Check::Syntax(implication_in_cover_property::implication_in_cover_property) },
+        Rule { id: "SV-FPV-001", name: "AssumeOnOutputOrState", category: "SVA", severity: Severity::Warning, profiles: ADVISORY, guidelines: &[], experimental: false, native: true, about: "Flags formal 'assume' statements that constrain module output ports or internal sequential state rather than primary inputs, which silently masks reachable DUT bugs.", check: Check::Syntax(assume_on_output_or_state::assume_on_output_or_state) },
+        Rule { id: "SV-FPV-002", name: "ResetlessFlopFeedsControl", category: "SVA", severity: Severity::Warning, profiles: ADVISORY, guidelines: &[], experimental: false, native: true, about: "Flags reset-less sequential flip-flops whose outputs feed 1-bit control/handshake ports, memory write-enables, or mux selectors in modules with reset logic.", check: Check::Syntax(resetless_flop_feeds_control::resetless_flop_feeds_control) },
+        Rule { id: "SV-FPV-003", name: "FormalAssertMissingDisableIff", category: "SVA", severity: Severity::Info, profiles: ADVISORY, guidelines: &[], experimental: false, native: true, about: "Flags concurrent 'assert' and 'cover' properties without 'disable iff' (and no 'default disable iff') inside elaborated modules that use reset. Advisory: selected by '--guideline formal-ready' or '--preset formal-ready'.", check: Check::Syntax(formal_assert_missing_disable_iff::formal_assert_missing_disable_iff) },
+        Rule { id: "SV-FPV-004", name: "UnboxedWideArithOrMemory", category: "SVA", severity: Severity::Info, profiles: ADVISORY, guidelines: &[], experimental: false, native: true, about: "Flags wide variable-by-variable multipliers/dividers (>= min_arith_width, default 16 bits) and large memories (>= min_mem_words, default 256 words) in formal-checked modules that should be black-boxed ('-bbox_mul' / '-bbox_a'). Advisory: selected by '--guideline formal-ready' or '--preset formal-ready'.", check: Check::Syntax(unboxed_wide_arith_or_memory::unboxed_wide_arith_or_memory) },
+        Rule { id: "SV-FPV-005", name: "ConstantOrContradictoryAssume", category: "SVA", severity: Severity::Error, profiles: SOUNDNESS, guidelines: &[], experimental: false, native: true, about: "Flags constant-false, tautological constant-true, or pairwise-contradictory formal 'assume' statements that render the formal environment vacuous or redundant.", check: Check::Syntax(constant_or_contradictory_assume::constant_or_contradictory_assume) },
     ]
 }

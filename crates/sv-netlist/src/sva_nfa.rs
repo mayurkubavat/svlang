@@ -13,9 +13,13 @@
 
 use std::collections::{BTreeMap, HashMap, VecDeque};
 
-use sv_semantic::{BoundProperty, CVal, CycleBound, CycleRange, ExprId, Loc, PropExpr, PropKind, RepeatKind, SeqExpr};
+use sv_semantic::{
+    BoundProperty, CVal, CycleBound, CycleRange, ExprId, Loc, PropExpr, PropKind, RepeatKind, SeqExpr, SvaEdge,
+};
 
-use crate::ir::{CheckKind, ClockSpec, FreeKind, NetOp, Netlist, State, StateId, UndrivenSlice, ValueId, ValueKind};
+use crate::ir::{
+    CheckKind, ClockSpec, Edge, FreeKind, NetOp, Netlist, State, StateId, UndrivenSlice, ValueId, ValueKind,
+};
 use crate::sva::{
     as_seq, bounds_checked, live_terms, prop_name, too_large, too_long, Cond, Lookback, Matcher, Monitor, Plan,
     PropertyOptions, Term,
@@ -68,7 +72,20 @@ pub(crate) fn prop_needs_automaton(prop: &PropExpr) -> bool {
                 prop_needs_automaton(inner)
             }
         }
-        PropExpr::Until { .. } => false,
+        PropExpr::And(a, b) | PropExpr::Or(a, b) => prop_needs_automaton(a) || prop_needs_automaton(b),
+        PropExpr::Implies(a, b) => prop_needs_automaton(a) || not_needs_automaton(a) || prop_needs_automaton(b),
+        PropExpr::Iff(a, b) => {
+            prop_needs_automaton(a) || not_needs_automaton(a) || prop_needs_automaton(b) || not_needs_automaton(b)
+        }
+        PropExpr::IfElse { then_prop, else_prop, .. } => {
+            prop_needs_automaton(then_prop) || else_prop.as_deref().is_some_and(prop_needs_automaton)
+        }
+        PropExpr::Until { lhs, rhs, .. } => {
+            let single_bool = |p: &PropExpr| matches!(as_seq(p).as_deref(), Ok(SeqExpr::Bool(_)));
+            !(single_bool(lhs) && single_bool(rhs))
+                && as_bool_formula(lhs, false).is_ok()
+                && as_bool_formula(rhs, false).is_ok()
+        }
         _ => false,
     }
 }
@@ -78,6 +95,14 @@ fn not_needs_automaton(p: &PropExpr) -> bool {
         PropExpr::Seq(s) | PropExpr::Weak(s) | PropExpr::Strong(s) => seq_needs_automaton(s),
         PropExpr::Not(inner) => not_needs_automaton(inner),
         PropExpr::AcceptOn { .. } | PropExpr::Until { .. } => true,
+        PropExpr::And(a, b) | PropExpr::Or(a, b) => not_needs_automaton(a) || not_needs_automaton(b),
+        PropExpr::Implies(a, b) => not_needs_automaton(a) || prop_needs_automaton(a) || not_needs_automaton(b),
+        PropExpr::Iff(a, b) => {
+            prop_needs_automaton(a) || not_needs_automaton(a) || prop_needs_automaton(b) || not_needs_automaton(b)
+        }
+        PropExpr::IfElse { then_prop, else_prop, .. } => {
+            not_needs_automaton(then_prop) || else_prop.as_deref().is_some_and(not_needs_automaton)
+        }
         PropExpr::OverlappedImplication { lhs, rhs }
         | PropExpr::NonOverlappedImplication { lhs, rhs }
         | PropExpr::FollowedBy { lhs, rhs, .. } => seq_needs_automaton(lhs) || not_needs_automaton(rhs),
@@ -1102,12 +1127,51 @@ impl ValFormula {
 /// Negation Normal Form property IR for `sva_nfa`.
 #[derive(Clone, Debug)]
 enum NormProp {
-    Seq { seq: NfaSeq, strong: bool },
-    NotSeq { seq: NfaSeq, negated_weak: bool },
-    Implication { overlapped: bool, orig_lhs: Option<SeqExpr>, nfa_lhs: NfaSeq, rhs: Box<NormProp> },
-    FollowedBy { overlapped: bool, nfa_lhs: NfaSeq, rhs: Box<NormProp> },
-    Until { strong: bool, overlapping: bool, hold: Option<BoolFormula>, release: BoolFormula },
-    Abort { reject: bool, cond: ExprId, prop: Box<NormProp> },
+    Seq {
+        seq: NfaSeq,
+        strong: bool,
+    },
+    NotSeq {
+        seq: NfaSeq,
+        negated_weak: bool,
+    },
+    Implication {
+        overlapped: bool,
+        orig_lhs: Option<SeqExpr>,
+        nfa_lhs: NfaSeq,
+        rhs: Box<NormProp>,
+        neg_rhs: Option<Box<NormProp>>,
+    },
+    FollowedBy {
+        overlapped: bool,
+        nfa_lhs: NfaSeq,
+        rhs: Box<NormProp>,
+    },
+    And(Box<NormProp>, Box<NormProp>),
+    Or(Box<NormProp>, Box<NormProp>),
+    Delay {
+        range: CycleRange,
+        strong: bool,
+        inner: Box<NormProp>,
+    },
+    Until {
+        strong: bool,
+        overlapping: bool,
+        hold: Option<BoolFormula>,
+        release: BoolFormula,
+    },
+    Abort {
+        reject: bool,
+        cond: ExprId,
+        prop: Box<NormProp>,
+    },
+}
+
+fn bf_or(a: BoolFormula, b: BoolFormula) -> BoolFormula {
+    BoolFormula::Not(Box::new(BoolFormula::And(
+        Box::new(BoolFormula::Not(Box::new(a))),
+        Box::new(BoolFormula::Not(Box::new(b))),
+    )))
 }
 
 fn as_bool_formula(p: &PropExpr, neg: bool) -> Result<BoolFormula, String> {
@@ -1116,6 +1180,57 @@ fn as_bool_formula(p: &PropExpr, neg: bool) -> Result<BoolFormula, String> {
         PropExpr::Seq(SeqExpr::Bool(e)) | PropExpr::Weak(SeqExpr::Bool(e)) | PropExpr::Strong(SeqExpr::Bool(e)) => {
             let leaf = BoolFormula::Leaf(*e);
             Ok(if neg { BoolFormula::Not(Box::new(leaf)) } else { leaf })
+        }
+        PropExpr::And(a, b) => {
+            if !neg {
+                Ok(BoolFormula::And(Box::new(as_bool_formula(a, false)?), Box::new(as_bool_formula(b, false)?)))
+            } else {
+                Ok(bf_or(as_bool_formula(a, true)?, as_bool_formula(b, true)?))
+            }
+        }
+        PropExpr::Or(a, b) => {
+            if !neg {
+                Ok(bf_or(as_bool_formula(a, false)?, as_bool_formula(b, false)?))
+            } else {
+                Ok(BoolFormula::And(Box::new(as_bool_formula(a, true)?), Box::new(as_bool_formula(b, true)?)))
+            }
+        }
+        PropExpr::Implies(a, b) => {
+            if !neg {
+                Ok(bf_or(as_bool_formula(a, true)?, as_bool_formula(b, false)?))
+            } else {
+                Ok(BoolFormula::And(Box::new(as_bool_formula(a, false)?), Box::new(as_bool_formula(b, true)?)))
+            }
+        }
+        PropExpr::Iff(a, b) => {
+            let ap = as_bool_formula(a, false)?;
+            let an = as_bool_formula(a, true)?;
+            let bp = as_bool_formula(b, false)?;
+            let bn = as_bool_formula(b, true)?;
+            if !neg {
+                let both = BoolFormula::And(Box::new(ap), Box::new(bp));
+                let neither = BoolFormula::And(Box::new(an), Box::new(bn));
+                Ok(bf_or(both, neither))
+            } else {
+                let l1 = BoolFormula::And(Box::new(ap), Box::new(bn));
+                let l2 = BoolFormula::And(Box::new(an), Box::new(bp));
+                Ok(bf_or(l1, l2))
+            }
+        }
+        PropExpr::IfElse { cond, then_prop, else_prop } => {
+            let c_pos = BoolFormula::Leaf(*cond);
+            let c_neg = BoolFormula::Not(Box::new(BoolFormula::Leaf(*cond)));
+            let t_pos = as_bool_formula(then_prop, false)?;
+            let then_branch = bf_or(c_neg.clone(), t_pos);
+            let full = match else_prop {
+                Some(ep) => {
+                    let e_pos = as_bool_formula(ep, false)?;
+                    let else_branch = bf_or(c_pos, e_pos);
+                    BoolFormula::And(Box::new(then_branch), Box::new(else_branch))
+                }
+                None => then_branch,
+            };
+            Ok(if neg { BoolFormula::Not(Box::new(full)) } else { full })
         }
         _ => Err("`until` between properties that are not single booleans".into()),
     }
@@ -1135,6 +1250,11 @@ fn delay_norm_prop(np: NormProp, range: CycleRange, strong: bool) -> Result<Norm
             let nw = NfaSeq::NotWeak(Box::new(seq));
             Ok(NormProp::Seq { seq: NfaSeq::Delay { range, lhs: None, rhs: Box::new(nw) }, strong })
         }
+        NormProp::Implication { .. }
+        | NormProp::FollowedBy { .. }
+        | NormProp::And(..)
+        | NormProp::Or(..)
+        | NormProp::Delay { .. } => Ok(NormProp::Delay { range, strong, inner: Box::new(np) }),
         NormProp::Until { .. } => Err("`until`".into()),
         _ => Err("a property operator inside a temporal range".into()),
     }
@@ -1143,6 +1263,82 @@ fn delay_norm_prop(np: NormProp, range: CycleRange, strong: bool) -> Result<Norm
 fn norm_prop(p: &PropExpr, neg: bool, default_strong: bool, allow_imp: bool) -> Result<NormProp, String> {
     match p {
         PropExpr::Not(inner) => norm_prop(inner, !neg, default_strong, true),
+        PropExpr::And(a, b) => {
+            let na = norm_prop(a, neg, default_strong, true)?;
+            let nb = norm_prop(b, neg, default_strong, true)?;
+            Ok(if !neg { NormProp::And(Box::new(na), Box::new(nb)) } else { NormProp::Or(Box::new(na), Box::new(nb)) })
+        }
+        PropExpr::Or(a, b) => {
+            let na = norm_prop(a, neg, default_strong, true)?;
+            let nb = norm_prop(b, neg, default_strong, true)?;
+            Ok(if !neg { NormProp::Or(Box::new(na), Box::new(nb)) } else { NormProp::And(Box::new(na), Box::new(nb)) })
+        }
+        PropExpr::Implies(a, b) => {
+            let na = norm_prop(a, !neg, default_strong, true)?;
+            let nb = norm_prop(b, neg, default_strong, true)?;
+            Ok(if !neg { NormProp::Or(Box::new(na), Box::new(nb)) } else { NormProp::And(Box::new(na), Box::new(nb)) })
+        }
+        PropExpr::Iff(a, b) => {
+            let ap = norm_prop(a, false, default_strong, true)?;
+            let an = norm_prop(a, true, default_strong, true)?;
+            let bp = norm_prop(b, false, default_strong, true)?;
+            let bn = norm_prop(b, true, default_strong, true)?;
+            if !neg {
+                Ok(NormProp::Or(
+                    Box::new(NormProp::And(Box::new(ap), Box::new(bp))),
+                    Box::new(NormProp::And(Box::new(an), Box::new(bn))),
+                ))
+            } else {
+                Ok(NormProp::Or(
+                    Box::new(NormProp::And(Box::new(ap), Box::new(bn))),
+                    Box::new(NormProp::And(Box::new(an), Box::new(bp))),
+                ))
+            }
+        }
+        PropExpr::IfElse { cond, then_prop, else_prop } => {
+            if !neg {
+                let t_pos = norm_prop(then_prop, false, default_strong, true)?;
+                let t_neg = norm_prop(then_prop, true, default_strong, true).ok().map(Box::new);
+                let then_imp = NormProp::Implication {
+                    overlapped: true,
+                    orig_lhs: Some(SeqExpr::Bool(*cond)),
+                    nfa_lhs: NfaSeq::Bool(*cond),
+                    rhs: Box::new(t_pos),
+                    neg_rhs: t_neg,
+                };
+                match else_prop {
+                    None => Ok(then_imp),
+                    Some(ep) => {
+                        let e_pos = norm_prop(ep, false, default_strong, true)?;
+                        let e_neg = norm_prop(ep, true, default_strong, true).ok().map(Box::new);
+                        let else_imp = NormProp::Implication {
+                            overlapped: true,
+                            orig_lhs: None,
+                            nfa_lhs: NfaSeq::NotBool(*cond),
+                            rhs: Box::new(e_pos),
+                            neg_rhs: e_neg,
+                        };
+                        Ok(NormProp::And(Box::new(then_imp), Box::new(else_imp)))
+                    }
+                }
+            } else {
+                let t_neg = norm_prop(then_prop, true, default_strong, true)?;
+                let then_fb =
+                    NormProp::FollowedBy { overlapped: true, nfa_lhs: NfaSeq::Bool(*cond), rhs: Box::new(t_neg) };
+                match else_prop {
+                    None => Ok(then_fb),
+                    Some(ep) => {
+                        let e_neg = norm_prop(ep, true, default_strong, true)?;
+                        let else_fb = NormProp::FollowedBy {
+                            overlapped: true,
+                            nfa_lhs: NfaSeq::NotBool(*cond),
+                            rhs: Box::new(e_neg),
+                        };
+                        Ok(NormProp::Or(Box::new(then_fb), Box::new(else_fb)))
+                    }
+                }
+            }
+        }
         PropExpr::Seq(s) => {
             let is_strong = default_strong;
             if !neg {
@@ -1177,11 +1373,13 @@ fn norm_prop(p: &PropExpr, neg: bool, default_strong: bool, allow_imp: bool) -> 
             }
             let overlapped = matches!(p, PropExpr::OverlappedImplication { .. });
             if !neg {
+                let neg_rhs = norm_prop(rhs, true, default_strong, false).ok().map(Box::new);
                 Ok(NormProp::Implication {
                     overlapped,
                     orig_lhs: Some(lhs.clone()),
                     nfa_lhs: NfaSeq::from_seq(lhs),
                     rhs: Box::new(norm_prop(rhs, false, default_strong, false)?),
+                    neg_rhs,
                 })
             } else {
                 Ok(NormProp::FollowedBy {
@@ -1199,11 +1397,13 @@ fn norm_prop(p: &PropExpr, neg: bool, default_strong: bool, allow_imp: bool) -> 
                     rhs: Box::new(norm_prop(rhs, false, default_strong, false)?),
                 })
             } else {
+                let neg_rhs = norm_prop(rhs, false, default_strong, false).ok().map(Box::new);
                 Ok(NormProp::Implication {
                     overlapped: *overlapped,
                     orig_lhs: Some(lhs.clone()),
                     nfa_lhs: NfaSeq::from_seq(lhs),
                     rhs: Box::new(norm_prop(rhs, true, default_strong, false)?),
+                    neg_rhs,
                 })
             }
         }
@@ -1220,7 +1420,7 @@ fn norm_prop(p: &PropExpr, neg: bool, default_strong: bool, allow_imp: bool) -> 
                 return Err(too_long());
             }
             let eff_strong = if neg { !*strong } else { *strong };
-            let inner_np = norm_prop(inner, neg, default_strong, false)?;
+            let inner_np = norm_prop(inner, neg, default_strong, true)?;
             delay_norm_prop(inner_np, CycleRange::exact(*cycles), eff_strong)
         }
         PropExpr::Eventually { strong, range, prop: inner } => {
@@ -1346,6 +1546,80 @@ fn peel_aborts(mut np: NormProp) -> (Vec<AbortSpec>, NormProp) {
     (aborts, np)
 }
 
+fn to_pos_seq(np: NormProp) -> Result<(NfaSeq, bool), String> {
+    match np {
+        NormProp::Seq { seq, strong } => Ok((seq, strong)),
+        NormProp::NotSeq { seq, negated_weak: true } => Ok((NfaSeq::NotWeak(Box::new(seq)), true)),
+        NormProp::NotSeq { seq, negated_weak: false } if !seq.has_unbounded_wait() => {
+            Ok((NfaSeq::NotWeak(Box::new(seq)), false))
+        }
+        NormProp::Until { hold, .. } => Err(if hold.is_some() { "`until`" } else { "`s_eventually`" }.into()),
+        _ => Err("nested property operator with unbounded liveness or abort".into()),
+    }
+}
+
+fn reduce_norm_prop(
+    nl: &Netlist,
+    leaves: &[Option<ValueId>],
+    np: NormProp,
+    for_cover: bool,
+) -> Result<NormProp, String> {
+    match np {
+        NormProp::FollowedBy { overlapped, nfa_lhs, rhs } => {
+            reduce_followed_by(nl, leaves, overlapped, nfa_lhs, *rhs, for_cover)
+        }
+        NormProp::Implication { overlapped, nfa_lhs, neg_rhs: Some(nr), .. } => {
+            let bad = reduce_followed_by(nl, leaves, overlapped, nfa_lhs, *nr, for_cover)?;
+            match bad {
+                NormProp::Seq { seq, strong } => Ok(NormProp::NotSeq { seq, negated_weak: !strong }),
+                _ => Err("an implication inside another property operator".into()),
+            }
+        }
+        NormProp::Delay { range, strong, inner } => {
+            let red = reduce_norm_prop(nl, leaves, *inner, for_cover)?;
+            delay_norm_prop(red, range, strong)
+        }
+        NormProp::And(a, b) => {
+            let ra = reduce_norm_prop(nl, leaves, *a, for_cover)?;
+            let rb = reduce_norm_prop(nl, leaves, *b, for_cover)?;
+            match (ra, rb) {
+                (NormProp::NotSeq { seq: s1, negated_weak: nw1 }, NormProp::NotSeq { seq: s2, negated_weak: nw2 })
+                    if (nw1 && s1.has_unbounded_wait()) == (nw2 && s2.has_unbounded_wait()) =>
+                {
+                    let eff_nw = nw1 && s1.has_unbounded_wait();
+                    Ok(NormProp::NotSeq { seq: NfaSeq::Or(Box::new(s1), Box::new(s2)), negated_weak: eff_nw })
+                }
+                (x, y) => {
+                    let (s1, st1) = to_pos_seq(x)?;
+                    let (s2, st2) = to_pos_seq(y)?;
+                    Ok(NormProp::Seq { seq: NfaSeq::And(Box::new(s1), Box::new(s2)), strong: st1 || st2 })
+                }
+            }
+        }
+        NormProp::Or(a, b) => {
+            let ra = reduce_norm_prop(nl, leaves, *a, for_cover)?;
+            let rb = reduce_norm_prop(nl, leaves, *b, for_cover)?;
+            match (ra, rb) {
+                (NormProp::Seq { seq: s1, strong: st1 }, NormProp::Seq { seq: s2, strong: st2 }) => {
+                    Ok(NormProp::Seq { seq: NfaSeq::Or(Box::new(s1), Box::new(s2)), strong: st1 || st2 })
+                }
+                (NormProp::NotSeq { seq: s1, negated_weak: nw1 }, NormProp::NotSeq { seq: s2, negated_weak: nw2 })
+                    if (nw1 && s1.has_unbounded_wait()) == (nw2 && s2.has_unbounded_wait()) =>
+                {
+                    let eff_nw = nw1 && s1.has_unbounded_wait();
+                    Ok(NormProp::NotSeq { seq: NfaSeq::And(Box::new(s1), Box::new(s2)), negated_weak: eff_nw })
+                }
+                (x, y) => {
+                    let (s1, st1) = to_pos_seq(x)?;
+                    let (s2, st2) = to_pos_seq(y)?;
+                    Ok(NormProp::Seq { seq: NfaSeq::Or(Box::new(s1), Box::new(s2)), strong: st1 || st2 })
+                }
+            }
+        }
+        other => Ok(other),
+    }
+}
+
 /// Resolves `FollowedBy` chains over sequences/complement-DFAs into a single `NormProp::Seq`.
 fn reduce_followed_by(
     nl: &Netlist,
@@ -1370,6 +1644,9 @@ fn reduce_followed_by(
     let resolved_rhs = match rhs {
         NormProp::FollowedBy { overlapped: inner_ov, nfa_lhs: inner_l, rhs: inner_r } => {
             reduce_followed_by(nl, leaves, inner_ov, inner_l, *inner_r, for_cover)?
+        }
+        NormProp::Implication { .. } | NormProp::And(..) | NormProp::Or(..) | NormProp::Delay { .. } => {
+            reduce_norm_prop(nl, leaves, rhs, for_cover)?
         }
         NormProp::Until { hold: Some(_), .. } if for_cover => {
             return Err("a cover of `until`".into());
@@ -1999,12 +2276,7 @@ fn build_cover_consequent(
         return Ok((ant, ConsequentPlan::CoverDfa(rhs_dfa), warm));
     }
 
-    let resolved = match body {
-        NormProp::FollowedBy { overlapped, nfa_lhs, rhs } => {
-            reduce_followed_by(nl, leaves, overlapped, nfa_lhs, *rhs, true)?
-        }
-        other => other,
-    };
+    let resolved = reduce_norm_prop(nl, leaves, body, true)?;
 
     let has_accept = outer_aborts.iter().any(|a| !a.reject);
     if !has_accept {
@@ -2056,14 +2328,11 @@ fn compile_cover_rhs_dfa(
     aborts: &[AbortSpec],
     min_ticks: u32,
 ) -> Result<(ConsequentDfa, u32), String> {
+    let body = reduce_norm_prop(nl, leaves, body, true)?;
     let (seq, mode) = match body {
         NormProp::Seq { seq, strong } => (seq, DfaMode::Pos { strong }),
         NormProp::NotSeq { seq, negated_weak } => {
             (seq, if negated_weak { DfaMode::NegWeak } else { DfaMode::NegStrong })
-        }
-        NormProp::FollowedBy { overlapped, nfa_lhs, rhs } => {
-            let red = reduce_followed_by(nl, leaves, overlapped, nfa_lhs, *rhs, true)?;
-            return compile_cover_rhs_dfa(nl, leaves, red, aborts, min_ticks);
         }
         NormProp::Until { hold, .. } => {
             return Err(if hold.is_some() { "a cover of `until`" } else { "a cover of `s_eventually`" }.into());
@@ -2126,7 +2395,7 @@ pub(crate) fn plan_automaton(
     let mut ant_reject: Option<(ConsequentDfa, Option<ValueId>)> = None;
     let mut has_ant = false;
     let (antecedent, ant_min_ticks, mut warm_max, eff_aborts, rhs_norm) = match top_body {
-        NormProp::Implication { overlapped, orig_lhs, nfa_lhs, rhs } => {
+        NormProp::Implication { overlapped, orig_lhs, nfa_lhs, rhs, .. } => {
             has_ant = true;
             let (inner_aborts, rhs_inner) = peel_aborts(*rhs);
             let combined_aborts: Vec<AbortSpec> = outer_aborts.iter().chain(&inner_aborts).copied().collect();
@@ -2337,12 +2606,7 @@ pub(crate) fn plan_automaton(
         }
     }
 
-    let resolved_rhs = match rhs_core {
-        NormProp::FollowedBy { overlapped, nfa_lhs, rhs } => {
-            reduce_followed_by(nl, leaves, overlapped, nfa_lhs, *rhs, false)?
-        }
-        other => other,
-    };
+    let resolved_rhs = reduce_norm_prop(nl, leaves, rhs_core, false)?;
 
     // Check if consequent is `Until` (`b until c`, `s_eventually bool`, or their negations/aborts):
     if let NormProp::Until { strong, overlapping, hold, release } = resolved_rhs {
@@ -3231,4 +3495,170 @@ fn emit_dfa_liveness(
         }
         brk_empty
     }
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn emit_sticky_always_trigger(
+    nl: &mut Netlist,
+    prop: &BoundProperty,
+    antecedent: Option<(&SeqExpr, bool)>,
+    shift: u32,
+    leaves: &[Option<ValueId>],
+    reached: Option<ValueId>,
+    opts: &PropertyOptions,
+    memo: &mut Lookback,
+) -> Result<ValueId, String> {
+    let clock_node =
+        prop.clock.as_ref().ok_or("a property with no clock (no clocking event and no default clocking)")?;
+    if clock_node.iff.is_some() {
+        return Err("a clocking event with `iff`".into());
+    }
+    let edge = match clock_node.edge {
+        SvaEdge::Posedge => Edge::Posedge,
+        SvaEdge::Negedge => Edge::Negedge,
+        SvaEdge::AnyEdge => return Err("a clocking event on both edges".into()),
+    };
+    let not_lowered = || "an expression that was not lowered".to_string();
+    let leaf = |e: ExprId| leaves.get(e.0 as usize).copied().flatten();
+    let signal = leaf(clock_node.signal).ok_or_else(not_lowered)?;
+    let clock = ClockSpec { signal, edge };
+    let disable = match prop.disable_iff {
+        Some(d) => Some(leaf(d).ok_or_else(not_lowered)?),
+        None => None,
+    };
+    let loc = prop.loc;
+    let skip = nl.skip_for(clock, opts);
+    let disable_lb = disable.map_or(0, |d| nl.lookback(d, memo));
+    let eff_skip = skip.max(disable_lb);
+    let off_val = disable.map(|d| {
+        let b = nl.sva_bool(d, loc);
+        nl.sva_op(NetOp::LogNot, vec![b], 1, loc)
+    });
+
+    let tag = nl.states.iter().filter(|s| s.name.contains("._sva_sticky")).count();
+    let prefix = format!("{}._sva_sticky_{tag}", nl.top);
+
+    let alloc_warm_ok = |nl: &mut Netlist, warm: u32| -> Option<ValueId> {
+        if warm == 0 {
+            return None;
+        }
+        let width = (32 - warm.leading_zeros()).max(1);
+        let id = StateId(nl.states.len() as u32);
+        let out = nl.sva_value(width, false, ValueKind::StateOut(id), loc);
+        let top = nl.sva_const(width, warm, loc);
+        let below = nl.sva_op(NetOp::ULt, vec![out, top], 1, loc);
+        let step = if width == 1 { below } else { nl.sva_op(NetOp::ZeroExt { width }, vec![below], width, loc) };
+        let next = nl.sva_op(NetOp::Add, vec![out, step], width, loc);
+        nl.states.push(State {
+            id,
+            name: format!("{prefix}_tick"),
+            width,
+            signed: false,
+            four_state: false,
+            clock: Some(clock),
+            async_reset: None,
+            latch_enable: None,
+            init: Some(CVal::new(width, false, 0)),
+            next,
+            out,
+            loc,
+        });
+        let from = nl.sva_const(width, warm, loc);
+        Some(nl.sva_op(NetOp::ULe, vec![from, out], 1, loc))
+    };
+
+    let (mut step_trig, total_shift) = match antecedent {
+        Some((ant_seq, overlapped)) => {
+            let nfa_lhs = NfaSeq::from_seq(ant_seq);
+            let (pool, leaf_tab, state_next, frag) = {
+                let mut b = SeqNfaBuilder::new(nl, leaves, MAX_NFA_STATES);
+                let inj = b.pool.var(GVar::Inject)?;
+                let frag = b.build(&nfa_lhs, inj, 0, false)?;
+                (b.pool, b.leaf_tab, b.state_next, frag)
+            };
+            let ant_has_match = if overlapped {
+                frag.min_nonempty_len.is_some() && frag.end_now != Guard::False
+            } else {
+                frag.accepts_empty || (frag.min_nonempty_len.is_some() && frag.end_now != Guard::False)
+            };
+            if !ant_has_match {
+                return Err("an antecedent that has no match".into());
+            }
+            let mut warm = compute_warm_start(nl, &leaf_tab, eff_skip, memo);
+            if let Some(rv) = reached {
+                warm = warm.max(nl.lookback(rv, memo));
+            }
+            let mut inject = match reached {
+                Some(rv) => {
+                    let rb = nl.sva_bool(rv, loc);
+                    nl.sva_two_state(rb, loc)
+                }
+                None => nl.sva_const(1, 1, loc),
+            };
+            if let Some(wok) = alloc_warm_ok(nl, warm) {
+                inject = nl.sva_op(NetOp::LogAnd, vec![inject, wok], 1, loc);
+            }
+            if let Some(off) = off_val {
+                inject = nl.sva_op(NetOp::LogAnd, vec![inject, off], 1, loc);
+            }
+            let (pos_leaves, neg_leaves) = prepare_leaves(nl, &leaf_tab, loc);
+            let mut nfa_ids = Vec::with_capacity(state_next.len());
+            let mut nfa_outs = Vec::with_capacity(state_next.len());
+            for k in 0..state_next.len() {
+                let (sid, out) = alloc_sva_bit_state(nl, format!("{prefix}_ant_{k}"), clock, loc);
+                nfa_ids.push(sid);
+                nfa_outs.push(out);
+            }
+            let env = GuardLowerEnv { inject, nfa_states: &nfa_outs, pos_leaves: &pos_leaves, neg_leaves: &neg_leaves };
+            for (k, &nxt_g) in state_next.iter().enumerate() {
+                let mut nxt_v = emit_guard(nl, &pool, nxt_g, &env, loc);
+                if let Some(off) = off_val {
+                    nxt_v = nl.sva_op(NetOp::LogAnd, vec![nxt_v, off], 1, loc);
+                }
+                nl.states[nfa_ids[k].0 as usize].next = nxt_v;
+            }
+            let mut end_v = emit_guard(nl, &pool, frag.end_now, &env, loc);
+            if !overlapped && frag.accepts_empty {
+                end_v = nl.sva_op(NetOp::LogOr, vec![end_v, inject], 1, loc);
+            }
+            if let Some(off) = off_val {
+                end_v = nl.sva_op(NetOp::LogAnd, vec![end_v, off], 1, loc);
+            }
+            (end_v, shift.saturating_add(u32::from(!overlapped)))
+        }
+        None => {
+            let warm = eff_skip.max(reached.map_or(0, |r| nl.lookback(r, memo)));
+            let mut trig = match reached {
+                Some(rv) => {
+                    let rb = nl.sva_bool(rv, loc);
+                    nl.sva_two_state(rb, loc)
+                }
+                None => nl.sva_const(1, 1, loc),
+            };
+            if let Some(wok) = alloc_warm_ok(nl, warm) {
+                trig = nl.sva_op(NetOp::LogAnd, vec![trig, wok], 1, loc);
+            }
+            if let Some(off) = off_val {
+                trig = nl.sva_op(NetOp::LogAnd, vec![trig, off], 1, loc);
+            }
+            (trig, shift)
+        }
+    };
+
+    for step in 0..total_shift {
+        let (sid, sq) = alloc_sva_bit_state(nl, format!("{prefix}_d_{step}"), clock, loc);
+        let mut nxt = step_trig;
+        if let Some(off) = off_val {
+            nxt = nl.sva_op(NetOp::LogAnd, vec![nxt, off], 1, loc);
+        }
+        nl.states[sid.0 as usize].next = nxt;
+        step_trig = if let Some(off) = off_val { nl.sva_op(NetOp::LogAnd, vec![sq, off], 1, loc) } else { sq };
+    }
+
+    let (sticky_id, sticky_q) = alloc_sva_bit_state(nl, format!("{prefix}_on"), clock, loc);
+    let raw_active = nl.sva_op(NetOp::LogOr, vec![step_trig, sticky_q], 1, loc);
+    let active =
+        if let Some(off) = off_val { nl.sva_op(NetOp::LogAnd, vec![raw_active, off], 1, loc) } else { raw_active };
+    nl.states[sticky_id.0 as usize].next = active;
+    Ok(active)
 }

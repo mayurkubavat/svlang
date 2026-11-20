@@ -347,13 +347,26 @@ pub struct SvaBinder<'a> {
     pub arena: &'a mut ExprArena,
     /// Fail-closed diagnostics emitted while binding SVA properties.
     pub diags: Vec<ExprDiag>,
+    /// Optional procedural local bindings in scope (for unrolled loops and inlined tasks).
+    pub extra_local_decls: FxMap<String, crate::LocalBinding>,
+    /// Optional procedural local typedefs in scope (for unrolled loops and inlined tasks).
+    pub extra_local_typedefs: FxMap<String, crate::RtlType>,
     cur_pkg: Option<String>,
 }
 
 impl<'a> SvaBinder<'a> {
     /// Creates a new [`SvaBinder`] over `(trees, design, arena)`.
     pub fn new(trees: &'a [Tree], design: &'a ElaboratedDesign, arena: &'a mut ExprArena) -> Self {
-        Self { trees, extra_tree: None, design, arena, diags: Vec::new(), cur_pkg: None }
+        Self {
+            trees,
+            extra_tree: None,
+            design,
+            arena,
+            diags: Vec::new(),
+            extra_local_decls: FxMap::default(),
+            extra_local_typedefs: FxMap::default(),
+            cur_pkg: None,
+        }
     }
 
     /// Attaches an out-of-line [`Tree`] addressable at index `self.trees.len()`.
@@ -2139,7 +2152,8 @@ impl<'a> SvaBinder<'a> {
         None
     }
 
-    fn extract_procedural_clock(
+    /// Extracts the procedural clock (`@(posedge clk)` / `@(negedge clk)`) of a clocked procedural block.
+    pub fn extract_procedural_clock(
         &mut self,
         tree_idx: usize,
         proc_node: NodeId,
@@ -2201,10 +2215,11 @@ impl<'a> SvaBinder<'a> {
 
     fn collect_procedural_concurrent_asserts(t: &Tree, node: NodeId, out: &mut Vec<NodeId>) {
         for c in t.children(node) {
-            if t.kind(c) == SyntaxKind::ConcurrentAssert {
-                out.push(c);
-            } else {
-                Self::collect_procedural_concurrent_asserts(t, c, out);
+            match t.kind(c) {
+                SyntaxKind::ConcurrentAssert => out.push(c),
+                // Loops are unrolled with per-iteration bindings during netlist procedural lowering.
+                SyntaxKind::LoopStmt | SyntaxKind::DoWhileStmt => {}
+                _ => Self::collect_procedural_concurrent_asserts(t, c, out),
             }
         }
     }
@@ -2218,6 +2233,12 @@ impl<'a> SvaBinder<'a> {
     ) -> ExprBinder<'b> {
         let mut binder = ExprBinder::new(self.trees, self.design, inst_id, scope_prefix, gen_consts, self.arena);
         binder.extra_tree = self.extra_tree;
+        for (lname, lbind) in &self.extra_local_decls {
+            binder.locals.insert(lname.clone(), lbind.clone());
+        }
+        for (tname, tty) in &self.extra_local_typedefs {
+            binder.local_typedefs.insert(tname.clone(), tty.clone());
+        }
         if let Some(pkg_name) = &self.cur_pkg {
             let p_opt = if pkg_name == "$unit" {
                 Some(&self.design.unit_scope)

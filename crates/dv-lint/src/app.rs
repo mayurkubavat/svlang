@@ -403,6 +403,7 @@ pub fn run() {
             return guides
                 .iter()
                 .any(|g| guideline_selectors.iter().any(|s| dv_lint::catalog::guideline_matches(s, g)))
+                || (guideline_selectors.iter().any(|s| s == "formal-ready") && dv_lint::is_formal_ready_rule(id))
                 || fix_named.contains(id);
         }
         selected(id) || configured.contains(id) || fix_named.contains(id)

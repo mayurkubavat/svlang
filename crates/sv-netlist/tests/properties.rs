@@ -212,12 +212,14 @@ fn kinds_names_and_unsupported_operators() {
          a_fby: assert property ((a ##1 b) #-# c);\n\
          a_abort: assert property (sync_accept_on(c) (a ##1 b));\n\
          a_alw: assert property (a |-> always b);\n\
+         a_alw_comp: assert property (a |-> always (b ##1 c));\n\
+         a_imp: assert property (a implies b);\n\
+         a_iff: assert property (a iff b);\n\
+         a_ifelse: assert property (if (a) (b |-> ##1 c) else c);\n\
+         a_snext: assert property (s_nexttime [2] (a |-> ##1 b));\n\
          u1: assert property ((a [*1:$]) intersect (b [*1:$]) |-> c);\n\
-         u2: assert property (a |-> always (b ##1 c));\n\
-         u3: assert property (a implies b);\n\
          u4: assert property (@(clk) a);\n\
          u5: assert property ((a ##1 b) [->1] |-> c);\n\
-         u6: assert property (a iff b);\n\
          u7: assert property ((a ##1 b) [=1] |-> c);\n\
          u8: assert property ((a [*1:$]) within (b [*1:$]) |-> c);\n\
          u9: assert property (a |-> ##[1:2000] b);\n\
@@ -235,11 +237,8 @@ fn kinds_names_and_unsupported_operators() {
         other => panic!("{name}: {other:?}"),
     };
     assert_eq!(why("m.u1"), "sequence `intersect` with an unbounded operand");
-    assert_eq!(why("m.u2"), "`always` with no upper bound");
-    assert_eq!(why("m.u3"), "`implies`");
     assert_eq!(why("m.u4"), "a clocking event on both edges");
     assert_eq!(why("m.u5"), "goto repetition [->] on a multi-cycle sequence");
-    assert_eq!(why("m.u6"), "property `iff`");
     assert_eq!(why("m.u7"), "non-consecutive repetition [=] on a multi-cycle sequence");
     assert_eq!(why("m.u8"), "sequence `within` with an unbounded operand");
     assert_eq!(why("m.u9"), "a property longer than 1024 clock ticks");
@@ -263,6 +262,11 @@ fn kinds_names_and_unsupported_operators() {
     assert_eq!(check("m.a_unb_del"), CheckKind::Assert);
     assert_eq!(check("m.a_unb_rep"), CheckKind::Assert);
     assert_eq!(check("m.a_goto"), CheckKind::Assert);
+    assert_eq!(check("m.a_alw_comp"), CheckKind::Assert);
+    assert_eq!(check("m.a_imp"), CheckKind::Assert);
+    assert_eq!(check("m.a_iff"), CheckKind::Assert);
+    assert_eq!(check("m.a_ifelse"), CheckKind::Assert);
+    assert_eq!(check("m.a_snext"), CheckKind::Assert);
     assert_eq!(check("m.a_nonconsec"), CheckKind::Assert);
     assert_eq!(check("m.a_not"), CheckKind::Assert);
     assert_eq!(check("m.a_fby"), CheckKind::Assert);
@@ -1824,4 +1828,38 @@ fn unbounded_always_safety_and_liveness() {
         matches!(&out[2], PropertyOutcome::Unsupported(w) if w == "a cover of `always` with no upper bound"),
         "{out:?}"
     );
+}
+
+#[test]
+fn tier4_implies_iff_ifelse_snexttime_and_compound_always_semantics() {
+    // Rows are `"rst,a,b,c"`.
+    // 1. `(a ##1 b) implies (##1 c)`: at tick t, if `a(t) && b(t+1)`, then `c(t+1)` must hold.
+    let p_imp = "p: assert property (@(posedge clk) (a ##1 b) implies (##1 c));";
+    assert_eq!(fails(p_imp, &["0100", "0011", "0100", "0010"]), [3]);
+
+    // 2. `a iff b`: fails whenever `a != b`.
+    let p_iff = "p: assert property (@(posedge clk) a iff b);";
+    assert_eq!(fails(p_iff, &["0000", "0110", "0100", "0010"]), [2, 3]);
+
+    // 3. `if (a) (b |-> ##1 c) else c`: when `a=1`, `b` implies next-tick `c`; when `a=0`, `c` must hold immediately.
+    let p_if = "p: assert property (@(posedge clk) if (a) (b |-> ##1 c) else c);";
+    // Tick 0: a=0, c=1 (ok); Tick 1: a=0, c=0 -> fails at tick 2 (span=1 lookback); Tick 2: a=1, b=1; Tick 3: a=0, c=0 -> fails!
+    assert_eq!(fails(p_if, &["0001", "0000", "0111", "0100"]), [2, 3]);
+
+    // 4. `s_nexttime [2] (a |-> ##1 b)`: starts checking `a |-> ##1 b` 2 ticks after attempt start.
+    let p_snext = "p: assert property (@(posedge clk) s_nexttime [2] (a |-> ##1 b));";
+    // `a=1, b=0` at ticks 0..1 is before tick 2 so ignored; `a=1` at tick 2 with `b=0` at tick 3 fails at tick 3!
+    assert_eq!(fails(p_snext, &["0100", "0000", "0100", "0000"]), [3]);
+
+    // 5. Compound unbounded `always`: `c |-> always (a |-> ##1 b)`
+    let p_comp_alw = "p: assert property (@(posedge clk) disable iff (rst) (c |-> always (a |-> ##1 b)));";
+    // Before `c=1`: `a=1, b=0` at ticks 0..1 does NOT fail. Once `c=1` at tick 2, `a=1` at tick 3 without `b=1` at tick 4 fails at tick 4!
+    assert_eq!(fails(p_comp_alw, &["0100", "0000", "0001", "0100", "0000"]), [4]);
+    // Reset at tick 4 aborts both the sticky trigger and the pending `a |-> ##1 b` obligation:
+    assert_eq!(fails(p_comp_alw, &["0001", "0100", "1000", "0100", "0000"]), [] as [usize; 0]);
+
+    // 6. Automaton `implies` / `if..else` with unbounded `[->1]`:
+    let p_nfa_if = "p: assert property (@(posedge clk) if (a) (b |-> c [->1]) else c);";
+    // Tick 0: a=1, b=1, c=0 -> waits for c; Tick 1: a=1, b=0, c=1 -> satisfies tick 0; Tick 2: a=0, c=0 -> fails immediately!
+    assert_eq!(fails(p_nfa_if, &["0110", "0101", "0000"]), [2]);
 }

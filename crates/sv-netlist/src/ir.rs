@@ -830,7 +830,20 @@ impl Netlist {
         prop: &BoundProperty,
         allow_four_state_ops: bool,
     ) -> Result<Vec<(ExprId, ValueId)>, Vec<NetlistDiag>> {
-        crate::lower::lower_external_property_on_netlist(self, design, arena, prop, allow_four_state_ops)
+        crate::lower::lower_external_property_on_netlist(self, &[], design, arena, prop, allow_four_state_ops)
+    }
+
+    /// Like [`Self::lower_external_property`], additionally accepting the parsed CST `trees`
+    /// so pure RTL package and module functions called inside `prop` can be inlined.
+    pub fn lower_external_property_with_trees(
+        &mut self,
+        trees: &[sv_syntax::Tree],
+        design: &ElaboratedDesign,
+        arena: &ExprArena,
+        prop: &BoundProperty,
+        allow_four_state_ops: bool,
+    ) -> Result<Vec<(ExprId, ValueId)>, Vec<NetlistDiag>> {
+        crate::lower::lower_external_property_on_netlist(self, trees, design, arena, prop, allow_four_state_ops)
     }
 
     /// Expands eligible [`Memory`] arrays with `depth as usize <= max_depth`:

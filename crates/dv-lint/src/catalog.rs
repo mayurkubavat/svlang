@@ -240,6 +240,10 @@ pub fn parse_guideline_selectors(raw: &[String]) -> Result<Vec<String>, String> 
             if sel.is_empty() {
                 continue;
             }
+            if matches!(sel.to_ascii_lowercase().as_str(), "formal-ready" | "formal") {
+                out.push("formal-ready".to_string());
+                continue;
+            }
             if !all.iter().any(|g| guideline_matches(sel, g.id)) {
                 return Err(format!("Unknown guideline '{sel}' (see --list-guidelines)"));
             }

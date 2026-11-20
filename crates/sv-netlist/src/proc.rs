@@ -254,6 +254,12 @@ enum LhsRoot {
 
 impl<'a> DesignLowerer<'a> {
     pub(crate) fn lower_procedural_block(&mut self, inst_id: InstanceId, item: &ElabItem) {
+        self.cur_proc_root = Some((item.tree, item.node, inst_id, item.scope_prefix.clone(), item.gen_consts.clone()));
+        self.lower_procedural_block_inner(inst_id, item);
+        self.cur_proc_root = None;
+    }
+
+    fn lower_procedural_block_inner(&mut self, inst_id: InstanceId, item: &ElabItem) {
         let t = &self.trees[item.tree];
         let kw = own_first_tok(t, item.node).unwrap_or("");
         match kw {
@@ -647,6 +653,7 @@ impl<'a> DesignLowerer<'a> {
         let rst_mem_marks: Vec<usize> = self.builder.memories.iter().map(|m| m.writes.len()).collect();
         let rst_check_mark = self.builder.checks.len();
         let rst_assert_mark = self.proc_assert_enables.len();
+        let rst_unrolled_mark = self.proc_unrolled_asserts.len();
         // The block's own declarations are in scope in both branches.
         for &d in &block_decls {
             self.exec_stmt(item.tree, d, &mut rst_ctx);
@@ -661,6 +668,10 @@ impl<'a> DesignLowerer<'a> {
         for ai in rst_assert_mark..self.proc_assert_enables.len() {
             let (old_en, aloc) = (self.proc_assert_enables[ai].3, self.proc_assert_enables[ai].2);
             self.proc_assert_enables[ai].3 = self.builder.alloc_and1(rst_asserted, old_en, aloc);
+        }
+        for ui in rst_unrolled_mark..self.proc_unrolled_asserts.len() {
+            let (old_en, uloc) = (self.proc_unrolled_asserts[ui].reach, self.proc_unrolled_asserts[ui].loc);
+            self.proc_unrolled_asserts[ui].reach = self.builder.alloc_and1(rst_asserted, old_en, uloc);
         }
         for (mi, &old_len) in rst_mem_marks.iter().enumerate() {
             if self.builder.memories[mi].writes.len() > old_len {
@@ -688,6 +699,7 @@ impl<'a> DesignLowerer<'a> {
         let mem_write_marks: Vec<usize> = self.builder.memories.iter().map(|m| m.writes.len()).collect();
         let check_mark = self.builder.checks.len();
         let assert_mark = self.proc_assert_enables.len();
+        let unrolled_mark = self.proc_unrolled_asserts.len();
         if sync_clear_eids.is_empty() {
             match branch_action {
                 AsyncBranch::Stmts { clk_stmt_opt: Some(clk_stmt), .. } => {
@@ -757,6 +769,10 @@ impl<'a> DesignLowerer<'a> {
         for ai in assert_mark..self.proc_assert_enables.len() {
             let (old_en, aloc) = (self.proc_assert_enables[ai].3, self.proc_assert_enables[ai].2);
             self.proc_assert_enables[ai].3 = self.builder.alloc_and1(rst_deasserted, old_en, aloc);
+        }
+        for ui in unrolled_mark..self.proc_unrolled_asserts.len() {
+            let (old_en, uloc) = (self.proc_unrolled_asserts[ui].reach, self.proc_unrolled_asserts[ui].loc);
+            self.proc_unrolled_asserts[ui].reach = self.builder.alloc_and1(rst_deasserted, old_en, uloc);
         }
         for (mi, &old_len) in mem_write_marks.iter().enumerate() {
             let writes_len = self.builder.memories[mi].writes.len();
@@ -982,9 +998,40 @@ impl<'a> DesignLowerer<'a> {
             SyntaxKind::ConcurrentAssert => {
                 let loc = self.stmt_loc(tree_idx, stmt, ctx);
                 let reach = ctx.effective_reach(&mut self.builder, loc);
-                if !self.call_stack.is_empty() || ctx.loop_depth > 0 {
-                    self.builder
-                        .unsup(loc, "procedural concurrent assertion inside subroutine or loop is not supported");
+                if ctx.kind == ProcKind::Subroutine {
+                    self.builder.err(loc, "concurrent assertion inside a function is illegal");
+                } else if !self.call_stack.is_empty() || ctx.loop_depth > 0 {
+                    let mut gen_consts = ctx.gen_consts.clone();
+                    let mut local_decls = ctx.local_decls.clone();
+                    for (lname, lbind) in &mut local_decls {
+                        if lbind.cval.is_none() {
+                            if let Some(cv) = ctx
+                                .cur_locals
+                                .get(&lbind.id)
+                                .and_then(|ov| ov.as_packed())
+                                .and_then(|vid| self.builder.const_cval(vid).cloned())
+                            {
+                                lbind.cval = Some(cv);
+                            }
+                        }
+                        if let Some(cv) = &lbind.cval {
+                            gen_consts.retain(|(k, _)| k != lname);
+                            gen_consts.push((lname.clone(), cv.clone()));
+                        }
+                    }
+                    self.proc_unrolled_asserts.push(crate::lower::UnrolledProcAssert {
+                        tree_idx,
+                        node: stmt,
+                        inst_id: ctx.inst_id,
+                        scope_prefix: ctx.scope_prefix.clone(),
+                        gen_consts,
+                        local_decls,
+                        local_typedefs: ctx.local_typedefs.clone(),
+                        local_vals: ctx.cur_locals.clone(),
+                        proc_root: self.cur_proc_root.clone(),
+                        loc,
+                        reach,
+                    });
                 } else {
                     // An attempt starts only when the flow reaches the assertion (§16.14.6).
                     self.proc_assert_enables.push((ctx.inst_id, ctx.scope_prefix.clone(), loc, reach));

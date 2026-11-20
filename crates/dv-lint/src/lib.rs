@@ -141,6 +141,38 @@ pub const DEFAULT_PROFILES: u32 = 1 | (1 << 1) | (1 << 2) | (1 << 4);
 /// and security. Style, smells and advisory rules are asked for by name, or
 /// with `all`. Err for
 /// an unknown preset.
+/// Rules selected by `--preset formal-ready` or `--guideline formal-ready`:
+/// pre-FPV static checks for assumption soundness, X-propagation control hazards,
+/// reset disable qualification, arithmetic/memory state-space blow-up, FSMs, and CDC.
+pub const FORMAL_READY_RULES: &[&str] = &[
+    "SV-FPV-001",
+    "SV-FPV-002",
+    "SV-FPV-003",
+    "SV-FPV-004",
+    "SV-FPV-005",
+    "SV-SVA-001",
+    "SV-SVA-002",
+    "SV-SVA-003",
+    "SV-SVA-004",
+    "SV-SVA-005",
+    "SV-SVA-007",
+    "SVA-CTX-001",
+    "SVA-VAC-001",
+    "SV-CDC-001",
+    "SV-FSM-002",
+    "SV-FSM-003",
+    "SV-RTL-001",
+    "SV-RTL-002",
+    "SV-RTL-003",
+    "SV-RTL-004",
+    "SV-RTL-005",
+];
+
+/// Returns `true` when `id` belongs to the `formal-ready` pre-FPV rule pack.
+pub fn is_formal_ready_rule(id: &str) -> bool {
+    FORMAL_READY_RULES.contains(&id)
+}
+
 pub fn rule_selection(preset: Option<&str>, experimental: bool) -> Result<impl Fn(&str) -> bool, String> {
     const ALL: u32 = u32::MAX;
     const ADVISORY: u32 = 1 << 6;
@@ -151,6 +183,7 @@ pub fn rule_selection(preset: Option<&str>, experimental: bool) -> Result<impl F
         Category(&'static str),
         Guidelines(Vec<&'static str>),
         AnyGuideline,
+        FormalReady,
     }
     let sel = match preset.map(str::to_ascii_lowercase).as_deref() {
         None | Some("default") => Sel::Profiles(DEFAULT),
@@ -165,6 +198,7 @@ pub fn rule_selection(preset: Option<&str>, experimental: bool) -> Result<impl F
         Some("uvm-1800.2" | "migration") => Sel::Category("Deprecated"),
         Some("reuse") => Sel::Guidelines(vec!["MG-1", "MG-2", "MG-3", "MG-4", "MG-5"]),
         Some("guide") => Sel::AnyGuideline,
+        Some("formal-ready" | "formal") => Sel::FormalReady,
         Some(p) => return Err(format!("unknown preset '{p}'")),
     };
     // "MG-4" selects MG-4.1, MG-4.2 ... but not MG-40.1.
@@ -183,6 +217,7 @@ pub fn rule_selection(preset: Option<&str>, experimental: bool) -> Result<impl F
             Sel::Category(c) => category == c,
             Sel::Guidelines(gs) => guides.iter().any(|g| gs.iter().any(|s| matches(s, g))),
             Sel::AnyGuideline => !guides.is_empty(),
+            Sel::FormalReady => is_formal_ready_rule(id),
         }
     })
 }

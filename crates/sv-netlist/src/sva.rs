@@ -625,6 +625,50 @@ impl Matcher<'_> {
                 let (c, last) = self.eval_prop(inner, start, true)?;
                 Ok((self.terms.not(c)?, last))
             }
+            PropExpr::And(a, b) => {
+                let (ca, la) = self.eval_prop(a, start, true)?;
+                let (cb, lb) = self.eval_prop(b, start, true)?;
+                Ok((self.terms.and(ca, cb)?, la.max(lb)))
+            }
+            PropExpr::Or(a, b) => {
+                let (ca, la) = self.eval_prop(a, start, true)?;
+                let (cb, lb) = self.eval_prop(b, start, true)?;
+                Ok((self.terms.or(ca, cb)?, la.max(lb)))
+            }
+            PropExpr::Implies(a, b) => {
+                let (ca, la) = self.eval_prop(a, start, true)?;
+                let (cb, lb) = self.eval_prop(b, start, true)?;
+                let na = self.terms.not(ca)?;
+                Ok((self.terms.or(na, cb)?, la.max(lb)))
+            }
+            PropExpr::Iff(a, b) => {
+                let (ca, la) = self.eval_prop(a, start, true)?;
+                let (cb, lb) = self.eval_prop(b, start, true)?;
+                let both = self.terms.and(ca, cb)?;
+                let na = self.terms.not(ca)?;
+                let nb = self.terms.not(cb)?;
+                let neither = self.terms.and(na, nb)?;
+                Ok((self.terms.or(both, neither)?, la.max(lb)))
+            }
+            PropExpr::IfElse { cond, then_prop, else_prop } => {
+                let cond_val = self
+                    .leaves
+                    .get(cond.0 as usize)
+                    .copied()
+                    .flatten()
+                    .ok_or_else(|| "an expression that was not lowered".to_string())?;
+                let c_cond = self.terms.leaf(start, cond_val)?;
+                let (ct, lt) = self.eval_prop(then_prop, start, true)?;
+                let not_c = self.terms.not(c_cond)?;
+                let then_ok = self.terms.or(not_c, ct)?;
+                if let Some(ep) = else_prop {
+                    let (ce, le) = self.eval_prop(ep, start, true)?;
+                    let else_ok = self.terms.or(c_cond, ce)?;
+                    Ok((self.terms.and(then_ok, else_ok)?, start.max(lt).max(le)))
+                } else {
+                    Ok((then_ok, start.max(lt)))
+                }
+            }
             PropExpr::FollowedBy { overlapped, lhs, rhs } => {
                 let mut fb_starts: BTreeMap<u32, Cond> = BTreeMap::new();
                 for (end, cond) in self.matches(lhs, start)? {
@@ -641,7 +685,7 @@ impl Matcher<'_> {
                 let mut any = Cond::False;
                 let mut last_max = start;
                 for (at, ant_cond) in fb_starts {
-                    let (cons_cond, cons_last) = self.eval_prop(rhs, at, false)?;
+                    let (cons_cond, cons_last) = self.eval_prop(rhs, at, true)?;
                     let both = self.terms.and(ant_cond, cons_cond)?;
                     any = self.terms.or(any, both)?;
                     last_max = last_max.max(at).max(cons_last);
@@ -680,7 +724,7 @@ impl Matcher<'_> {
                 if target > MAX_PROPERTY_SPAN {
                     return Err(too_long());
                 }
-                self.eval_prop(prop, target, false)
+                self.eval_prop(prop, target, true)
             }
             PropExpr::Eventually { range, prop, .. } if range.max != CycleBound::Unbounded && as_seq(p).is_err() => {
                 let (min, max) = bounds(range, "eventually")?;
@@ -691,7 +735,7 @@ impl Matcher<'_> {
                     if target > MAX_PROPERTY_SPAN {
                         return Err(too_long());
                     }
-                    let (c, l) = self.eval_prop(prop, target, false)?;
+                    let (c, l) = self.eval_prop(prop, target, true)?;
                     any = self.terms.or(any, c)?;
                     last_max = last_max.max(l);
                 }
@@ -711,7 +755,7 @@ impl Matcher<'_> {
                     if target > MAX_PROPERTY_SPAN {
                         return Err(too_long());
                     }
-                    let (c, l) = self.eval_prop(prop, target, false)?;
+                    let (c, l) = self.eval_prop(prop, target, true)?;
                     all = self.terms.and(all, c)?;
                     last_max = last_max.max(l);
                 }
@@ -1617,23 +1661,32 @@ impl Netlist {
         let mut plans = Vec::new();
         let mut planned = Vec::new();
         let mut memo = Lookback { memo: vec![None; self.values.len()], open: vec![false; self.values.len()] };
-        for (i, prop) in self.properties.iter().enumerate() {
+        for (i, outcome_slot) in outcomes.iter_mut().enumerate() {
             if let Some(check) = self.property_checks[i] {
-                outcomes[i] = Some(PropertyOutcome::Compiled { check });
+                *outcome_slot = Some(PropertyOutcome::Compiled { check });
                 continue;
             }
             if let Some(index) = self.property_liveness[i] {
-                outcomes[i] = Some(PropertyOutcome::Liveness { index });
+                *outcome_slot = Some(PropertyOutcome::Liveness { index });
                 continue;
             }
             let reached = self.property_enables.get(i).copied().flatten();
-            match self.plan(prop, &self.prop_expr_values, reached, opts, &mut memo) {
+            let planned_res = match self.plan(&self.properties[i], &self.prop_expr_values, reached, opts, &mut memo) {
+                Ok(p) => Ok(p),
+                Err(why) if why == "`always` with no upper bound" => {
+                    let prop = self.properties[i].clone();
+                    let leaves = self.prop_expr_values.clone();
+                    self.plan_compound_always(&prop, &leaves, reached, opts, &mut memo)
+                }
+                Err(why) => Err(why),
+            };
+            match planned_res {
                 Ok(p) => {
-                    let name = self.property_names.get(i).cloned().or_else(|| prop.label.clone());
+                    let name = self.property_names.get(i).cloned().or_else(|| self.properties[i].label.clone());
                     plans.push((p, name));
                     planned.push(i);
                 }
-                Err(why) => outcomes[i] = Some(PropertyOutcome::Unsupported(why)),
+                Err(why) => *outcome_slot = Some(PropertyOutcome::Unsupported(why)),
             }
         }
         // The related covers ride after the properties' own plans: `zip` below stops at the
@@ -1753,12 +1806,24 @@ impl Netlist {
         properties: &[ExternalProperty<'_>],
         opts: &PropertyOptions,
     ) -> Vec<Result<Compiled, String>> {
+        self.compile_external_properties_with_trees(&[], design, properties, opts)
+    }
+
+    /// Like [`Self::compile_external_properties`], additionally passing the parsed CST `trees`
+    /// so external properties can inline pure RTL package and module functions.
+    pub fn compile_external_properties_with_trees(
+        &mut self,
+        trees: &[sv_syntax::Tree],
+        design: &ElaboratedDesign,
+        properties: &[ExternalProperty<'_>],
+        opts: &PropertyOptions,
+    ) -> Vec<Result<Compiled, String>> {
         // Lowering one property's expressions may re-index the values, so the expressions
         // already lowered ride at the end of `prop_expr_values`, which is kept in step.
         let base = self.prop_expr_values.len();
         let mut lowered: Vec<Result<(usize, Vec<ExprId>), String>> = Vec::new();
         for x in properties {
-            lowered.push(match self.lower_external_property(design, x.arena, x.property, false) {
+            lowered.push(match self.lower_external_property_with_trees(trees, design, x.arena, x.property, false) {
                 Ok(pairs) => {
                     let at = self.prop_expr_values.len();
                     self.prop_expr_values.extend(pairs.iter().map(|&(_, v)| Some(v)));
@@ -1783,7 +1848,14 @@ impl Netlist {
             for (k, e) in exprs.iter().enumerate() {
                 leaves[e.0 as usize] = self.prop_expr_values[at + k];
             }
-            match self.plan(x.property, &leaves, None, opts, &mut memo) {
+            let planned_res = match self.plan(x.property, &leaves, None, opts, &mut memo) {
+                Ok(p) => Ok(p),
+                Err(why) if why == "`always` with no upper bound" => {
+                    self.plan_compound_always(x.property, &leaves, None, opts, &mut memo)
+                }
+                Err(why) => Err(why),
+            };
+            match planned_res {
                 Ok(p) => {
                     plans.push((p, Some(x.name.clone())));
                     planned.push(i);
@@ -1798,6 +1870,64 @@ impl Netlist {
             results[i] = Some(Ok(made));
         }
         results.into_iter().map(|r| r.expect("every property has a result")).collect()
+    }
+
+    /// Decomposes `[ant |-> | ant |=>] always [m:$] <compound_prop>` into a sticky 1-bit
+    /// trigger monitor feeding `reached` on `<compound_prop>`.
+    fn plan_compound_always(
+        &mut self,
+        prop: &BoundProperty,
+        leaves: &[Option<ValueId>],
+        reached: Option<ValueId>,
+        opts: &PropertyOptions,
+        memo: &mut Lookback,
+    ) -> Result<Plan, String> {
+        if prop.kind == PropKind::Cover {
+            return Err("a cover of `always` with no upper bound".into());
+        }
+        let (ant, mut cur): (Option<(&SeqExpr, bool)>, &PropExpr) = match &prop.expr {
+            PropExpr::OverlappedImplication { lhs, rhs } if is_unbounded_always(rhs) => {
+                (Some((lhs, true)), rhs.as_ref())
+            }
+            PropExpr::NonOverlappedImplication { lhs, rhs } if is_unbounded_always(rhs) => {
+                (Some((lhs, false)), rhs.as_ref())
+            }
+            p if is_unbounded_always(p) => (None, p),
+            _ => return Err("`always` with no upper bound".into()),
+        };
+        let mut shift = 0u32;
+        while let PropExpr::Always { range, prop: inner, .. } = cur {
+            if range.max != CycleBound::Unbounded {
+                break;
+            }
+            shift = shift.saturating_add(range.min);
+            if shift > MAX_PROPERTY_SPAN {
+                return Err(too_long());
+            }
+            cur = inner.as_ref();
+        }
+        let mut inner_prop = prop.clone();
+        inner_prop.expr = cur.clone();
+        if ant.is_none() && shift == 0 && reached.is_none() {
+            return match self.plan(&inner_prop, leaves, None, opts, memo) {
+                Ok(p) => Ok(p),
+                Err(why) if why == "`always` with no upper bound" => {
+                    self.plan_compound_always(&inner_prop, leaves, None, opts, memo)
+                }
+                Err(why) => Err(why),
+            };
+        }
+        let active_val =
+            crate::sva_nfa::emit_sticky_always_trigger(self, prop, ant, shift, leaves, reached, opts, memo)?;
+        memo.memo.resize(self.values.len(), None);
+        memo.open.resize(self.values.len(), false);
+        match self.plan(&inner_prop, leaves, Some(active_val), opts, memo) {
+            Ok(p) => Ok(p),
+            Err(why) if why == "`always` with no upper bound" => {
+                self.plan_compound_always(&inner_prop, leaves, Some(active_val), opts, memo)
+            }
+            Err(why) => Err(why),
+        }
     }
 
     /// Writes the check of each plan, under the name beside it, and returns their indices

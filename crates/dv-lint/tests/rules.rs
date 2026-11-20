@@ -20,10 +20,10 @@ const MOCK: &str = "class uvm_object; function new(string name = \"\"); endfunct
 #[test]
 fn rules_have_unique_ids() {
     let r = rules();
-    assert_eq!(r.len(), 441);
+    assert_eq!(r.len(), 446);
     let mut ids: Vec<_> = r.iter().map(|r| r.id).collect();
     ids.dedup();
-    assert_eq!(ids.len(), 441);
+    assert_eq!(ids.len(), 446);
 }
 
 #[test]
@@ -1200,5 +1200,16 @@ fn all_native_rule_fixtures_pass() {
             assert!(found_good.is_empty(), "unexpected finding in {rid}/good.sv: {found_good:?}");
         }
     }
-    assert!(tested >= 27, "expected >= 27 native rule fixture suites, tested {tested}");
+    assert!(tested >= 32, "expected >= 32 native rule fixture suites, tested {tested}");
+}
+
+#[test]
+fn formal_ready_preset_and_guideline_selector_work() {
+    let keep = dv_lint::rule_selection(Some("formal-ready"), false).unwrap();
+    for id in ["SV-FPV-001", "SV-FPV-002", "SV-FPV-003", "SV-FPV-004", "SV-FPV-005", "SV-SVA-007", "SV-CDC-001"] {
+        assert!(keep(id), "expected {id} in formal-ready preset");
+    }
+    assert!(!keep("SV-STY-001"));
+    let parsed = dv_lint::catalog::parse_guideline_selectors(&["formal-ready".to_string()]).unwrap();
+    assert_eq!(parsed, vec!["formal-ready"]);
 }
