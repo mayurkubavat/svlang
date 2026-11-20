@@ -119,6 +119,7 @@ pub struct Driver {
     defines: Vec<(String, Option<String>)>,
     tops: Vec<String>,
     params: Vec<(String, String)>,
+    black_box_modules: Vec<String>,
     inputs: Vec<InputUnit>,
     file_list: Option<FileList>,
 }
@@ -140,6 +141,7 @@ impl Driver {
             defines: Vec::new(),
             tops: Vec::new(),
             params: Vec::new(),
+            black_box_modules: Vec::new(),
             inputs: Vec::new(),
             file_list: None,
         }
@@ -186,6 +188,12 @@ impl Driver {
     /// Adds a top-level or hierarchical parameter override (`-G name=value`).
     pub fn param(mut self, name: impl Into<String>, value: impl Into<String>) -> Self {
         self.params.push((name.into(), value.into()));
+        self
+    }
+
+    /// Configures module names allowed to elaborate as source-less black-box stubs (`-bbox_m`).
+    pub fn black_box_modules(mut self, modules: Vec<String>) -> Self {
+        self.black_box_modules = modules;
         self
     }
 
@@ -369,7 +377,13 @@ impl Driver {
                 message: d.message.clone(),
             })
             .collect();
-        Ok(Compilation { trees, tops: self.tops, params: self.params, file_list_diags })
+        Ok(Compilation {
+            trees,
+            tops: self.tops,
+            params: self.params,
+            black_box_modules: self.black_box_modules,
+            file_list_diags,
+        })
     }
 }
 
@@ -379,18 +393,19 @@ pub struct Compilation {
     trees: Vec<Tree>,
     tops: Vec<String>,
     params: Vec<(String, String)>,
+    black_box_modules: Vec<String>,
     file_list_diags: Vec<Diagnostic>,
 }
 
 impl Compilation {
     /// Creates a [`Compilation`] from parsed CST [`Tree`]s.
     pub fn from_trees(trees: Vec<Tree>) -> Self {
-        Self { trees, tops: Vec::new(), params: Vec::new(), file_list_diags: Vec::new() }
+        Self { trees, tops: Vec::new(), params: Vec::new(), black_box_modules: Vec::new(), file_list_diags: Vec::new() }
     }
 
     /// Creates a [`Compilation`] from parsed [`Tree`]s and explicit `-top` module names.
     pub fn from_trees_with_tops(trees: Vec<Tree>, tops: Vec<String>) -> Self {
-        Self { trees, tops, params: Vec::new(), file_list_diags: Vec::new() }
+        Self { trees, tops, params: Vec::new(), black_box_modules: Vec::new(), file_list_diags: Vec::new() }
     }
 
     /// Attaches `-G name=value` parameter overrides to this compilation.
@@ -402,7 +417,13 @@ impl Compilation {
     /// Convenience constructor that parses one in-memory SystemVerilog source string.
     pub fn from_source(name: &str, src: &str) -> Self {
         let tree = syntax::parse_source(src, name, syntax::Options::default());
-        Self { trees: vec![tree], tops: Vec::new(), params: Vec::new(), file_list_diags: Vec::new() }
+        Self {
+            trees: vec![tree],
+            tops: Vec::new(),
+            params: Vec::new(),
+            black_box_modules: Vec::new(),
+            file_list_diags: Vec::new(),
+        }
     }
 
     /// Compiles command-line / filelist arguments directly into a [`Compilation`].
@@ -473,7 +494,7 @@ impl Compilation {
 
     /// Elaborates the module/interface instance hierarchy and parameter values.
     pub fn elaborate(&self) -> Elaborated {
-        semantic::elaborate_with_params(&self.trees, &self.tops, &self.params)
+        semantic::elaborate_with_options(&self.trees, &self.tops, &self.params, &self.black_box_modules)
     }
 
     /// Builds the owned IEEE 1800 OOP class and file [`Design`] model.
@@ -489,7 +510,8 @@ impl Compilation {
         for (ix, t) in self.trees.iter().enumerate() {
             collect_syntax_diagnostics(ix, t, &mut loc, &mut out);
         }
-        let (sema, elab) = semantic::semantic_diags_with_params(&self.trees, &self.tops, &self.params);
+        let (sema, elab) =
+            semantic::semantic_diags_with_options(&self.trees, &self.tops, &self.params, &self.black_box_modules);
         for d in sema {
             let t = &self.trees[d.tree];
             let Some((tok, _)) = t.token_bounds(d.node) else {
@@ -565,7 +587,12 @@ impl Compilation {
     /// assert_eq!(nl.states[0].width, 4);
     /// ```
     pub fn lower_netlist(&self, config: &netlist::LowerConfig) -> netlist::LowerOutcome {
-        netlist::lower_trees(&self.trees, &self.tops, &self.params, config)
+        if self.black_box_modules.is_empty() || !config.black_box_modules.is_empty() {
+            return netlist::lower_trees(&self.trees, &self.tops, &self.params, config);
+        }
+        let mut merged = config.clone();
+        merged.black_box_modules = self.black_box_modules.clone();
+        netlist::lower_trees(&self.trees, &self.tops, &self.params, &merged)
     }
 
     /// Parses and binds an external SVA property or concurrent assertion string

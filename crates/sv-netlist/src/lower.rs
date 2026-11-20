@@ -17,7 +17,7 @@ use crate::expr_lower::{
 };
 use crate::ir::{
     Check, CheckKind, ClockSpec, Edge, FreeKind, LowerConfig, LowerOutcome, MemId, Memory, NetOp, Netlist, NetlistDiag,
-    PortInput, PortOutput, State, StateId, TraceSignal, ValueId, ValueKind, ValueNode,
+    PortInput, PortOutput, State, StateId, TraceSignal, UndrivenSlice, ValueId, ValueKind, ValueNode,
 };
 
 #[derive(Clone, Debug)]
@@ -124,6 +124,7 @@ pub fn lower_design(trees: &[Tree], design: &ElaboratedDesign, config: &LowerCon
     // Pass 3: lower port connections, continuous assigns, gates, net aliases, and procedural blocks.
     lowerer.lower_instance_recursive(top_id);
     lowerer.resolve_pending_aliases();
+    lowerer.stitch_sourceless_blackbox_stubs(top_id);
     if !lowerer.builder.diags.is_empty() {
         return classify_diags(lowerer.builder.diags);
     }
@@ -182,8 +183,14 @@ pub fn lower_design(trees: &[Tree], design: &ElaboratedDesign, config: &LowerCon
     match lowerer.builder.finalize(sva_arena, properties, prop_expr_values, property_enables, symbol_values) {
         Ok(mut netlist) => {
             netlist.property_names = property_names;
+            if let Some(min_words) = config.bbox_array_words {
+                netlist.black_box_memories(min_words);
+            }
             if let Some(max_depth) = config.blast_memories_up_to {
                 netlist.blast_memories(max_depth);
+            }
+            if let Some(min_w) = config.bbox_mul_width {
+                netlist.black_box_multipliers(min_w);
             }
             LowerOutcome::Lowered(netlist)
         }
@@ -311,6 +318,9 @@ impl<'a> DesignLowerer<'a> {
 
     /// A black box: its ports only. Each output is a free value (a cut point).
     fn alloc_black_box(&mut self, inst_id: InstanceId) {
+        if self.design.instance(inst_id).is_blackbox_stub {
+            return;
+        }
         let ports = self.design.instance(inst_id).ports.clone();
         for sid in ports {
             let sym = self.design.symbol(sid);
@@ -1794,6 +1804,159 @@ impl<'a> DesignLowerer<'a> {
                 }
             }
         }
+    }
+
+    /// Infers input vs. output port connections on source-less black-box instances (`-bbox_m`
+    /// where the module declaration is absent from the source files). Any connected signal or
+    /// constant bit-slice in the parent instance that has no other driver is treated as an
+    /// unconstrained black-box output ([`FreeKind::Cut`]); expressions and already-driven signals
+    /// are treated as black-box inputs.
+    fn stitch_sourceless_blackbox_stubs(&mut self, root_id: InstanceId) {
+        let mut stubs = Vec::new();
+        let mut stack = vec![root_id];
+        while let Some(id) = stack.pop() {
+            let inst = self.design.instance(id);
+            if inst.is_blackbox_stub && self.boxed.contains(&id) {
+                stubs.push(id);
+            } else if !self.boxed.contains(&id) {
+                for &cid in inst.children.iter().rev() {
+                    stack.push(cid);
+                }
+            }
+        }
+
+        for child_id in stubs {
+            let child = self.design.instance(child_id);
+            let Some(parent_id) = child.parent else { continue };
+            let def_name = child.definition.clone();
+            let conns = child.port_conns.clone();
+            for conn in conns {
+                if conn.wildcard {
+                    self.builder.unsup(
+                        conn.loc,
+                        format!(
+                            "wildcard '.*' port connection on source-less black box '{def_name}' requires its module declaration"
+                        ),
+                    );
+                    continue;
+                }
+                if conn.implicit_named {
+                    let port_name = conn.port_name.as_deref().unwrap_or("");
+                    if let Some(psid) = self.design.instance(parent_id).resolve_lexical(&conn.scope_prefix, port_name) {
+                        if let Some(slot) = self.sym_slots.get(&psid).cloned() {
+                            self.drive_undriven_stub_port_slot(&slot, conn.loc);
+                        }
+                    } else {
+                        self.builder
+                            .err(conn.loc, format!("undeclared identifier '{port_name}' in implicit port connection"));
+                    }
+                    continue;
+                }
+                if let Some((tr, nd)) = conn.expr {
+                    let mut arena = ExprArena::new();
+                    let eid_opt = {
+                        let mut binder = ExprBinder::new(
+                            self.trees,
+                            self.design,
+                            parent_id,
+                            &conn.scope_prefix,
+                            &conn.gen_consts,
+                            &mut arena,
+                        );
+                        let out = binder.bind_self(tr, nd);
+                        let diags = binder.diags;
+                        self.flush_expr_diags(diags);
+                        out
+                    };
+                    if let Some(eid) = eid_opt {
+                        self.drive_undriven_stub_port_expr(&arena, eid, conn.loc);
+                    }
+                }
+            }
+        }
+    }
+
+    fn drive_undriven_stub_port_expr(&mut self, arena: &ExprArena, eid: ExprId, loc: Loc) {
+        match &arena.get(eid).kind {
+            ExprKind::Symbol(sid) => {
+                if let Some(slot) = self.sym_slots.get(sid).cloned() {
+                    self.drive_undriven_stub_port_slot(&slot, loc);
+                }
+            }
+            ExprKind::Concat(parts) => {
+                let parts = parts.clone();
+                for part_eid in parts {
+                    self.drive_undriven_stub_port_expr(arena, part_eid, loc);
+                }
+            }
+            ExprKind::Member { .. }
+            | ExprKind::BitSelect { .. }
+            | ExprKind::PartSelect { .. }
+            | ExprKind::IndexedPartSelect { .. }
+            | ExprKind::ArrayIndex { .. } => {
+                if let Some((slot, bit_lo, bit_w)) = self.resolve_const_lhs_slice(arena, eid, loc) {
+                    if let ObjSlot::Packed(sidx) = slot {
+                        if bit_w > 0 {
+                            self.drive_undriven_stub_packed_slice(sidx, bit_lo, bit_lo + bit_w - 1, loc);
+                        }
+                    } else if bit_lo == 0 {
+                        self.drive_undriven_stub_port_slot(&slot, loc);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn drive_undriven_stub_port_slot(&mut self, slot: &ObjSlot, loc: Loc) {
+        match slot {
+            ObjSlot::Packed(sidx) => {
+                let w = self.slots[*sidx].width;
+                if w > 0 {
+                    self.drive_undriven_stub_packed_slice(*sidx, 0, w - 1, loc);
+                }
+            }
+            ObjSlot::Struct(fields) => {
+                for (_, fslot) in fields {
+                    self.drive_undriven_stub_port_slot(fslot, loc);
+                }
+            }
+            ObjSlot::Elems { elems, .. } => {
+                for eslot in elems {
+                    self.drive_undriven_stub_port_slot(eslot, loc);
+                }
+            }
+            ObjSlot::Memory(_) | ObjSlot::Const(_, _) => {}
+        }
+    }
+
+    fn drive_undriven_stub_packed_slice(&mut self, sidx: usize, lo: u32, hi: u32, loc: Loc) {
+        let slot = &self.slots[sidx];
+        if lo > hi || hi >= slot.width {
+            return;
+        }
+        if slot.free != FreeKind::Undriven || slot.init.is_some() || slot.pull.is_some() {
+            return;
+        }
+        if slot.drivers.iter().any(|d| d.lo <= hi && lo <= d.hi) {
+            return;
+        }
+        let w = hi - lo + 1;
+        let whole = lo == 0 && hi + 1 == slot.width;
+        let sig = if whole { slot.name.clone() } else { format!("{}[{hi}:{lo}]", slot.name) };
+        let signed = whole && slot.signed;
+        let four = slot.four_state;
+        let uid = self.builder.undriven.len();
+        let uval = self.builder.alloc_raw(w, signed, four, BuildKind::Undriven(uid), Some(sig.clone()), loc);
+        self.builder.undriven.push(UndrivenSlice {
+            signal: sig,
+            hi: w - 1,
+            lo: 0,
+            value: uval,
+            loc,
+            free: FreeKind::Cut,
+        });
+        self.slots[sidx].add_driver(lo, hi, uval, DriverKind::ChildOutput, loc);
     }
 
     #[allow(clippy::too_many_arguments)]

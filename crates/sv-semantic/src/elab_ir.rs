@@ -517,6 +517,8 @@ pub struct Instance {
     pub is_checker: bool,
     /// `true` when instantiated via a SystemVerilog `bind` directive.
     pub is_bound: bool,
+    /// `true` when `definition` had no source declaration and was elaborated as a black-box stub.
+    pub is_blackbox_stub: bool,
     /// Bound `event` formal ports on a `checker` instance (`event clk = $inferred_clock`).
     pub checker_events: Vec<(String, CheckerEventBinding)>,
     /// Bound `untyped`, `sequence`, or `property` formal ports on a `checker` instance.

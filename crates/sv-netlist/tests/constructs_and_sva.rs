@@ -1422,3 +1422,114 @@ endmodule
     assert_eq!(sim.out_i("tri_y"), 1, "bufif1 enabled drives din=1");
     assert_eq!(sim.out_i("mux_y"), 1, "sel=1 selects dff_q=1");
 }
+
+#[test]
+fn sourceless_black_box_infers_port_directions_and_checks_errors() {
+    let src = "\
+module top(
+    input logic clk,
+    input logic [7:0] a,
+    output logic [7:0] y,
+    output logic [7:0] bus
+);
+    logic [7:0] mid;
+    assign bus[3:0] = a[3:0];
+    missing_ip #(.W(8)) u_ip (
+        .clk,
+        .in_expr(a + 8'd1),
+        .mid_out(mid),
+        .bus_hi(bus[7:4])
+    );
+    missing_consumer u_cons (
+        .clk(clk),
+        .in_mid(mid),
+        .out_y(y)
+    );
+endmodule
+";
+    // Without `-bbox_m`, instantiating `missing_ip` is an error.
+    assert!(matches!(lower_src(src), LowerOutcome::Error(_)));
+
+    let cfg = LowerConfig {
+        black_box_modules: vec!["missing_ip".into(), "missing_consumer".into()],
+        ..LowerConfig::default()
+    };
+    let nl = expect_lowered(lower_src_cfg(src, &[], &cfg));
+    let cuts: Vec<&str> =
+        nl.undriven.iter().filter(|u| u.free == sv_netlist::FreeKind::Cut).map(|u| u.signal.as_str()).collect();
+    assert_eq!(cuts, ["top.mid", "top.bus[7:4]", "top.y"]);
+
+    // Undeclared identifier inside a source-less black-box port expression fails closed!
+    let bad_src = "module top(input logic clk); missing_ip u(.clk, .bad(no_such_sig)); endmodule\n";
+    let bad_cfg = LowerConfig { black_box_modules: vec!["missing_ip".into()], ..LowerConfig::default() };
+    match lower_src_cfg(bad_src, &[], &bad_cfg) {
+        LowerOutcome::Error(ds) => assert!(ds[0].message.contains("no_such_sig"), "{ds:?}"),
+        other => panic!("expected undeclared identifier error, got {other:?}"),
+    }
+
+    // Wildcard `.*` on a source-less black-box fails closed as Unsupported.
+    let wc_src = "module top(input logic clk); missing_ip u(.*); endmodule\n";
+    assert!(matches!(lower_src_cfg(wc_src, &[], &bad_cfg), LowerOutcome::Unsupported(_)));
+}
+
+#[test]
+fn complexity_auto_boxing_mul_arrays_and_formal_coverage_targets() {
+    let src = "\
+module top(
+    input logic clk,
+    input logic sel,
+    input logic [15:0] a, b,
+    input logic [3:0] c, d,
+    input logic [5:0] addr,
+    output logic [15:0] prod_wide,
+    output logic [15:0] prod_const,
+    output logic [3:0] prod_narrow,
+    output logic [7:0] mem_big_q,
+    output logic [7:0] mem_small_q,
+    output logic reg_q
+);
+    logic [7:0] big_mem [0:63];
+    logic [7:0] small_mem [0:3];
+    always_ff @(posedge clk) begin
+        big_mem[addr] <= a[7:0];
+        small_mem[addr[1:0]] <= a[7:0];
+        if (sel)
+            reg_q <= 1'b1;
+        else
+            reg_q <= 1'b0;
+    end
+    assign prod_wide = a * b;
+    assign prod_const = a * 16'd3;
+    assign prod_narrow = c * d;
+    assign mem_big_q = big_mem[addr];
+    assign mem_small_q = small_mem[addr[1:0]];
+endmodule
+";
+    let cfg = LowerConfig {
+        bbox_mul_width: Some(16),
+        bbox_array_words: Some(32),
+        blast_memories_up_to: Some(16),
+        ..LowerConfig::default()
+    };
+    let mut nl = expect_lowered(lower_src_cfg(src, &[], &cfg));
+    // `big_mem` (64 words >= 32) was boxed; `small_mem` (4 words <= 16) was blasted to 4 states + `reg_q` = 5 states.
+    assert!(nl.memories.is_empty());
+    assert_eq!(nl.states.len(), 5);
+    // `a * b` (16-bit variable*variable) was boxed, while `a * 16'd3` and 4-bit `c * d` remained intact!
+    let mul_ops = nl
+        .values
+        .iter()
+        .filter(|v| matches!(v.kind, sv_netlist::ValueKind::Op { op: sv_netlist::NetOp::Mul, .. }))
+        .count();
+    assert_eq!(mul_ops, 2, "only constant-stride 16-bit mul and narrow 4-bit mul remain");
+    assert_eq!(
+        nl.undriven.iter().filter(|u| u.free == sv_netlist::FreeKind::Cut).count(),
+        2,
+        "one cut for wide mul and one cut for 64-word memory read"
+    );
+
+    let branch_covs = nl.add_branch_covers(1);
+    assert!(branch_covs >= 2, "at least one true/false branch cover pair synthesized");
+    let toggle_covs = nl.add_toggle_covers(1);
+    assert!(toggle_covs >= 2, "rise/fall toggle covers synthesized on registers");
+}

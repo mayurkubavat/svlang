@@ -392,8 +392,20 @@ pub fn semantic_diags_with_params(
     tops: &[String],
     params: &[(String, String)],
 ) -> (Vec<names::Diag>, Elaborated) {
+    semantic_diags_with_options(trees, tops, params, &[])
+}
+
+/// Like [`semantic_diags_with_params`], also allowing modules named in
+/// `black_box_modules` to elaborate as source-less black-box stubs when their
+/// definitions are absent from `trees`.
+pub fn semantic_diags_with_options(
+    trees: &[Tree],
+    tops: &[String],
+    params: &[(String, String)],
+    black_box_modules: &[String],
+) -> (Vec<names::Diag>, Elaborated) {
     let parts = SemaChecks::new(trees);
-    let elab = elaborate_with_params(trees, tops, params);
+    let elab = elaborate_with_options(trees, tops, params, black_box_modules);
     (parts.diags(trees, &elab), elab)
 }
 
@@ -499,6 +511,18 @@ pub fn elaborate_full(trees: &[Tree], tops: &[String]) -> Elaborated {
 
 /// Like [`elaborate_full`], also applying CLI `-G name=val` parameter overrides.
 pub fn elaborate_with_params(trees: &[Tree], tops: &[String], params: &[(String, String)]) -> Elaborated {
+    elaborate_with_options(trees, tops, params, &[])
+}
+
+/// Like [`elaborate_with_params`], also allowing modules named in
+/// `black_box_modules` to elaborate as source-less black-box stubs when their
+/// definitions are absent from `trees`.
+pub fn elaborate_with_options(
+    trees: &[Tree],
+    tops: &[String],
+    params: &[(String, String)],
+    black_box_modules: &[String],
+) -> Elaborated {
     let mut b = Builder::new(trees);
     b.designs = true;
     b.collect_names();
@@ -506,6 +530,7 @@ pub fn elaborate_with_params(trees: &[Tree], tops: &[String], params: &[(String,
     let mut e = elab::Elab::new(&b);
     e.top = tops.to_vec();
     e.cli_params = params.to_vec();
+    e.black_box_modules = black_box_modules.iter().cloned().collect();
     e.run();
     let skipped = e.skipped.iter().map(|r| (r.tree, r.node)).collect();
     let copies = e.copies.iter().map(|(r, k)| ((r.tree, r.node), *k)).collect();

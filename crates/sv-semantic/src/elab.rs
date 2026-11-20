@@ -199,6 +199,8 @@ pub(crate) struct Elab<'b, 't> {
     pub top: Vec<String>,
     /// CLI parameter overrides (`-G name=val` or `-G path.name=val`).
     pub cli_params: Vec<(String, String)>,
+    /// Module names allowed to elaborate as source-less black-box stubs (`-bbox_m`).
+    pub black_box_modules: HashSet<String>,
     taken: HashSet<NodeRef>,
     considered: HashSet<NodeRef>,
     reached: HashSet<NodeRef>,
@@ -346,6 +348,7 @@ impl<'b, 't> Elab<'b, 't> {
             checked: HashSet::default(),
             top: Vec::new(),
             cli_params: Vec::new(),
+            black_box_modules: HashSet::default(),
             taken: HashSet::default(),
             considered: HashSet::default(),
             reached: HashSet::default(),
@@ -1270,6 +1273,7 @@ impl<'b, 't> Elab<'b, 't> {
                 is_interface,
                 is_checker: false,
                 is_bound: self.bound > 0,
+                is_blackbox_stub: false,
                 checker_events: Vec::new(),
                 checker_untyped: Vec::new(),
                 def_node: (decl.tree, decl.node),
@@ -2566,6 +2570,10 @@ impl<'b, 't> Elab<'b, 't> {
         }
         let def = self.resolve_configured_cell(path, &def_lookup);
         let Some(d) = self.defs.get(&def) else {
+            if self.black_box_modules.contains(&def_lookup) || self.black_box_modules.contains(&def) {
+                self.instantiate_blackbox_stub(c, dt, &def, path, scope, vals);
+                return;
+            }
             // Nothing is elaborated for the instance, so say so: a design that silently
             // loses an instance is not the design that was read.
             if self.checked.insert(c) {
@@ -2732,6 +2740,86 @@ impl<'b, 't> Elab<'b, 't> {
                 }
                 self.instance(&actual_def, &n, &child_path, &over, pend, env, port_conns.clone(), loc, depth + 1);
                 self.check_port_names(inst, &actual_def, &child_path, &port_conns);
+            }
+        }
+    }
+
+    fn instantiate_blackbox_stub(&mut self, c: NodeRef, dt: NodeRef, def: &str, path: &str, scope: usize, vals: &Vals) {
+        let b = self.b;
+        for inst in b.children(c) {
+            if b.kind(inst) != Instance {
+                continue;
+            }
+            let Some((name, _)) = b.name_of(inst) else { continue };
+            let dims: Vec<NodeRef> = b.children(inst).into_iter().filter(|k| b.kind(*k) == Dim).collect();
+            let mut names = vec![name.clone()];
+            for dim in dims {
+                *b.inst.borrow_mut() = vals.clone();
+                let Some((l, r)) = b.dim_range(dim, scope, &self.env()) else { return };
+                if l.abs_diff(r) > MAX_ITER as u128 {
+                    if self.checked.insert(dim) {
+                        self.diags.push(crate::names::Diag {
+                            tree: dim.tree,
+                            node: dim.node,
+                            message: format!("instance array '{name}' exceeds maximum size"),
+                        });
+                    }
+                    return;
+                }
+                let idx: Vec<i128> = if l >= r { (r..=l).collect() } else { (l..=r).collect() };
+                names = names.iter().flat_map(|n| idx.iter().map(move |i| format!("{n}[{i}]"))).collect();
+            }
+            let port_conns = self.extract_port_conns(inst, vals);
+            let loc = self.loc_of(inst);
+            for n in names {
+                let child_path = format!("{path}.{n}");
+                let actual_def = self.resolve_configured_instance(&child_path, def);
+                self.out.push(format!("{path} instance {n} : {actual_def}"));
+                if self.uninst == 0 {
+                    let parent = self.design_stack.last().copied();
+                    let rel_path = match parent {
+                        Some(pid) => {
+                            let ppath = &self.design.instances[pid.0 as usize].path;
+                            child_path.strip_prefix(&format!("{ppath}.")).unwrap_or(&n).to_string()
+                        }
+                        None => n.clone(),
+                    };
+                    let inst_id = InstanceId(self.design.instances.len() as u32);
+                    self.design.instances.push(DesignInstance {
+                        id: inst_id,
+                        parent,
+                        name: n.clone(),
+                        rel_path,
+                        path: child_path.clone(),
+                        definition: actual_def,
+                        is_interface: false,
+                        is_checker: false,
+                        is_bound: self.bound > 0,
+                        is_blackbox_stub: true,
+                        checker_events: Vec::new(),
+                        checker_untyped: Vec::new(),
+                        def_node: (c.tree, dt.node),
+                        params: Vec::new(),
+                        type_params: Vec::new(),
+                        typedefs: Vec::new(),
+                        imports: Vec::new(),
+                        ports: Vec::new(),
+                        port_conns: port_conns.clone(),
+                        symbols: Vec::new(),
+                        enum_consts: Vec::new(),
+                        modports: Vec::new(),
+                        items: Vec::new(),
+                        subroutines: Vec::new(),
+                        children: Vec::new(),
+                        loc,
+                        sym_by_rel: HashMap::default(),
+                    });
+                    self.design.inst_by_path.insert(child_path, inst_id);
+                    match parent {
+                        Some(pid) => self.design.instances[pid.0 as usize].children.push(inst_id),
+                        None => self.design.tops.push(inst_id),
+                    }
+                }
             }
         }
     }
@@ -3575,6 +3663,7 @@ impl<'b, 't> Elab<'b, 't> {
             is_interface: false,
             is_checker: true,
             is_bound: self.bound > 0,
+            is_blackbox_stub: false,
             checker_events: Vec::new(),
             checker_untyped: Vec::new(),
             def_node: (decl.tree, decl.node),

@@ -105,7 +105,8 @@ pub fn lower_trees(
     }
     let effective_tops: Vec<String> =
         if tops.is_empty() { config.top.iter().cloned().collect() } else { tops.to_vec() };
-    let (sema, elab) = sv_semantic::semantic_diags_with_params(trees, &effective_tops, params);
+    let (sema, elab) =
+        sv_semantic::semantic_diags_with_options(trees, &effective_tops, params, &config.black_box_modules);
     for d in sema {
         let t = &trees[d.tree];
         let l = t.token_bounds(d.node).map(|(tok, _)| loc.loc(d.tree, t, tok)).unwrap_or_default();

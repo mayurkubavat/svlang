@@ -707,6 +707,12 @@ pub struct LowerConfig {
     /// check such as `assert (!$isunknown(x))` then always holds: it says nothing about
     /// the design. Ignored when `allow_four_state_ops` is `true`.
     pub isunknown_is_false: bool,
+    /// When `Some(min_width)`, replaces variable-by-variable `Mul`/`UDiv`/`SDiv`/`UMod`/`SMod`
+    /// operations of width `>= min_width` with unconstrained [`FreeKind::Cut`] values (`-bbox_mul`).
+    pub bbox_mul_width: Option<u32>,
+    /// When `Some(min_words)`, abstracts unpacked-array memories with `depth >= min_words` by
+    /// replacing their [`ValueKind::MemRead`] ports with unconstrained [`FreeKind::Cut`] values (`-bbox_a`).
+    pub bbox_array_words: Option<usize>,
 }
 
 impl Default for LowerConfig {
@@ -721,6 +727,8 @@ impl Default for LowerConfig {
             black_box_instances: Vec::new(),
             skip_initial_checks: false,
             isunknown_is_false: false,
+            bbox_mul_width: None,
+            bbox_array_words: None,
         }
     }
 }
@@ -1073,6 +1081,294 @@ impl Netlist {
         }
 
         self.toposort();
+    }
+
+    /// Abstracts variable-by-variable multiplier, divider, and modulo operations (`*`, `/`, `%`)
+    /// whose result or operand bit width is `>= min_width` into unconstrained [`FreeKind::Cut`]
+    /// values (`elaborate -bbox_mul`). Returns the number of arithmetic cones boxed.
+    pub fn black_box_multipliers(&mut self, min_width: u32) -> usize {
+        let mut boxed = 0usize;
+        for vi in 0..self.values.len() {
+            let should_box = match &self.values[vi].kind {
+                ValueKind::Op { op: NetOp::Mul | NetOp::UDiv | NetOp::SDiv | NetOp::UMod | NetOp::SMod, args } => {
+                    let max_w = self.values[vi].width.max(args.iter().map(|&a| self.value(a).width).max().unwrap_or(0));
+                    max_w >= min_width && args.iter().all(|&a| !matches!(self.value(a).kind, ValueKind::Const(_)))
+                }
+                _ => false,
+            };
+            if !should_box {
+                continue;
+            }
+            let uid = self.undriven.len();
+            let sig = self.values[vi].name.clone().unwrap_or_else(|| format!("{}._bbox_mul_{boxed}", self.top));
+            let w = self.values[vi].width;
+            let vid = self.values[vi].id;
+            let loc = self.values[vi].loc;
+            self.undriven.push(UndrivenSlice {
+                signal: sig.clone(),
+                hi: w - 1,
+                lo: 0,
+                value: vid,
+                loc,
+                free: FreeKind::Cut,
+            });
+            self.values[vi].kind = ValueKind::Undriven(uid);
+            if self.values[vi].name.is_none() {
+                self.values[vi].name = Some(sig);
+            }
+            boxed += 1;
+        }
+        if boxed > 0 {
+            self.toposort();
+        }
+        boxed
+    }
+
+    /// Abstracts [`Memory`] arrays with `(depth as usize) >= min_words` by replacing all of their
+    /// [`ValueKind::MemRead`] ports with unconstrained [`FreeKind::Cut`] values and removing the
+    /// boxed memories (`elaborate -bbox_a`). Returns the number of memories boxed.
+    pub fn black_box_memories(&mut self, min_words: usize) -> usize {
+        if !self.memories.iter().any(|m| (m.depth as usize) >= min_words) {
+            return 0;
+        }
+        let mut remap: Vec<Option<MemId>> = vec![None; self.memories.len()];
+        let mut mem_names: Vec<String> = vec![String::new(); self.memories.len()];
+        let mut kept: Vec<Memory> = Vec::new();
+        let mut boxed = 0usize;
+        for mut mem in std::mem::take(&mut self.memories) {
+            let idx = mem.id.0 as usize;
+            mem_names[idx] = mem.name.clone();
+            if (mem.depth as usize) >= min_words {
+                boxed += 1;
+            } else {
+                let new_id = MemId(kept.len() as u32);
+                mem.id = new_id;
+                remap[idx] = Some(new_id);
+                kept.push(mem);
+            }
+        }
+        self.memories = kept;
+
+        let mut read_k = 0usize;
+        for vi in 0..self.values.len() {
+            let mem_idx = match &mut self.values[vi].kind {
+                ValueKind::MemRead { mem, .. } => {
+                    let old = mem.0 as usize;
+                    if let Some(new_mid) = remap[old] {
+                        *mem = new_mid;
+                        None
+                    } else {
+                        Some(old)
+                    }
+                }
+                _ => None,
+            };
+            let Some(old_idx) = mem_idx else { continue };
+            let uid = self.undriven.len();
+            let sig =
+                self.values[vi].name.clone().unwrap_or_else(|| format!("{}._bbox_rd_{read_k}", mem_names[old_idx]));
+            read_k += 1;
+            let w = self.values[vi].width;
+            let vid = self.values[vi].id;
+            let loc = self.values[vi].loc;
+            self.undriven.push(UndrivenSlice {
+                signal: sig.clone(),
+                hi: w - 1,
+                lo: 0,
+                value: vid,
+                loc,
+                free: FreeKind::Cut,
+            });
+            self.values[vi].kind = ValueKind::Undriven(uid);
+            if self.values[vi].name.is_none() {
+                self.values[vi].name = Some(sig);
+            }
+        }
+        self.toposort();
+        boxed
+    }
+
+    fn alloc_post_reset_gate(&mut self, skip_cycles: u32) -> ValueId {
+        let mut gate = self.push_const(CVal::new(1, false, 1), false, Loc::default());
+        if skip_cycles == 0 {
+            return gate;
+        }
+        let clk = self
+            .states
+            .iter()
+            .find_map(|s| s.clock)
+            .or_else(|| self.checks.iter().find_map(|c| c.clock))
+            .or_else(|| self.inputs.first().map(|p| ClockSpec { signal: p.value, edge: Edge::Posedge }));
+        let Some(clock) = clk else {
+            return gate;
+        };
+        for step in 0..skip_cycles {
+            let sid = StateId(self.states.len() as u32);
+            let out_val = ValueId(self.values.len() as u32);
+            let name = format!("{}._cov_post_reset_{step}", self.top);
+            self.values.push(ValueNode {
+                id: out_val,
+                width: 1,
+                signed: false,
+                four_state: false,
+                kind: ValueKind::StateOut(sid),
+                name: Some(name.clone()),
+                loc: Loc::default(),
+            });
+            self.states.push(State {
+                id: sid,
+                name,
+                width: 1,
+                signed: false,
+                four_state: false,
+                clock: Some(clock),
+                async_reset: None,
+                latch_enable: None,
+                init: Some(CVal::new(1, false, 0)),
+                next: gate,
+                out: out_val,
+                loc: Loc::default(),
+            });
+            gate = out_val;
+        }
+        gate
+    }
+
+    /// Synthesizes paired true/false [`CheckKind::Cover`] targets (`<top>._cov_branch_<k>_true`
+    /// and `<top>._cov_branch_<k>_false`) on every source-located non-constant [`NetOp::Mux`]
+    /// condition in the netlist (`check_cov -type branch`), gated off for the first `skip_steps`
+    /// model steps when a reset sequence is active. Returns the number of covers added.
+    pub fn add_branch_covers(&mut self, skip_steps: u32) -> usize {
+        let mut candidates: Vec<(ValueId, Loc)> = Vec::new();
+        let mut seen = std::collections::HashSet::new();
+        for v in &self.values {
+            let ValueKind::Op { op: NetOp::Mux, args } = &v.kind else { continue };
+            if args.len() != 3 || v.loc.line == 0 {
+                continue;
+            }
+            let cond = args[0];
+            if matches!(self.value(cond).kind, ValueKind::Const(_)) {
+                continue;
+            }
+            if seen.insert((cond, v.loc.file, v.loc.line)) {
+                candidates.push((cond, v.loc));
+            }
+        }
+        if candidates.is_empty() {
+            return 0;
+        }
+        let enable = self.alloc_post_reset_gate(skip_steps);
+        let mut added = 0usize;
+        for (idx, (cond, loc)) in candidates.into_iter().enumerate() {
+            let cond_b = if self.value(cond).width == 1 {
+                cond
+            } else {
+                let four = self.value(cond).four_state;
+                self.push_op(NetOp::RedOr, vec![cond], 1, false, four, loc)
+            };
+            let four = self.value(cond_b).four_state;
+            let neg = self.push_op(NetOp::Not, vec![cond_b], 1, false, four, loc);
+            self.checks.push(Check {
+                kind: CheckKind::Cover,
+                immediate: true,
+                label: Some(format!("{}._cov_branch_{idx}_true", self.top)),
+                enable,
+                expr: cond_b,
+                clock: None,
+                loc,
+            });
+            self.checks.push(Check {
+                kind: CheckKind::Cover,
+                immediate: true,
+                label: Some(format!("{}._cov_branch_{idx}_false", self.top)),
+                enable,
+                expr: neg,
+                clock: None,
+                loc,
+            });
+            added += 2;
+        }
+        self.toposort();
+        added
+    }
+
+    /// Synthesizes `0 -> 1` (`_rise`) and `1 -> 0` (`_fall`) [`CheckKind::Cover`] targets on
+    /// register bits in [`Self::states`] (`check_cov -type toggle`, capped at 32 bits per register
+    /// or word-level `next != out` for wider buses), gated off for the first `skip_steps` model
+    /// steps when a reset sequence is active. Returns the number of covers added.
+    pub fn add_toggle_covers(&mut self, skip_steps: u32) -> usize {
+        if self.states.is_empty() {
+            return 0;
+        }
+        let snapshot: Vec<State> = self
+            .states
+            .iter()
+            .filter(|st| {
+                !st.name.contains("._cov_post_reset_")
+                    && !self.undriven.iter().any(|u| u.free == FreeKind::Cut && u.signal == st.name)
+            })
+            .cloned()
+            .collect();
+        if snapshot.is_empty() {
+            return 0;
+        }
+        let enable = self.alloc_post_reset_gate(skip_steps);
+        let mut added = 0usize;
+        for st in snapshot {
+            let (name, width, four, clock, out, next, loc) =
+                (st.name, st.width, st.four_state, st.clock, st.out, st.next, st.loc);
+            let safe: String =
+                name.chars().map(|c| if c.is_ascii_alphanumeric() || c == '.' || c == '_' { c } else { '_' }).collect();
+            if width <= 32 {
+                for bit in 0..width {
+                    let (ob, nb) = if width == 1 {
+                        (out, next)
+                    } else {
+                        let o = self.push_op(NetOp::Slice { hi: bit, lo: bit }, vec![out], 1, false, four, loc);
+                        let n = self.push_op(NetOp::Slice { hi: bit, lo: bit }, vec![next], 1, false, four, loc);
+                        (o, n)
+                    };
+                    let not_o = self.push_op(NetOp::Not, vec![ob], 1, false, four, loc);
+                    let not_n = self.push_op(NetOp::Not, vec![nb], 1, false, four, loc);
+                    let rise = self.push_op(NetOp::And, vec![not_o, nb], 1, false, four, loc);
+                    let fall = self.push_op(NetOp::And, vec![ob, not_n], 1, false, four, loc);
+                    let suffix = if width == 1 { String::new() } else { format!("_{bit}") };
+                    self.checks.push(Check {
+                        kind: CheckKind::Cover,
+                        immediate: true,
+                        label: Some(format!("{safe}._cov_toggle{suffix}_rise")),
+                        enable,
+                        expr: rise,
+                        clock,
+                        loc,
+                    });
+                    self.checks.push(Check {
+                        kind: CheckKind::Cover,
+                        immediate: true,
+                        label: Some(format!("{safe}._cov_toggle{suffix}_fall")),
+                        enable,
+                        expr: fall,
+                        clock,
+                        loc,
+                    });
+                    added += 2;
+                }
+            } else {
+                let chg = self.push_op(NetOp::Neq, vec![out, next], 1, false, four, loc);
+                self.checks.push(Check {
+                    kind: CheckKind::Cover,
+                    immediate: true,
+                    label: Some(format!("{safe}._cov_toggle_chg")),
+                    enable,
+                    expr: chg,
+                    clock,
+                    loc,
+                });
+                added += 1;
+            }
+        }
+        self.toposort();
+        added
     }
 
     fn push_const(&mut self, cval: CVal, four_state: bool, loc: Loc) -> ValueId {
