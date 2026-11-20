@@ -68,3 +68,6 @@ add_executable(uvmcheck_regexcheck tools/oracles/regexcheck.cpp)
 # Reference expression types, for checking dv-lint's typer (tools/gates/expr_gate.py).
 add_executable(uvmcheck_exprdump tools/oracles/exprdump.cpp)
 target_link_libraries(uvmcheck_exprdump PRIVATE slang::slang)
+# Reference generic class specialization counts, for checking sv-semantic (tools/gates/spec_gate.py).
+add_executable(uvmcheck_specdump tools/oracles/specdump.cpp)
+target_link_libraries(uvmcheck_specdump PRIVATE slang::slang)

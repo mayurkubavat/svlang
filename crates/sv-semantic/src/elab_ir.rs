@@ -1349,7 +1349,7 @@ impl Builder<'_> {
             let is_union = own.first() == Some(&"union");
             let is_tagged = own.contains(&"tagged");
             let is_soft = own.contains(&"soft");
-            let is_packed = own.contains(&"packed");
+            let is_packed = own.contains(&"packed") || (is_union && is_soft);
             let signed = own.contains(&"signed");
             if is_packed {
                 let mut raw_members: Vec<(String, RtlType, u32)> = Vec::new();

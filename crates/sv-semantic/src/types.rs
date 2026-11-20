@@ -520,7 +520,9 @@ impl<'t> Builder<'t> {
                     return Some((w, sg));
                 }
             }
-            if matches!(own.first(), Some(&"struct" | &"union")) && own.contains(&"packed") {
+            if matches!(own.first(), Some(&"struct" | &"union"))
+                && (own.contains(&"packed") || (own.first() == Some(&"union") && own.contains(&"soft")))
+            {
                 // Members' widths: summed, or the widest for a union.
                 let union = own.first() == Some(&"union");
                 let mut w: u32 = 0;
@@ -1404,7 +1406,7 @@ impl<'t> Builder<'t> {
             None => {
                 let name = if path.len() == 2 && path[0] == "std" { path[1] } else { path[0] };
                 match name {
-                    "mailbox" => {
+                    "mailbox" | "weak_reference" => {
                         let arg = self
                             .child(dt, ParamList)
                             .and_then(|pl| self.child(pl, ArgList))
@@ -1412,9 +1414,9 @@ impl<'t> Builder<'t> {
                             .and_then(|a| self.children(a).into_iter().next());
                         match arg {
                             Some(a) => {
-                                format!("mailbox#({})", self.ts(a, scope, env, false, depth + 1))
+                                format!("{name}#({})", self.ts(a, scope, env, false, depth + 1))
                             }
-                            None => "mailbox#(untyped)".into(),
+                            None => format!("{name}#(untyped)"),
                         }
                     }
                     "semaphore" | "process" => name.to_string(),
@@ -1600,7 +1602,14 @@ impl<'t> Builder<'t> {
             } else {
                 // A string argument prints as written.
                 if let Some(b) = env.get(name) {
-                    if let [lit] = self.toks_of(b.node).as_slice() {
+                    if let Some(&lit) = self.toks_of(b.node).last() {
+                        if lit.starts_with('"') {
+                            s.push_str(lit);
+                            continue;
+                        }
+                    }
+                } else if let Some(d) = default {
+                    if let Some(&lit) = self.toks_of(*d).last() {
                         if lit.starts_with('"') {
                             s.push_str(lit);
                             continue;
@@ -1944,7 +1953,7 @@ impl<'t> Builder<'t> {
         let own = self.own_tokens(dt);
         let kind = own[0];
         let mut s = kind.to_string();
-        if own.contains(&"packed") {
+        if own.contains(&"packed") || (kind == "union" && own.contains(&"soft")) {
             s.push_str(" packed");
         }
         if own.contains(&"tagged") {

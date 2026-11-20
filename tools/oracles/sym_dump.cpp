@@ -23,6 +23,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "slang/ast/ASTVisitor.h"
@@ -47,6 +48,8 @@ std::vector<std::string> lines;
 bool withTypes = false;
 bool withValues = false;
 bool withHier = false;
+bool withSpecs = false;
+std::unordered_map<const GenericClassDefSymbol*, std::vector<const ClassType*>> preSpecs;
 // Inside a parameterized class, types are left out: slang prints a type
 // parameter by name or by value depending on which specialization it made
 // first. The builder checks those types on specializations (phase N4).
@@ -85,6 +88,18 @@ void klass(const std::string& path, const Symbol& sym) {
             ++inGeneric;
             scope(join(path, sym.name), t->getCanonicalType().as<ClassType>());
             --inGeneric;
+        }
+        if (withSpecs && inGeneric == 0 && path != "uvm_pkg") {
+            if (auto it = preSpecs.find(g); it != preSpecs.end()) {
+                for (auto sp : it->second) {
+                    std::string full = sp->toString();
+                    auto hash = full.find("#(");
+                    auto sep = hash == std::string::npos ? std::string::npos : full.rfind("::", hash);
+                    std::string sname = sep == std::string::npos ? full : full.substr(sep + 2);
+                    put(path, "class", sname);
+                    scope(join(path, sname), *sp);
+                }
+            }
         }
     }
 }
@@ -251,6 +266,7 @@ int main(int argc, char** argv) {
         if (std::string(argv[i]) == "--types") withTypes = true;
         else if (std::string(argv[i]) == "--values") withValues = true;
         else if (std::string(argv[i]) == "--hier") withHier = true;
+        else if (std::string(argv[i]) == "--specs") withSpecs = true;
         else args.push_back(argv[i]);
     }
     argc = int(args.size());
@@ -260,6 +276,22 @@ int main(int argc, char** argv) {
     if (!drv.parseCommandLine(argc, argv) || !drv.processOptions() || !drv.parseAllSources()) return 2;
     auto comp = drv.createCompilation();
     auto& root = comp->getRoot();
+    if (withSpecs) {
+        comp->getAllDiagnostics();
+        struct PreSpecCollector : ASTVisitor<PreSpecCollector, VisitFlags::AllGood> {
+            void handle(const GenericClassDefSymbol& g) {
+                auto& vec = preSpecs[&g];
+                if (!vec.empty()) return;
+                for (auto& sp : g.specializations()) {
+                    if (&sp != &g.getInvalidSpecialization() && sp.isClass()) {
+                        vec.push_back(&sp.getCanonicalType().as<ClassType>());
+                    }
+                }
+                visitDefault(g);
+            }
+        } collector;
+        root.visit(collector);
+    }
     if (withHier) {
         for (auto top : root.topInstances) {
             lines.push_back("$root instance " + std::string(top->name) + " : " + std::string(top->getDefinition().name));
@@ -286,7 +318,13 @@ int main(int argc, char** argv) {
     for (auto d : comp->getDefinitions()) {
         auto def = d->as_if<DefinitionSymbol>();
         if (!def) continue;
-        auto& body = InstanceSymbol::createDefault(*comp, *def).body;
+        const InstanceBodySymbol* topBody = nullptr;
+        if (withSpecs) {
+            for (auto top : root.topInstances) {
+                if (&top->getDefinition() == def) { topBody = &top->body; break; }
+            }
+        }
+        auto& body = topBody ? *topBody : InstanceSymbol::createDefault(*comp, *def).body;
         const char* k = def->definitionKind == DefinitionKind::Interface ? "interface"
                         : def->definitionKind == DefinitionKind::Program ? "program"
                                                                          : "module";

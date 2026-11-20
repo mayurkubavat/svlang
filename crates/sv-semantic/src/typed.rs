@@ -32,8 +32,17 @@ use SyntaxKind::*;
 use crate::names::Diag;
 use crate::scopes::{Scopes, SymKind, ROOT, UNIT};
 
-const CLASS_BUILTINS: &[&str] =
-    &["randomize", "srandom", "get_randstate", "set_randstate", "rand_mode", "constraint_mode", "new"];
+const CLASS_BUILTINS: &[&str] = &[
+    "randomize",
+    "pre_randomize",
+    "post_randomize",
+    "srandom",
+    "get_randstate",
+    "set_randstate",
+    "rand_mode",
+    "constraint_mode",
+    "new",
+];
 
 fn own_toks(t: &Tree, n: NodeId) -> Vec<&str> {
     t.node(n)
@@ -82,6 +91,10 @@ enum Shape {
     Queue,
     Assoc,
     Dynamic,
+    Semaphore,
+    Mailbox,
+    Process,
+    WeakRef,
 }
 
 fn shape(ty: &str) -> Option<Shape> {
@@ -90,6 +103,19 @@ fn shape(ty: &str) -> Option<Shape> {
     }
     if ty == "string" {
         return Some(Shape::Str);
+    }
+    let short = ty.rsplit(['.', ':']).next().unwrap_or(ty);
+    if short == "semaphore" {
+        return Some(Shape::Semaphore);
+    }
+    if short == "mailbox" || short.starts_with("mailbox#(") {
+        return Some(Shape::Mailbox);
+    }
+    if short == "process" {
+        return Some(Shape::Process);
+    }
+    if short == "weak_reference" || short.starts_with("weak_reference#(") {
+        return Some(Shape::WeakRef);
     }
     // The outermost unpacked dimension is the last `$[...]`.
     let at = ty.rfind("$[")?;
@@ -127,6 +153,11 @@ fn method_arity(s: Shape, m: &str) -> Option<(u32, u32)> {
         (Queue | Assoc | Dynamic, "reverse" | "sort" | "rsort" | "shuffle") if m == "reverse" || m == "shuffle" => {
             (0, 0)
         }
+        (Semaphore, "put" | "get" | "try_get") => (0, 1),
+        (Mailbox, "num") => (0, 0),
+        (Mailbox, "put" | "try_put" | "get" | "try_get" | "peek" | "try_peek") => (1, 1),
+        (Process, "self" | "status" | "kill" | "await" | "suspend" | "resume") => (0, 0),
+        (WeakRef, "get" | "clear" | "get_id") => (0, 0),
         _ => return None,
     })
 }
@@ -203,6 +234,8 @@ struct Ctx<'a> {
     parents: Vec<Vec<u32>>,
     /// Class scopes by name, parameterized ones too (when the name is unique).
     any_class: HashMap<String, Option<usize>>,
+    /// Member visibility (`local` / `protected`) by symbol index.
+    vis: HashMap<usize, crate::Visibility>,
 }
 
 /// Runs this module's checks over every tree of a compile and returns the
@@ -273,7 +306,7 @@ pub fn check(trees: &[Tree], scopes: &Scopes) -> Vec<Diag> {
             _ => {}
         }
     }
-    let parents = trees
+    let parents: Vec<Vec<u32>> = trees
         .iter()
         .map(|t| {
             let mut parent = vec![u32::MAX; t.nodes.len()];
@@ -285,6 +318,30 @@ pub fn check(trees: &[Tree], scopes: &Scopes) -> Vec<Diag> {
             parent
         })
         .collect();
+    let mut vis = HashMap::default();
+    for (i, s) in scopes.symbols.iter().enumerate() {
+        let Some(owner_sym) = scopes.scopes[s.scope].symbol else { continue };
+        if scopes.symbols[owner_sym].kind != SymKind::Class {
+            continue;
+        }
+        let (t, parent) = (&trees[s.tree], &parents[s.tree]);
+        let mut cur = Some(s.node);
+        while let Some(a) = cur {
+            if matches!(t.kind(a), DataDecl | FunctionDecl | TaskDecl | MethodPrototype) {
+                let own = own_toks(t, a);
+                if own.contains(&"local") {
+                    vis.insert(i, crate::Visibility::Local);
+                } else if own.contains(&"protected") {
+                    vis.insert(i, crate::Visibility::Protected);
+                }
+                break;
+            }
+            if t.kind(a) == ClassDecl {
+                break;
+            }
+            cur = up(parent, a);
+        }
+    }
     let cx = Ctx {
         trees,
         scopes,
@@ -299,6 +356,7 @@ pub fn check(trees: &[Tree], scopes: &Scopes) -> Vec<Diag> {
         members,
         parents,
         any_class,
+        vis,
     };
     let mut out = Vec::new();
     for (ix, t) in trees.iter().enumerate() {
@@ -525,11 +583,21 @@ impl<'a> Ctx<'a> {
                     return;
                 }
                 let pkg = t.bare_text(base);
+                let member = own[1];
+                if member == "new" {
+                    if let Some(Some(cs)) = self.classes.get(&pkg) {
+                        if let Some(v) = self.member_vis(*cs, "new") {
+                            if !self.can_access(ix, t, n, parent, *cs, v) {
+                                err(n, format!("cannot access constructor 'new' of class '{pkg}'"));
+                            }
+                        }
+                        return;
+                    }
+                }
                 let Some(Some(s)) = self.packages.get(&pkg) else { return };
                 if self.exporting.contains(s) || self.classes.contains_key(&pkg) {
                     return;
                 }
-                let member = own[1];
                 if !self.by_name.contains_key(&(*s, member)) {
                     err(n, format!("no member named '{member}' in package '{pkg}'"));
                 }
@@ -556,14 +624,157 @@ impl<'a> Ctx<'a> {
                     }
                     return;
                 }
+                // Generic class handle `C#(int)` with no base class: check declared members
+                // when the declared type is directly `C#(...)` (not `C#(...)::typedef_t`).
+                if ty.contains("#(") && ty.ends_with(')') && !ty.contains(['{', '$', '[', ' ']) {
+                    let sy = &self.scopes.symbols[sym];
+                    let is_scoped_typedef = sy.dtype.is_some_and(|dt| {
+                        let dtt = &self.trees[sy.tree];
+                        let dtoks: Vec<&str> =
+                            dtt.token_range(dt).into_iter().map(|i| &*dtt.tokens[i as usize].text).collect();
+                        dtoks.iter().rposition(|&x| x == ")").is_some_and(|rp| dtoks[rp + 1..].contains(&"::"))
+                    });
+                    if !is_scoped_typedef {
+                        let head = ty.split('#').next().unwrap_or(&ty);
+                        let cname = head.rsplit(['.', ':']).next().unwrap_or(head);
+                        if !matches!(cname, "mailbox" | "weak_reference") {
+                            if let Some(Some(cs)) = self.any_class.get(cname) {
+                                if self.bases.get(cs) == Some(&None) {
+                                    if let Some(ms) = self.members.get(cs) {
+                                        if !ms.contains(&member) && !CLASS_BUILTINS.contains(&member) {
+                                            err(n, format!("no member named '{member}' in class '{cname}'"));
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    return;
+                }
                 // A class handle.
                 if ty.contains(['{', '$', '[', '#', ' ']) {
                     return;
                 }
                 let cname = ty.rsplit(['.', ':']).next().unwrap_or(&ty);
+                if matches!(cname, "semaphore" | "mailbox" | "process" | "weak_reference") {
+                    return;
+                }
                 let Some(ms) = self.class_members(cname) else { return };
                 if !ms.contains(member) && !CLASS_BUILTINS.contains(&member) {
                     err(n, format!("no member named '{member}' in class '{cname}'"));
+                    return;
+                }
+                if let Some(Some(cs)) = self.classes.get(cname) {
+                    if let Some(msym) = self.class_member(*cs, member) {
+                        if let Some(&v) = self.vis.get(&msym) {
+                            let decl_cls = self.scopes.symbols[msym].scope;
+                            if !self.can_access(ix, t, n, parent, decl_cls, v) {
+                                err(n, format!("cannot access non-public member '{member}' of class '{cname}'"));
+                            }
+                        }
+                    }
+                }
+            }
+            NameExpr if t.bare_text(n) == "new" => {
+                // `A a = new` or `a = new(...)` constructor visibility check.
+                let call_or_self =
+                    up(parent, n).filter(|&p| t.kind(p) == CallExpr && t.children(p).next() == Some(n)).unwrap_or(n);
+                let target_cls = match up(parent, call_or_self) {
+                    Some(decl) if t.kind(decl) == Declarator => up(parent, decl)
+                        .filter(|&dd| t.kind(dd) == DataDecl)
+                        .and_then(|dd| t.child(dd, DataType))
+                        .map(|dt| t.bare_text(dt))
+                        .and_then(|nm| self.classes.get(nm.trim()).copied().flatten()),
+                    Some(bin)
+                        if t.kind(bin) == BinaryExpr
+                            && own_toks(t, bin).first() == Some(&"=")
+                            && t.children(bin).nth(1) == Some(call_or_self) =>
+                    {
+                        t.children(bin)
+                            .next()
+                            .and_then(|lhs| self.sym_of_name(ix, t, lhs, parent))
+                            .and_then(|s| self.resolved_type(s))
+                            .filter(|ty| !ty.contains(['{', '$', '[', '#', ' ']))
+                            .and_then(|ty| {
+                                let cname = ty.rsplit(['.', ':']).next().unwrap_or(&ty);
+                                self.classes.get(cname).copied().flatten()
+                            })
+                    }
+                    _ => None,
+                };
+                if let Some(cs) = target_cls {
+                    if let Some(v) = self.member_vis(cs, "new") {
+                        if !self.can_access(ix, t, n, parent, cs, v) {
+                            let cname =
+                                self.scopes.scopes[cs].symbol.map_or("class", |y| self.scopes.symbols[y].name.as_str());
+                            err(n, format!("cannot access constructor 'new' of class '{cname}'"));
+                        }
+                    }
+                }
+            }
+            ExprOrDist => {
+                // Top-level `string` expression in a constraint item (not an `if` condition).
+                if up(parent, n).is_some_and(|ci| t.kind(ci) == ConstraintItem && !own_toks(t, ci).contains(&"if")) {
+                    if let Some(e) = t.children(n).next() {
+                        let str_bad = match t.kind(e) {
+                            NameExpr => self.expr_type(ix, t, e, parent).as_deref() == Some("string"),
+                            BinaryExpr => {
+                                let op = own_toks(t, e).first().copied().unwrap_or("");
+                                matches!(op, "==" | "!=" | "<" | "<=" | ">" | ">=")
+                                    && t.children(e)
+                                        .any(|ch| self.expr_type(ix, t, ch, parent).as_deref() == Some("string"))
+                            }
+                            _ => false,
+                        };
+                        if str_bad {
+                            err(e, "string expression is not valid in a constraint".into());
+                        }
+                    }
+                }
+            }
+            WithClause => {
+                // `c.randomize() with { ... }`: check `local` / `protected` visibility on `c`'s members.
+                let Some(ce) = up(parent, n).filter(|&p| t.kind(p) == CallExpr) else { return };
+                let Some(callee) = t.children(ce).next().filter(|&k| t.kind(k) == MemberExpr) else { return };
+                if own_toks(t, callee) != [".", "randomize"] {
+                    return;
+                }
+                let Some(base) = t.children(callee).next() else { return };
+                if t.kind(base) == NameExpr && matches!(t.bare_text(base).as_str(), "this" | "super") {
+                    return;
+                }
+                let Some(sym) = self.sym_of_name(ix, t, base, parent) else { return };
+                let Some(ty) = self.resolved_type(sym).filter(|ty| !ty.contains(['{', '$', '[', '#', ' '])) else {
+                    return;
+                };
+                let cname = ty.rsplit(['.', ':']).next().unwrap_or(&ty);
+                let Some(Some(target_cls)) = self.classes.get(cname) else { return };
+                let mut stack = vec![n];
+                while let Some(cur) = stack.pop() {
+                    if t.kind(cur) == ScopedExpr && own_toks(t, cur).first() == Some(&"::") {
+                        continue;
+                    }
+                    if t.kind(cur) == NameExpr {
+                        let is_member_base = up(parent, cur)
+                            .is_some_and(|p| t.kind(p) == MemberExpr && t.children(p).next() != Some(cur));
+                        if !is_member_base {
+                            let ident = t.bare_text(cur);
+                            if let Some(msym) = self.class_member(*target_cls, &ident) {
+                                if let Some(&v) = self.vis.get(&msym) {
+                                    let decl_cls = self.scopes.symbols[msym].scope;
+                                    if !self.can_access(ix, t, cur, parent, decl_cls, v) {
+                                        err(
+                                            cur,
+                                            format!(
+                                                "cannot access non-public member '{ident}' of class '{cname}' in randomize 'with'"
+                                            ),
+                                        );
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    stack.extend(t.children(cur));
                 }
             }
             InsideExpr => {
@@ -591,9 +802,54 @@ impl<'a> Ctx<'a> {
                 if up(parent, n).and_then(|b| up(parent, b)).is_some_and(|g| t.kind(g) == ConstraintItem) {
                     err(n, "constraint ordering directive is not allowed within a nested constraint block".into());
                 }
-                let Some(cls) = self.class_of(ix, n) else { return };
+                let lexical_cls = self.class_of(ix, n);
+                // Check if this `solve ... before` sits inside `[h.]randomize(args) with { ... }` (§18.11):
+                let mut with_call = None;
+                let mut anc = up(parent, n);
+                while let Some(a) = anc {
+                    if t.kind(a) == WithClause {
+                        with_call = up(parent, a).filter(|&p| t.kind(p) == CallExpr);
+                        break;
+                    }
+                    anc = up(parent, a);
+                }
+                let mut inline_rands: HashSet<&str> = HashSet::default();
+                let target_cls = if let Some(ce) = with_call {
+                    if let Some(al) = t.child(ce, ArgList) {
+                        for arg in t.children(al).filter(|&k| t.kind(k) == Arg) {
+                            let atoks: Vec<&str> =
+                                t.token_range(arg).into_iter().map(|k| &*t.tokens[k as usize].text).collect();
+                            if let [ident] = atoks.as_slice() {
+                                if ident.starts_with(|c: char| c.is_ascii_alphabetic() || c == '_') {
+                                    inline_rands.insert(*ident);
+                                }
+                            }
+                        }
+                    }
+                    match t.children(ce).next() {
+                        Some(callee) if t.kind(callee) == NameExpr => lexical_cls,
+                        Some(callee) if t.kind(callee) == MemberExpr => t
+                            .children(callee)
+                            .next()
+                            .and_then(|base| self.sym_of_name(ix, t, base, parent))
+                            .and_then(|sym| self.resolved_type(sym))
+                            .filter(|ty| !ty.contains(['{', '$', '[', '#', ' ']))
+                            .and_then(|ty| {
+                                let cname = ty.rsplit(['.', ':']).next().unwrap_or(&ty);
+                                self.classes.get(cname).copied().flatten()
+                            }),
+                        _ => None,
+                    }
+                } else {
+                    lexical_cls
+                };
                 for item in solve_items(&toks) {
-                    if let Some(m) = self.solve_target(cls, &item) {
+                    let (check_cls, check_item, rands) = match item.as_slice() {
+                        ["local", "::", rest @ ..] => (lexical_cls, rest, None),
+                        other => (target_cls, other, Some(&inline_rands)),
+                    };
+                    let Some(cls) = check_cls else { continue };
+                    if let Some(m) = self.solve_target(cls, check_item, rands) {
                         err(n, m.to_string());
                     }
                 }
@@ -711,11 +967,77 @@ impl<'a> Ctx<'a> {
         None
     }
 
+    fn member_vis(&self, cls: usize, name: &str) -> Option<crate::Visibility> {
+        let ids = self.by_name.get(&(cls, name))?;
+        ids.iter().find_map(|i| self.vis.get(i).copied())
+    }
+
+    fn is_subclass_of(&self, mut sub: usize, anc: usize) -> bool {
+        for _ in 0..64 {
+            if sub == anc {
+                return true;
+            }
+            let Some(Some(bname)) = self.bases.get(&sub) else { return false };
+            let Some(Some(bs)) = self.any_class.get(bname.as_str()) else { return false };
+            sub = *bs;
+        }
+        false
+    }
+
+    fn can_access(
+        &self,
+        ix: usize,
+        t: &Tree,
+        at: NodeId,
+        parent: &[u32],
+        decl_cls: usize,
+        v: crate::Visibility,
+    ) -> bool {
+        if v == crate::Visibility::Public {
+            return true;
+        }
+        let mut enc_classes = Vec::new();
+        let mut cur = up(parent, at);
+        while let Some(a) = cur {
+            if t.kind(a) == ClassDecl {
+                if let Some(&cs) = self.opener.get(&(ix, a)) {
+                    enc_classes.push(cs);
+                }
+            } else if matches!(t.kind(a), FunctionDecl | TaskDecl | ConstraintDecl) {
+                if let Some(nm) = t.child(a, Name).map(|nm| t.bare_text(nm)) {
+                    if let Some((c_raw, _)) = nm.split_once("::") {
+                        if let Some(Some(cs)) = self.any_class.get(c_raw.trim()) {
+                            let mut sc_opt = Some(*cs);
+                            while let Some(sc) = sc_opt {
+                                if self.scopes.scopes[sc]
+                                    .symbol
+                                    .is_some_and(|y| self.scopes.symbols[y].kind == SymKind::Class)
+                                {
+                                    enc_classes.push(sc);
+                                }
+                                sc_opt = self.scopes.scopes[sc].parent;
+                            }
+                        }
+                    }
+                }
+            }
+            cur = up(parent, a);
+        }
+        match v {
+            crate::Visibility::Public => true,
+            crate::Visibility::Local => enc_classes.contains(&decl_cls),
+            crate::Visibility::Protected => enc_classes.iter().any(|&ec| self.is_subclass_of(ec, decl_cls)),
+        }
+    }
+
     /// What is wrong with one name of a `solve ... before` list in class
     /// scope `cls`, if anything can be told.
-    fn solve_target(&self, cls: usize, item: &[&str]) -> Option<&'static str> {
+    fn solve_target(&self, cls: usize, item: &[&str], inline_rands: Option<&HashSet<&str>>) -> Option<&'static str> {
         // A `randc` name is checks.rs's (class `randc` check).
         const NOT_RAND: &str = "target of 'solve before' constraint must be a random variable";
+        if item.contains(&"(") && !item.ends_with(&[".", "size", "(", ")"]) {
+            return Some("subroutine call is not allowed in 'solve ... before'");
+        }
         let item = match item {
             ["this", ".", rest @ ..] => rest,
             _ => item,
@@ -725,7 +1047,11 @@ impl<'a> Ctx<'a> {
             return None;
         }
         let sym = self.class_member(cls, root)?;
-        if self.rand_kind(sym)?.is_empty() {
+        if self.scopes.symbols[sym].kind != SymKind::Variable {
+            return Some(NOT_RAND);
+        }
+        let promoted = inline_rands.is_some_and(|s| s.contains(root));
+        if self.rand_kind(sym)?.is_empty() && !promoted {
             return Some(NOT_RAND);
         }
         // `a.m` (after any selects of `a`): one level is looked at.

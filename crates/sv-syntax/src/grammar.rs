@@ -530,6 +530,7 @@ fn find_method_name(p: &Parser) -> Option<(usize, usize)> {
             // `,` and `)` end a modport's `task t` with no ports.
             "(" | ";" | "" | "," | ")" => break,
             "#" if p.text_at(i + 1) == "(" => i = skip_group_at(p, i + 1),
+            "type" if p.text_at(i + 1) == "(" => i = skip_group_at(p, i + 1),
             "[" | "{" => i = skip_group_at(p, i),
             _ => i += 1,
         }
@@ -926,7 +927,7 @@ pub(crate) fn data_type(p: &mut Parser) {
             let is_union = p.at("union");
             p.bump();
             let has_tagged = p.eat("tagged");
-            let has_soft = if p.at("soft") {
+            let _has_soft = if p.at("soft") {
                 if !is_union {
                     p.error("`soft` is only allowed on a packed union, not a `struct`".into());
                 } else if has_tagged {
@@ -937,9 +938,7 @@ pub(crate) fn data_type(p: &mut Parser) {
             } else {
                 false
             };
-            if !p.eat("packed") && has_soft && is_union {
-                p.error("`soft` union must also be declared `packed`".into());
-            }
+            p.eat("packed");
             if p.at_any(&["signed", "unsigned"]) {
                 p.bump();
             }

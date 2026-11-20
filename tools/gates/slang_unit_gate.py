@@ -16,7 +16,17 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(os.path.dirname(HERE))
 UVMCHECK = os.environ.get('UVMCHECK', os.path.join(REPO, 'build', 'uvmcheck'))
 DVBUILD = os.environ.get('DV_BUILD', os.path.join(REPO, 'target', 'release', 'dv-build'))
-TESTS = os.environ.get('SLANG_TESTS', os.path.join(REPO, 'build-model', '_deps', 'slang-src', 'tests', 'unittests', 'ast'))
+
+
+def _default_tests():
+    for b in ('build', 'build-dev', 'build-model'):
+        p = os.path.join(REPO, b, '_deps', 'slang-src', 'tests', 'unittests', 'ast')
+        if os.path.isdir(p):
+            return p
+    return os.path.join(REPO, 'build', '_deps', 'slang-src', 'tests', 'unittests', 'ast')
+
+
+TESTS = os.environ.get('SLANG_TESTS', _default_tests())
 
 CASE = re.compile(r'TEST_CASE\("((?:[^"\\]|\\.)*)"')
 TEXT = re.compile(r'fromText\(R"\((.*?)\)"', re.S)
@@ -59,7 +69,7 @@ def verdicts(texts, is_2023):
         except subprocess.TimeoutExpired:
             nat = 'hang'
         out = os.path.join(tmp, 'r.json')
-        sl_flags = ['--override', 'lang-std=1800-2023'] if is_2023 else []
+        sl_flags = ['--std', '1800-2023'] if is_2023 else []
         try:
             subprocess.run([UVMCHECK, '--no-config', '--no-cache', *sl_flags, '--json', out, *files], capture_output=True, timeout=30, preexec_fn=limit)
         except subprocess.TimeoutExpired:
@@ -80,7 +90,11 @@ def main():
     if sel:
         files = [f for f in files if any(s in os.path.basename(f) for s in sel)]
     jobs = [(os.path.basename(f)[:-9], n, ts, v23) for f in files for n, ts, v23 in cases(f)]
-    with concurrent.futures.ThreadPoolExecutor(min(6, os.cpu_count() or 4)) as pool:
+    if not jobs:
+        print(f'FAIL: no Slang unit test cases found under {TESTS}', file=sys.stderr)
+        return 1
+    workers = int(os.environ.get('GATE_JOBS', min(2, os.cpu_count() or 2)))
+    with concurrent.futures.ThreadPoolExecutor(workers) as pool:
         rows = list(pool.map(lambda j: (j[0], j[1], *verdicts(j[2], j[3])), jobs))
     t = collections.defaultdict(collections.Counter)
     hangs = 0

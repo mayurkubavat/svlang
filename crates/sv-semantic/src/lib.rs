@@ -516,6 +516,7 @@ pub fn symbol_info(trees: &[Tree], s: &scopes::Scopes) -> (Vec<Option<String>>, 
             b.symbol_value(y, scope, &env)
         })
         .collect();
+    let oracle = crate::oracle::TypeOracle::new(trees);
     let types = s
         .symbols
         .iter()
@@ -535,6 +536,24 @@ pub fn symbol_info(trees: &[Tree], s: &scopes::Scopes) -> (Vec<Option<String>>, 
             let t = &trees[y.tree];
             if y.kind == K::Variable && t.kind(y.node) == SyntaxKind::CovergroupDecl {
                 return Some("<unnamed covergroup>".into());
+            }
+            if y.kind == K::Net {
+                let is_ic = t.preorder().into_iter().any(|n| {
+                    matches!(t.kind(n), SyntaxKind::DataDecl | SyntaxKind::Port)
+                        && b.own_tokens(NodeRef { tree: y.tree, node: n }).contains(&"interconnect")
+                        && t.children(n).any(|d| Some(d) == y.item || d == y.node)
+                });
+                if is_ic {
+                    return Some("untyped".into());
+                }
+            }
+            if let Some(dt) = y.dtype {
+                if b.own_tokens(r(dt)).first() == Some(&"type") {
+                    let ti = oracle.decl_type(y.tree, Some(dt), y.item);
+                    if !ti.text.is_empty() && !ti.text.starts_with("type(") {
+                        return Some(ti.text);
+                    }
+                }
             }
             // A net of a user net type has that type's data type.
             if let Some(dt) = y.dtype {
@@ -561,6 +580,150 @@ pub fn symbol_info(trees: &[Tree], s: &scopes::Scopes) -> (Vec<Option<String>>, 
         })
         .collect();
     (types, values)
+}
+
+/// Emits specialized generic class symbol lines (`--symbols --specs`) matching
+/// `tools/oracles/sym_dump.cpp --specs` (with optional `: <type>` and `= <value>`).
+pub fn spec_symbol_lines(trees: &[Tree], s: &scopes::Scopes, with_types: bool, with_values: bool) -> Vec<String> {
+    use scopes::SymKind as K;
+    let mut b = Builder::new(trees);
+    b.designs = true;
+    b.collect_names();
+    b.collect();
+    let mut map = vec![b.unit; s.scopes.len()];
+    for (i, sc) in s.scopes.iter().enumerate() {
+        let parent = sc.parent.map_or(b.unit, |p| map[p]);
+        map[i] = match sc.symbol {
+            Some(y) => {
+                let y = &s.symbols[y];
+                b.node_scope.get(&NodeRef { tree: y.tree, node: y.node }).copied().unwrap_or(parent)
+            }
+            None => b.unit,
+        };
+    }
+    let mut nettypes: HashMap<String, NodeRef> = HashMap::default();
+    for (ti, t) in trees.iter().enumerate() {
+        for n in t.preorder() {
+            if t.kind(n) == SyntaxKind::NetTypeDecl {
+                if let Some(nm) = t.child(n, SyntaxKind::Name) {
+                    nettypes.insert(t.bare_text(nm), NodeRef { tree: ti, node: n });
+                }
+            }
+        }
+    }
+    let nested_generic = |mut sc: usize, root_c: usize| loop {
+        if let ScopeKind::Class(k) = b.scopes[sc].kind {
+            if k != root_c && b.classes[k].generic {
+                return true;
+            }
+        }
+        let Some(p) = b.scopes[sc].parent else { return false };
+        sc = p;
+    };
+    let mut out = Vec::new();
+    for (sc_idx, sc) in s.scopes.iter().enumerate() {
+        let Some(sym_idx) = sc.symbol else { continue };
+        let cls_sym = &s.symbols[sym_idx];
+        if cls_sym.kind != K::Class {
+            continue;
+        }
+        let ScopeKind::Class(c) = b.scopes[map[sc_idx]].kind else { continue };
+        if !b.classes[c].generic || b.generic_owner(b.classes[c].parent).is_some() {
+            continue;
+        }
+        let Some(specs) = b.named_sets.get(&c) else { continue };
+        let parent_path = &s.scopes[cls_sym.scope].path;
+        if parent_path == "uvm_pkg" {
+            continue;
+        }
+        let base_prefix = &sc.path;
+        let base_dot = format!("{base_prefix}.");
+        let mut seen_shown = HashSet::default();
+        for (shown, raw_env) in specs.values() {
+            if !seen_shown.insert(shown.as_str()) {
+                continue;
+            }
+            // Skip synthetic specializations whose arguments still reference an unspecialized generic parameter.
+            let has_unspec_param = b.classes.iter().filter(|gc| gc.generic).any(|gc| {
+                gc.params.iter().any(|(pn, is_ty, _)| *is_ty && shown.contains(&format!("{}::{pn}", gc.name)))
+            });
+            if has_unspec_param {
+                continue;
+            }
+            let spec_path = if parent_path == "$root" { shown.clone() } else { format!("{parent_path}.{shown}") };
+            out.push(format!("{parent_path} class {shown}"));
+            let env = b.complete_env(c, raw_env);
+            for y in &s.symbols {
+                let ypath = &s.scopes[y.scope].path;
+                let rel_path = if ypath == base_prefix {
+                    spec_path.clone()
+                } else if let Some(rest) = ypath.strip_prefix(&base_dot) {
+                    format!("{spec_path}.{rest}")
+                } else {
+                    continue;
+                };
+                let bscope = map[y.scope];
+                let in_nested_gen = nested_generic(bscope, c);
+                let mut line = format!("{rel_path} {} {}", y.kind.as_str(), y.name);
+                if with_types && !in_nested_gen {
+                    let r = |n: NodeId| NodeRef { tree: y.tree, node: n };
+                    let t = &trees[y.tree];
+                    let ty = if !matches!(y.kind, K::Net | K::Variable | K::Parameter | K::Argument | K::Typedef) {
+                        None
+                    } else if y.kind == K::Typedef {
+                        y.item.map(|it| b.typedef_target(r(it), bscope, &env))
+                    } else if y.kind == K::Variable && t.kind(y.node) == SyntaxKind::CovergroupDecl {
+                        Some("<unnamed covergroup>".into())
+                    } else if let Some(dt) = y.dtype.and_then(|dt| nettypes.get(t.bare_text(dt).as_str()).copied()) {
+                        Some(b.type_string(b.child(dt, SyntaxKind::DataType), None, bscope, &env, true))
+                    } else if y.kind == K::Parameter && y.dtype.is_none() {
+                        if y.scope == sc_idx {
+                            if let Some(bound) = env.get(&y.name) {
+                                Some(b.value_type(bound.node, bound.scope, &bound.env))
+                            } else {
+                                let v = y.item.and_then(|d| {
+                                    t.children(d).find(|&ch| !matches!(t.kind(ch), SyntaxKind::Name | SyntaxKind::Dim))
+                                });
+                                v.map(|v| b.value_type(r(v), bscope, &env))
+                            }
+                        } else {
+                            let v = y.item.and_then(|d| {
+                                t.children(d).find(|&ch| !matches!(t.kind(ch), SyntaxKind::Name | SyntaxKind::Dim))
+                            });
+                            v.map(|v| b.value_type(r(v), bscope, &env))
+                        }
+                    } else {
+                        Some(b.type_string(y.dtype.map(r), y.item.map(r), bscope, &env, false))
+                    };
+                    if let Some(ty) = ty {
+                        line.push_str(" : ");
+                        line.push_str(&ty);
+                    }
+                }
+                if with_values && !in_nested_gen && matches!(y.kind, K::Parameter | K::Specparam | K::EnumValue) {
+                    let r = |n: NodeId| NodeRef { tree: y.tree, node: n };
+                    let val = if y.kind == K::Parameter
+                        && y.scope == sc_idx
+                        && b.classes[c].params.iter().any(|(pn, is_ty, _)| pn == &y.name && !*is_ty)
+                    {
+                        if let Some(bound) = env.get(&y.name) {
+                            b.value_text(y.dtype.map(r), bound.node, bound.scope, &bound.env)
+                        } else {
+                            b.symbol_value(y, bscope, &env)
+                        }
+                    } else {
+                        b.symbol_value(y, bscope, &env)
+                    };
+                    if let Some(val) = val {
+                        line.push_str(" = ");
+                        line.push_str(&val);
+                    }
+                }
+                out.push(line);
+            }
+        }
+    }
+    out
 }
 
 /// Returns the number of specializations elaborated for each parameterized
@@ -1964,7 +2127,9 @@ impl<'t> Builder<'t> {
             return TypeInfo { resolved: Resolved::Vif, ..other };
         }
         if matches!(first, "struct" | "union") {
-            let packed = toks.get(1).is_some_and(|t| *t == "packed") || toks.get(2).is_some_and(|t| *t == "packed");
+            let packed = toks.get(1).is_some_and(|t| *t == "packed")
+                || toks.get(2).is_some_and(|t| *t == "packed")
+                || (first == "union" && toks.contains(&"soft"));
             let shape = if packed { TypeShape::Other } else { TypeShape::UnpackedStruct };
             return TypeInfo { shape, ..other };
         }

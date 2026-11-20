@@ -103,7 +103,8 @@ def main():
     root, sel = argv[0], (argv[1] if len(argv) > 1 else '')
     import glob
     files = [f for f in sorted(glob.glob(os.path.join(root, 'tests', '**', '*.sv'), recursive=True)) if sel in f]
-    with concurrent.futures.ThreadPoolExecutor(os.cpu_count() or 4) as pool:
+    workers = int(os.environ.get('GATE_JOBS', min(4, os.cpu_count() or 4)))
+    with concurrent.futures.ThreadPoolExecutor(workers) as pool:
         rows = list(pool.map(lambda f: run(root, f), files))
     t = collections.defaultdict(collections.Counter)
     for rel, clause, kind, nat, sl, why in rows:

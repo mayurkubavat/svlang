@@ -222,12 +222,40 @@ impl<'t> TypeOracle<'t> {
         let r = |n| NodeRef { tree, node: n };
         if let Some(d) = dt {
             let toks = self.b.toks_of(r(d));
-            if let ["type", "(", ident, ")"] = toks.as_slice() {
-                let unpacked =
-                    item.is_some_and(|i| self.b.trees[tree].children(i).any(|c| self.b.trees[tree].kind(c) == Dim));
-                if !unpacked {
+            let unpacked =
+                item.is_some_and(|i| self.b.trees[tree].children(i).any(|c| self.b.trees[tree].kind(c) == Dim));
+            if !unpacked {
+                if let ["type", "(", ident, ")"] = toks.as_slice() {
                     if let Some(resolved) = self.type_operator_target(scope, ident) {
                         return resolved;
+                    }
+                } else if toks.first() == Some(&"type") {
+                    if let Some(inner) = self.b.trees[tree].children(d).find(|&c| self.b.trees[tree].kind(c) != Dim) {
+                        if let Some(resolved) = self.type_operator_expr(tree, scope, inner) {
+                            return resolved;
+                        }
+                    }
+                } else if let [ident] = toks.as_slice() {
+                    for (ti, tr) in self.b.trees.iter().enumerate() {
+                        for n in tr.preorder() {
+                            if tr.kind(n) == sv_syntax::SyntaxKind::NetTypeDecl
+                                && tr.child(n, sv_syntax::SyntaxKind::Name).is_some_and(|nm| tr.bare_text(nm) == *ident)
+                            {
+                                if let Some(ndt) = tr.child(n, sv_syntax::SyntaxKind::DataType) {
+                                    let mut resolved = self.decl_type(ti, Some(ndt), None);
+                                    if resolved.src.is_some() {
+                                        resolved.text = self.b.type_string(
+                                            Some(NodeRef { tree: ti, node: ndt }),
+                                            None,
+                                            self.scope_of(ti, n),
+                                            &Env::default(),
+                                            true,
+                                        );
+                                    }
+                                    return resolved;
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -266,6 +294,42 @@ impl<'t> TypeOracle<'t> {
             cur = sc.parent;
         }
         None
+    }
+
+    fn type_operator_expr(&self, tree: usize, scope: usize, e: sv_syntax::NodeId) -> Option<TypeInfo> {
+        let t = &self.b.trees[tree];
+        match t.kind(e) {
+            NameExpr => self.type_operator_target(scope, &t.bare_text(e)),
+            ParenExpr => t.children(e).next().and_then(|c| self.type_operator_expr(tree, scope, c)),
+            BinaryExpr => {
+                let mut kids = t.children(e);
+                let (l, r) = (kids.next()?, kids.next()?);
+                let lt = self.type_operator_expr(tree, scope, l)?;
+                let rt = self.type_operator_expr(tree, scope, r)?;
+                if matches!(lt.text.as_str(), "real" | "realtime") || matches!(rt.text.as_str(), "real" | "realtime") {
+                    return Some(TypeInfo {
+                        text: "real".into(),
+                        integral: None,
+                        four_state: false,
+                        src: None,
+                        aggregate: false,
+                    });
+                }
+                if lt.text == "shortreal" && (rt.text == "shortreal" || rt.integral.is_some())
+                    || rt.text == "shortreal" && lt.integral.is_some()
+                {
+                    return Some(TypeInfo {
+                        text: "shortreal".into(),
+                        integral: None,
+                        four_state: false,
+                        src: None,
+                        aggregate: false,
+                    });
+                }
+                crate::expr_types::binary_type(&lt, &rt, false)
+            }
+            _ => None,
+        }
     }
 
     /// A data type written in an expression (`T'(x)`, a type parameter).

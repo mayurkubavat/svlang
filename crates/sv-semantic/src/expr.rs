@@ -3363,7 +3363,7 @@ impl<'a> ExprBinder<'a> {
         // Inline `struct` / `union` (packed or unpacked).
         if own.contains(&"struct") || own.contains(&"union") {
             let is_union = own.contains(&"union");
-            let is_packed = own.contains(&"packed");
+            let is_packed = own.contains(&"packed") || (is_union && own.contains(&"soft"));
             let signed = own.contains(&"signed") && !own.contains(&"unsigned");
             let members: Vec<NodeId> = t.children(dt).filter(|&c| t.kind(c) == SyntaxKind::DataDecl).collect();
             if is_packed {

@@ -208,12 +208,15 @@ fn kinds_names_and_unsupported_operators() {
          a_unb_rep: assert property (a [*1:$] |-> b);\n\
          a_goto: assert property (a |-> b [->1] ##1 c);\n\
          a_nonconsec: assert property (a |-> b [=1:2] ##1 c);\n\
+         a_not: assert property (not a);\n\
+         a_fby: assert property ((a ##1 b) #-# c);\n\
+         a_abort: assert property (sync_accept_on(c) (a ##1 b));\n\
          u1: assert property ((a [*1:$]) intersect (b [*1:$]) |-> c);\n\
          u2: assert property (a |-> always b);\n\
          u3: assert property (a implies b);\n\
          u4: assert property (@(clk) a);\n\
          u5: assert property ((a ##1 b) [->1] |-> c);\n\
-         u6: assert property (not a);\n\
+         u6: assert property (a iff b);\n\
          u7: assert property ((a ##1 b) [=1] |-> c);\n\
          u8: assert property ((a [*1:$]) within (b [*1:$]) |-> c);\n\
          u9: assert property (a |-> ##[1:2000] b);\n\
@@ -235,7 +238,7 @@ fn kinds_names_and_unsupported_operators() {
     assert_eq!(why("m.u3"), "`implies`");
     assert_eq!(why("m.u4"), "a clocking event on both edges");
     assert_eq!(why("m.u5"), "goto repetition [->] on a multi-cycle sequence");
-    assert_eq!(why("m.u6"), "property `not`");
+    assert_eq!(why("m.u6"), "property `iff`");
     assert_eq!(why("m.u7"), "non-consecutive repetition [=] on a multi-cycle sequence");
     assert_eq!(why("m.u8"), "sequence `within` with an unbounded operand");
     assert_eq!(why("m.u9"), "a property longer than 1024 clock ticks");
@@ -260,6 +263,9 @@ fn kinds_names_and_unsupported_operators() {
     assert_eq!(check("m.a_unb_rep"), CheckKind::Assert);
     assert_eq!(check("m.a_goto"), CheckKind::Assert);
     assert_eq!(check("m.a_nonconsec"), CheckKind::Assert);
+    assert_eq!(check("m.a_not"), CheckKind::Assert);
+    assert_eq!(check("m.a_fby"), CheckKind::Assert);
+    assert_eq!(check("m.a_abort"), CheckKind::Assert);
 
     // Compiling again keeps what is there.
     let checks = nl.checks.len();
@@ -1392,7 +1398,11 @@ fn random_automaton_properties_agree_with_annex_f() {
         );
         let mut nl = lower_src(&src).unwrap_netlist();
         let outcomes = nl.compile_properties(&PropertyOptions::default());
-        assert!(outcomes.iter().all(|o| matches!(o, PropertyOutcome::Compiled { .. })), "{text}: {outcomes:?}");
+        assert!(
+            matches!(outcomes[0], PropertyOutcome::Compiled { .. } | PropertyOutcome::Liveness { .. })
+                && matches!(outcomes[1], PropertyOutcome::Compiled { .. }),
+            "{text}: {outcomes:?}"
+        );
 
         let trace: Vec<[bool; 3]> = (0..24).map(|_| [rng.below(8) < 4, rng.below(8) < 4, rng.below(8) < 4]).collect();
         let rows: Vec<String> = trace.iter().map(|r| format!("0{}{}{}", r[0] as u8, r[1] as u8, r[2] as u8)).collect();
@@ -1452,4 +1462,324 @@ fn random_automaton_properties_agree_with_annex_f() {
         hit += want_hit_vec.len();
     }
     assert!(checked >= 80 && failed >= 40 && hit >= 80, "checked={checked} failed={failed} hit={hit}");
+}
+
+#[test]
+fn property_not_bounded_unbounded_and_four_state() {
+    // `not a` vs `!a` on 4-state `'x'`:
+    // SVA boolean `a` is false on `'x'`, so `not a` HOLDS on `'x'` whereas `!a` is `'x'` (FAILS)!
+    assert_eq!(fails("p: assert property (not a);", &["0000", "0100", "0x00"]), [1]);
+    assert_eq!(fails("p: assert property (!a);", &["0000", "0100", "0x00"]), [1, 2]);
+
+    // Bounded sequence negation `not (a ##1 b)` and implication negation `not (a |-> b)`:
+    assert_eq!(fails("p: assert property (not (a ##1 b));", &["0100", "0010", "0100", "0000"]), [1]);
+    // `not (a |-> b)` == `a && !b`: fails when `a == 0` OR when `a == 1 && b == 1`!
+    assert_eq!(fails("p: assert property (not (a |-> b));", &["0100", "0110", "0000", "0100"]), [1, 2]);
+    // Consequent negation `a |-> not (b ##1 c)`:
+    assert_eq!(fails("p: assert property (a |-> not (b ##1 c));", &["0110", "0001", "0110", "0000"]), [1]);
+
+    // Unbounded negation:
+    // `not strong(a ##[1:$] b)` is pure safety (`a ##[1:$] b` never completes), whereas
+    // `not weak(a ##[1:$] b)` (and default `not (a ##[1:$] b)` in `assert`) has both safety + liveness!
+    let src = format!(
+        "module m({PORTS});\n default clocking @(posedge clk); endclocking\n\
+         ns: assert property (not strong(a ##[1:$] b));\n\
+         nw: assert property (not weak(a ##[1:$] b));\n\
+         nev: assert property (not (s_eventually [1:$] (a ##1 b)));\n\
+         nalw: assert property (not (always a));\n\
+         nunt: assert property (not (a |-> b until c));\n\
+         ngoto: assert property (not (a [->1] |-> (b ##1 c)));\n\
+         endmodule\n"
+    );
+    let mut nl = lower_src(&src).unwrap_netlist();
+    let out = nl.compile_properties(&PropertyOptions::default());
+    assert!(matches!(out[0], PropertyOutcome::Compiled { .. }), "{out:?}");
+    assert!(matches!(out[1], PropertyOutcome::Compiled { .. }), "{out:?}");
+    assert!(matches!(out[2], PropertyOutcome::Compiled { .. }), "{out:?}");
+    assert!(matches!(out[3], PropertyOutcome::Liveness { .. }), "{out:?}");
+    assert!(matches!(out[4], PropertyOutcome::Compiled { .. }), "{out:?}");
+    assert!(matches!(out[5], PropertyOutcome::Compiled { .. }), "{out:?}");
+    // `ns` has no liveness obligation, `nw` and `nalw` and `nunt` and `ngoto` have liveness obligations:
+    assert_eq!(nl.property_liveness[0], None);
+    assert!(nl.property_liveness[1].is_some());
+    assert_eq!(nl.property_liveness[2], None);
+    assert!(nl.property_liveness[3].is_some());
+    assert!(nl.property_liveness[4].is_some());
+    assert!(nl.property_liveness[5].is_some());
+
+    // Simulate `not strong(a ##[1:$] b)`: fails at tick 2 when `b` completes `a ##[1:$] b`:
+    assert_eq!(fails("p: assert property (not strong(a ##[1:$] b));", &["0100", "0000", "0010", "0000"]), [2]);
+    // Simulate `not (a |-> b until c)`: `a=0` fails at tick 0; `a=1, c=1` fails at tick 0;
+    // `a=1, b=0, c=0` holds!
+    assert_eq!(fails("p: assert property (not (a |-> b until c));", &["0100", "0000", "0101"]), [1, 2]);
+}
+
+#[test]
+fn followed_by_overlapped_and_non_overlapped() {
+    // `(a ##1 b) #-# c` == `a ##1 (b && c)`:
+    assert_eq!(fails("p: assert property ((a ##1 b) #-# c);", &["0100", "0111", "0111", "0010"]), [3]);
+    assert_eq!(covers("p: cover property ((a ##1 b) #-# c);", &["0100", "0011", "0100", "0010"]), [1]);
+
+    // Empty-admitting prefix `a [*0:1]`:
+    // `#-#` drops empty left match (`a && b`); `#=#` starts `b` at tick 0 on empty match (`b@0 || (a@0 && b@1)`).
+    assert_eq!(fails("p: assert property (a [*0:1] #-# b);", &["0110", "0010"]), [1]);
+    assert_eq!(fails("p: assert property (a [*0:1] #=# b);", &["0010", "0110", "0000", "0000"]), [3]);
+
+    // Unbounded prefix / consequent with `#-#`:
+    assert_eq!(covers("p: cover property ((a ##1 b) #-# s_eventually c);", &["0100", "0010", "0000", "0001"]), [3]);
+    assert_eq!(fails("p: assert property (a [->1] #-# b);", &["0000", "0100", "0110"]), [1]);
+
+    // Empty-admitting consequent in `#-#` is rejected per IEEE 1800 §16.12.22:
+    let src = format!(
+        "module m({PORTS}); default clocking @(posedge clk); endclocking\n\
+         p: assert property (a #-# b [*0:1]);\nendmodule\n"
+    );
+    let mut nl = lower_src(&src).unwrap_netlist();
+    let out = nl.compile_properties(&PropertyOptions::default());
+    assert!(matches!(&out[0], PropertyOutcome::Unsupported(w) if w.contains("empty match")), "{out:?}");
+}
+
+#[test]
+fn abort_operators_accept_and_reject_prefix_exact() {
+    // Prefix-exact `sync_accept_on(c) (a ##1 b)`:
+    // - Tick 0: `a=0, c=0` -> fails immediately at tick 0; `c=1` at tick 1 does NOT retroactively forgive tick 0!
+    // - Tick 2: `a=0, c=1` -> accepted immediately at tick 2!
+    // - Tick 3: `a=1, c=0`, Tick 4: `b=0, c=1` -> accepted at tick 4!
+    let p = "p: assert property (sync_accept_on(c) (a ##1 b));";
+    assert_eq!(fails(p, &["0000", "0111", "0001", "0100", "0101"]), [0]);
+
+    // `reject_on(c) (a ##1 b)`:
+    // - Even if `b=1` at tick 1, `c=1` at tick 1 rejects!
+    let r = "p: assert property (reject_on(c) (a ##1 b));";
+    assert_eq!(fails(r, &["0100", "0111", "0110"]), [1]);
+
+    // 4-state `'x'` on abort condition neither accepts nor rejects:
+    assert_eq!(fails(p, &["000x"]), [0]);
+    assert_eq!(fails(r, &["010x", "011x"]), NONE);
+
+    // Outer abort overrides inner abort when both trigger on the same tick:
+    let acc_over_rej = "p: assert property (accept_on(c) reject_on(c) a);";
+    assert_eq!(fails(acc_over_rej, &["0001", "0100"]), NONE);
+    let rej_over_acc = "p: assert property (reject_on(c) accept_on(c) a);";
+    assert_eq!(fails(rej_over_acc, &["0101", "0100"]), [0]);
+
+    // Abort wrapping an implication:
+    // 1. `accept_on(c) (a ##1 b |-> rst)`: `c=1` during antecedent aborts that attempt cleanly.
+    let imp_acc = "p: assert property (accept_on(c) (a ##1 b |-> rst));";
+    assert_eq!(fails(imp_acc, &["0101", "0010", "0100", "0010"]), [3]);
+    // 2. `reject_on(c) (a ##1 b |-> rst)`:
+    //    - If `a=0, c=0` at tick 0 and we gate attempts by `if (!c || a)`? Test bare:
+    //      At tick 0 `a=0, c=1` -> rejects immediately at tick 0!
+    //      Under procedural `if (rst)`: attempt starts at tick 0 (`rst=1, a=0, c=0`) -> antecedent dies at tick 0,
+    //      so `c=1` at tick 1 (`rst=0`) does NOT fail attempt 0!
+    let imp_rej = "always @(posedge clk) if (rst) p: assert property (sync_reject_on(c) (a ##1 b |-> a));";
+    assert_eq!(fails(imp_rej, &["1000", "0001"]), NONE);
+    assert_eq!(fails(imp_rej, &["1100", "0001"]), [1]);
+    assert_eq!(fails(imp_rej, &["1001", "0000"]), [0]);
+
+    // Abort wrapping `until`:
+    let unt_acc = "p: assert property (sync_accept_on(c) (a |-> b until rst));";
+    assert_eq!(fails(unt_acc, &["0100", "0101", "0000"]), [0]);
+    assert_eq!(fails(unt_acc, &["0110", "0001", "0000"]), NONE);
+    let unt_rej = "p: assert property (sync_reject_on(c) (a |-> b until rst));";
+    assert_eq!(fails(unt_rej, &["0110", "1001"]), [1]);
+
+    // Cover with `accept_on`:
+    assert_eq!(covers("p: cover property (accept_on(c) (a ##1 b));", &["0001", "0100", "0000"]), [0]);
+}
+
+#[test]
+fn random_not_followed_by_and_abort_properties_agree_with_annex_f() {
+    let mut rng = Rng(0x9E37_79B9_7F4A_7C15);
+    let (mut checked, mut failed, mut hit) = (0usize, 0usize, 0usize);
+
+    for _ in 0..160 {
+        let mode = rng.below(4);
+        let s1 = rng.auto_seq(1, mode == 1);
+        let s2 = rng.auto_seq(0, false);
+        if s2.admits_empty() || !s2.can_match_from(&[], 0, 4) {
+            continue;
+        }
+        let overlapped = rng.below(2) == 0;
+        let abort_sig = rng.below(3) as usize;
+        let abort_name = ["a", "b", "c"][abort_sig];
+
+        // Mode 0: `accept_on(abort) s2` (using depth-1 sequence `sq`)
+        // Mode 1: `reject_on(abort) sq`
+        // Mode 2: `s1 #-# s2` / `s1 #=# s2` (with at least one automaton op)
+        // Mode 3: `not (s1 |-> s2)` (== `s1 #-# not s2`, with single-bool `s2` for crisp oracle)
+        let sq = rng.auto_seq(1, false);
+        if (mode == 0 || mode == 1) && (sq.admits_empty() || !sq.can_match_from(&[], 0, 4)) {
+            continue;
+        }
+        if mode == 2 {
+            let can_start = if overlapped {
+                s1.can_match_from(&[], 0, 4)
+            } else {
+                s1.admits_empty() || s1.can_match_from(&[], 0, 4)
+            };
+            if !can_start {
+                continue;
+            }
+        }
+        let b_idx = rng.below(3) as usize;
+        let b_name = ["a", "b", "c"][b_idx];
+        if mode == 3 && !s1.can_match_from(&[], 0, 4) {
+            continue;
+        }
+
+        let text = match mode {
+            0 => {
+                let kw = if rng.below(2) == 0 { "accept_on" } else { "sync_accept_on" };
+                format!("{kw}({abort_name}) ({})", sq.text())
+            }
+            1 => {
+                let kw = if rng.below(2) == 0 { "reject_on" } else { "sync_reject_on" };
+                format!("{kw}({abort_name}) ({})", sq.text())
+            }
+            2 => {
+                let op = if overlapped { "#-#" } else { "#=#" };
+                format!("({}) {op} ({})", s1.text(), s2.text())
+            }
+            _ => format!("not (({}) |-> {b_name})", s1.text()),
+        };
+        // Route Modes 2 & 3 through `sva_nfa` when they contain automaton ops; skip purely bounded
+        // cases here because bounded `Matcher` decides at `t + span` whereas `sva_nfa` decides on tight prefixes.
+        if (mode == 2 || mode == 3) && !text.contains('$') && !text.contains("[->") && !text.contains("[=") {
+            continue;
+        }
+
+        let src = format!(
+            "module m({PORTS});\n default clocking @(posedge clk); endclocking\n\
+             p: assert property ({text});\n q: cover property ({text});\nendmodule\n"
+        );
+        let mut nl = lower_src(&src).unwrap_netlist();
+        let outcomes = nl.compile_properties(&PropertyOptions::default());
+        assert!(
+            matches!(outcomes[0], PropertyOutcome::Compiled { .. } | PropertyOutcome::Liveness { .. })
+                && matches!(outcomes[1], PropertyOutcome::Compiled { .. }),
+            "{text}: {outcomes:?}"
+        );
+
+        let trace: Vec<[bool; 3]> = (0..20).map(|_| [rng.below(8) < 4, rng.below(8) < 4, rng.below(8) < 4]).collect();
+        let rows: Vec<String> = trace.iter().map(|r| format!("0{}{}{}", r[0] as u8, r[1] as u8, r[2] as u8)).collect();
+        let rows_ref: Vec<&str> = rows.iter().map(String::as_str).collect();
+
+        let mut want_fail = BTreeSet::new();
+        let mut want_hit = BTreeSet::new();
+
+        for st in 0..trace.len() {
+            match mode {
+                0 => {
+                    // `accept_on(abort) sq` from `st`:
+                    for t in st..trace.len() {
+                        if trace[t][abort_sig] {
+                            want_hit.insert(t);
+                            break;
+                        }
+                        let prefix = &trace[..=t];
+                        if sq.ends(prefix, st).iter().any(|&e| e > st) {
+                            want_hit.insert(t);
+                            break;
+                        }
+                        if !sq.can_match_from(prefix, st, 4) {
+                            want_fail.insert(t);
+                            break;
+                        }
+                    }
+                }
+                1 => {
+                    // `reject_on(abort) sq` from `st`:
+                    // `CoverNfa` (`(!abort) throughout sq`) hits on every abort-free match end:
+                    for end in sq.ends(&trace, st) {
+                        if end > st && end <= trace.len() && (st..end).all(|u| !trace[u][abort_sig]) {
+                            want_hit.insert(end - 1);
+                        }
+                    }
+                    for t in st..trace.len() {
+                        if trace[t][abort_sig] {
+                            want_fail.insert(t);
+                            break;
+                        }
+                        let prefix = &trace[..=t];
+                        if sq.ends(prefix, st).iter().any(|&e| e > st) {
+                            break;
+                        }
+                        if !sq.can_match_from(prefix, st, 4) {
+                            want_fail.insert(t);
+                            break;
+                        }
+                    }
+                }
+                2 => {
+                    let comb_seq = if overlapped {
+                        AutoSeq::Delay(Box::new(s1.clone()), 0, Some(0), Box::new(s2.clone()))
+                    } else {
+                        AutoSeq::Delay(Box::new(s1.clone()), 1, Some(1), Box::new(s2.clone()))
+                    };
+                    for end in comb_seq.ends(&trace, st) {
+                        if end > st && end <= trace.len() {
+                            want_hit.insert(end - 1);
+                        }
+                    }
+                    for t in st..trace.len() {
+                        let prefix = &trace[..=t];
+                        if comb_seq.ends(prefix, st).iter().any(|&e| e > st) {
+                            break;
+                        }
+                        if !comb_seq.can_match_from(prefix, st, 5) {
+                            want_fail.insert(t);
+                            break;
+                        }
+                    }
+                }
+                _ => {
+                    // `not (s1 |-> b)` == `s1 ##0 !b` from `st`:
+                    let has_match = |tr: &Trace| -> BTreeSet<usize> {
+                        s1.ends(tr, st).into_iter().filter(|&e| e > st && e <= tr.len() && !tr[e - 1][b_idx]).collect()
+                    };
+                    for end in has_match(&trace) {
+                        want_hit.insert(end - 1);
+                    }
+                    fn can_ext(s1: &AutoSeq, b_idx: usize, buf: &mut Vec<[bool; 3]>, st: usize, rem: usize) -> bool {
+                        if s1.ends(buf, st).into_iter().any(|e| e > st && e <= buf.len() && !buf[e - 1][b_idx]) {
+                            return true;
+                        }
+                        if rem == 0 {
+                            return false;
+                        }
+                        for bits in 0..8u8 {
+                            buf.push([(bits & 1) != 0, (bits & 2) != 0, (bits & 4) != 0]);
+                            if can_ext(s1, b_idx, buf, st, rem - 1) {
+                                buf.pop();
+                                return true;
+                            }
+                            buf.pop();
+                        }
+                        false
+                    }
+                    for t in st..trace.len() {
+                        let prefix = &trace[..=t];
+                        if !has_match(prefix).is_empty() {
+                            break;
+                        }
+                        let mut buf = prefix.to_vec();
+                        if !can_ext(&s1, b_idx, &mut buf, st, 5) {
+                            want_fail.insert(t);
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        let want_hit_vec: Vec<usize> = want_hit.into_iter().collect();
+        let want_fail_vec: Vec<usize> = want_fail.into_iter().collect();
+        assert_eq!(ticks(&nl, &rows_ref, Watch::HitCovers), want_hit_vec, "cover {text}\n{rows_ref:?}");
+        assert_eq!(ticks(&nl, &rows_ref, Watch::FailedAsserts), want_fail_vec, "assert {text}\n{rows_ref:?}");
+        checked += 1;
+        failed += want_fail_vec.len();
+        hit += want_hit_vec.len();
+    }
+    assert!(checked >= 50 && failed >= 30 && hit >= 50, "checked={checked} failed={failed} hit={hit}");
 }

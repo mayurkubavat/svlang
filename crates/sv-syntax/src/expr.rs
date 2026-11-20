@@ -539,6 +539,12 @@ fn arg_value(p: &mut Parser) {
         return;
     }
     type_or_expr(p);
+    if p.eat(":") {
+        // IEEE 1800-2023 §11.11 min:typ:max delay expression (`#(3:2:1)`).
+        expr(p);
+        p.expect(":");
+        expr(p);
+    }
 }
 
 /// `#( values )` on a class or module name.

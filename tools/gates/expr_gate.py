@@ -95,7 +95,8 @@ def main():
         else:
             show = int(arg.split('=')[1])
     todo = cases(argv)
-    with concurrent.futures.ThreadPoolExecutor(os.cpu_count() or 4) as pool:
+    workers = int(os.environ.get('GATE_JOBS', min(4, os.cpu_count() or 4)))
+    with concurrent.futures.ThreadPoolExecutor(workers) as pool:
         results = list(pool.map(run, todo))
     ok = nwrong = nmiss = nextra = 0
     pattern = collections.Counter()

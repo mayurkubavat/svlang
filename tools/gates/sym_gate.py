@@ -20,7 +20,20 @@ import collections, concurrent.futures, os, re, subprocess, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from ieee_gate import DVBUILD, REPO, args_for, header  # noqa: E402
 
-SYMDUMP = os.environ.get('SYM_DUMP', os.path.join(REPO, 'build', 'uvmcheck_sym_dump'))
+SPECS = '--specs' in sys.argv
+
+
+def _default_symdump():
+    order = (('build-dev', 'uvmcheck_sym_dump'), ('build', 'uvmcheck_sym_dump')) if SPECS else (
+        ('build', 'uvmcheck_sym_dump'), ('build-dev', 'uvmcheck_sym_dump'))
+    for rel in order:
+        p = os.path.join(REPO, *rel)
+        if os.path.isfile(p) and os.access(p, os.X_OK):
+            return p
+    return os.path.join(REPO, 'build', 'uvmcheck_sym_dump')
+
+
+SYMDUMP = os.environ.get('SYM_DUMP', _default_symdump())
 
 
 # Slang numbers anonymous enums, structs and unions (`e$3`, `s$7`) with
@@ -33,9 +46,12 @@ ANON = re.compile(r'([eus])\$\d+')
 # uvm_pkg::uvm_driver::REQ)` for one written with two explicit arguments).
 # These typedefs' types are not compared.
 CACHED_SPECIALIZATIONS = {
-    'uvm_pkg typedef ' + n for n in (
-        'uvm_default_driver_type', 'uvm_default_sequence_type', 'uvm_default_sequencer_param_type',
-        'uvm_default_sequencer_type', 'uvm_id_file_array', 'uvm_id_verbosities_array')
+    *(
+        'uvm_pkg typedef ' + n for n in (
+            'uvm_default_driver_type', 'uvm_default_sequence_type', 'uvm_default_sequencer_param_type',
+            'uvm_default_sequencer_type', 'uvm_id_actions_array', 'uvm_id_file_array', 'uvm_id_verbosities_array')
+    ),
+    'uvm_pkg.uvm_root.end_of_elaboration_phase variable adapter',
 }
 
 
@@ -56,7 +72,8 @@ HIER = '--hier' in sys.argv
 
 
 def compare(args):
-    flag = (['--types'] if TYPES else []) + (['--values'] if VALUES else []) + (['--hier'] if HIER else [])
+    flag = ((['--types'] if TYPES else []) + (['--values'] if VALUES else [])
+            + (['--hier'] if HIER else []) + (['--specs'] if SPECS else []))
     native = dump([DVBUILD, '--quiet', '--symbols', *flag, *args])
     slang = dump([SYMDUMP, *flag, *args])
     n, s = collections.Counter(native), collections.Counter(slang)
@@ -92,7 +109,8 @@ def main():
                 top = rel.split('/')[0]
                 cases.append((rel, top.split('-')[1] if top.startswith('chapter-') else top, args_for(root, f, h)))
 
-    with concurrent.futures.ThreadPoolExecutor(os.cpu_count() or 4) as pool:
+    workers = int(os.environ.get('GATE_JOBS', min(4, os.cpu_count() or 4)))
+    with concurrent.futures.ThreadPoolExecutor(workers) as pool:
         rows = list(pool.map(lambda c: (c[0], c[1], compare(c[2])), cases))
     per = collections.defaultdict(collections.Counter)
     lines = collections.Counter()

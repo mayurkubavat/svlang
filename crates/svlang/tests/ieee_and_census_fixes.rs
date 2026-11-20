@@ -700,3 +700,77 @@ endmodule
     assert!(msgs.iter().any(|m| m.contains("explicit data type")), "msgs: {msgs:?}");
     assert!(msgs.iter().any(|m| m.contains("interconnect net 'ic_sig'")), "msgs: {msgs:?}");
 }
+
+#[test]
+fn ieee1800_2023_conformance_suite_positive_and_negative() {
+    let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata/conformance/ieee1800_2023");
+
+    // 1. Positive suite: zero diagnostics, and RTL+SVA file lowers cleanly to `sv-netlist`.
+    let mut pos_files: Vec<_> = std::fs::read_dir(base.join("positive"))
+        .expect("positive dir must exist")
+        .filter_map(|e| e.ok())
+        .map(|e| e.path())
+        .filter(|p| p.extension().is_some_and(|ext| ext == "sv"))
+        .collect();
+    pos_files.sort();
+    assert_eq!(pos_files.len(), 2);
+    for path in &pos_files {
+        let name = path.file_name().unwrap().to_str().unwrap();
+        let comp = Driver::new().add_file(path).compile().expect("positive 2023 file must compile");
+        let (diags, _) = comp.check();
+        assert!(diags.is_empty(), "expected 0 diagnostics on {name}, got {diags:?}");
+        if name == "types_pp_and_sva_2023.sv" {
+            match comp.lower_netlist(&LowerConfig::default()) {
+                LowerOutcome::Lowered(nl) => assert_eq!(nl.properties.len(), 5),
+                other => panic!("expected Lowered on {name}, got {other:?}"),
+            }
+        }
+    }
+
+    // 2. Negative suite: verify all expected diagnostics fire cleanly.
+    let oop_neg = Driver::new()
+        .add_file(base.join("negative/oop_override_and_ctor_errors.sv"))
+        .compile()
+        .expect("oop negative file must parse");
+    let (oop_diags, _) = oop_neg.check();
+    let oop_msgs: Vec<String> = oop_diags.iter().map(|d| d.message.clone()).collect();
+    for needle in [
+        "cannot extend ':final' class 'SealedCls'",
+        "circular class inheritance",
+        "':extends' method 'non_virt'",
+        "':initial' method 'virt_m'",
+        "cannot override ':final' method 'locked_m'",
+        "cannot override ':final' constraint 'c_locked'",
+        "':initial' constraint 'c_existing'",
+        "':extends' constraint 'c_missing'",
+        "out-of-block constraint 'OvDerived::c_ext_mismatch'",
+        "unknown base covergroup 'no_such_cg'",
+        "does not have a super class for 'new(default)'",
+    ] {
+        assert!(oop_msgs.iter().any(|m| m.contains(needle)), "missing {needle:?} in {oop_msgs:?}");
+    }
+
+    let cls_neg = Driver::new()
+        .add_file(base.join("negative/clauses_14_17_24_28_35_errors.sv"))
+        .compile()
+        .expect("clauses negative file must parse");
+    let (cls_diags, _) = cls_neg.check();
+    let cls_msgs: Vec<String> = cls_diags.iter().map(|d| d.message.clone()).collect();
+    for needle in [
+        "duplicate 'global clocking'",
+        "cannot drive clocking input signal 'gcb1.q_in'",
+        "user-defined nettype 'real_nt' is not allowed in a checker",
+        "hierarchical lookup into checker 'u_chk'",
+        "design element cannot reference program 'prog_bad'",
+        "'always_comb' procedure is not allowed inside a program",
+        "gate 'and' terminal cannot connect to user-defined nettype",
+        "UDP 'my_buf' terminal cannot connect to user-defined nettype",
+        "bidirectional switch 'tran' terminals must have matching nettypes",
+        "deprecated '\"DPI\"' spec string",
+        "'pure' DPI function cannot have 'void' return type",
+        "invalid DPI function return type 'integer'",
+        "'not_a_func' is not a subroutine",
+    ] {
+        assert!(cls_msgs.iter().any(|m| m.contains(needle)), "missing {needle:?} in {cls_msgs:?}");
+    }
+}

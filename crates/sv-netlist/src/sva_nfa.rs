@@ -41,6 +41,9 @@ pub(crate) fn prop_needs_automaton(prop: &PropExpr) -> bool {
             // `strong(bounded_seq)` agrees with `bounded_seq` on infinite traces; unbounded needs liveness.
             seq_is_unbounded_len(s) || seq_needs_automaton(s)
         }
+        PropExpr::Not(inner) => not_needs_automaton(inner),
+        PropExpr::AcceptOn { .. } => true,
+        PropExpr::FollowedBy { lhs, rhs, .. } => seq_needs_automaton(lhs) || fb_rhs_needs_automaton(rhs),
         PropExpr::OverlappedImplication { lhs, rhs } | PropExpr::NonOverlappedImplication { lhs, rhs } => {
             seq_needs_automaton(lhs) || rhs_needs_automaton(rhs)
         }
@@ -63,6 +66,30 @@ pub(crate) fn prop_needs_automaton(prop: &PropExpr) -> bool {
         }
         PropExpr::Until { .. } => false,
         _ => false,
+    }
+}
+
+fn not_needs_automaton(p: &PropExpr) -> bool {
+    match p {
+        PropExpr::Seq(s) | PropExpr::Weak(s) | PropExpr::Strong(s) => seq_needs_automaton(s),
+        PropExpr::Not(inner) => not_needs_automaton(inner),
+        PropExpr::AcceptOn { .. } | PropExpr::Until { .. } => true,
+        PropExpr::OverlappedImplication { lhs, rhs }
+        | PropExpr::NonOverlappedImplication { lhs, rhs }
+        | PropExpr::FollowedBy { lhs, rhs, .. } => seq_needs_automaton(lhs) || not_needs_automaton(rhs),
+        PropExpr::Nexttime { prop: inner, .. } => not_needs_automaton(inner),
+        PropExpr::Eventually { range, prop: inner, .. } | PropExpr::Always { range, prop: inner, .. } => {
+            range.max == CycleBound::Unbounded || not_needs_automaton(inner)
+        }
+        _ => false,
+    }
+}
+
+fn fb_rhs_needs_automaton(rhs: &PropExpr) -> bool {
+    match rhs {
+        PropExpr::Until { .. } => true,
+        PropExpr::Eventually { strong: true, range, .. } if range.max == CycleBound::Unbounded => true,
+        _ => prop_needs_automaton(rhs),
     }
 }
 
@@ -254,30 +281,111 @@ impl GuardPool {
     }
 }
 
-/// Leaf table mapping `ExprId` to compact leaf indices.
+/// Leaf table mapping `ExprId` (`ValueId`) to compact leaf indices.
 #[derive(Clone, Default)]
 pub(crate) struct LeafTable {
     pub(crate) exprs: Vec<(ValueId, bool)>,
-    by_val: HashMap<(ValueId, bool), u16>,
+    by_val: HashMap<ValueId, u16>,
     /// Minimum tick offset from attempt start at which each leaf index can be evaluated.
     pub(crate) min_offset: Vec<u32>,
 }
 
 impl LeafTable {
     fn intern(&mut self, val: ValueId, needs_four_state_neg: bool, offset_lb: u32) -> Result<u16, String> {
-        if let Some(&idx) = self.by_val.get(&(val, needs_four_state_neg)) {
+        if let Some(&idx) = self.by_val.get(&val) {
+            self.exprs[idx as usize].1 |= needs_four_state_neg;
             self.min_offset[idx as usize] = self.min_offset[idx as usize].min(offset_lb);
             return Ok(idx);
         }
         let idx = u16::try_from(self.exprs.len()).map_err(|_| too_large())?;
         self.exprs.push((val, needs_four_state_neg));
         self.min_offset.push(offset_lb);
-        self.by_val.insert((val, needs_four_state_neg), idx);
+        self.by_val.insert(val, idx);
         Ok(idx)
     }
 }
 
-/// Compiled sequence NFA fragment.
+/// Internal sequence AST enriched with negated boolean leaves, negated `throughout` guards,
+/// and embedded complement DFAs (`NotWeak`) produced by property negation normal form.
+#[derive(Clone, Debug)]
+enum NfaSeq {
+    Bool(ExprId),
+    NotBool(ExprId),
+    Delay { range: CycleRange, lhs: Option<Box<NfaSeq>>, rhs: Box<NfaSeq> },
+    Fusion(Box<NfaSeq>, Box<NfaSeq>),
+    Repeat { kind: RepeatKind, range: CycleRange, seq: Box<NfaSeq> },
+    Or(Box<NfaSeq>, Box<NfaSeq>),
+    Throughout { cond: ExprId, negated: bool, seq: Box<NfaSeq> },
+    FirstMatch(Box<NfaSeq>),
+    NotWeak(Box<NfaSeq>),
+    And(Box<NfaSeq>, Box<NfaSeq>),
+    Intersect(Box<NfaSeq>, Box<NfaSeq>),
+    Within(Box<NfaSeq>, Box<NfaSeq>),
+    Clocked,
+}
+
+impl NfaSeq {
+    fn from_seq(s: &SeqExpr) -> Self {
+        match s {
+            SeqExpr::Bool(e) => Self::Bool(*e),
+            SeqExpr::Delay { range, lhs, rhs } => Self::Delay {
+                range: *range,
+                lhs: lhs.as_deref().map(|l| Box::new(Self::from_seq(l))),
+                rhs: Box::new(Self::from_seq(rhs)),
+            },
+            SeqExpr::Fusion(a, b) => Self::Fusion(Box::new(Self::from_seq(a)), Box::new(Self::from_seq(b))),
+            SeqExpr::Repeat { kind, range, seq } => {
+                Self::Repeat { kind: *kind, range: *range, seq: Box::new(Self::from_seq(seq)) }
+            }
+            SeqExpr::Or(a, b) => Self::Or(Box::new(Self::from_seq(a)), Box::new(Self::from_seq(b))),
+            SeqExpr::Throughout { cond, seq } => {
+                Self::Throughout { cond: *cond, negated: false, seq: Box::new(Self::from_seq(seq)) }
+            }
+            SeqExpr::FirstMatch(inner) => Self::FirstMatch(Box::new(Self::from_seq(inner))),
+            SeqExpr::And(a, b) => Self::And(Box::new(Self::from_seq(a)), Box::new(Self::from_seq(b))),
+            SeqExpr::Intersect(a, b) => Self::Intersect(Box::new(Self::from_seq(a)), Box::new(Self::from_seq(b))),
+            SeqExpr::Within(a, b) => Self::Within(Box::new(Self::from_seq(a)), Box::new(Self::from_seq(b))),
+            SeqExpr::Clocked { .. } => Self::Clocked,
+        }
+    }
+
+    fn has_unbounded_wait(&self) -> bool {
+        match self {
+            Self::Bool(_) | Self::NotBool(_) | Self::Clocked => false,
+            Self::Delay { range, lhs, rhs } => {
+                range.max == CycleBound::Unbounded
+                    || lhs.as_deref().is_some_and(Self::has_unbounded_wait)
+                    || rhs.has_unbounded_wait()
+            }
+            Self::Fusion(a, b) | Self::Or(a, b) | Self::And(a, b) | Self::Intersect(a, b) | Self::Within(a, b) => {
+                a.has_unbounded_wait() || b.has_unbounded_wait()
+            }
+            Self::Repeat { kind, range, seq } => {
+                matches!(kind, RepeatKind::Goto | RepeatKind::NonConsecutive)
+                    || range.max == CycleBound::Unbounded
+                    || seq.has_unbounded_wait()
+            }
+            Self::Throughout { seq, .. } | Self::FirstMatch(seq) | Self::NotWeak(seq) => seq.has_unbounded_wait(),
+        }
+    }
+}
+
+/// 2-state boolean formula over property leaf expressions (used by `until` and its negations).
+#[derive(Clone, Debug)]
+pub(crate) enum BoolFormula {
+    Leaf(ExprId),
+    Not(Box<BoolFormula>),
+    And(Box<BoolFormula>, Box<BoolFormula>),
+}
+
+/// Enclosing abort specification (`accept_on` / `sync_accept_on` vs `reject_on` / `sync_reject_on`).
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct AbortSpec {
+    pub(crate) reject: bool,
+    pub(crate) cond: ExprId,
+}
+
+///Compiled sequence NFA fragment.
 #[derive(Clone, Copy, Debug)]
 struct Frag {
     /// Whether the sequence admits the empty match (`start == end`).
@@ -350,6 +458,57 @@ impl<'a> SeqNfaBuilder<'a> {
         Ok((pos, neg))
     }
 
+    fn import_dfa_guard(
+        &mut self,
+        src_pool: &GuardPool,
+        root: Guard,
+        pos_map: &[Guard],
+        neg_map: &[Option<Guard>],
+    ) -> Result<Guard, String> {
+        match root {
+            Guard::False => Ok(Guard::False),
+            Guard::True => Ok(Guard::True),
+            Guard::Node(idx) => {
+                let mut mapped = vec![Guard::False; (idx as usize) + 1];
+                for i in 0..=(idx as usize) {
+                    mapped[i] = match src_pool.nodes[i] {
+                        GNode::Var(GVar::PosLeaf(k)) => pos_map[k as usize],
+                        GNode::Var(GVar::NegLeaf(k)) => neg_map[k as usize].expect("4-state neg mapped"),
+                        GNode::Var(GVar::Inject | GVar::NfaState(_)) => unreachable!("DFA guard has only leaf vars"),
+                        GNode::Not(a) => self.pool.not(mapped[a as usize])?,
+                        GNode::And(a, b) => {
+                            let ga = match a {
+                                Guard::False => Guard::False,
+                                Guard::True => Guard::True,
+                                Guard::Node(j) => mapped[j as usize],
+                            };
+                            let gb = match b {
+                                Guard::False => Guard::False,
+                                Guard::True => Guard::True,
+                                Guard::Node(j) => mapped[j as usize],
+                            };
+                            self.pool.and(ga, gb)?
+                        }
+                        GNode::Or(a, b) => {
+                            let ga = match a {
+                                Guard::False => Guard::False,
+                                Guard::True => Guard::True,
+                                Guard::Node(j) => mapped[j as usize],
+                            };
+                            let gb = match b {
+                                Guard::False => Guard::False,
+                                Guard::True => Guard::True,
+                                Guard::Node(j) => mapped[j as usize],
+                            };
+                            self.pool.or(ga, gb)?
+                        }
+                    };
+                }
+                Ok(mapped[idx as usize])
+            }
+        }
+    }
+
     /// Delays `sig` by `[min_ticks ..= max_ticks]` (or `[min_ticks .. $]`) clock ticks:
     /// at offset `0`, returns `sig` combinationally; at offset `k >= 1`, shifts through `k` registers.
     fn delay_signal(&mut self, sig: Guard, min_ticks: u32, max_bound: CycleBound) -> Result<Guard, String> {
@@ -394,15 +553,77 @@ impl<'a> SeqNfaBuilder<'a> {
         }
     }
 
-    fn build(&mut self, s: &SeqExpr, inject: Guard, min_off: u32, allow_first_match: bool) -> Result<Frag, String> {
+    fn build(&mut self, s: &NfaSeq, inject: Guard, min_off: u32, allow_first_match: bool) -> Result<Frag, String> {
         match s {
-            SeqExpr::Bool(e) => {
+            NfaSeq::Bool(e) => {
                 let b = self.pos_leaf(*e, min_off)?;
                 let raw = self.pool.and(inject, b)?;
                 let end_now = self.apply_throughout(raw)?;
                 Ok(Frag { accepts_empty: false, end_now, min_nonempty_len: Some(1) })
             }
-            SeqExpr::Fusion(a, b) => {
+            NfaSeq::NotBool(e) => {
+                let pos = self.pos_leaf(*e, min_off)?;
+                let b = self.pool.not(pos)?;
+                let raw = self.pool.and(inject, b)?;
+                let end_now = self.apply_throughout(raw)?;
+                Ok(Frag { accepts_empty: false, end_now, min_nonempty_len: Some(1) })
+            }
+            NfaSeq::NotWeak(inner) => {
+                let (dfa, _) =
+                    compile_consequent_dfa(self.nl, self.leaves, inner, DfaMode::Pos { strong: false }, &[], min_off)?;
+                let mut pos_map = Vec::with_capacity(dfa.leaf_tab.exprs.len());
+                let mut neg_map = Vec::with_capacity(dfa.leaf_tab.exprs.len());
+                for (&(val, is_four), &off) in dfa.leaf_tab.exprs.iter().zip(&dfa.leaf_tab.min_offset) {
+                    let k = self.leaf_tab.intern(val, is_four, off)?;
+                    let pg = self.pool.var(GVar::PosLeaf(k))?;
+                    pos_map.push(pg);
+                    if is_four {
+                        neg_map.push(Some(self.pool.var(GVar::NegLeaf(k))?));
+                    } else {
+                        neg_map.push(None);
+                    }
+                }
+                let mut regs = Vec::with_capacity(dfa.num_states);
+                for _ in 0..dfa.num_states {
+                    regs.push(self.alloc_reg(Guard::False)?);
+                }
+                let init_dead_g = self.import_dfa_guard(&dfa.pool, dfa.init_dead, &pos_map, &neg_map)?;
+                let mut init_to_g = Vec::with_capacity(dfa.num_states);
+                for d in 0..dfa.num_states {
+                    init_to_g.push(self.import_dfa_guard(&dfa.pool, dfa.init_to[d], &pos_map, &neg_map)?);
+                }
+                let mut state_dead_g = Vec::with_capacity(dfa.num_states);
+                let mut state_to_g = Vec::with_capacity(dfa.num_states);
+                for d in 0..dfa.num_states {
+                    state_dead_g.push(self.import_dfa_guard(&dfa.pool, dfa.state_dead[d], &pos_map, &neg_map)?);
+                    let mut row = Vec::with_capacity(dfa.num_states);
+                    for d2 in 0..dfa.num_states {
+                        row.push(self.import_dfa_guard(&dfa.pool, dfa.state_to[d][d2], &pos_map, &neg_map)?);
+                    }
+                    state_to_g.push(row);
+                }
+                for d2 in 0..dfa.num_states {
+                    let mut nxt = self.pool.and(inject, init_to_g[d2])?;
+                    for d in 0..dfa.num_states {
+                        if state_to_g[d][d2] != Guard::False {
+                            let step = self.pool.and(regs[d].1, state_to_g[d][d2])?;
+                            nxt = self.pool.or(nxt, step)?;
+                        }
+                    }
+                    self.state_next[regs[d2].0] = self.apply_throughout(nxt)?;
+                }
+                let mut dead_hit = self.pool.and(inject, init_dead_g)?;
+                for d in 0..dfa.num_states {
+                    if state_dead_g[d] != Guard::False {
+                        let d_hit = self.pool.and(regs[d].1, state_dead_g[d])?;
+                        dead_hit = self.pool.or(dead_hit, d_hit)?;
+                    }
+                }
+                let end_now = self.apply_throughout(dead_hit)?;
+                let min_len = if end_now == Guard::False { None } else { Some(1) };
+                Ok(Frag { accepts_empty: false, end_now, min_nonempty_len: min_len })
+            }
+            NfaSeq::Fusion(a, b) => {
                 let fa = self.build(a, inject, min_off, allow_first_match)?;
                 let Some(la) = fa.min_nonempty_len else {
                     return Ok(Frag { accepts_empty: false, end_now: Guard::False, min_nonempty_len: None });
@@ -413,7 +634,7 @@ impl<'a> SeqNfaBuilder<'a> {
                 let min_len = fb.min_nonempty_len.map(|lb| la.saturating_add(lb).saturating_sub(1));
                 Ok(Frag { accepts_empty: false, end_now: fb.end_now, min_nonempty_len: min_len })
             }
-            SeqExpr::Delay { range, lhs: None, rhs } => {
+            NfaSeq::Delay { range, lhs: None, rhs } => {
                 bounds_checked(range, "the delay")?;
                 let delayed_inj = self.delay_signal(inject, range.min, range.max)?;
                 let fr = self.build(rhs, delayed_inj, min_off.saturating_add(range.min), allow_first_match)?;
@@ -441,7 +662,7 @@ impl<'a> SeqNfaBuilder<'a> {
                 }
                 Ok(Frag { accepts_empty, end_now, min_nonempty_len: min_len })
             }
-            SeqExpr::Delay { range, lhs: Some(lhs), rhs } => {
+            NfaSeq::Delay { range, lhs: Some(lhs), rhs } => {
                 bounds_checked(range, "the delay")?;
                 let fl = self.build(lhs, inject, min_off, allow_first_match)?;
                 let mut end_now = Guard::False;
@@ -527,7 +748,7 @@ impl<'a> SeqNfaBuilder<'a> {
                 }
                 Ok(Frag { accepts_empty, end_now, min_nonempty_len: min_len })
             }
-            SeqExpr::Repeat { kind: RepeatKind::Consecutive, range, seq } => {
+            NfaSeq::Repeat { kind: RepeatKind::Consecutive, range, seq } => {
                 bounds_checked(range, "the repetition")?;
                 if range.max == CycleBound::Const(0) {
                     return Ok(Frag { accepts_empty: true, end_now: Guard::False, min_nonempty_len: None });
@@ -587,8 +808,6 @@ impl<'a> SeqNfaBuilder<'a> {
                             cur_off = cur_off.saturating_add(step_l);
                         }
                         // Build the repeating tail copy `seq_+` fed by `cur_inj | reg(tail.end_now)`.
-                        // Because `tail.end_now` only matches non-empty runs (`>= 1` tick), feeding it
-                        // back through `alloc_reg` has a 1-tick flip-flop boundary (no combinational loop!).
                         let (fb_idx, fb_q) = self.alloc_reg(Guard::False)?;
                         let loop_inj = self.pool.or(cur_inj, fb_q)?;
                         let f_tail = self.build(seq, loop_inj, cur_off, false)?;
@@ -601,12 +820,12 @@ impl<'a> SeqNfaBuilder<'a> {
                 self.in_loop = saved_loop;
                 res
             }
-            SeqExpr::Repeat { kind: RepeatKind::Goto, range, seq } => {
+            NfaSeq::Repeat { kind: RepeatKind::Goto, range, seq } => {
                 bounds_checked(range, "the goto repetition")?;
                 if range.min == 0 {
                     return Err("goto repetition [->0] is illegal".into());
                 }
-                let SeqExpr::Bool(e) = seq.as_ref() else {
+                let NfaSeq::Bool(e) = seq.as_ref() else {
                     return Err("goto repetition [->] on a multi-cycle sequence".into());
                 };
                 let (b_pos, b_neg) = self.pos_and_neg_leaf(*e, min_off)?;
@@ -649,8 +868,6 @@ impl<'a> SeqNfaBuilder<'a> {
                             let (_, next_q) = self.alloc_reg(hit)?;
                             cur_inj = next_q;
                         }
-                        // On the `min`-th and all subsequent hits, `active` stays alive across both `b_neg` and `b_pos`
-                        // (`(!b | b)` on 2-state, or `b_neg | b_pos` on 4-state so `'x` drops dead!).
                         let (tail_idx, tail_q) = self.alloc_reg(Guard::False)?;
                         let active = self.pool.or(cur_inj, tail_q)?;
                         let valid_bit = self.pool.or(b_pos, b_neg)?;
@@ -662,9 +879,9 @@ impl<'a> SeqNfaBuilder<'a> {
                     }
                 }
             }
-            SeqExpr::Repeat { kind: RepeatKind::NonConsecutive, range, seq } => {
+            NfaSeq::Repeat { kind: RepeatKind::NonConsecutive, range, seq } => {
                 bounds_checked(range, "the non-consecutive repetition")?;
-                let SeqExpr::Bool(e) = seq.as_ref() else {
+                let NfaSeq::Bool(e) = seq.as_ref() else {
                     return Err("non-consecutive repetition [=] on a multi-cycle sequence".into());
                 };
                 let (b_pos, b_neg) = self.pos_and_neg_leaf(*e, min_off)?;
@@ -707,7 +924,6 @@ impl<'a> SeqNfaBuilder<'a> {
                             return Err(too_long());
                         }
                         if range.min == 0 {
-                            // `b [= 0:$]` matches empty and every tick where `b` is a valid boolean (`b_pos | b_neg`).
                             let (idx, q) = self.alloc_reg(Guard::False)?;
                             let active = self.pool.or(inject, q)?;
                             let valid_bit = self.pool.or(b_pos, b_neg)?;
@@ -716,7 +932,6 @@ impl<'a> SeqNfaBuilder<'a> {
                             self.state_next[idx] = post;
                             return Ok(Frag { accepts_empty: true, end_now: post, min_nonempty_len: Some(1) });
                         }
-                        // `b [= min:$]` (`min >= 1`): states `0 .. min` where state `min` absorbs `>= min` occurrences!
                         let cnt = (range.min as usize) + 1;
                         let mut regs = Vec::with_capacity(cnt);
                         for _ in 0..cnt {
@@ -748,7 +963,7 @@ impl<'a> SeqNfaBuilder<'a> {
                     }
                 }
             }
-            SeqExpr::Or(a, b) => {
+            NfaSeq::Or(a, b) => {
                 let fa = self.build(a, inject, min_off, allow_first_match)?;
                 let fb = self.build(b, inject, min_off, allow_first_match)?;
                 let end_now = self.pool.or(fa.end_now, fb.end_now)?;
@@ -758,22 +973,21 @@ impl<'a> SeqNfaBuilder<'a> {
                 };
                 Ok(Frag { accepts_empty: fa.accepts_empty || fb.accepts_empty, end_now, min_nonempty_len: min_len })
             }
-            SeqExpr::Throughout { cond, seq } => {
-                let c_guard = self.pos_leaf(*cond, min_off)?;
+            NfaSeq::Throughout { cond, negated, seq } => {
+                let pos = self.pos_leaf(*cond, min_off)?;
+                let c_guard = if *negated { self.pool.not(pos)? } else { pos };
                 self.throughout_stack.push(c_guard);
                 let f = self.build(seq, inject, min_off, allow_first_match);
                 self.throughout_stack.pop();
-                // IEEE 1800-2023 Annex F: `b throughout empty` holds vacuously (`empty` covers 0 ticks).
                 f
             }
-            SeqExpr::FirstMatch(inner) => {
+            NfaSeq::FirstMatch(inner) => {
                 if !allow_first_match || self.in_loop {
                     return Err("`first_match` over an unbounded antecedent or loop".into());
                 }
                 let start_idx = self.state_next.len();
                 let f = self.build(inner, inject, min_off, true)?;
                 if f.accepts_empty {
-                    // Empty match is strictly earlier than any non-empty match, so non-empty matches are suppressed!
                     for st in &mut self.state_next[start_idx..] {
                         *st = Guard::False;
                     }
@@ -786,73 +1000,394 @@ impl<'a> SeqNfaBuilder<'a> {
                 }
                 Ok(f)
             }
-            SeqExpr::And(..) => Err("sequence `and` with an unbounded operand".into()),
-            SeqExpr::Intersect(..) => Err("sequence `intersect` with an unbounded operand".into()),
-            SeqExpr::Within(..) => Err("sequence `within` with an unbounded operand".into()),
-            SeqExpr::Clocked { .. } => Err("a sequence with its own clock".into()),
+            NfaSeq::And(..) => Err("sequence `and` with an unbounded operand".into()),
+            NfaSeq::Intersect(..) => Err("sequence `intersect` with an unbounded operand".into()),
+            NfaSeq::Within(..) => Err("sequence `within` with an unbounded operand".into()),
+            NfaSeq::Clocked => Err("a sequence with its own clock".into()),
         }
     }
 
-    fn build_probe_nullable(&self, s: &SeqExpr) -> Result<bool, String> {
+    fn build_probe_nullable(&self, s: &NfaSeq) -> Result<bool, String> {
         Ok(match s {
-            SeqExpr::Bool(_) | SeqExpr::Fusion(..) => false,
-            SeqExpr::Delay { range, lhs: None, rhs } => range.min == 0 && self.build_probe_nullable(rhs)?,
-            SeqExpr::Delay { range, lhs: Some(l), rhs: r } => {
+            NfaSeq::Bool(_) | NfaSeq::NotBool(_) | NfaSeq::NotWeak(_) | NfaSeq::Fusion(..) => false,
+            NfaSeq::Delay { range, lhs: None, rhs } => range.min == 0 && self.build_probe_nullable(rhs)?,
+            NfaSeq::Delay { range, lhs: Some(l), rhs: r } => {
                 let has_1 = match range.max {
                     CycleBound::Const(mx) => range.min <= 1 && mx >= 1,
                     CycleBound::Unbounded => range.min <= 1,
                 };
                 has_1 && self.build_probe_nullable(l)? && self.build_probe_nullable(r)?
             }
-            SeqExpr::Repeat { kind: RepeatKind::Consecutive, range, seq } => {
+            NfaSeq::Repeat { kind: RepeatKind::Consecutive, range, seq } => {
                 range.min == 0 || self.build_probe_nullable(seq)?
             }
-            SeqExpr::Repeat { kind: RepeatKind::Goto, .. } => false,
-            SeqExpr::Repeat { kind: RepeatKind::NonConsecutive, range, .. } => range.min == 0,
-            SeqExpr::Or(a, b) => self.build_probe_nullable(a)? || self.build_probe_nullable(b)?,
-            SeqExpr::Throughout { seq, .. } | SeqExpr::FirstMatch(seq) => self.build_probe_nullable(seq)?,
-            SeqExpr::And(a, b) | SeqExpr::Intersect(a, b) => {
+            NfaSeq::Repeat { kind: RepeatKind::Goto, .. } => false,
+            NfaSeq::Repeat { kind: RepeatKind::NonConsecutive, range, .. } => range.min == 0,
+            NfaSeq::Or(a, b) => self.build_probe_nullable(a)? || self.build_probe_nullable(b)?,
+            NfaSeq::Throughout { seq, .. } | NfaSeq::FirstMatch(seq) => self.build_probe_nullable(seq)?,
+            NfaSeq::And(a, b) | NfaSeq::Intersect(a, b) => {
                 self.build_probe_nullable(a)? && self.build_probe_nullable(b)?
             }
-            SeqExpr::Within(a, b) => self.build_probe_nullable(a)? && self.build_probe_nullable(b)?,
-            SeqExpr::Clocked { .. } => return Err("a sequence with its own clock".into()),
+            NfaSeq::Within(a, b) => self.build_probe_nullable(a)? && self.build_probe_nullable(b)?,
+            NfaSeq::Clocked => return Err("a sequence with its own clock".into()),
         })
     }
 }
 
-/// Unbounded sequence extraction for consequents (extends [`as_seq`] with unbounded `eventually` / `s_eventually`).
-fn as_consequent_seq(p: &PropExpr) -> Result<(SeqExpr, bool), String> {
-    let delayed = |range: CycleRange, s: SeqExpr| SeqExpr::Delay { range, lhs: None, rhs: Box::new(s) };
-    match p {
-        PropExpr::Seq(s) | PropExpr::Weak(s) => Ok((s.clone(), false)),
-        PropExpr::Strong(s) => Ok((s.clone(), true)),
-        PropExpr::Nexttime { strong, cycles, prop } => {
-            let (inner, inner_strong) = as_consequent_seq(prop)?;
-            Ok((delayed(CycleRange::exact(*cycles), inner), *strong || inner_strong))
-        }
-        PropExpr::Eventually { strong, range, prop } => {
-            if !*strong && range.max == CycleBound::Unbounded {
-                return Err(prop_name(p).into());
+#[derive(Clone, Debug)]
+pub(crate) enum ValFormula {
+    Leaf(ValueId),
+    Not(Box<ValFormula>),
+    And(Box<ValFormula>, Box<ValFormula>),
+}
+
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct ValAbortSpec {
+    pub(crate) reject: bool,
+    pub(crate) val: ValueId,
+}
+
+impl ValFormula {
+    fn from_bool_formula(bf: &BoolFormula, leaves: &[Option<ValueId>]) -> Result<Self, String> {
+        let not_lowered = || "an expression that was not lowered".to_string();
+        match bf {
+            BoolFormula::Leaf(e) => {
+                let v = leaves.get(e.0 as usize).copied().flatten().ok_or_else(not_lowered)?;
+                Ok(Self::Leaf(v))
             }
-            let (inner, inner_strong) = as_consequent_seq(prop)?;
-            Ok((delayed(*range, inner), *strong || inner_strong))
+            BoolFormula::Not(x) => Ok(Self::Not(Box::new(Self::from_bool_formula(x, leaves)?))),
+            BoolFormula::And(a, b) => Ok(Self::And(
+                Box::new(Self::from_bool_formula(a, leaves)?),
+                Box::new(Self::from_bool_formula(b, leaves)?),
+            )),
         }
-        PropExpr::Always { range, prop, strong } => {
-            let CycleBound::Const(last) = range.max else {
-                return Err("`always` with no upper bound".into());
-            };
-            if last > crate::sva::MAX_PROPERTY_SPAN || last < range.min {
+    }
+
+    fn max_lookback(&self, nl: &Netlist, memo: &mut Lookback) -> u32 {
+        match self {
+            Self::Leaf(v) => nl.lookback(*v, memo),
+            Self::Not(x) => x.max_lookback(nl, memo),
+            Self::And(a, b) => a.max_lookback(nl, memo).max(b.max_lookback(nl, memo)),
+        }
+    }
+
+    fn emit(&self, nl: &mut Netlist, loc: Loc) -> ValueId {
+        match self {
+            Self::Leaf(v) => {
+                let b = nl.sva_bool(*v, loc);
+                nl.sva_two_state(b, loc)
+            }
+            Self::Not(x) => {
+                let xv = x.emit(nl, loc);
+                nl.sva_op(NetOp::LogNot, vec![xv], 1, loc)
+            }
+            Self::And(a, b) => {
+                let av = a.emit(nl, loc);
+                let bv = b.emit(nl, loc);
+                nl.sva_op(NetOp::LogAnd, vec![av, bv], 1, loc)
+            }
+        }
+    }
+}
+
+/// Negation Normal Form property IR for `sva_nfa`.
+#[derive(Clone, Debug)]
+enum NormProp {
+    Seq { seq: NfaSeq, strong: bool },
+    NotSeq { seq: NfaSeq, negated_weak: bool },
+    Implication { overlapped: bool, orig_lhs: Option<SeqExpr>, nfa_lhs: NfaSeq, rhs: Box<NormProp> },
+    FollowedBy { overlapped: bool, nfa_lhs: NfaSeq, rhs: Box<NormProp> },
+    Until { strong: bool, overlapping: bool, hold: Option<BoolFormula>, release: BoolFormula },
+    Abort { reject: bool, cond: ExprId, prop: Box<NormProp> },
+}
+
+fn as_bool_formula(p: &PropExpr, neg: bool) -> Result<BoolFormula, String> {
+    match p {
+        PropExpr::Not(inner) => as_bool_formula(inner, !neg),
+        PropExpr::Seq(SeqExpr::Bool(e)) | PropExpr::Weak(SeqExpr::Bool(e)) | PropExpr::Strong(SeqExpr::Bool(e)) => {
+            let leaf = BoolFormula::Leaf(*e);
+            Ok(if neg { BoolFormula::Not(Box::new(leaf)) } else { leaf })
+        }
+        _ => Err("`until` between properties that are not single booleans".into()),
+    }
+}
+
+fn delay_norm_prop(np: NormProp, range: CycleRange, strong: bool) -> Result<NormProp, String> {
+    bounds_checked(&range, "eventually")?;
+    match np {
+        NormProp::Seq { seq, strong: inner_strong } => Ok(NormProp::Seq {
+            seq: NfaSeq::Delay { range, lhs: None, rhs: Box::new(seq) },
+            strong: strong || inner_strong,
+        }),
+        NormProp::NotSeq { seq, negated_weak } if range.max == CycleBound::Const(range.min) => {
+            Ok(NormProp::NotSeq { seq: NfaSeq::Delay { range, lhs: None, rhs: Box::new(seq) }, negated_weak })
+        }
+        NormProp::NotSeq { seq, negated_weak: true } => {
+            let nw = NfaSeq::NotWeak(Box::new(seq));
+            Ok(NormProp::Seq { seq: NfaSeq::Delay { range, lhs: None, rhs: Box::new(nw) }, strong })
+        }
+        NormProp::Until { .. } => Err("`until`".into()),
+        _ => Err("a property operator inside a temporal range".into()),
+    }
+}
+
+fn norm_prop(p: &PropExpr, neg: bool, default_strong: bool, allow_imp: bool) -> Result<NormProp, String> {
+    match p {
+        PropExpr::Not(inner) => norm_prop(inner, !neg, default_strong, true),
+        PropExpr::Seq(s) => {
+            let is_strong = default_strong;
+            if !neg {
+                Ok(NormProp::Seq { seq: NfaSeq::from_seq(s), strong: is_strong })
+            } else if let SeqExpr::Bool(e) = s {
+                Ok(NormProp::Seq { seq: NfaSeq::NotBool(*e), strong: false })
+            } else {
+                Ok(NormProp::NotSeq { seq: NfaSeq::from_seq(s), negated_weak: !is_strong })
+            }
+        }
+        PropExpr::Strong(s) => {
+            if !neg {
+                Ok(NormProp::Seq { seq: NfaSeq::from_seq(s), strong: true })
+            } else if let SeqExpr::Bool(e) = s {
+                Ok(NormProp::Seq { seq: NfaSeq::NotBool(*e), strong: false })
+            } else {
+                Ok(NormProp::NotSeq { seq: NfaSeq::from_seq(s), negated_weak: false })
+            }
+        }
+        PropExpr::Weak(s) => {
+            if !neg {
+                Ok(NormProp::Seq { seq: NfaSeq::from_seq(s), strong: false })
+            } else if let SeqExpr::Bool(e) = s {
+                Ok(NormProp::Seq { seq: NfaSeq::NotBool(*e), strong: false })
+            } else {
+                Ok(NormProp::NotSeq { seq: NfaSeq::from_seq(s), negated_weak: true })
+            }
+        }
+        PropExpr::OverlappedImplication { lhs, rhs } | PropExpr::NonOverlappedImplication { lhs, rhs } => {
+            if !allow_imp {
+                return Err("an implication inside another property operator".into());
+            }
+            let overlapped = matches!(p, PropExpr::OverlappedImplication { .. });
+            if !neg {
+                Ok(NormProp::Implication {
+                    overlapped,
+                    orig_lhs: Some(lhs.clone()),
+                    nfa_lhs: NfaSeq::from_seq(lhs),
+                    rhs: Box::new(norm_prop(rhs, false, default_strong, false)?),
+                })
+            } else {
+                Ok(NormProp::FollowedBy {
+                    overlapped,
+                    nfa_lhs: NfaSeq::from_seq(lhs),
+                    rhs: Box::new(norm_prop(rhs, true, default_strong, false)?),
+                })
+            }
+        }
+        PropExpr::FollowedBy { overlapped, lhs, rhs } => {
+            if !neg {
+                Ok(NormProp::FollowedBy {
+                    overlapped: *overlapped,
+                    nfa_lhs: NfaSeq::from_seq(lhs),
+                    rhs: Box::new(norm_prop(rhs, false, default_strong, false)?),
+                })
+            } else {
+                Ok(NormProp::Implication {
+                    overlapped: *overlapped,
+                    orig_lhs: Some(lhs.clone()),
+                    nfa_lhs: NfaSeq::from_seq(lhs),
+                    rhs: Box::new(norm_prop(rhs, true, default_strong, false)?),
+                })
+            }
+        }
+        PropExpr::AcceptOn { reject, cond, prop: inner, .. } => {
+            let eff_reject = if neg { !*reject } else { *reject };
+            Ok(NormProp::Abort {
+                reject: eff_reject,
+                cond: *cond,
+                prop: Box::new(norm_prop(inner, neg, default_strong, allow_imp)?),
+            })
+        }
+        PropExpr::Nexttime { strong, cycles, prop: inner } => {
+            if *cycles > crate::sva::MAX_PROPERTY_SPAN {
                 return Err(too_long());
             }
-            let (inner, inner_strong) = as_consequent_seq(prop)?;
-            if range.min == last {
-                return Ok((delayed(CycleRange::exact(range.min), inner), *strong || inner_strong));
+            let eff_strong = if neg { !*strong } else { *strong };
+            let inner_np = norm_prop(inner, neg, default_strong, false)?;
+            delay_norm_prop(inner_np, CycleRange::exact(*cycles), eff_strong)
+        }
+        PropExpr::Eventually { strong, range, prop: inner } => {
+            if !neg {
+                if !*strong && range.max == CycleBound::Unbounded {
+                    return Err(prop_name(p).into());
+                }
+                if *strong && range.min == 0 && range.max == CycleBound::Unbounded {
+                    if let Ok(bf) = as_bool_formula(inner, false) {
+                        return Ok(NormProp::Until { strong: true, overlapping: false, hold: None, release: bf });
+                    }
+                }
+                let inner_np = norm_prop(inner, false, default_strong, false)?;
+                delay_norm_prop(inner_np, *range, *strong)
+            } else {
+                // `not (s_eventually [range] inner)` = `always [range] (not inner)`:
+                bounds_checked(range, "eventually")?;
+                match range.max {
+                    CycleBound::Unbounded => {
+                        let inner_pos = norm_prop(inner, false, true, false)?;
+                        match inner_pos {
+                            NormProp::Seq { seq, .. } => Ok(NormProp::NotSeq {
+                                seq: NfaSeq::Delay { range: *range, lhs: None, rhs: Box::new(seq) },
+                                negated_weak: false,
+                            }),
+                            NormProp::Until { .. } => Err("`until`".into()),
+                            _ => Err(prop_name(p).into()),
+                        }
+                    }
+                    CycleBound::Const(_) => {
+                        let s = NfaSeq::from_seq(as_seq(p)?.as_ref());
+                        Ok(NormProp::NotSeq { seq: s, negated_weak: !default_strong })
+                    }
+                }
             }
-            // Fallback to `as_seq` when `always [m:n]` is bounded.
-            Ok((as_seq(p)?.into_owned(), false))
+        }
+        PropExpr::Always { strong, range, prop: inner } => {
+            if !neg {
+                let CycleBound::Const(last) = range.max else {
+                    return Err("`always` with no upper bound".into());
+                };
+                if last > crate::sva::MAX_PROPERTY_SPAN || last < range.min {
+                    return Err(too_long());
+                }
+                if range.min == last {
+                    let inner_np = norm_prop(inner, false, default_strong, false)?;
+                    return delay_norm_prop(inner_np, CycleRange::exact(range.min), *strong);
+                }
+                let s = NfaSeq::from_seq(as_seq(p)?.as_ref());
+                Ok(NormProp::Seq { seq: s, strong: default_strong })
+            } else {
+                // `not (always [range] inner)` = `s_eventually [range] (not inner)`:
+                bounds_checked(range, "always")?;
+                let eff_strong = !*strong;
+                if !eff_strong && range.max == CycleBound::Unbounded {
+                    return Err("`eventually`".into());
+                }
+                if eff_strong && range.min == 0 && range.max == CycleBound::Unbounded {
+                    if let Ok(bf) = as_bool_formula(inner, true) {
+                        return Ok(NormProp::Until { strong: true, overlapping: false, hold: None, release: bf });
+                    }
+                }
+                let inner_np = norm_prop(inner, true, default_strong, false)?;
+                delay_norm_prop(inner_np, *range, eff_strong)
+            }
+        }
+        PropExpr::Until { strong, overlapping, lhs, rhs } => {
+            let l_bf = as_bool_formula(lhs, false)?;
+            let r_bf = as_bool_formula(rhs, false)?;
+            if !neg {
+                Ok(NormProp::Until { strong: *strong, overlapping: *overlapping, hold: Some(l_bf), release: r_bf })
+            } else {
+                let nl = BoolFormula::Not(Box::new(l_bf));
+                let nr = BoolFormula::Not(Box::new(r_bf));
+                if !*overlapping {
+                    let both_neg = BoolFormula::And(Box::new(nl), Box::new(nr.clone()));
+                    Ok(NormProp::Until { strong: !*strong, overlapping: true, hold: Some(nr), release: both_neg })
+                } else {
+                    Ok(NormProp::Until { strong: !*strong, overlapping: false, hold: Some(nr), release: nl })
+                }
+            }
         }
         other => Err(prop_name(other).into()),
     }
+}
+
+fn peel_aborts(mut np: NormProp) -> (Vec<AbortSpec>, NormProp) {
+    let mut aborts = Vec::new();
+    while let NormProp::Abort { reject, cond, prop } = np {
+        aborts.push(AbortSpec { reject, cond });
+        np = *prop;
+    }
+    (aborts, np)
+}
+
+/// Resolves `FollowedBy` chains over sequences/complement-DFAs into a single `NormProp::Seq`.
+fn reduce_followed_by(
+    nl: &Netlist,
+    leaves: &[Option<ValueId>],
+    overlapped: bool,
+    nfa_lhs: NfaSeq,
+    rhs: NormProp,
+    for_cover: bool,
+) -> Result<NormProp, String> {
+    let mut lb = SeqNfaBuilder::new(nl, leaves, MAX_NFA_STATES);
+    let linj = lb.pool.var(GVar::Inject)?;
+    let lf = lb.build(&nfa_lhs, linj, 0, false)?;
+    let ant_has_match = if overlapped {
+        lf.min_nonempty_len.is_some() && lf.end_now != Guard::False
+    } else {
+        lf.accepts_empty || (lf.min_nonempty_len.is_some() && lf.end_now != Guard::False)
+    };
+    if !ant_has_match {
+        return Err("an antecedent that has no match".into());
+    }
+
+    let resolved_rhs = match rhs {
+        NormProp::FollowedBy { overlapped: inner_ov, nfa_lhs: inner_l, rhs: inner_r } => {
+            reduce_followed_by(nl, leaves, inner_ov, inner_l, *inner_r, for_cover)?
+        }
+        NormProp::Until { hold: Some(_), .. } if for_cover => {
+            return Err("a cover of `until`".into());
+        }
+        // In `cover property ((a ##1 b) #-# s_eventually done)` (or `assert`), `Until { hold: None, release: Leaf(e) }`
+        // is `strong(##[0:$] e)`!
+        NormProp::Until { strong: true, overlapping: false, hold: None, release: BoolFormula::Leaf(e) } => {
+            NormProp::Seq {
+                seq: NfaSeq::Delay { range: CycleRange::unbounded(0), lhs: None, rhs: Box::new(NfaSeq::Bool(e)) },
+                strong: true,
+            }
+        }
+        NormProp::Until { strong: true, overlapping: false, hold: None, release: BoolFormula::Not(inner) }
+            if matches!(*inner, BoolFormula::Leaf(_)) =>
+        {
+            let BoolFormula::Leaf(e) = *inner else { unreachable!() };
+            NormProp::Seq {
+                seq: NfaSeq::Delay { range: CycleRange::unbounded(0), lhs: None, rhs: Box::new(NfaSeq::NotBool(e)) },
+                strong: true,
+            }
+        }
+        other => other,
+    };
+
+    let (r_seq, r_strong) = match resolved_rhs {
+        NormProp::Seq { seq, strong } => (seq, strong),
+        NormProp::NotSeq { seq, negated_weak: true } => (NfaSeq::NotWeak(Box::new(seq)), true),
+        NormProp::NotSeq { seq, negated_weak: false } if !seq.has_unbounded_wait() => {
+            (NfaSeq::NotWeak(Box::new(seq)), false)
+        }
+        NormProp::Until { hold, .. } => {
+            return Err(if hold.is_some() {
+                "followed-by (#-#, #=#) before `until`".into()
+            } else {
+                "followed-by (#-#, #=#) before `s_eventually`".into()
+            });
+        }
+        _ => return Err("followed-by (#-#, #=#) with nested abort or implication".into()),
+    };
+
+    let mut rb = SeqNfaBuilder::new(nl, leaves, MAX_NFA_STATES);
+    let rinj = rb.pool.var(GVar::Inject)?;
+    let rf = rb.build(&r_seq, rinj, 0, true)?;
+    if rf.accepts_empty {
+        return Err("a sequence that admits an empty match, used as a property".into());
+    }
+    if rf.min_nonempty_len.is_none() || rf.end_now == Guard::False {
+        return Err("a sequence that has no match, used as a property".into());
+    }
+
+    let combined = if overlapped {
+        NfaSeq::Fusion(Box::new(nfa_lhs.clone()), Box::new(r_seq))
+    } else {
+        NfaSeq::Delay { range: CycleRange::exact(1), lhs: Some(Box::new(nfa_lhs.clone())), rhs: Box::new(r_seq) }
+    };
+    let eff_strong = r_strong || nfa_lhs.has_unbounded_wait();
+    Ok(NormProp::Seq { seq: combined, strong: eff_strong })
 }
 
 /// Compiled antecedent trigger specification in an [`AutomatonPlan`].
@@ -862,7 +1397,7 @@ pub(crate) enum AntecedentPlan {
     Always { reached: Option<ValueId> },
     /// Bounded antecedent compiled by `Matcher` (`starts: Vec<(at, Cond, first_tick)>`, `terms`).
     Bounded { terms: Vec<Term>, two_state: bool, starts: Vec<(u32, Cond, u32)>, non_overlapped: bool },
-    /// Existential `SeqNfa` antecedent (`[->]`, `[=]`, `##[m:$]`, `[*m:$]`).
+    /// Existential `SeqNfa` antecedent (`[->]`, `[=]`, `##[m:$]`, `[*m:$]`, or abort-guarded antecedent).
     Nfa {
         pool: GuardPool,
         leaf_tab: LeafTable,
@@ -871,18 +1406,29 @@ pub(crate) enum AntecedentPlan {
         end_now: Guard,
         reached: Option<ValueId>,
         non_overlapped: bool,
+        pipe_abort_free: Vec<ValueId>,
         warm_start: u32,
     },
 }
 
-/// Deterministic subset automaton compiled for a universal (`assert`/`assume`) consequent.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum DfaMode {
+    Pos { strong: bool },
+    NegWeak,
+    NegStrong,
+    AntReject,
+}
+
+/// Deterministic subset automaton compiled for a consequent (or abort-guarded antecedent).
 #[derive(Clone)]
 pub(crate) struct ConsequentDfa {
     pub(crate) pool: GuardPool,
     pub(crate) leaf_tab: LeafTable,
     pub(crate) num_states: usize,
+    pub(crate) init_matched: Guard,
     pub(crate) init_dead: Guard,
     pub(crate) init_to: Vec<Guard>,
+    pub(crate) state_matched: Vec<Guard>,
     pub(crate) state_dead: Vec<Guard>,
     pub(crate) state_to: Vec<Vec<Guard>>,
     pub(crate) has_dead: bool,
@@ -900,10 +1446,12 @@ pub(crate) enum ConsequentPlan {
         reached: Option<ValueId>,
         warm_start: u32,
     },
+    /// Deterministic DFA monitor for `PropKind::Cover` when `accept_on` or `not` is present.
+    CoverDfa(ConsequentDfa),
     /// Precondition cover of `AntecedentPlan` (`start_now & !disable_now`).
     PreconditionCover,
-    /// `b until c` / `s_eventually c` after an NFA antecedent.
-    Until { hold: Option<ValueId>, release: ValueId, with: bool, strong: bool },
+    /// `b until c` / `s_eventually c` (with optional enclosing aborts).
+    Until { hold: Option<ValFormula>, release: ValFormula, aborts: Vec<ValAbortSpec>, with: bool, strong: bool },
     /// Subset-constructed universal safety (+ optional strong liveness) DFA.
     Dfa(ConsequentDfa),
 }
@@ -912,6 +1460,8 @@ pub(crate) enum ConsequentPlan {
 pub(crate) struct AutomatonPlan {
     pub(crate) antecedent: AntecedentPlan,
     pub(crate) consequent: ConsequentPlan,
+    /// Optional antecedent rejection DFA when an outer `reject_on` / `sync_reject_on` wraps `lhs |-> rhs`.
+    pub(crate) ant_reject: Option<(ConsequentDfa, Option<ValueId>)>,
     /// Full property expression + leaves saved so `related_cover(..., witness = true)` can build a cover NFA.
     pub(crate) witness_cover: Option<Box<ConsequentPlan>>,
 }
@@ -951,8 +1501,6 @@ fn robdd_from_table(
         return Ok(cached);
     }
     let half = tt.len() / 2;
-    // Bit `0` of assignment index corresponds to `vars[0]`, or MSB?
-    // Let `vars[0]` be the MSB of the slice (`idx >= half` means `vars[0] == true`).
     let lo_slice = &tt[..half];
     let hi_slice = &tt[half..];
     let lo_g = robdd_from_table(pool, &vars[1..], lo_slice, memo)?;
@@ -970,28 +1518,89 @@ fn robdd_from_table(
     Ok(res)
 }
 
+fn dfa_has_cycle(init_to: &[Guard], state_to: &[Vec<Guard>]) -> bool {
+    let n = state_to.len();
+    if n == 0 {
+        return false;
+    }
+    let mut reachable = vec![false; n];
+    let mut q = VecDeque::new();
+    for (d, &g) in init_to.iter().enumerate() {
+        if g != Guard::False {
+            reachable[d] = true;
+            q.push_back(d);
+        }
+    }
+    while let Some(u) = q.pop_front() {
+        for (v, &g) in state_to[u].iter().enumerate() {
+            if g != Guard::False && !reachable[v] {
+                reachable[v] = true;
+                q.push_back(v);
+            }
+        }
+    }
+    // DFS cycle check on reachable subgraph (`0 = unvisited`, `1 = on stack`, `2 = done`):
+    let mut color = vec![0u8; n];
+    for start in 0..n {
+        if !reachable[start] || color[start] != 0 {
+            continue;
+        }
+        let mut stack = vec![(start, 0usize)];
+        color[start] = 1;
+        while let Some((u, next_v)) = stack.last_mut() {
+            let u_val = *u;
+            if *next_v < n {
+                let v = *next_v;
+                *next_v += 1;
+                if state_to[u_val][v] == Guard::False || !reachable[v] {
+                    continue;
+                }
+                if color[v] == 1 {
+                    return true;
+                }
+                if color[v] == 0 {
+                    color[v] = 1;
+                    stack.push((v, 0));
+                }
+            } else {
+                color[u_val] = 2;
+                stack.pop();
+            }
+        }
+    }
+    false
+}
+
 fn compile_consequent_dfa(
     nl: &Netlist,
     leaves: &[Option<ValueId>],
-    rhs_seq: &SeqExpr,
-    strong: bool,
+    rhs_seq: &NfaSeq,
+    mode: DfaMode,
+    aborts: &[AbortSpec],
     ant_min_len: u32,
 ) -> Result<(ConsequentDfa, u32), String> {
     let mut b = SeqNfaBuilder::new(nl, leaves, MAX_CONSEQUENT_NFA_STATES);
     let inj = b.pool.var(GVar::Inject)?;
-    let frag = b.build(rhs_seq, inj, ant_min_len, true)?;
-    if frag.accepts_empty {
-        return Err("a sequence that admits an empty match, used as a property".into());
-    }
-    if frag.min_nonempty_len.is_none() || frag.end_now == Guard::False {
-        return Err("a sequence that has no match, used as a property".into());
+    let frag = b.build(rhs_seq, inj, ant_min_len, mode != DfaMode::AntReject)?;
+    if mode != DfaMode::AntReject {
+        if frag.accepts_empty {
+            return Err("a sequence that admits an empty match, used as a property".into());
+        }
+        if frag.min_nonempty_len.is_none() || frag.end_now == Guard::False {
+            return Err("a sequence that has no match, used as a property".into());
+        }
     }
 
-    // Build variable list for ROBDD / truth-table enumeration:
-    // Each leaf `k` contributes `PosLeaf(k)` and, if 4-state, `NegLeaf(k)`.
+    let mut abort_leaves = Vec::with_capacity(aborts.len());
+    for ab in aborts {
+        let v = leaves.get(ab.cond.0 as usize).copied().flatten().ok_or("an expression that was not lowered")?;
+        let idx = b.leaf_tab.intern(v, false, ant_min_len)?;
+        abort_leaves.push((idx, ab.reject));
+    }
+
     let mut dfa_pool = GuardPool::default();
     let mut var_guards: Vec<Guard> = Vec::new();
-    let mut var_roles: Vec<(u16, bool)> = Vec::new(); // (leaf_idx, is_neg)
+    let mut var_roles: Vec<(u16, bool)> = Vec::new();
     for (k, &(_, is_four_neg)) in b.leaf_tab.exprs.iter().enumerate() {
         let k16 = k as u16;
         var_guards.push(dfa_pool.var(GVar::PosLeaf(k16))?);
@@ -1015,7 +1624,6 @@ fn compile_consequent_dfa(
         Next(usize),
     }
 
-    // Decode assignment index `a` (where `var_guards[0]` is MSB `nvars - 1`):
     let decode = |a: usize| -> Option<(u16, u16)> {
         let mut pos_bits = 0u16;
         let mut neg_bits = 0u16;
@@ -1027,8 +1635,6 @@ fn compile_consequent_dfa(
                 pos_bits |= bit << leaf_k;
             }
         }
-        // For 2-state leaves (`!is_four_neg`), `neg` is `!pos` (handled inside `b.pool` via `Not`).
-        // For 4-state leaves (`is_four_neg`), `(pos=1, neg=1)` is impossible in hardware!
         for (k, &(_, is_four_neg)) in b.leaf_tab.exprs.iter().enumerate() {
             if is_four_neg && ((pos_bits >> k) & 1) != 0 && ((neg_bits >> k) & 1) != 0 {
                 return None;
@@ -1037,9 +1643,11 @@ fn compile_consequent_dfa(
         Some((pos_bits, neg_bits))
     };
 
-    let eval_step = |inject: bool, mask: u64, pos_bits: u16, neg_bits: u16| -> (bool, u64) {
+    let valid_assigns: Vec<Option<(u16, u16)>> = (0..nassign).map(decode).collect();
+
+    let eval_raw = |inject: bool, mask: u64, pos_bits: u16, neg_bits: u16| -> (bool, u64) {
         let matched = b.pool.eval(frag.end_now, inject, mask, pos_bits, neg_bits);
-        if matched {
+        if matched && mode != DfaMode::AntReject {
             return (true, 0);
         }
         let mut next_mask = 0u64;
@@ -1048,7 +1656,50 @@ fn compile_consequent_dfa(
                 next_mask |= 1u64 << si;
             }
         }
-        (false, next_mask)
+        (matched, next_mask)
+    };
+
+    // Prune dead-end NFA masks that can never reach `frag.end_now` on any future suffix:
+    let mut raw_seen: std::collections::HashSet<u64> = std::collections::HashSet::new();
+    let mut raw_q: VecDeque<u64> = VecDeque::new();
+    let mut raw_edges: HashMap<u64, Vec<(bool, u64)>> = HashMap::new();
+    for &(pos_b, neg_b) in valid_assigns.iter().flatten() {
+        let (_, nm) = eval_raw(true, 0, pos_b, neg_b);
+        if nm != 0 && raw_seen.len() < MAX_DFA_STATES * 4 && raw_seen.insert(nm) {
+            raw_q.push_back(nm);
+        }
+    }
+    while let Some(m) = raw_q.pop_front() {
+        let mut outs = Vec::new();
+        for &(pos_b, neg_b) in valid_assigns.iter().flatten() {
+            let (hit, nm) = eval_raw(false, m, pos_b, neg_b);
+            outs.push((hit, nm));
+            if nm != 0 && raw_seen.len() < MAX_DFA_STATES * 4 && raw_seen.insert(nm) {
+                raw_q.push_back(nm);
+            }
+        }
+        raw_edges.insert(m, outs);
+    }
+    let mut completable: std::collections::HashSet<u64> = std::collections::HashSet::new();
+    let mut changed = true;
+    while changed {
+        changed = false;
+        for (&m, outs) in &raw_edges {
+            if completable.contains(&m) {
+                continue;
+            }
+            if outs.iter().any(|&(hit, nm)| hit || (nm != 0 && completable.contains(&nm))) {
+                completable.insert(m);
+                changed = true;
+            }
+        }
+    }
+    let filter_mask = |nm: u64| -> u64 {
+        if nm == 0 || !raw_edges.contains_key(&nm) || completable.contains(&nm) {
+            nm
+        } else {
+            0
+        }
     };
 
     let mut mask_to_dfa: HashMap<u64, usize> = HashMap::new();
@@ -1070,17 +1721,54 @@ fn compile_consequent_dfa(
             Ok(id)
         };
 
+    let classify = |inject: bool,
+                    mask: u64,
+                    pos_b: u16,
+                    neg_b: u16,
+                    map: &mut HashMap<u64, usize>,
+                    vec: &mut Vec<u64>,
+                    q: &mut VecDeque<usize>|
+     -> Result<OutTrans, String> {
+        for &(leaf_k, is_reject) in &abort_leaves {
+            if ((pos_b >> leaf_k) & 1) != 0 {
+                return Ok(if is_reject { OutTrans::Dead } else { OutTrans::Matched });
+            }
+        }
+        let (matched, raw_nm) = eval_raw(inject, mask, pos_b, neg_b);
+        let next_m = filter_mask(raw_nm);
+        Ok(match mode {
+            DfaMode::Pos { .. } => {
+                if matched {
+                    OutTrans::Matched
+                } else if next_m == 0 {
+                    OutTrans::Dead
+                } else {
+                    OutTrans::Next(intern_mask(next_m, map, vec, q)?)
+                }
+            }
+            DfaMode::NegWeak | DfaMode::NegStrong => {
+                if matched {
+                    OutTrans::Dead
+                } else if next_m == 0 {
+                    OutTrans::Matched
+                } else {
+                    OutTrans::Next(intern_mask(next_m, map, vec, q)?)
+                }
+            }
+            DfaMode::AntReject => {
+                if next_m == 0 {
+                    OutTrans::Matched
+                } else {
+                    OutTrans::Next(intern_mask(next_m, map, vec, q)?)
+                }
+            }
+        })
+    };
+
     let mut init_trans = vec![OutTrans::DontCare; nassign];
     for (a, slot) in init_trans.iter_mut().enumerate() {
-        let Some((pos_b, neg_b)) = decode(a) else { continue };
-        let (matched, next_m) = eval_step(true, 0, pos_b, neg_b);
-        *slot = if matched {
-            OutTrans::Matched
-        } else if next_m == 0 {
-            OutTrans::Dead
-        } else {
-            OutTrans::Next(intern_mask(next_m, &mut mask_to_dfa, &mut dfa_masks, &mut queue)?)
-        };
+        let Some((pos_b, neg_b)) = valid_assigns[a] else { continue };
+        *slot = classify(true, 0, pos_b, neg_b, &mut mask_to_dfa, &mut dfa_masks, &mut queue)?;
     }
 
     let mut state_trans: Vec<Vec<OutTrans>> = Vec::new();
@@ -1088,15 +1776,8 @@ fn compile_consequent_dfa(
         let mask = dfa_masks[d_id];
         let mut row = vec![OutTrans::DontCare; nassign];
         for (a, slot) in row.iter_mut().enumerate() {
-            let Some((pos_b, neg_b)) = decode(a) else { continue };
-            let (matched, next_m) = eval_step(false, mask, pos_b, neg_b);
-            *slot = if matched {
-                OutTrans::Matched
-            } else if next_m == 0 {
-                OutTrans::Dead
-            } else {
-                OutTrans::Next(intern_mask(next_m, &mut mask_to_dfa, &mut dfa_masks, &mut queue)?)
-            };
+            let Some((pos_b, neg_b)) = valid_assigns[a] else { continue };
+            *slot = classify(false, mask, pos_b, neg_b, &mut mask_to_dfa, &mut dfa_masks, &mut queue)?;
         }
         if d_id >= state_trans.len() {
             state_trans.resize(d_id + 1, Vec::new());
@@ -1116,14 +1797,17 @@ fn compile_consequent_dfa(
         robdd_from_table(pool, &var_guards, &tt, memo)
     };
 
+    let init_matched = mk_pred(&mut dfa_pool, &mut memo, &init_trans, OutTrans::Matched)?;
     let init_dead = mk_pred(&mut dfa_pool, &mut memo, &init_trans, OutTrans::Dead)?;
     let mut init_to = Vec::with_capacity(num_states);
     for d in 0..num_states {
         init_to.push(mk_pred(&mut dfa_pool, &mut memo, &init_trans, OutTrans::Next(d))?);
     }
+    let mut state_matched = Vec::with_capacity(num_states);
     let mut state_dead = Vec::with_capacity(num_states);
     let mut state_to = Vec::with_capacity(num_states);
     for row in &state_trans {
+        state_matched.push(mk_pred(&mut dfa_pool, &mut memo, row, OutTrans::Matched)?);
         state_dead.push(mk_pred(&mut dfa_pool, &mut memo, row, OutTrans::Dead)?);
         let mut dsts = Vec::with_capacity(num_states);
         for d2 in 0..num_states {
@@ -1132,18 +1816,22 @@ fn compile_consequent_dfa(
         state_to.push(dsts);
     }
     let has_dead = init_dead != Guard::False || state_dead.iter().any(|&g| g != Guard::False);
+    let wants_strong = matches!(mode, DfaMode::Pos { strong: true } | DfaMode::NegWeak);
+    let eff_strong = wants_strong && dfa_has_cycle(&init_to, &state_to);
 
     Ok((
         ConsequentDfa {
             pool: dfa_pool,
             leaf_tab: b.leaf_tab,
             num_states,
+            init_matched,
             init_dead,
             init_to,
+            state_matched,
             state_dead,
             state_to,
             has_dead,
-            strong,
+            strong: eff_strong,
         },
         frag.min_nonempty_len.unwrap_or(1),
     ))
@@ -1158,6 +1846,13 @@ fn compute_warm_start(nl: &Netlist, tab: &LeafTable, skip: u32, memo: &mut Lookb
     warm
 }
 
+fn wrap_abort_free(mut seq: NfaSeq, aborts: &[AbortSpec]) -> NfaSeq {
+    for ab in aborts {
+        seq = NfaSeq::Throughout { cond: ab.cond, negated: true, seq: Box::new(seq) };
+    }
+    seq
+}
+
 fn build_cover_consequent(
     nl: &Netlist,
     leaves: &[Option<ValueId>],
@@ -1165,78 +1860,185 @@ fn build_cover_consequent(
     reached: Option<ValueId>,
     skip: u32,
     memo: &mut Lookback,
-) -> Result<(ConsequentPlan, u32), String> {
-    let full_seq = match prop_expr {
-        PropExpr::OverlappedImplication { lhs, rhs } => {
-            let (rseq, _) = as_consequent_seq(rhs)?;
-            SeqExpr::Fusion(Box::new(lhs.clone()), Box::new(rseq))
+) -> Result<(AntecedentPlan, ConsequentPlan, u32), String> {
+    let norm = norm_prop(prop_expr, false, true, true)?;
+    let (outer_aborts, body) = peel_aborts(norm);
+
+    if let NormProp::Until { hold, .. } = &body {
+        return Err(if hold.is_some() { "a cover of `until`" } else { "a cover of `s_eventually`" }.into());
+    }
+
+    // Implication in `cover property` (`lhs |-> rhs` / `lhs |=> rhs`):
+    // If there are NO outer `accept_on` aborts (only optional `reject_on`), `lhs |-> rhs` in `cover`
+    // is covered iff `lhs #-# rhs` holds! If an outer `accept_on` wraps `(lhs |-> rhs)`, evaluate
+    // `lhs` as an antecedent or `FollowedBy` depending on operator:
+    if let NormProp::Implication { overlapped, nfa_lhs, rhs, .. } = body {
+        let (inner_aborts, rhs_body) = peel_aborts(*rhs);
+        if let NormProp::Until { hold, .. } = &rhs_body {
+            return Err(if hold.is_some() { "a cover of `until`" } else { "a cover of `s_eventually`" }.into());
         }
-        PropExpr::NonOverlappedImplication { lhs, rhs } => {
-            let (rseq, _) = as_consequent_seq(rhs)?;
-            SeqExpr::Delay { range: CycleRange::exact(1), lhs: Some(Box::new(lhs.clone())), rhs: Box::new(rseq) }
+        let all_aborts: Vec<AbortSpec> = outer_aborts.iter().chain(&inner_aborts).copied().collect();
+        let has_accept = all_aborts.iter().any(|a| !a.reject);
+        if !has_accept && matches!(rhs_body, NormProp::Seq { .. }) {
+            let NormProp::Seq { seq: r_seq, .. } = rhs_body else { unreachable!() };
+            let r_guarded = wrap_abort_free(r_seq, &inner_aborts);
+            let combined_np = reduce_followed_by(
+                nl,
+                leaves,
+                overlapped,
+                nfa_lhs,
+                NormProp::Seq { seq: r_guarded, strong: true },
+                true,
+            )?;
+            let NormProp::Seq { seq: full_seq, .. } = combined_np else { unreachable!() };
+            let full_guarded = wrap_abort_free(full_seq, &outer_aborts);
+            let mut b = SeqNfaBuilder::new(nl, leaves, MAX_NFA_STATES);
+            let inj = b.pool.var(GVar::Inject)?;
+            let frag = b.build(&full_guarded, inj, 0, false)?;
+            let mut warm_start = compute_warm_start(nl, &b.leaf_tab, skip, memo);
+            if let Some(rv) = reached {
+                warm_start = warm_start.max(nl.lookback(rv, memo));
+            }
+            return Ok((
+                AntecedentPlan::Always { reached },
+                ConsequentPlan::CoverNfa {
+                    pool: b.pool,
+                    leaf_tab: b.leaf_tab,
+                    state_next: b.state_next,
+                    hit_now: frag.end_now,
+                    reached,
+                    warm_start,
+                },
+                warm_start,
+            ));
         }
-        other => {
-            let (rseq, _) = as_consequent_seq(other)?;
-            rseq
+        // General implication cover with `accept_on` or `NotSeq` consequent:
+        let mut lb = SeqNfaBuilder::new(nl, leaves, MAX_NFA_STATES);
+        let linj = lb.pool.var(GVar::Inject)?;
+        let lf_raw = lb.build(&nfa_lhs, linj, 0, false)?;
+        let ant_has_match = if overlapped {
+            lf_raw.min_nonempty_len.is_some() && lf_raw.end_now != Guard::False
+        } else {
+            lf_raw.accepts_empty || (lf_raw.min_nonempty_len.is_some() && lf_raw.end_now != Guard::False)
+        };
+        if !ant_has_match {
+            return Err("an antecedent that has no match".into());
         }
+        let guarded_lhs = wrap_abort_free(nfa_lhs, &outer_aborts);
+        let mut ab = SeqNfaBuilder::new(nl, leaves, MAX_NFA_STATES);
+        let ainj = ab.pool.var(GVar::Inject)?;
+        let af = ab.build(&guarded_lhs, ainj, 0, false)?;
+        let mut ant_warm = compute_warm_start(nl, &ab.leaf_tab, skip, memo);
+        if let Some(rv) = reached {
+            ant_warm = ant_warm.max(nl.lookback(rv, memo));
+        }
+        let min_ticks = if overlapped {
+            af.min_nonempty_len.unwrap_or(1).saturating_sub(1)
+        } else if af.accepts_empty {
+            0
+        } else {
+            af.min_nonempty_len.unwrap_or(1)
+        };
+        let pipe_abort_free: Vec<ValueId> = outer_aborts
+            .iter()
+            .map(|a| leaves.get(a.cond.0 as usize).copied().flatten().ok_or("an expression that was not lowered"))
+            .collect::<Result<_, _>>()?;
+        let (rhs_dfa, _) = compile_cover_rhs_dfa(nl, leaves, rhs_body, &all_aborts, min_ticks)?;
+        let rhs_warm = compute_warm_start(nl, &rhs_dfa.leaf_tab, skip, memo);
+        let warm = ant_warm.max(rhs_warm);
+        let ant = AntecedentPlan::Nfa {
+            pool: ab.pool,
+            leaf_tab: ab.leaf_tab,
+            state_next: ab.state_next,
+            accepts_empty: !overlapped && af.accepts_empty,
+            end_now: af.end_now,
+            reached,
+            non_overlapped: !overlapped,
+            pipe_abort_free,
+            warm_start: warm,
+        };
+        return Ok((ant, ConsequentPlan::CoverDfa(rhs_dfa), warm));
+    }
+
+    let resolved = match body {
+        NormProp::FollowedBy { overlapped, nfa_lhs, rhs } => {
+            reduce_followed_by(nl, leaves, overlapped, nfa_lhs, *rhs, true)?
+        }
+        other => other,
     };
-    // Verify consequent legality per IEEE 1800-2023 §16.12.22:
-    match prop_expr {
-        PropExpr::OverlappedImplication { lhs, rhs } | PropExpr::NonOverlappedImplication { lhs, rhs } => {
-            let overlapped = matches!(prop_expr, PropExpr::OverlappedImplication { .. });
-            let mut lb = SeqNfaBuilder::new(nl, leaves, MAX_NFA_STATES);
-            let linj = lb.pool.var(GVar::Inject)?;
-            let lf = lb.build(lhs, linj, 0, false)?;
-            let ant_has_match = if overlapped {
-                lf.min_nonempty_len.is_some() && lf.end_now != Guard::False
-            } else {
-                lf.accepts_empty || (lf.min_nonempty_len.is_some() && lf.end_now != Guard::False)
-            };
-            if !ant_has_match {
-                return Err("an antecedent that has no match".into());
-            }
-            let (rseq, _) = as_consequent_seq(rhs)?;
+
+    let has_accept = outer_aborts.iter().any(|a| !a.reject);
+    if !has_accept {
+        if let NormProp::Seq { seq, .. } = resolved {
             let mut rb = SeqNfaBuilder::new(nl, leaves, MAX_NFA_STATES);
             let rinj = rb.pool.var(GVar::Inject)?;
-            let rf = rb.build(&rseq, rinj, 0, false)?;
+            let rf = rb.build(&seq, rinj, 0, false)?;
             if rf.accepts_empty {
                 return Err("a sequence that admits an empty match, used as a property".into());
             }
             if rf.min_nonempty_len.is_none() || rf.end_now == Guard::False {
                 return Err("a sequence that has no match, used as a property".into());
             }
-        }
-        _ => {
-            let mut rb = SeqNfaBuilder::new(nl, leaves, MAX_NFA_STATES);
-            let rinj = rb.pool.var(GVar::Inject)?;
-            let rf = rb.build(&full_seq, rinj, 0, false)?;
-            if rf.accepts_empty {
-                return Err("a sequence that admits an empty match, used as a property".into());
+            let guarded = wrap_abort_free(seq, &outer_aborts);
+            let mut b = SeqNfaBuilder::new(nl, leaves, MAX_NFA_STATES);
+            let inj = b.pool.var(GVar::Inject)?;
+            let frag = b.build(&guarded, inj, 0, false)?;
+            let mut warm_start = compute_warm_start(nl, &b.leaf_tab, skip, memo);
+            if let Some(rv) = reached {
+                warm_start = warm_start.max(nl.lookback(rv, memo));
             }
-            if rf.min_nonempty_len.is_none() || rf.end_now == Guard::False {
-                return Err("a sequence that has no match, used as a property".into());
-            }
+            return Ok((
+                AntecedentPlan::Always { reached },
+                ConsequentPlan::CoverNfa {
+                    pool: b.pool,
+                    leaf_tab: b.leaf_tab,
+                    state_next: b.state_next,
+                    hit_now: frag.end_now,
+                    reached,
+                    warm_start,
+                },
+                warm_start,
+            ));
         }
     }
 
-    let mut b = SeqNfaBuilder::new(nl, leaves, MAX_NFA_STATES);
-    let inj = b.pool.var(GVar::Inject)?;
-    let frag = b.build(&full_seq, inj, 0, false)?;
-    let mut warm_start = compute_warm_start(nl, &b.leaf_tab, skip, memo);
+    let (dfa, _) = compile_cover_rhs_dfa(nl, leaves, resolved, &outer_aborts, 0)?;
+    let mut warm_start = compute_warm_start(nl, &dfa.leaf_tab, skip, memo);
     if let Some(rv) = reached {
         warm_start = warm_start.max(nl.lookback(rv, memo));
     }
-    Ok((
-        ConsequentPlan::CoverNfa {
-            pool: b.pool,
-            leaf_tab: b.leaf_tab,
-            state_next: b.state_next,
-            hit_now: frag.end_now,
-            reached,
-            warm_start,
-        },
-        warm_start,
-    ))
+    Ok((AntecedentPlan::Always { reached }, ConsequentPlan::CoverDfa(dfa), warm_start))
+}
+
+fn compile_cover_rhs_dfa(
+    nl: &Netlist,
+    leaves: &[Option<ValueId>],
+    body: NormProp,
+    aborts: &[AbortSpec],
+    min_ticks: u32,
+) -> Result<(ConsequentDfa, u32), String> {
+    let (seq, mode) = match body {
+        NormProp::Seq { seq, strong } => (seq, DfaMode::Pos { strong }),
+        NormProp::NotSeq { seq, negated_weak } => {
+            (seq, if negated_weak { DfaMode::NegWeak } else { DfaMode::NegStrong })
+        }
+        NormProp::FollowedBy { overlapped, nfa_lhs, rhs } => {
+            let red = reduce_followed_by(nl, leaves, overlapped, nfa_lhs, *rhs, true)?;
+            return compile_cover_rhs_dfa(nl, leaves, red, aborts, min_ticks);
+        }
+        NormProp::Until { hold, .. } => {
+            return Err(if hold.is_some() { "a cover of `until`" } else { "a cover of `s_eventually`" }.into());
+        }
+        _ => return Err("unsupported operator in `cover property`".into()),
+    };
+    let (dfa, min_len) = compile_consequent_dfa(nl, leaves, &seq, mode, aborts, min_ticks)?;
+    if dfa.init_matched == Guard::False
+        && dfa.state_matched.iter().all(|&g| g == Guard::False)
+        && dfa_has_cycle(&dfa.init_to, &dfa.state_to)
+    {
+        return Err("a cover of an unbounded safety invariant with no finite witness".into());
+    }
+    Ok((dfa, min_len))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1255,28 +2057,7 @@ pub(crate) fn plan_automaton(
     let eff_skip = skip.max(disable_lb);
 
     if prop.kind == PropKind::Cover {
-        if matches!(
-            prop.expr,
-            PropExpr::Until { .. } | PropExpr::OverlappedImplication { .. } | PropExpr::NonOverlappedImplication { .. }
-        ) {
-            if let PropExpr::Until { .. } = prop.expr {
-                return Err("a cover of `until`".into());
-            }
-            if let PropExpr::OverlappedImplication { rhs, .. } | PropExpr::NonOverlappedImplication { rhs, .. } =
-                &prop.expr
-            {
-                if matches!(**rhs, PropExpr::Until { .. }) {
-                    return Err("a cover of `until`".into());
-                }
-                if matches!(**rhs, PropExpr::Eventually { strong: true, .. }) {
-                    return Err("a cover of `s_eventually`".into());
-                }
-            }
-        }
-        if matches!(prop.expr, PropExpr::Eventually { strong: true, .. }) {
-            return Err("a cover of `s_eventually`".into());
-        }
-        let (cover_plan, warm) = build_cover_consequent(nl, leaves, &prop.expr, reached, eff_skip, memo)?;
+        let (ant, cover_plan, warm) = build_cover_consequent(nl, leaves, &prop.expr, reached, eff_skip, memo)?;
         return Ok(Plan {
             kind: PropKind::Cover,
             loc: prop.loc,
@@ -1291,28 +2072,28 @@ pub(crate) fn plan_automaton(
             warm,
             until: None,
             automaton: Some(AutomatonPlan {
-                antecedent: AntecedentPlan::Always { reached },
+                antecedent: ant,
                 consequent: cover_plan,
+                ant_reject: None,
                 witness_cover: None,
             }),
         });
     }
 
     // `Assert`, `Assume`, or `Restrict`:
-    let (ant_opt, rhs_expr) = match &prop.expr {
-        PropExpr::OverlappedImplication { lhs, rhs } => (Some((lhs, true)), rhs.as_ref()),
-        PropExpr::NonOverlappedImplication { lhs, rhs } => (Some((lhs, false)), rhs.as_ref()),
-        other => (None, other),
-    };
+    let norm = norm_prop(&prop.expr, false, false, true)?;
+    let (outer_aborts, top_body) = peel_aborts(norm);
 
-    let (antecedent, ant_min_ticks, mut warm_max) = match ant_opt {
-        None => {
-            let w = eff_skip.max(reached.map_or(0, |r| nl.lookback(r, memo)));
-            (AntecedentPlan::Always { reached }, 0u32, w)
-        }
-        Some((lhs, overlapped)) => {
-            if !seq_needs_automaton(lhs) {
-                // Bounded antecedent: reuse `Matcher` so `first_match`, `intersect`, `and`, `within` work!
+    let mut ant_reject: Option<(ConsequentDfa, Option<ValueId>)> = None;
+    let mut has_ant = false;
+    let (antecedent, ant_min_ticks, mut warm_max, eff_aborts, rhs_norm) = match top_body {
+        NormProp::Implication { overlapped, orig_lhs, nfa_lhs, rhs } => {
+            has_ant = true;
+            let (inner_aborts, rhs_inner) = peel_aborts(*rhs);
+            let combined_aborts: Vec<AbortSpec> = outer_aborts.iter().chain(&inner_aborts).copied().collect();
+
+            if outer_aborts.is_empty() && orig_lhs.as_ref().is_some_and(|s| !seq_needs_automaton(s)) {
+                let lhs = orig_lhs.as_ref().unwrap();
                 let mut m = Matcher::new(leaves);
                 let r_cond = match reached {
                     Some(v) => m.terms.leaf(0, v)?,
@@ -1354,34 +2135,62 @@ pub(crate) fn plan_automaton(
                         terms: terms.nodes,
                         two_state: terms.negated,
                         starts: planned,
-                        non_overlapped: false, // `at` already accounts for `!overlapped`!
+                        non_overlapped: false,
                     },
                     min_at,
                     w_max,
+                    combined_aborts,
+                    rhs_inner,
                 )
             } else {
-                let mut b = SeqNfaBuilder::new(nl, leaves, MAX_NFA_STATES);
-                let inj = b.pool.var(GVar::Inject)?;
-                let frag = b.build(lhs, inj, 0, false)?;
+                // Verify raw `nfa_lhs` has at least one match:
+                let mut check_b = SeqNfaBuilder::new(nl, leaves, MAX_NFA_STATES);
+                let cinj = check_b.pool.var(GVar::Inject)?;
+                let cfrag = check_b.build(&nfa_lhs, cinj, 0, false)?;
                 let ant_has_match = if overlapped {
-                    frag.min_nonempty_len.is_some() && frag.end_now != Guard::False
+                    cfrag.min_nonempty_len.is_some() && cfrag.end_now != Guard::False
                 } else {
-                    frag.accepts_empty || (frag.min_nonempty_len.is_some() && frag.end_now != Guard::False)
+                    cfrag.accepts_empty || (cfrag.min_nonempty_len.is_some() && cfrag.end_now != Guard::False)
                 };
                 if !ant_has_match {
                     return Err("an antecedent that has no match".into());
                 }
+
+                // If any outer abort is a `reject_on` / `sync_reject_on`, build the in-flight antecedent
+                // rejection DFA so `c` rejects immediately at `attempt_start` or while `lhs` is completable!
+                if outer_aborts.iter().any(|a| a.reject) {
+                    let (rej_dfa, _) =
+                        compile_consequent_dfa(nl, leaves, &nfa_lhs, DfaMode::AntReject, &outer_aborts, 0)?;
+                    ant_reject = Some((rej_dfa, reached));
+                }
+
+                let guarded_lhs = wrap_abort_free(nfa_lhs, &outer_aborts);
+                let mut b = SeqNfaBuilder::new(nl, leaves, MAX_NFA_STATES);
+                let inj = b.pool.var(GVar::Inject)?;
+                let frag = b.build(&guarded_lhs, inj, 0, false)?;
                 let mut w = compute_warm_start(nl, &b.leaf_tab, eff_skip, memo);
                 if let Some(rv) = reached {
                     w = w.max(nl.lookback(rv, memo));
                 }
+                if let Some((ref r_dfa, _)) = ant_reject {
+                    w = w.max(compute_warm_start(nl, &r_dfa.leaf_tab, eff_skip, memo));
+                }
                 let min_ticks = if overlapped {
-                    frag.min_nonempty_len.unwrap_or(1).saturating_sub(1)
-                } else if frag.accepts_empty {
+                    cfrag.min_nonempty_len.unwrap_or(1).saturating_sub(1)
+                } else if cfrag.accepts_empty {
                     0
                 } else {
-                    frag.min_nonempty_len.unwrap_or(1)
+                    cfrag.min_nonempty_len.unwrap_or(1)
                 };
+                // For `|=>`, only outer `accept_on` suppresses `ant_pipe`; outer `reject_on` lets `rhs` start
+                // so `rhs`'s own `outer_aborts` immediately rejects on that tick!
+                let pipe_abort_free: Vec<ValueId> = outer_aborts
+                    .iter()
+                    .filter(|a| !a.reject)
+                    .map(|a| {
+                        leaves.get(a.cond.0 as usize).copied().flatten().ok_or("an expression that was not lowered")
+                    })
+                    .collect::<Result<_, _>>()?;
                 (
                     AntecedentPlan::Nfa {
                         pool: b.pool,
@@ -1391,30 +2200,143 @@ pub(crate) fn plan_automaton(
                         end_now: frag.end_now,
                         reached,
                         non_overlapped: !overlapped,
+                        pipe_abort_free,
                         warm_start: w,
                     },
                     min_ticks,
                     w,
+                    combined_aborts,
+                    rhs_inner,
                 )
             }
         }
+        other => {
+            let w = eff_skip.max(reached.map_or(0, |r| nl.lookback(r, memo)));
+            (AntecedentPlan::Always { reached }, 0u32, w, outer_aborts, other)
+        }
     };
 
-    // Check if consequent is `Until` (`b until c`, `s_eventually bool` after unbounded NFA antecedent):
-    if let PropExpr::Until { strong, overlapping, lhs, rhs } = rhs_expr {
-        let not_lowered = || "an expression that was not lowered".to_string();
-        let leaf = |e: ExprId| leaves.get(e.0 as usize).copied().flatten();
-        let boolean = |p: &PropExpr| match as_seq(p).as_deref() {
-            Ok(SeqExpr::Bool(e)) => Ok(*e),
-            _ => Err("`until` between properties that are not single booleans".to_string()),
-        };
-        let hold = leaf(boolean(lhs)?).ok_or_else(not_lowered)?;
-        let release = leaf(boolean(rhs)?).ok_or_else(not_lowered)?;
-        let rhs_lb = nl.lookback(hold, memo).max(nl.lookback(release, memo)).saturating_sub(ant_min_ticks);
-        warm_max = warm_max.max(rhs_lb);
+    // Unwrap any inner aborts on `rhs_norm` (in case `rhs_norm` wasn't an `Implication` above):
+    let (extra_aborts, rhs_core) = peel_aborts(rhs_norm);
+    let mut all_aborts = eff_aborts;
+    all_aborts.extend(extra_aborts);
+
+    // Handle 1-tick boolean `FollowedBy` before `Until` (e.g., `not (a |-> b until c)` = `a #-# ((!c) s_until_with ...)`):
+    if let NormProp::FollowedBy { overlapped: true, ref nfa_lhs, ref rhs } = rhs_core {
+        if matches!(nfa_lhs, NfaSeq::Bool(_) | NfaSeq::NotBool(_)) && matches!(**rhs, NormProp::Until { .. }) {
+            let NormProp::Until { strong, overlapping, ref hold, ref release } = **rhs else { unreachable!() };
+            let prefix_bf = match *nfa_lhs {
+                NfaSeq::Bool(e) => BoolFormula::Leaf(e),
+                NfaSeq::NotBool(e) => BoolFormula::Not(Box::new(BoolFormula::Leaf(e))),
+                _ => unreachable!(),
+            };
+            // `prefix #-# (h until r)`: at start tick `prefix` must hold; we enforce `prefix` at `start`
+            // via an `AntReject`-style 0-state check (`reject_on(!prefix)` on `start` only), or by
+            // building a 1-tick `ant_reject` when `ant_reject.is_none()`!
+            if ant_reject.is_none() && matches!(antecedent, AntecedentPlan::Always { .. }) {
+                let mut rej_aborts = all_aborts.clone();
+                let _ = prefix_bf;
+                // Build `NotWeak(nfa_lhs)`? Even simpler: `nfa_lhs` as `Pos` 1-tick `ConsequentDfa`!
+                // On `nfa_lhs` (`Bool` or `NotBool`), `num_states == 0`, `init_dead` fires iff `nfa_lhs` fails
+                // at `start` (respecting `all_aborts`!), so `ant_reject = Some((prefix_dfa, reached))`!
+                let (prefix_dfa, _) = compile_consequent_dfa(
+                    nl,
+                    leaves,
+                    nfa_lhs,
+                    DfaMode::Pos { strong: false },
+                    &rej_aborts,
+                    ant_min_ticks,
+                )?;
+                rej_aborts.clear();
+                warm_max = warm_max.max(compute_warm_start(nl, &prefix_dfa.leaf_tab, eff_skip, memo));
+                let hold_vf = hold.as_ref().map(|h| ValFormula::from_bool_formula(h, leaves)).transpose()?;
+                let rel_vf = ValFormula::from_bool_formula(release, leaves)?;
+                let val_aborts: Vec<ValAbortSpec> = all_aborts
+                    .iter()
+                    .map(|a| {
+                        let v = leaves
+                            .get(a.cond.0 as usize)
+                            .copied()
+                            .flatten()
+                            .ok_or_else(|| "an expression that was not lowered".to_string())?;
+                        Ok(ValAbortSpec { reject: a.reject, val: v })
+                    })
+                    .collect::<Result<_, String>>()?;
+                let mut rhs_lb =
+                    hold_vf.as_ref().map_or(0, |h| h.max_lookback(nl, memo)).max(rel_vf.max_lookback(nl, memo));
+                for va in &val_aborts {
+                    rhs_lb = rhs_lb.max(nl.lookback(va.val, memo));
+                }
+                warm_max = warm_max.max(rhs_lb.saturating_sub(ant_min_ticks));
+                return Ok(Plan {
+                    kind: prop.kind,
+                    loc: prop.loc,
+                    clock,
+                    terms: Vec::new(),
+                    live: Vec::new(),
+                    two_state: false,
+                    enable: Cond::True,
+                    expr: Cond::True,
+                    disable,
+                    span: 0,
+                    warm: warm_max,
+                    until: None,
+                    automaton: Some(AutomatonPlan {
+                        antecedent,
+                        consequent: ConsequentPlan::Until {
+                            hold: hold_vf,
+                            release: rel_vf,
+                            aborts: val_aborts,
+                            with: overlapping,
+                            strong,
+                        },
+                        ant_reject: Some((prefix_dfa, reached)),
+                        witness_cover: None,
+                    }),
+                });
+            }
+        }
+    }
+
+    let resolved_rhs = match rhs_core {
+        NormProp::FollowedBy { overlapped, nfa_lhs, rhs } => {
+            reduce_followed_by(nl, leaves, overlapped, nfa_lhs, *rhs, false)?
+        }
+        other => other,
+    };
+
+    // Check if consequent is `Until` (`b until c`, `s_eventually bool`, or their negations/aborts):
+    if let NormProp::Until { strong, overlapping, hold, release } = resolved_rhs {
+        let hold_vf = hold.as_ref().map(|h| ValFormula::from_bool_formula(h, leaves)).transpose()?;
+        let rel_vf = ValFormula::from_bool_formula(&release, leaves)?;
+        let val_aborts: Vec<ValAbortSpec> = all_aborts
+            .iter()
+            .map(|a| {
+                let v = leaves
+                    .get(a.cond.0 as usize)
+                    .copied()
+                    .flatten()
+                    .ok_or_else(|| "an expression that was not lowered".to_string())?;
+                Ok(ValAbortSpec { reject: a.reject, val: v })
+            })
+            .collect::<Result<_, String>>()?;
+        let mut rhs_lb = hold_vf.as_ref().map_or(0, |h| h.max_lookback(nl, memo)).max(rel_vf.max_lookback(nl, memo));
+        for va in &val_aborts {
+            rhs_lb = rhs_lb.max(nl.lookback(va.val, memo));
+        }
+        let adj_lb = rhs_lb.saturating_sub(ant_min_ticks);
+        warm_max = warm_max.max(adj_lb);
         let mut ant = antecedent;
-        if let AntecedentPlan::Nfa { warm_start, .. } = &mut ant {
-            *warm_start = (*warm_start).max(rhs_lb);
+        match &mut ant {
+            AntecedentPlan::Bounded { starts, .. } => {
+                for (_, _, first) in starts {
+                    *first = (*first).max(adj_lb);
+                }
+            }
+            AntecedentPlan::Nfa { warm_start, .. } => {
+                *warm_start = (*warm_start).max(adj_lb);
+            }
+            AntecedentPlan::Always { .. } => {}
         }
         return Ok(Plan {
             kind: prop.kind,
@@ -1431,14 +2353,28 @@ pub(crate) fn plan_automaton(
             until: None,
             automaton: Some(AutomatonPlan {
                 antecedent: ant,
-                consequent: ConsequentPlan::Until { hold: Some(hold), release, with: *overlapping, strong: *strong },
+                consequent: ConsequentPlan::Until {
+                    hold: hold_vf,
+                    release: rel_vf,
+                    aborts: val_aborts,
+                    with: overlapping,
+                    strong,
+                },
+                ant_reject,
                 witness_cover: None,
             }),
         });
     }
 
-    let (rhs_seq, strong) = as_consequent_seq(rhs_expr)?;
-    let (dfa, _) = compile_consequent_dfa(nl, leaves, &rhs_seq, strong, ant_min_ticks)?;
+    let (rhs_seq, dfa_mode) = match resolved_rhs {
+        NormProp::Seq { seq, strong } => (seq, DfaMode::Pos { strong }),
+        NormProp::NotSeq { seq, negated_weak } => {
+            (seq, if negated_weak { DfaMode::NegWeak } else { DfaMode::NegStrong })
+        }
+        _ => return Err("unsupported property operator".into()),
+    };
+
+    let (dfa, _) = compile_consequent_dfa(nl, leaves, &rhs_seq, dfa_mode, &all_aborts, ant_min_ticks)?;
     let rhs_warm = compute_warm_start(nl, &dfa.leaf_tab, eff_skip, memo);
     warm_max = warm_max.max(rhs_warm);
     let mut ant = antecedent;
@@ -1454,14 +2390,19 @@ pub(crate) fn plan_automaton(
         AntecedentPlan::Always { .. } => {}
     }
 
-    let witness_cover = if prop.kind == PropKind::Assert && !strong && (ant_opt.is_some() || reached.is_some()) {
-        build_cover_consequent(nl, leaves, &prop.expr, reached, eff_skip, memo).ok().map(|(cp, w)| {
-            warm_max = warm_max.max(w);
-            Box::new(cp)
-        })
-    } else {
-        None
-    };
+    let witness_cover =
+        if prop.kind == PropKind::Assert && !dfa.strong && ant_reject.is_none() && (has_ant || reached.is_some()) {
+            build_cover_consequent(nl, leaves, &prop.expr, reached, eff_skip, memo).ok().and_then(|(c_ant, cp, w)| {
+                if matches!(c_ant, AntecedentPlan::Always { .. }) {
+                    warm_max = warm_max.max(w);
+                    Some(Box::new(cp))
+                } else {
+                    None
+                }
+            })
+        } else {
+            None
+        };
 
     Ok(Plan {
         kind: prop.kind,
@@ -1476,7 +2417,12 @@ pub(crate) fn plan_automaton(
         span: 0,
         warm: warm_max,
         until: None,
-        automaton: Some(AutomatonPlan { antecedent: ant, consequent: ConsequentPlan::Dfa(dfa), witness_cover }),
+        automaton: Some(AutomatonPlan {
+            antecedent: ant,
+            consequent: ConsequentPlan::Dfa(dfa),
+            ant_reject,
+            witness_cover,
+        }),
     })
 }
 
@@ -1514,6 +2460,7 @@ pub(crate) fn related_automaton_cover(p: &Plan, witness: bool) -> Option<Plan> {
             automaton: Some(AutomatonPlan {
                 antecedent: AntecedentPlan::Always { reached: None },
                 consequent: cov,
+                ant_reject: None,
                 witness_cover: None,
             }),
         })
@@ -1534,6 +2481,7 @@ pub(crate) fn related_automaton_cover(p: &Plan, witness: bool) -> Option<Plan> {
             automaton: Some(AutomatonPlan {
                 antecedent: auto.antecedent.clone(),
                 consequent: ConsequentPlan::PreconditionCover,
+                ant_reject: None,
                 witness_cover: None,
             }),
         })
@@ -1730,6 +2678,7 @@ fn emit_antecedent_start(
             end_now,
             reached,
             non_overlapped,
+            pipe_abort_free,
             warm_start,
         } => {
             let mut inj_opt = warm_gate(nl, *warm_start, ticks, loc);
@@ -1770,8 +2719,21 @@ fn emit_antecedent_start(
                     Some((_, off)) => nl.sva_op(NetOp::LogAnd, vec![sq, off], 1, loc),
                     None => sq,
                 };
+                for &ab_v in pipe_abort_free {
+                    let ab_raw = nl.sva_bool(ab_v, loc);
+                    let ab_b = nl.sva_two_state(ab_raw, loc);
+                    let not_ab = nl.sva_op(NetOp::LogNot, vec![ab_b], 1, loc);
+                    delayed = nl.sva_op(NetOp::LogAnd, vec![delayed, not_ab], 1, loc);
+                }
                 if *accepts_empty {
-                    delayed = nl.sva_op(NetOp::LogOr, vec![delayed, inject], 1, loc);
+                    let mut emp = inject;
+                    for &ab_v in pipe_abort_free {
+                        let ab_raw = nl.sva_bool(ab_v, loc);
+                        let ab_b = nl.sva_two_state(ab_raw, loc);
+                        let not_ab = nl.sva_op(NetOp::LogNot, vec![ab_b], 1, loc);
+                        emp = nl.sva_op(NetOp::LogAnd, vec![emp, not_ab], 1, loc);
+                    }
+                    delayed = nl.sva_op(NetOp::LogOr, vec![delayed, emp], 1, loc);
                 }
                 delayed
             } else {
@@ -1779,6 +2741,114 @@ fn emit_antecedent_start(
             }
         }
     }
+}
+
+#[allow(clippy::type_complexity)]
+fn emit_dfa_safety(
+    nl: &mut Netlist,
+    p: &Plan,
+    dfa: &ConsequentDfa,
+    start: ValueId,
+    off_now: Option<(ValueId, ValueId)>,
+    state_prefix: &str,
+) -> (ValueId, ValueId, ValueId, Vec<ValueId>, Vec<Vec<ValueId>>, Vec<StateId>) {
+    let loc = p.loc;
+    let (pos_leaves, neg_leaves) = prepare_leaves(nl, &dfa.leaf_tab, loc);
+    let dummy = nl.sva_const(1, 0, loc);
+    let env = GuardLowerEnv { inject: dummy, nfa_states: &[], pos_leaves: &pos_leaves, neg_leaves: &neg_leaves };
+
+    let mut dfa_ids = Vec::with_capacity(dfa.num_states);
+    let mut dfa_outs = Vec::with_capacity(dfa.num_states);
+    for d in 0..dfa.num_states {
+        let (sid, sq) = alloc_sva_bit_state(nl, format!("{state_prefix}_{d}"), p.clock, loc);
+        dfa_ids.push(sid);
+        dfa_outs.push(sq);
+    }
+
+    let init_dead_v = emit_guard(nl, &dfa.pool, dfa.init_dead, &env, loc);
+    let mut init_to_v = Vec::with_capacity(dfa.num_states);
+    for d in 0..dfa.num_states {
+        init_to_v.push(emit_guard(nl, &dfa.pool, dfa.init_to[d], &env, loc));
+    }
+    let mut state_dead_v = Vec::with_capacity(dfa.num_states);
+    let mut state_to_v = Vec::with_capacity(dfa.num_states);
+    for d in 0..dfa.num_states {
+        state_dead_v.push(emit_guard(nl, &dfa.pool, dfa.state_dead[d], &env, loc));
+        let mut row = Vec::with_capacity(dfa.num_states);
+        for d2 in 0..dfa.num_states {
+            row.push(emit_guard(nl, &dfa.pool, dfa.state_to[d][d2], &env, loc));
+        }
+        state_to_v.push(row);
+    }
+
+    for d2 in 0..dfa.num_states {
+        let mut acc = nl.sva_op(NetOp::LogAnd, vec![start, init_to_v[d2]], 1, loc);
+        for d in 0..dfa.num_states {
+            if dfa.state_to[d][d2] != Guard::False {
+                let term = nl.sva_op(NetOp::LogAnd, vec![dfa_outs[d], state_to_v[d][d2]], 1, loc);
+                acc = nl.sva_op(NetOp::LogOr, vec![acc, term], 1, loc);
+            }
+        }
+        if let Some((_, off)) = off_now {
+            acc = nl.sva_op(NetOp::LogAnd, vec![acc, off], 1, loc);
+        }
+        nl.states[dfa_ids[d2].0 as usize].next = acc;
+    }
+
+    let mut any_active = start;
+    for &sq in &dfa_outs {
+        any_active = nl.sva_op(NetOp::LogOr, vec![any_active, sq], 1, loc);
+    }
+    if let Some((_, off)) = off_now {
+        any_active = nl.sva_op(NetOp::LogAnd, vec![any_active, off], 1, loc);
+    }
+
+    let mut fail = nl.sva_op(NetOp::LogAnd, vec![start, init_dead_v], 1, loc);
+    for d in 0..dfa.num_states {
+        if dfa.state_dead[d] != Guard::False {
+            let f_d = nl.sva_op(NetOp::LogAnd, vec![dfa_outs[d], state_dead_v[d]], 1, loc);
+            fail = nl.sva_op(NetOp::LogOr, vec![fail, f_d], 1, loc);
+        }
+    }
+    if let Some((_, off)) = off_now {
+        fail = nl.sva_op(NetOp::LogAnd, vec![fail, off], 1, loc);
+    }
+    let ok_expr = nl.sva_op(NetOp::LogNot, vec![fail], 1, loc);
+    (any_active, fail, ok_expr, init_to_v, state_to_v, dfa_ids)
+}
+
+fn emit_abort_signals(nl: &mut Netlist, aborts: &[ValAbortSpec], loc: Loc) -> (Option<ValueId>, Option<ValueId>) {
+    if aborts.is_empty() {
+        return (None, None);
+    }
+    let mut accept_acc: Option<ValueId> = None;
+    let mut reject_acc: Option<ValueId> = None;
+    let mut none_yet: Option<ValueId> = None;
+    for ab in aborts {
+        let c_raw = nl.sva_bool(ab.val, loc);
+        let c = nl.sva_two_state(c_raw, loc);
+        let trig = match none_yet {
+            None => c,
+            Some(ny) => nl.sva_op(NetOp::LogAnd, vec![ny, c], 1, loc),
+        };
+        if ab.reject {
+            reject_acc = Some(match reject_acc {
+                None => trig,
+                Some(prev) => nl.sva_op(NetOp::LogOr, vec![prev, trig], 1, loc),
+            });
+        } else {
+            accept_acc = Some(match accept_acc {
+                None => trig,
+                Some(prev) => nl.sva_op(NetOp::LogOr, vec![prev, trig], 1, loc),
+            });
+        }
+        let not_c = nl.sva_op(NetOp::LogNot, vec![c], 1, loc);
+        none_yet = Some(match none_yet {
+            None => not_c,
+            Some(ny) => nl.sva_op(NetOp::LogAnd, vec![ny, not_c], 1, loc),
+        });
+    }
+    (accept_acc, reject_acc)
 }
 
 pub(crate) fn emit_automaton(
@@ -1796,7 +2866,7 @@ pub(crate) fn emit_automaton(
         (d2, nl.sva_op(NetOp::LogNot, vec![d2], 1, loc))
     });
 
-    match &auto.consequent {
+    let base_res = match &auto.consequent {
         ConsequentPlan::CoverNfa { pool, leaf_tab, state_next, hit_now, reached, warm_start } => {
             let mut inj_opt = warm_gate(nl, *warm_start, ticks, loc);
             if let Some(rv) = *reached {
@@ -1830,73 +2900,36 @@ pub(crate) fn emit_automaton(
                 hit = nl.sva_op(NetOp::LogAnd, vec![hit, off], 1, loc);
             }
             let one = nl.sva_const(1, 1, loc);
-            (Monitor::Check(one, hit), CheckKind::Cover)
+            return (Monitor::Check(one, hit), CheckKind::Cover);
         }
-        ConsequentPlan::PreconditionCover => {
-            let start = emit_antecedent_start(nl, p, &auto.antecedent, off_now, ticks, &prefix);
-            let one = nl.sva_const(1, 1, loc);
-            (Monitor::Check(one, start), CheckKind::Cover)
-        }
-        ConsequentPlan::Until { hold, release, with, strong } => {
-            let start = emit_antecedent_start(nl, p, &auto.antecedent, off_now, ticks, &prefix);
-            let (pending_id, pending) = alloc_sva_bit_state(nl, format!("{prefix}_until"), p.clock, loc);
-            let mut active = nl.sva_op(NetOp::LogOr, vec![start, pending], 1, loc);
-            if let Some((_, off)) = off_now {
-                active = nl.sva_op(NetOp::LogAnd, vec![active, off], 1, loc);
-            }
-            let rel_raw = nl.sva_bool(*release, loc);
-            let rel_b = nl.sva_two_state(rel_raw, loc);
-            let ended = nl.sva_op(NetOp::LogNot, vec![rel_b], 1, loc);
-            let next = nl.sva_op(NetOp::LogAnd, vec![active, ended], 1, loc);
-            nl.states[pending_id.0 as usize].next = next;
-            let ck = if p.kind == PropKind::Assert { CheckKind::Assert } else { CheckKind::Assume };
-            let Some(h_val) = *hold else {
-                let off = off_now.map(|(_, o)| o);
-                return (Monitor::Liveness(nl.sva_liveness(p, pending, active, ended, off, nth)), ck);
-            };
-            let hold_b = nl.sva_bool(h_val, loc);
-            let expr = if *with { hold_b } else { nl.sva_op(NetOp::LogOr, vec![hold_b, rel_b], 1, loc) };
-            if *strong {
-                let off = off_now.map(|(_, o)| o);
-                let sig = nl.sva_liveness(p, pending, active, ended, off, nth);
-                (Monitor::Both(active, expr, sig), ck)
-            } else {
-                (Monitor::Check(active, expr), ck)
-            }
-        }
-        ConsequentPlan::Dfa(dfa) => {
+        ConsequentPlan::CoverDfa(dfa) => {
             let start = emit_antecedent_start(nl, p, &auto.antecedent, off_now, ticks, &prefix);
             let (pos_leaves, neg_leaves) = prepare_leaves(nl, &dfa.leaf_tab, loc);
             let dummy = nl.sva_const(1, 0, loc);
             let env =
                 GuardLowerEnv { inject: dummy, nfa_states: &[], pos_leaves: &pos_leaves, neg_leaves: &neg_leaves };
-
             let mut dfa_ids = Vec::with_capacity(dfa.num_states);
             let mut dfa_outs = Vec::with_capacity(dfa.num_states);
             for d in 0..dfa.num_states {
-                let (sid, sq) = alloc_sva_bit_state(nl, format!("{prefix}_dfa_{d}"), p.clock, loc);
+                let (sid, sq) = alloc_sva_bit_state(nl, format!("{prefix}_cov_dfa_{d}"), p.clock, loc);
                 dfa_ids.push(sid);
                 dfa_outs.push(sq);
             }
-
-            // Pre-emit transition guards once:
-            let init_dead_v = emit_guard(nl, &dfa.pool, dfa.init_dead, &env, loc);
+            let init_matched_v = emit_guard(nl, &dfa.pool, dfa.init_matched, &env, loc);
             let mut init_to_v = Vec::with_capacity(dfa.num_states);
             for d in 0..dfa.num_states {
                 init_to_v.push(emit_guard(nl, &dfa.pool, dfa.init_to[d], &env, loc));
             }
-            let mut state_dead_v = Vec::with_capacity(dfa.num_states);
+            let mut state_matched_v = Vec::with_capacity(dfa.num_states);
             let mut state_to_v = Vec::with_capacity(dfa.num_states);
             for d in 0..dfa.num_states {
-                state_dead_v.push(emit_guard(nl, &dfa.pool, dfa.state_dead[d], &env, loc));
+                state_matched_v.push(emit_guard(nl, &dfa.pool, dfa.state_matched[d], &env, loc));
                 let mut row = Vec::with_capacity(dfa.num_states);
                 for d2 in 0..dfa.num_states {
                     row.push(emit_guard(nl, &dfa.pool, dfa.state_to[d][d2], &env, loc));
                 }
                 state_to_v.push(row);
             }
-
-            // Wire DFA state `next`s:
             for d2 in 0..dfa.num_states {
                 let mut acc = nl.sva_op(NetOp::LogAnd, vec![start, init_to_v[d2]], 1, loc);
                 for d in 0..dfa.num_states {
@@ -1910,52 +2943,153 @@ pub(crate) fn emit_automaton(
                 }
                 nl.states[dfa_ids[d2].0 as usize].next = acc;
             }
-
-            // Safety enable and failure expression:
-            let mut any_active = start;
-            for &sq in &dfa_outs {
-                any_active = nl.sva_op(NetOp::LogOr, vec![any_active, sq], 1, loc);
-            }
-            if let Some((_, off)) = off_now {
-                any_active = nl.sva_op(NetOp::LogAnd, vec![any_active, off], 1, loc);
-            }
-
-            let mut fail = nl.sva_op(NetOp::LogAnd, vec![start, init_dead_v], 1, loc);
+            let mut hit = nl.sva_op(NetOp::LogAnd, vec![start, init_matched_v], 1, loc);
             for d in 0..dfa.num_states {
-                if dfa.state_dead[d] != Guard::False {
-                    let f_d = nl.sva_op(NetOp::LogAnd, vec![dfa_outs[d], state_dead_v[d]], 1, loc);
-                    fail = nl.sva_op(NetOp::LogOr, vec![fail, f_d], 1, loc);
+                if dfa.state_matched[d] != Guard::False {
+                    let h_d = nl.sva_op(NetOp::LogAnd, vec![dfa_outs[d], state_matched_v[d]], 1, loc);
+                    hit = nl.sva_op(NetOp::LogOr, vec![hit, h_d], 1, loc);
                 }
             }
             if let Some((_, off)) = off_now {
-                fail = nl.sva_op(NetOp::LogAnd, vec![fail, off], 1, loc);
+                hit = nl.sva_op(NetOp::LogAnd, vec![hit, off], 1, loc);
             }
-            let ok_expr = nl.sva_op(NetOp::LogNot, vec![fail], 1, loc);
-
+            let one = nl.sva_const(1, 1, loc);
+            return (Monitor::Check(one, hit), CheckKind::Cover);
+        }
+        ConsequentPlan::PreconditionCover => {
+            let start = emit_antecedent_start(nl, p, &auto.antecedent, off_now, ticks, &prefix);
+            let one = nl.sva_const(1, 1, loc);
+            return (Monitor::Check(one, start), CheckKind::Cover);
+        }
+        ConsequentPlan::Until { hold, release, aborts, with, strong } => {
+            let start = emit_antecedent_start(nl, p, &auto.antecedent, off_now, ticks, &prefix);
+            let (pending_id, pending) = alloc_sva_bit_state(nl, format!("{prefix}_until"), p.clock, loc);
+            let mut active = nl.sva_op(NetOp::LogOr, vec![start, pending], 1, loc);
+            if let Some((_, off)) = off_now {
+                active = nl.sva_op(NetOp::LogAnd, vec![active, off], 1, loc);
+            }
+            let raw_rel = release.emit(nl, loc);
+            let (acc_early, rej_early) = emit_abort_signals(nl, aborts, loc);
+            let mut rel_b = match rej_early {
+                None => raw_rel,
+                Some(rej) => {
+                    let not_rej = nl.sva_op(NetOp::LogNot, vec![rej], 1, loc);
+                    nl.sva_op(NetOp::LogAnd, vec![not_rej, raw_rel], 1, loc)
+                }
+            };
+            if let Some(acc) = acc_early {
+                rel_b = nl.sva_op(NetOp::LogOr, vec![acc, rel_b], 1, loc);
+            }
+            let ended = nl.sva_op(NetOp::LogNot, vec![rel_b], 1, loc);
+            let next = nl.sva_op(NetOp::LogAnd, vec![active, ended], 1, loc);
+            nl.states[pending_id.0 as usize].next = next;
             let ck = if p.kind == PropKind::Assert { CheckKind::Assert } else { CheckKind::Assume };
-            if !dfa.strong {
-                return (Monitor::Check(any_active, ok_expr), ck);
-            }
-
-            // Strong / liveness obligation:
-            let live_sig = emit_dfa_liveness(
-                nl,
-                p,
-                dfa,
-                start,
-                &init_to_v,
-                &state_to_v,
-                &dfa_ids,
-                off_now.map(|(_, o)| o),
-                &prefix,
-            );
-            if dfa.has_dead {
-                (Monitor::Both(any_active, ok_expr, live_sig), ck)
-            } else {
-                (Monitor::Liveness(live_sig), ck)
+            let hold_opt: Option<ValueId> = match (hold, rej_early) {
+                (None, None) => None,
+                (None, Some(rej)) => {
+                    let not_rej = nl.sva_op(NetOp::LogNot, vec![rej], 1, loc);
+                    Some(match acc_early {
+                        None => not_rej,
+                        Some(acc) => nl.sva_op(NetOp::LogOr, vec![acc, not_rej], 1, loc),
+                    })
+                }
+                (Some(hf), rej_opt) => {
+                    let raw_h = hf.emit(nl, loc);
+                    let mut hb = match rej_opt {
+                        None => raw_h,
+                        Some(rej) => {
+                            let not_rej = nl.sva_op(NetOp::LogNot, vec![rej], 1, loc);
+                            nl.sva_op(NetOp::LogAnd, vec![not_rej, raw_h], 1, loc)
+                        }
+                    };
+                    if let Some(acc) = acc_early {
+                        hb = nl.sva_op(NetOp::LogOr, vec![acc, hb], 1, loc);
+                    }
+                    Some(hb)
+                }
+            };
+            match hold_opt {
+                None => {
+                    let off = off_now.map(|(_, o)| o);
+                    (Monitor::Liveness(nl.sva_liveness(p, pending, active, ended, off, nth)), ck)
+                }
+                Some(hold_b) => {
+                    let expr = if *with || hold.is_none() {
+                        hold_b
+                    } else {
+                        nl.sva_op(NetOp::LogOr, vec![hold_b, rel_b], 1, loc)
+                    };
+                    if *strong || hold.is_none() {
+                        let off = off_now.map(|(_, o)| o);
+                        let sig = nl.sva_liveness(p, pending, active, ended, off, nth);
+                        (Monitor::Both(active, expr, sig), ck)
+                    } else {
+                        (Monitor::Check(active, expr), ck)
+                    }
+                }
             }
         }
-    }
+        ConsequentPlan::Dfa(dfa) => {
+            let start = emit_antecedent_start(nl, p, &auto.antecedent, off_now, ticks, &prefix);
+            let (any_active, _, ok_expr, init_to_v, state_to_v, dfa_ids) =
+                emit_dfa_safety(nl, p, dfa, start, off_now, &format!("{prefix}_dfa"));
+            let ck = if p.kind == PropKind::Assert { CheckKind::Assert } else { CheckKind::Assume };
+            if !dfa.strong {
+                (Monitor::Check(any_active, ok_expr), ck)
+            } else {
+                let live_sig = emit_dfa_liveness(
+                    nl,
+                    p,
+                    dfa,
+                    start,
+                    &init_to_v,
+                    &state_to_v,
+                    &dfa_ids,
+                    off_now.map(|(_, o)| o),
+                    &prefix,
+                );
+                if dfa.has_dead {
+                    (Monitor::Both(any_active, ok_expr, live_sig), ck)
+                } else {
+                    (Monitor::Liveness(live_sig), ck)
+                }
+            }
+        }
+    };
+
+    let Some((rej_dfa, rej_reached)) = &auto.ant_reject else {
+        return base_res;
+    };
+    let rej_start = emit_antecedent_start(
+        nl,
+        p,
+        &AntecedentPlan::Always { reached: *rej_reached },
+        off_now,
+        ticks,
+        &format!("{prefix}_arej"),
+    );
+    let (rej_active, rej_fail, _, _, _, _) =
+        emit_dfa_safety(nl, p, rej_dfa, rej_start, off_now, &format!("{prefix}_arej_dfa"));
+    let not_rej_fail = nl.sva_op(NetOp::LogNot, vec![rej_fail], 1, loc);
+    let (mon, ck) = base_res;
+    let combined_mon = match mon {
+        Monitor::Check(en, ok) => {
+            let new_en = nl.sva_op(NetOp::LogOr, vec![en, rej_active], 1, loc);
+            let not_en = nl.sva_op(NetOp::LogNot, vec![en], 1, loc);
+            let base_ok = nl.sva_op(NetOp::LogOr, vec![not_en, ok], 1, loc);
+            let new_ok = nl.sva_op(NetOp::LogAnd, vec![base_ok, not_rej_fail], 1, loc);
+            Monitor::Check(new_en, new_ok)
+        }
+        Monitor::Liveness(sig) => Monitor::Both(rej_active, not_rej_fail, sig),
+        Monitor::Both(en, ok, sig) => {
+            let new_en = nl.sva_op(NetOp::LogOr, vec![en, rej_active], 1, loc);
+            let not_en = nl.sva_op(NetOp::LogNot, vec![en], 1, loc);
+            let base_ok = nl.sva_op(NetOp::LogOr, vec![not_en, ok], 1, loc);
+            let new_ok = nl.sva_op(NetOp::LogAnd, vec![base_ok, not_rej_fail], 1, loc);
+            Monitor::Both(new_en, new_ok, sig)
+        }
+    };
+    (combined_mon, ck)
 }
 
 #[allow(clippy::too_many_arguments)]

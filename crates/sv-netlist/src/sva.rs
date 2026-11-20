@@ -10,9 +10,11 @@
 //! regular unbounded / non-consecutive sequence automata (`sva_nfa`):
 //!
 //! ```text
-//! property := seq | weak(seq) | strong(seq)
-//!           | seq |-> seq | seq |=> seq
-//!           | seq |-> strong(seq) | seq |=> strong(seq)
+//! property := seq | weak(seq) | strong(seq) | not property
+//!           | seq |-> property | seq |=> property
+//!           | seq #-# property | seq #=# property
+//!           | accept_on(b) property | reject_on(b) property
+//!           | sync_accept_on(b) property | sync_reject_on(b) property
 //!           | [seq |-> | seq |=>] b until c | [seq |-> | seq |=>] b until_with c
 //!           | [seq |-> | seq |=>] b s_until c | [seq |-> | seq |=>] b s_until_with c
 //!           | [seq |-> | seq |=>] s_eventually [range] seq
@@ -31,9 +33,8 @@
 //! `M` and `N` are constants (`M` may be `0`, except `[->0]` which is illegal per IEEE 1800
 //! §16.9.2). Not in the subset, and reported by name: `and` / `intersect` / `within` over
 //! unbounded operands, `[->]` / `[=]` over multi-cycle sequences, a sequence with its own
-//! clock, and every property operator other than one implication at the top (`not`, property
-//! `and` and `or` over implications, `if`, `always` and weak `eventually` with no upper bound,
-//! `#-#`, `accept_on`, ...).
+//! clock, and property `and`, `or`, `implies`, `iff`, `if`, or positive `always` / weak
+//! `eventually` with no upper bound.
 //!
 //! A bounded sequence has finitely many possible matches, each of a known length. The pass
 //! enumerates them as IEEE 1800-2023 annex F defines a match: for the attempt that starts at
@@ -611,11 +612,123 @@ struct Shape {
 }
 
 impl Matcher<'_> {
+    /// Evaluates bounded property `p` starting at tick `start`, returning `(holds_cond, last_tick)`.
+    /// `allow_imp` permits an implication directly under `not (...)` while rejecting nested
+    /// `a |-> (b |-> c)`.
+    fn eval_prop(&mut self, p: &PropExpr, start: u32, allow_imp: bool) -> Result<(Cond, u32), String> {
+        self.terms.step()?;
+        if start > MAX_PROPERTY_SPAN {
+            return Err(too_long());
+        }
+        match p {
+            PropExpr::Not(inner) => {
+                let (c, last) = self.eval_prop(inner, start, true)?;
+                Ok((self.terms.not(c)?, last))
+            }
+            PropExpr::FollowedBy { overlapped, lhs, rhs } => {
+                let mut fb_starts: BTreeMap<u32, Cond> = BTreeMap::new();
+                for (end, cond) in self.matches(lhs, start)? {
+                    let at = match (*overlapped, end == start) {
+                        (true, true) => continue,
+                        (true, false) => end - 1,
+                        (false, _) => end,
+                    };
+                    self.add(&mut fb_starts, at, cond)?;
+                }
+                if fb_starts.is_empty() {
+                    return Err("an antecedent that has no match".into());
+                }
+                let mut any = Cond::False;
+                let mut last_max = start;
+                for (at, ant_cond) in fb_starts {
+                    let (cons_cond, cons_last) = self.eval_prop(rhs, at, false)?;
+                    let both = self.terms.and(ant_cond, cons_cond)?;
+                    any = self.terms.or(any, both)?;
+                    last_max = last_max.max(at).max(cons_last);
+                }
+                Ok((any, last_max))
+            }
+            PropExpr::OverlappedImplication { lhs, rhs } | PropExpr::NonOverlappedImplication { lhs, rhs }
+                if allow_imp =>
+            {
+                let overlapped = matches!(p, PropExpr::OverlappedImplication { .. });
+                let mut imp_starts: BTreeMap<u32, Cond> = BTreeMap::new();
+                for (end, cond) in self.matches(lhs, start)? {
+                    let at = match (overlapped, end == start) {
+                        (true, true) => continue,
+                        (true, false) => end - 1,
+                        (false, _) => end,
+                    };
+                    self.add(&mut imp_starts, at, cond)?;
+                }
+                if imp_starts.is_empty() {
+                    return Err("an antecedent that has no match".into());
+                }
+                let mut all = Cond::True;
+                let mut last_max = start;
+                for (at, ant_cond) in imp_starts {
+                    let (cons_cond, cons_last) = self.eval_prop(rhs, at, false)?;
+                    let not_ant = self.terms.not(ant_cond)?;
+                    let met = self.terms.or(not_ant, cons_cond)?;
+                    all = self.terms.and(all, met)?;
+                    last_max = last_max.max(at).max(cons_last);
+                }
+                Ok((all, last_max))
+            }
+            PropExpr::Nexttime { cycles, prop, .. } if as_seq(p).is_err() => {
+                let target = start.saturating_add(*cycles);
+                if target > MAX_PROPERTY_SPAN {
+                    return Err(too_long());
+                }
+                self.eval_prop(prop, target, false)
+            }
+            PropExpr::Eventually { range, prop, .. } if range.max != CycleBound::Unbounded && as_seq(p).is_err() => {
+                let (min, max) = bounds(range, "eventually")?;
+                let mut any = Cond::False;
+                let mut last_max = start;
+                for d in min..=max {
+                    let target = start.saturating_add(d);
+                    if target > MAX_PROPERTY_SPAN {
+                        return Err(too_long());
+                    }
+                    let (c, l) = self.eval_prop(prop, target, false)?;
+                    any = self.terms.or(any, c)?;
+                    last_max = last_max.max(l);
+                }
+                Ok((any, last_max))
+            }
+            PropExpr::Always { range, prop, .. } if as_seq(p).is_err() => {
+                let CycleBound::Const(last) = range.max else {
+                    return Err("`always` with no upper bound".into());
+                };
+                if last > MAX_PROPERTY_SPAN || last < range.min {
+                    return Err(too_long());
+                }
+                let mut all = Cond::True;
+                let mut last_max = start;
+                for d in range.min..=last {
+                    let target = start.saturating_add(d);
+                    if target > MAX_PROPERTY_SPAN {
+                        return Err(too_long());
+                    }
+                    let (c, l) = self.eval_prop(prop, target, false)?;
+                    all = self.terms.and(all, c)?;
+                    last_max = last_max.max(l);
+                }
+                Ok((all, last_max))
+            }
+            other => {
+                let seq = as_seq(other)?;
+                self.holds(&seq, start)
+            }
+        }
+    }
+
     /// `reached` is the condition under which an attempt starts at all.
     fn shape(&mut self, p: &PropExpr, reached: Cond) -> Result<Shape, String> {
         // Where the consequent starts, and when.
         let mut starts: BTreeMap<u32, Cond> = BTreeMap::new();
-        let consequent = match p {
+        let rhs_prop = match p {
             PropExpr::OverlappedImplication { lhs, rhs } | PropExpr::NonOverlappedImplication { lhs, rhs } => {
                 let overlapped = matches!(p, PropExpr::OverlappedImplication { .. });
                 for (end, cond) in self.matches(lhs, 0)? {
@@ -632,18 +745,18 @@ impl Matcher<'_> {
                 if starts.is_empty() {
                     return Err("an antecedent that has no match".into());
                 }
-                as_seq(rhs)?
+                rhs.as_ref()
             }
             other => {
                 starts.insert(0, reached);
-                as_seq(other)?
+                other
             }
         };
         let mut obligations = Vec::new();
         let mut span = 0;
         for (at, when) in starts {
-            let (holds, last) = self.holds(&consequent, at)?;
-            span = span.max(last);
+            let (holds, last) = self.eval_prop(rhs_prop, at, false)?;
+            span = span.max(at).max(last);
             obligations.push((when, holds));
         }
         if span > MAX_PROPERTY_SPAN {

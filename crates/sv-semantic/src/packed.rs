@@ -74,7 +74,9 @@ impl Builder<'_> {
             return Some(Shape::Array { left, right, elem, elem_w });
         }
         let own = self.own_tokens(ty.dt);
-        if matches!(own.first(), Some(&"struct" | &"union")) && own.contains(&"packed") {
+        if matches!(own.first(), Some(&"struct" | &"union"))
+            && (own.contains(&"packed") || (own.first() == Some(&"union") && own.contains(&"soft")))
+        {
             let union = own.first() == Some(&"union");
             let mut members: Vec<(String, Ty, u32)> = Vec::new();
             for m in self.children(ty.dt) {

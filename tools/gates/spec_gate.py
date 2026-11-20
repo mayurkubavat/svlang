@@ -12,7 +12,16 @@ import concurrent.futures, glob, os, subprocess, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(os.path.dirname(HERE))
-SPECDUMP = os.environ.get('SPECDUMP', os.path.join(REPO, 'build', 'specdump'))
+def _default_specdump():
+    for rel in (('build', 'uvmcheck_specdump'), ('build-dev', 'uvmcheck_specdump'),
+                ('build', 'specdump'), ('build-dev', 'specdump')):
+        p = os.path.join(REPO, *rel)
+        if os.path.isfile(p) and os.access(p, os.X_OK):
+            return p
+    return os.path.join(REPO, 'build', 'uvmcheck_specdump')
+
+
+SPECDUMP = os.environ.get('SPECDUMP', _default_specdump())
 DVLINT = os.environ.get('DV_LINT', os.path.join(REPO, 'target', 'release', 'dv-lint'))
 
 
@@ -60,7 +69,11 @@ def main():
         cases = [('uvm_pkg', ['+incdir+' + argv[1], os.path.join(argv[1], 'uvm_pkg.sv')])]
     else:
         sys.exit(__doc__)
-    with concurrent.futures.ThreadPoolExecutor(os.cpu_count() or 4) as pool:
+    if not os.path.isfile(SPECDUMP):
+        print(f'FAIL: specdump binary not found at {SPECDUMP}', file=sys.stderr)
+        return 1
+    workers = int(os.environ.get('GATE_JOBS', min(2, os.cpu_count() or 2)))
+    with concurrent.futures.ThreadPoolExecutor(workers) as pool:
         results = list(pool.map(lambda c: (c[0], counts(c[1])), cases))
     classes = good = 0
     bad_cases = 0
@@ -75,6 +88,9 @@ def main():
                 for k, r, o in diffs[:show]:
                     print(f'  {k}: slang {r}, ours {o}')
     print(f'compiles={len(cases)} differ={bad_cases} classes={classes} identical={good}')
+    if classes == 0:
+        print('FAIL: no generic classes checked (check input path)', file=sys.stderr)
+        return 1
     if max_differ is not None and bad_cases > max_differ:
         return 1
     return 0

@@ -132,6 +132,13 @@ if [ "$cpp" = 1 ]; then
     step "test_engine_gate" python3 cpp/tests/test_engine_gate.py
     step "python rules" python3 python/tests/test_python_rules.py --binary $b
     step "engine_equivalence" python3 cpp/tests/engine_equivalence.py --binary $b
+    if [ "$rust" = 1 ]; then
+        step "slang unit gate (dv-build vs slang)" sh -c \
+            'cargo build --locked -q --release -p dv-build -p dv-lint && python3 tools/gates/slang_unit_gate.py --max-false=1 --max-gaps=370'
+        if uvm_ok; then
+            step "spec gate (--model, uvm-core)" python3 tools/gates/spec_gate.py --model --max-differ=0 --uvm "$UVM_HOME/src"
+        fi
+    fi
 fi
 
 echo

@@ -41,6 +41,7 @@ fn main() -> ExitCode {
     svlang::source::exit_on_closed_pipe();
     let mut dialect = Dialect::Any;
     let (mut dump, mut quiet, mut symbols, mut types, mut values) = (false, false, false, false, false);
+    let mut specs = false;
     let mut cst = false;
     let mut hier = false;
     let mut emit_netlist = false;
@@ -85,6 +86,10 @@ fn main() -> ExitCode {
             "--types" => {
                 symbols = true;
                 types = true;
+            }
+            "--specs" => {
+                symbols = true;
+                specs = true;
             }
             "--dialect" => {
                 dialect = match it.next().as_deref() {
@@ -182,7 +187,11 @@ fn main() -> ExitCode {
         let scopes = comp.scopes();
         let (tys, vals) =
             if types || values { svlang::semantic::symbol_info(comp.trees(), &scopes) } else { Default::default() };
-        let lines = scopes.dump_full(types.then_some(tys.as_slice()), values.then_some(vals.as_slice()));
+        let mut lines = scopes.dump_full(types.then_some(tys.as_slice()), values.then_some(vals.as_slice()));
+        if specs {
+            lines.extend(svlang::semantic::spec_symbol_lines(comp.trees(), &scopes, types, values));
+            lines.sort();
+        }
         for l in lines {
             println!("{l}");
         }

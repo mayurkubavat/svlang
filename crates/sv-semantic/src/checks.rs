@@ -99,6 +99,28 @@ struct Ctx<'a> {
     classes: HashMap<String, Vec<(usize, NodeId)>>,
     /// Typeless `interconnect` net/port names by `(tree, module_or_iface_node, name)`.
     interconnects: crate::fx::FxSet<(usize, NodeId, String)>,
+    /// Checker declaration names.
+    checkers: crate::fx::FxSet<String>,
+    /// Checker instance names by `(tree, container_node, inst_name)`.
+    checker_insts: crate::fx::FxSet<(usize, NodeId, String)>,
+    /// Program declaration names.
+    programs: crate::fx::FxSet<String>,
+    /// Program instance names by `(tree, container_node, inst_name)`.
+    program_insts: crate::fx::FxSet<(usize, NodeId, String)>,
+    /// Module / interface declaration names.
+    design_defs: crate::fx::FxSet<String>,
+    /// UDP (`primitive`) declaration names.
+    udps: crate::fx::FxSet<String>,
+    /// User-defined `nettype` names.
+    nettypes: crate::fx::FxSet<String>,
+    /// Declared net/var user-defined nettype by `(tree, container_node, name)`: `Some(udnt)` or `None` (built-in net).
+    net_udnt: HashMap<(usize, NodeId, String), Option<String>>,
+    /// Functions that have at least one `output`, `inout`, or non-`const` `ref` port.
+    funcs_with_out_args: crate::fx::FxSet<String>,
+    /// Whether any `global clocking` exists in the compilation.
+    has_global_clocking: bool,
+    /// Clocking `input`-only signals by `(tree, container_node, cb_name, sig_name)`.
+    clocking_inputs: crate::fx::FxSet<(usize, NodeId, String, String)>,
 }
 
 /// Runs the type checks over every tree of a compile, resolving names in
@@ -130,11 +152,178 @@ pub fn check(trees: &[Tree], scopes: &Scopes) -> Vec<Diag> {
     let mut enums: HashMap<String, bool> = HashMap::default();
     let mut reals: HashMap<String, bool> = HashMap::default();
     let mut interconnects: crate::fx::FxSet<(usize, NodeId, String)> = Default::default();
+    let mut checkers: crate::fx::FxSet<String> = Default::default();
+    let mut programs: crate::fx::FxSet<String> = Default::default();
+    let mut design_defs: crate::fx::FxSet<String> = Default::default();
+    let mut udps: crate::fx::FxSet<String> = Default::default();
+    let mut nettypes: crate::fx::FxSet<String> = Default::default();
+    let mut funcs_with_out_args: crate::fx::FxSet<String> = Default::default();
+    let mut has_global_clocking = false;
+    for t in trees {
+        for n in t.preorder() {
+            match t.kind(n) {
+                CheckerDecl => {
+                    let nm = name_of(t, n);
+                    if !nm.is_empty() {
+                        checkers.insert(nm);
+                    }
+                }
+                ProgramDecl => {
+                    let nm = name_of(t, n);
+                    if !nm.is_empty() {
+                        programs.insert(nm);
+                    }
+                }
+                ModuleDecl | InterfaceDecl => {
+                    let nm = name_of(t, n);
+                    if !nm.is_empty() {
+                        design_defs.insert(nm);
+                    }
+                }
+                UdpDecl => {
+                    let nm = name_of(t, n);
+                    if !nm.is_empty() {
+                        udps.insert(nm);
+                    }
+                }
+                NetTypeDecl => {
+                    let nm = name_of(t, n);
+                    if !nm.is_empty() {
+                        nettypes.insert(nm);
+                    }
+                }
+                FunctionDecl => {
+                    let fnm = name_of(t, n);
+                    if !fnm.is_empty() {
+                        if let Some(pl) =
+                            t.child(n, PortList).or_else(|| t.child(n, Header).and_then(|h| t.child(h, PortList)))
+                        {
+                            let mut cur_out = false;
+                            for p in t.children(pl).filter(|&c| t.kind(c) == Port) {
+                                let own = toks(t, p);
+                                if let Some(&d) =
+                                    own.iter().find(|&&x| matches!(x, "input" | "output" | "inout" | "ref"))
+                                {
+                                    cur_out = d == "output" || d == "inout" || (d == "ref" && !own.contains(&"const"));
+                                }
+                                if cur_out {
+                                    funcs_with_out_args.insert(fnm);
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+                ClockingDecl if toks(t, n).contains(&"global") => {
+                    has_global_clocking = true;
+                }
+                _ => {}
+            }
+        }
+    }
+    let mut checker_insts: crate::fx::FxSet<(usize, NodeId, String)> = Default::default();
+    let mut program_insts: crate::fx::FxSet<(usize, NodeId, String)> = Default::default();
+    let mut net_udnt: HashMap<(usize, NodeId, String), Option<String>> = HashMap::default();
+    let mut clocking_inputs: crate::fx::FxSet<(usize, NodeId, String, String)> = Default::default();
     for (ix, t) in trees.iter().enumerate() {
         let parent = parents(t);
+        let container_of = |start: NodeId| -> NodeId {
+            let mut cur = up(&parent, start);
+            while let Some(anc) = cur {
+                if matches!(t.kind(anc), ModuleDecl | InterfaceDecl | ProgramDecl | CheckerDecl | PackageDecl) {
+                    return anc;
+                }
+                cur = up(&parent, anc);
+            }
+            t.root
+        };
         for n in t.preorder() {
             if t.kind(n) == ClassDecl {
                 classes.entry(name_of(t, n)).or_default().push((ix, n));
+            }
+            if t.kind(n) == Instantiation {
+                if let Some(dt) = t.child(n, DataType) {
+                    let target: String = t
+                        .token_range(dt)
+                        .into_iter()
+                        .map(|i| &*t.tokens[i as usize].text)
+                        .take_while(|&s| s != "#")
+                        .collect();
+                    let target = target.trim();
+                    let anc = container_of(n);
+                    if checkers.contains(target) {
+                        for inst in t.children(n).filter(|&c| t.kind(c) == Instance) {
+                            let inm = name_of(t, inst);
+                            if !inm.is_empty() {
+                                checker_insts.insert((ix, anc, inm));
+                            }
+                        }
+                    } else if programs.contains(target) {
+                        for inst in t.children(n).filter(|&c| t.kind(c) == Instance) {
+                            let inm = name_of(t, inst);
+                            if !inm.is_empty() {
+                                program_insts.insert((ix, anc, inm));
+                            }
+                        }
+                    }
+                }
+            }
+            if t.kind(n) == DataDecl {
+                let own = toks(t, n);
+                let anc = container_of(n);
+                let dt_name = t.child(n, DataType).map(|dt| t.bare_text(dt));
+                let is_builtin_net = own.iter().any(|&k| {
+                    matches!(
+                        k,
+                        "wire"
+                            | "tri"
+                            | "wand"
+                            | "wor"
+                            | "triand"
+                            | "trior"
+                            | "tri0"
+                            | "tri1"
+                            | "trireg"
+                            | "uwire"
+                            | "supply0"
+                            | "supply1"
+                    )
+                });
+                if let Some(ref dtn) = dt_name {
+                    if nettypes.contains(dtn.trim()) {
+                        for decl in t.children(n).filter(|&c| t.kind(c) == Declarator) {
+                            let vnm = name_of(t, decl);
+                            if !vnm.is_empty() {
+                                net_udnt.insert((ix, anc, vnm), Some(dtn.trim().to_string()));
+                            }
+                        }
+                    }
+                }
+                if is_builtin_net {
+                    for decl in t.children(n).filter(|&c| t.kind(c) == Declarator) {
+                        let vnm = name_of(t, decl);
+                        if !vnm.is_empty() {
+                            net_udnt.entry((ix, anc, vnm)).or_insert(None);
+                        }
+                    }
+                }
+            }
+            if t.kind(n) == ClockingDecl {
+                let cb_nm = name_of(t, n);
+                if !cb_nm.is_empty() {
+                    let anc = container_of(n);
+                    for ci in t.children(n).filter(|&c| t.kind(c) == ClockingItem) {
+                        let c_own = toks(t, ci);
+                        if c_own.contains(&"input") && !c_own.contains(&"output") && !c_own.contains(&"inout") {
+                            for decl in t.children(ci).filter(|&c| t.kind(c) == Declarator) {
+                                let snm = name_of(t, decl);
+                                if !snm.is_empty() {
+                                    clocking_inputs.insert((ix, anc, cb_nm.clone(), snm));
+                                }
+                            }
+                        }
+                    }
+                }
             }
             if matches!(t.kind(n), DataDecl | Port) && toks(t, n).contains(&"interconnect") {
                 let mut cur = up(&parent, n);
@@ -162,8 +351,29 @@ pub fn check(trees: &[Tree], scopes: &Scopes) -> Vec<Diag> {
             *reals.entry(name).or_insert(true) &= REAL_TYPES.contains(&first) && !dims;
         }
     }
-    let cx = Ctx { trees, scopes, values, opener, enums, reals, classes, interconnects };
+    let cx = Ctx {
+        trees,
+        scopes,
+        values,
+        opener,
+        enums,
+        reals,
+        classes,
+        interconnects,
+        checkers,
+        checker_insts,
+        programs,
+        program_insts,
+        design_defs,
+        udps,
+        nettypes,
+        net_udnt,
+        funcs_with_out_args,
+        has_global_clocking,
+        clocking_inputs,
+    };
     let mut out = Vec::new();
+    cx.check_dpi(&mut out);
     for (ix, t) in trees.iter().enumerate() {
         let parent = parents(t);
         for n in t.preorder() {
@@ -419,7 +629,11 @@ impl Ctx<'_> {
                     }
                 }
             }
-            DataType if matches!(toks(t, n).first(), Some(&"struct" | &"union")) && toks(t, n).contains(&"packed") => {
+            DataType
+                if matches!(toks(t, n).first(), Some(&"struct" | &"union"))
+                    && (toks(t, n).contains(&"packed")
+                        || (toks(t, n).first() == Some(&"union") && toks(t, n).contains(&"soft"))) =>
+            {
                 let tk = toks(t, n);
                 let is_union = tk.first() == Some(&"union");
                 let check_equal_widths = is_union && !tk.contains(&"tagged") && !tk.contains(&"soft");
@@ -546,7 +760,27 @@ impl Ctx<'_> {
             DataDecl | Port if toks(t, n).contains(&"interconnect") => {
                 self.check_interconnect_decl(t, n, &mut err);
             }
-            NameExpr => self.check_interconnect_use(ix, t, n, parent, &mut err),
+            NameExpr => {
+                self.check_interconnect_use(ix, t, n, parent, &mut err);
+                if t.bare_text(n) == "$global_clock"
+                    && !self.has_global_clocking
+                    && (!self.within(t, n, parent, &[CheckerDecl]) || !self.checker_insts.is_empty())
+                {
+                    err(n, "'$global_clock' requires a 'global clocking' declaration".into());
+                }
+            }
+            MemberExpr => self.check_hier_member(ix, t, n, parent, &mut err),
+            CheckerDecl => {
+                self.check_clocking_scope(t, n, &mut err);
+                self.check_checker_decl(t, n, parent, &mut err);
+            }
+            ProgramDecl => {
+                self.check_clocking_scope(t, n, &mut err);
+                self.check_program_decl(t, n, &mut err);
+            }
+            ModuleDecl | InterfaceDecl => self.check_clocking_scope(t, n, &mut err),
+            GateInst => self.check_gate_udnt(ix, t, n, parent, &mut err),
+            Instantiation => self.check_udp_udnt(ix, t, n, parent, &mut err),
             SpecparamDecl => self.constant_context(ix, t, n, parent, &mut err),
             PathDecl => self.check_specify_path(ix, t, n, parent, &mut err),
             TimingCheck => self.check_timing_check(ix, t, n, parent, &mut err),
@@ -820,6 +1054,34 @@ impl Ctx<'_> {
             match t.children(target).next() {
                 Some(b) => target = b,
                 None => return,
+            }
+        }
+        if procedural && t.kind(target) == MemberExpr {
+            let m_own = toks(t, target);
+            if m_own.len() == 2 && m_own[0] == "." {
+                if let Some(base) = t.children(target).next() {
+                    if t.kind(base) == NameExpr {
+                        let cb_nm = t.bare_text(base);
+                        let mut anc_opt = up(parent, stmt);
+                        while let Some(anc) = anc_opt {
+                            if matches!(t.kind(anc), ModuleDecl | InterfaceDecl | ProgramDecl | CheckerDecl) {
+                                if self.clocking_inputs.contains(&(ix, anc, cb_nm, m_own[1].to_string())) {
+                                    err(
+                                        lhs,
+                                        format!(
+                                            "cannot drive clocking input signal '{}.{}'",
+                                            t.bare_text(base),
+                                            m_own[1]
+                                        ),
+                                    );
+                                    return;
+                                }
+                                break;
+                            }
+                            anc_opt = up(parent, anc);
+                        }
+                    }
+                }
             }
         }
         let Some(d) = self.name_decl(ix, t, target, parent) else { return };
@@ -1259,6 +1521,642 @@ impl Ctx<'_> {
             if let Some(d) = self.name_decl(ix, t, ne, parent) {
                 if matches!(d.kind, SymKind::Net | SymKind::Parameter | SymKind::Specparam) {
                     err(ne, format!("timing check notifier '{}' in {chk_name} must be a variable", t.bare_text(ne)));
+                }
+            }
+        }
+    }
+
+    /// IEEE 1800-2023 §14.14: at most one `global clocking` per module/interface/program/checker.
+    fn check_clocking_scope(&self, t: &Tree, scope_node: NodeId, err: &mut impl FnMut(NodeId, String)) {
+        let mut seen = false;
+        for cd in t.children(scope_node).filter(|&c| t.kind(c) == ClockingDecl) {
+            if toks(t, cd).contains(&"global") {
+                if seen {
+                    err(cd, "duplicate 'global clocking' declaration in the same scope".into());
+                }
+                seen = true;
+            }
+        }
+    }
+
+    /// IEEE 1800-2023 §17.2 & §24.3: disallow hierarchical references into checkers, and disallow
+    /// references from design elements (`module` / `interface` / `package`) into `program` items.
+    fn check_hier_member(&self, ix: usize, t: &Tree, n: NodeId, parent: &[u32], err: &mut impl FnMut(NodeId, String)) {
+        let m_own = toks(t, n);
+        if m_own.len() != 2 || m_own[0] != "." {
+            return;
+        }
+        let Some(base) = t.children(n).next() else { return };
+        if t.kind(base) != NameExpr || t.token_bounds(base).is_none_or_multi() {
+            return;
+        }
+        let bname = t.bare_text(base);
+        let mut anc_opt = up(parent, n);
+        let mut container = t.root;
+        let mut in_design_elem = false;
+        let mut in_checker = None;
+        while let Some(anc) = anc_opt {
+            match t.kind(anc) {
+                CheckerDecl if in_checker.is_none() => in_checker = Some(anc),
+                ModuleDecl | InterfaceDecl | PackageDecl => {
+                    container = anc;
+                    in_design_elem = true;
+                    break;
+                }
+                ProgramDecl => {
+                    container = anc;
+                    break;
+                }
+                _ => {}
+            }
+            anc_opt = up(parent, anc);
+        }
+        let same_checker = in_checker.is_some_and(|chk| name_of(t, chk) == bname);
+        if !same_checker
+            && (self.checkers.contains(&bname)
+                || self.checker_insts.contains(&(ix, container, bname.clone()))
+                || in_checker.is_some_and(|chk| self.checker_insts.contains(&(ix, chk, bname.clone()))))
+            && self.name_decl(ix, t, base, parent).is_none()
+        {
+            err(n, format!("hierarchical lookup into checker '{bname}' is not allowed"));
+            return;
+        }
+        if in_design_elem
+            && in_checker.is_none()
+            && (self.programs.contains(&bname) || self.program_insts.contains(&(ix, container, bname.clone())))
+            && self.name_decl(ix, t, base, parent).is_none()
+        {
+            err(n, format!("design element cannot reference program '{bname}'"));
+        }
+    }
+
+    /// IEEE 1800-2023 Clause 17 checker semantic restrictions.
+    fn check_checker_decl(&self, t: &Tree, chk: NodeId, parent: &[u32], err: &mut impl FnMut(NodeId, String)) {
+        let mut local_vars: crate::fx::FxSet<String> = Default::default();
+        let mut local_cgs: crate::fx::FxSet<String> = Default::default();
+        for c in t.children(chk) {
+            match t.kind(c) {
+                NetTypeDecl => {
+                    err(c, "user-defined nettype declaration is not allowed in a checker".into());
+                }
+                DataDecl => {
+                    if let Some(dt) = t.child(c, DataType) {
+                        let dtn = t.bare_text(dt);
+                        if self.nettypes.contains(dtn.trim()) {
+                            err(c, format!("user-defined nettype '{}' is not allowed in a checker", dtn.trim()));
+                        }
+                    }
+                    let is_cg = t.child(c, DataType).is_some_and(|dt| local_cgs.contains(t.bare_text(dt).trim()));
+                    for d in t.children(c).filter(|&x| t.kind(x) == Declarator) {
+                        let vnm = name_of(t, d);
+                        if !vnm.is_empty() {
+                            if is_cg {
+                                local_cgs.insert(vnm);
+                            } else {
+                                local_vars.insert(vnm);
+                            }
+                        }
+                    }
+                }
+                CovergroupDecl => {
+                    let cnm = name_of(t, c);
+                    if !cnm.is_empty() {
+                        local_cgs.insert(cnm);
+                    }
+                }
+                _ => {}
+            }
+        }
+        for sub in t.preorder_of(chk) {
+            if sub != chk && t.kind(sub) == CheckerDecl {
+                continue;
+            }
+            if t.kind(sub) == ProceduralBlock {
+                for x in t.preorder_of(sub) {
+                    if t.kind(x) == NameExpr && local_cgs.contains(&t.bare_text(x)) {
+                        err(
+                            x,
+                            format!(
+                                "covergroup '{}' cannot be referenced in a checker procedural block",
+                                t.bare_text(x)
+                            ),
+                        );
+                    }
+                }
+            }
+            if t.kind(sub) == ExprStmt {
+                if let Some(be) = t.children(sub).next().filter(|&e| t.kind(e) == BinaryExpr) {
+                    let op = toks(t, be).first().copied().unwrap_or("");
+                    let kids: Vec<NodeId> = t.children(be).collect();
+                    if ASSIGN_OPS.contains(&op)
+                        && kids.len() == 2
+                        && t.kind(kids[0]) == NameExpr
+                        && local_vars.contains(&t.bare_text(kids[0]))
+                    {
+                        for rx in t.preorder_of(kids[1]) {
+                            if t.kind(rx) == CallExpr {
+                                if let Some(callee) = t.children(rx).next().filter(|&k| t.kind(k) == NameExpr) {
+                                    let fnm = t.bare_text(callee);
+                                    if self.funcs_with_out_args.contains(&fnm) {
+                                        err(
+                                            rx,
+                                            format!(
+                                                "function '{fnm}' with output/inout/ref argument cannot be called in checker variable assignment"
+                                            ),
+                                        );
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        let _ = parent;
+    }
+
+    /// IEEE 1800-2023 Clause 24 program semantic restrictions.
+    fn check_program_decl(&self, t: &Tree, prog: NodeId, err: &mut impl FnMut(NodeId, String)) {
+        for c in t.preorder_of(prog) {
+            if c == prog {
+                continue;
+            }
+            match t.kind(c) {
+                ProceduralBlock => {
+                    if let Some(ft) = first_tok(t, c) {
+                        if ft.starts_with("always") {
+                            err(c, format!("'{ft}' procedure is not allowed inside a program"));
+                        }
+                    }
+                }
+                ModuleDecl | InterfaceDecl | ProgramDecl => {
+                    err(c, "nested module, interface, or program declaration is not allowed inside a program".into());
+                }
+                Instantiation => {
+                    if let Some(dt) = t.child(c, DataType) {
+                        let target: String = t
+                            .token_range(dt)
+                            .into_iter()
+                            .map(|i| &*t.tokens[i as usize].text)
+                            .take_while(|&s| s != "#")
+                            .collect();
+                        if self.design_defs.contains(target.trim()) {
+                            err(c, format!("cannot instantiate design element '{}' inside a program", target.trim()));
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    /// IEEE 1800-2023 Clause 28 (`GateUDNTConn` & `BiDiSwitchNetTypes`).
+    fn check_gate_udnt(&self, ix: usize, t: &Tree, n: NodeId, parent: &[u32], err: &mut impl FnMut(NodeId, String)) {
+        if self.nettypes.is_empty() {
+            return;
+        }
+        let Some(gw) = first_tok(t, n) else { return };
+        let mut anc_opt = up(parent, n);
+        let mut container = t.root;
+        while let Some(anc) = anc_opt {
+            if matches!(t.kind(anc), ModuleDecl | InterfaceDecl | ProgramDecl) {
+                container = anc;
+                break;
+            }
+            anc_opt = up(parent, anc);
+        }
+        let is_bidi = matches!(gw, "tran" | "tranif0" | "tranif1");
+        for inst in t.children(n).filter(|&c| t.kind(c) == Instance) {
+            let Some(al) = t.child(inst, ArgList) else { continue };
+            let args: Vec<NodeId> = t
+                .children(al)
+                .filter(|&a| t.kind(a) == Arg)
+                .filter_map(|a| t.children(a).find(|&x| t.kind(x) != Attribute))
+                .collect();
+            if is_bidi {
+                if args.len() >= 2 && t.kind(args[0]) == NameExpr && t.kind(args[1]) == NameExpr {
+                    let n0 = t.bare_text(args[0]);
+                    let n1 = t.bare_text(args[1]);
+                    if let (Some(u0), Some(u1)) =
+                        (self.net_udnt.get(&(ix, container, n0)), self.net_udnt.get(&(ix, container, n1)))
+                    {
+                        if u0 != u1 {
+                            err(inst, format!("bidirectional switch '{gw}' terminals must have matching nettypes"));
+                        }
+                    }
+                }
+            } else {
+                for a in args {
+                    if t.kind(a) == NameExpr {
+                        if let Some(Some(udnt)) = self.net_udnt.get(&(ix, container, t.bare_text(a))) {
+                            err(a, format!("gate '{gw}' terminal cannot connect to user-defined nettype '{udnt}'"));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fn check_udp_udnt(&self, ix: usize, t: &Tree, n: NodeId, parent: &[u32], err: &mut impl FnMut(NodeId, String)) {
+        if self.nettypes.is_empty() || self.udps.is_empty() {
+            return;
+        }
+        let Some(dt) = t.child(n, DataType) else { return };
+        let target = t.bare_text(dt);
+        if !self.udps.contains(target.trim()) {
+            return;
+        }
+        let mut anc_opt = up(parent, n);
+        let mut container = t.root;
+        while let Some(anc) = anc_opt {
+            if matches!(t.kind(anc), ModuleDecl | InterfaceDecl | ProgramDecl) {
+                container = anc;
+                break;
+            }
+            anc_opt = up(parent, anc);
+        }
+        for inst in t.children(n).filter(|&c| t.kind(c) == Instance) {
+            let Some(al) = t.child(inst, ArgList) else { continue };
+            for arg in t.children(al).filter(|&a| t.kind(a) == Arg) {
+                if let Some(a) = t.children(arg).find(|&x| t.kind(x) != Attribute) {
+                    if t.kind(a) == NameExpr {
+                        if let Some(Some(udnt)) = self.net_udnt.get(&(ix, container, t.bare_text(a))) {
+                            err(
+                                a,
+                                format!(
+                                    "UDP '{}' terminal cannot connect to user-defined nettype '{udnt}'",
+                                    target.trim()
+                                ),
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// IEEE 1800-2023 Clause 35 DPI-C import/export and C-identifier signature validation.
+    #[allow(clippy::too_many_lines, clippy::type_complexity)]
+    fn check_dpi(&self, out: &mut Vec<Diag>) {
+        let valid_c_id = |raw: &str| -> bool {
+            let s = raw.trim().strip_prefix('\\').unwrap_or(raw.trim()).trim();
+            !s.is_empty()
+                && s.bytes().next().is_some_and(|b| b.is_ascii_alphabetic() || b == b'_')
+                && s.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_')
+        };
+        let sub_dpi_sig = |t: &Tree, n: NodeId, is_task: bool| -> Option<(bool, String, Vec<(String, String)>)> {
+            let ret = if is_task {
+                "void".to_string()
+            } else if let Some(rt) = t.child(n, ReturnType) {
+                let rtoks: Vec<&str> = t.token_range(rt).into_iter().map(|i| &*t.tokens[i as usize].text).collect();
+                rtoks.join(" ")
+            } else {
+                "logic".to_string()
+            };
+            let mut args = Vec::new();
+            if let Some(pl) = t.child(n, PortList).or_else(|| t.child(n, Header).and_then(|h| t.child(h, PortList))) {
+                let mut dir = "input".to_string();
+                let mut dty = "logic".to_string();
+                for p in t.children(pl).filter(|&c| t.kind(c) == Port) {
+                    let own = toks(t, p);
+                    let exp_dir = own.iter().find(|&&x| matches!(x, "input" | "output" | "inout" | "ref")).copied();
+                    let dt = t.child(p, DataType);
+                    match (exp_dir, dt) {
+                        (_, Some(d)) => {
+                            let dtoks: Vec<&str> =
+                                t.token_range(d).into_iter().map(|i| &*t.tokens[i as usize].text).collect();
+                            dty = dtoks.join(" ");
+                        }
+                        (Some(_), None) => dty = "logic".to_string(),
+                        (None, None) => {}
+                    }
+                    if let Some(ed) = exp_dir {
+                        dir = ed.to_string();
+                    }
+                    // If `dty` contains a user typedef identifier rather than built-in keywords, skip strict sig comparison.
+                    let first_w = dty.split([' ', '[']).next().unwrap_or("");
+                    if !matches!(
+                        first_w,
+                        "void"
+                            | "bit"
+                            | "logic"
+                            | "reg"
+                            | "byte"
+                            | "shortint"
+                            | "int"
+                            | "longint"
+                            | "integer"
+                            | "real"
+                            | "shortreal"
+                            | "chandle"
+                            | "string"
+                    ) {
+                        return None;
+                    }
+                    args.push((dir.clone(), dty.clone()));
+                }
+            }
+            let first_r = ret.split([' ', '[']).next().unwrap_or("");
+            if !matches!(
+                first_r,
+                "void"
+                    | "bit"
+                    | "logic"
+                    | "reg"
+                    | "byte"
+                    | "shortint"
+                    | "int"
+                    | "longint"
+                    | "real"
+                    | "shortreal"
+                    | "chandle"
+                    | "string"
+            ) {
+                return None;
+            }
+            Some((is_task, ret, args))
+        };
+        let check_sub_types = |ix: usize,
+                               t: &Tree,
+                               err_node: NodeId,
+                               sub_node: NodeId,
+                               is_task: bool,
+                               is_pure: bool,
+                               out: &mut Vec<Diag>| {
+            if !is_task {
+                if let Some(rt) = t.child(sub_node, ReturnType) {
+                    let rtoks: Vec<&str> = t.token_range(rt).into_iter().map(|i| &*t.tokens[i as usize].text).collect();
+                    if is_pure && rtoks.as_slice() == ["void"] {
+                        out.push(Diag {
+                            tree: ix,
+                            node: err_node,
+                            message: "'pure' DPI function cannot have 'void' return type".into(),
+                        });
+                    }
+                    if let Some(&first_rt) = rtoks.first() {
+                        if matches!(first_rt, "integer" | "time" | "realtime" | "event")
+                            || (is_pure && first_rt == "chandle")
+                        {
+                            out.push(Diag {
+                                tree: ix,
+                                node: err_node,
+                                message: format!("invalid DPI function return type '{first_rt}'"),
+                            });
+                        }
+                    }
+                }
+            }
+            if let Some(pl) =
+                t.child(sub_node, PortList).or_else(|| t.child(sub_node, Header).and_then(|h| t.child(h, PortList)))
+            {
+                let mut dir = "input";
+                let mut dt_first = "logic";
+                for p in t.children(pl).filter(|&c| t.kind(c) == Port) {
+                    let own = toks(t, p);
+                    let exp_dir = own.iter().find(|&&x| matches!(x, "input" | "output" | "inout" | "ref")).copied();
+                    let dt = t.child(p, DataType);
+                    match (exp_dir, dt) {
+                        (_, Some(d)) => dt_first = first_tok(t, d).unwrap_or("logic"),
+                        (Some(_), None) => dt_first = "logic",
+                        (None, None) => {}
+                    }
+                    if let Some(ed) = exp_dir {
+                        dir = ed;
+                    }
+                    if dir == "ref" {
+                        out.push(Diag {
+                            tree: ix,
+                            node: err_node,
+                            message: "'ref' argument is not allowed on a DPI subroutine".into(),
+                        });
+                    } else if is_pure && matches!(dir, "output" | "inout") {
+                        out.push(Diag {
+                            tree: ix,
+                            node: err_node,
+                            message: format!("'pure' DPI function cannot have '{dir}' argument"),
+                        });
+                    }
+                    if dt_first == "event" || (is_pure && dt_first == "chandle") {
+                        out.push(Diag {
+                            tree: ix,
+                            node: err_node,
+                            message: format!("invalid DPI argument type '{dt_first}'"),
+                        });
+                    }
+                }
+            }
+        };
+
+        let mut c_sigs: HashMap<String, (bool, String, Vec<(String, String)>)> = HashMap::default();
+        let mut exported_c_ids: crate::fx::FxSet<String> = Default::default();
+        let mut exported_in_scope: crate::fx::FxSet<(usize, NodeId, String)> = Default::default();
+
+        for (ix, t) in self.trees.iter().enumerate() {
+            let parent = parents(t);
+            let scope_node_of = |n: NodeId| -> NodeId {
+                let mut cur = up(&parent, n);
+                while let Some(a) = cur {
+                    if matches!(t.kind(a), ModuleDecl | InterfaceDecl | ProgramDecl | PackageDecl | ClassDecl) {
+                        return a;
+                    }
+                    cur = up(&parent, a);
+                }
+                t.root
+            };
+            for n in t.preorder() {
+                match t.kind(n) {
+                    DpiImport => {
+                        let own = toks(t, n);
+                        let spec = own.iter().find(|s| s.starts_with('"')).copied().unwrap_or("");
+                        if spec == "\"DPI\"" {
+                            out.push(Diag {
+                                tree: ix,
+                                node: n,
+                                message: "deprecated '\"DPI\"' spec string is not allowed; use '\"DPI-C\"'".into(),
+                            });
+                        } else if spec != "\"DPI-C\"" {
+                            out.push(Diag {
+                                tree: ix,
+                                node: n,
+                                message: format!("invalid DPI spec string {spec}; expected '\"DPI-C\"'"),
+                            });
+                        }
+                        let is_pure = own.contains(&"pure");
+                        let is_task = own.contains(&"task");
+                        if is_pure && is_task {
+                            out.push(Diag { tree: ix, node: n, message: "DPI task cannot be declared 'pure'".into() });
+                        }
+                        let sv_name = name_of(t, n);
+                        let c_id = if let Some(eq_pos) = own.iter().position(|&x| x == "=") {
+                            own.get(eq_pos.wrapping_sub(1)).copied().unwrap_or("")
+                        } else {
+                            sv_name.as_str()
+                        };
+                        if !c_id.is_empty() && !valid_c_id(c_id) {
+                            out.push(Diag { tree: ix, node: n, message: format!("invalid DPI C identifier '{c_id}'") });
+                        }
+                        check_sub_types(ix, t, n, n, is_task, is_pure, out);
+                        let clean_cid = c_id.trim().strip_prefix('\\').unwrap_or(c_id.trim()).trim().to_string();
+                        if !clean_cid.is_empty() && valid_c_id(c_id) {
+                            if let Some(sig) = sub_dpi_sig(t, n, is_task) {
+                                if let Some(prev) = c_sigs.get(&clean_cid) {
+                                    if prev != &sig {
+                                        out.push(Diag {
+                                            tree: ix,
+                                            node: n,
+                                            message: format!("DPI signature mismatch for C identifier '{clean_cid}'"),
+                                        });
+                                    }
+                                } else {
+                                    c_sigs.insert(clean_cid, sig);
+                                }
+                            }
+                        }
+                    }
+                    DpiExport => {
+                        let own = toks(t, n);
+                        let spec = own.iter().find(|s| s.starts_with('"')).copied().unwrap_or("");
+                        if spec == "\"DPI\"" {
+                            out.push(Diag {
+                                tree: ix,
+                                node: n,
+                                message: "deprecated '\"DPI\"' spec string is not allowed; use '\"DPI-C\"'".into(),
+                            });
+                        } else if spec != "\"DPI-C\"" {
+                            out.push(Diag {
+                                tree: ix,
+                                node: n,
+                                message: format!("invalid DPI spec string {spec}; expected '\"DPI-C\"'"),
+                            });
+                        }
+                        let Some(kw_pos) = own.iter().position(|&x| matches!(x, "function" | "task")) else {
+                            continue;
+                        };
+                        let want_task = own[kw_pos] == "task";
+                        let sv_raw = own.get(kw_pos + 1).copied().unwrap_or("");
+                        if sv_raw.is_empty() || sv_raw == ";" {
+                            continue;
+                        }
+                        let sv_name = sv_raw.trim().strip_prefix('\\').unwrap_or(sv_raw.trim()).trim();
+                        let c_raw = if let Some(eq_pos) = own.iter().position(|&x| x == "=") {
+                            own.get(eq_pos.wrapping_sub(1)).copied().unwrap_or(sv_raw)
+                        } else {
+                            sv_raw
+                        };
+                        if !valid_c_id(c_raw) {
+                            out.push(Diag {
+                                tree: ix,
+                                node: n,
+                                message: format!("invalid DPI C identifier '{c_raw}'"),
+                            });
+                        }
+                        let container = scope_node_of(n);
+                        let mut found_node: Option<NodeId> = None;
+                        for ch in t.children(container) {
+                            match t.kind(ch) {
+                                FunctionDecl | TaskDecl | DpiImport if name_of(t, ch) == sv_name => {
+                                    found_node = Some(ch);
+                                    break;
+                                }
+                                DataDecl | ParamDecl
+                                    if t.children(ch).any(|d| t.kind(d) == Declarator && name_of(t, d) == sv_name) =>
+                                {
+                                    found_node = Some(ch);
+                                    break;
+                                }
+                                _ => {}
+                            }
+                        }
+                        let Some(target) = found_node else {
+                            out.push(Diag {
+                                tree: ix,
+                                node: n,
+                                message: format!("DPI export '{sv_name}' must be declared in the same scope"),
+                            });
+                            continue;
+                        };
+                        match t.kind(target) {
+                            DpiImport => {
+                                out.push(Diag {
+                                    tree: ix,
+                                    node: n,
+                                    message: format!("cannot DPI-export imported subroutine '{sv_name}'"),
+                                });
+                                continue;
+                            }
+                            FunctionDecl | TaskDecl => {
+                                let actual_task = t.kind(target) == TaskDecl;
+                                if actual_task != want_task {
+                                    out.push(Diag {
+                                        tree: ix,
+                                        node: n,
+                                        message: format!("DPI export kind mismatch for '{sv_name}'"),
+                                    });
+                                    continue;
+                                }
+                                if !exported_in_scope.insert((ix, container, sv_name.to_string())) {
+                                    out.push(Diag {
+                                        tree: ix,
+                                        node: n,
+                                        message: format!("duplicate DPI export of '{sv_name}'"),
+                                    });
+                                    continue;
+                                }
+                                check_sub_types(ix, t, n, target, actual_task, false, out);
+                                let clean_cid =
+                                    c_raw.trim().strip_prefix('\\').unwrap_or(c_raw.trim()).trim().to_string();
+                                if valid_c_id(c_raw) {
+                                    if container != t.root {
+                                        // Check signature compatibility across compilation, and duplicate C-id within same module/scope.
+                                        if let Some(sig) = sub_dpi_sig(t, target, actual_task) {
+                                            if let Some(prev) = c_sigs.get(&clean_cid) {
+                                                if prev != &sig {
+                                                    out.push(Diag {
+                                                        tree: ix,
+                                                        node: n,
+                                                        message: format!(
+                                                            "DPI signature mismatch for C identifier '{clean_cid}'"
+                                                        ),
+                                                    });
+                                                }
+                                            } else {
+                                                c_sigs.insert(clean_cid.clone(), sig);
+                                            }
+                                        }
+                                        if !exported_c_ids.insert(format!("{ix}:{}::{clean_cid}", container.0)) {
+                                            out.push(Diag {
+                                                tree: ix,
+                                                node: n,
+                                                message: format!("duplicate DPI export C identifier '{clean_cid}'"),
+                                            });
+                                        }
+                                    } else if let Some(sig) = sub_dpi_sig(t, target, actual_task) {
+                                        if let Some(prev) = c_sigs.get(&clean_cid) {
+                                            if prev != &sig {
+                                                out.push(Diag {
+                                                    tree: ix,
+                                                    node: n,
+                                                    message: format!(
+                                                        "DPI signature mismatch for C identifier '{clean_cid}'"
+                                                    ),
+                                                });
+                                            }
+                                        } else {
+                                            c_sigs.insert(clean_cid, sig);
+                                        }
+                                    }
+                                }
+                            }
+                            _ => {
+                                out.push(Diag {
+                                    tree: ix,
+                                    node: n,
+                                    message: format!("'{sv_name}' is not a subroutine"),
+                                });
+                            }
+                        }
+                    }
+                    _ => {}
                 }
             }
         }

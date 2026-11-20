@@ -439,7 +439,15 @@ impl Walker<'_, '_> {
             SequenceDecl => self.named(scope, n, SymKind::Sequence),
             PropertyDecl => self.named(scope, n, SymKind::Property),
             LetDecl => self.named(scope, n, SymKind::Let),
-            NetTypeDecl => self.named(scope, n, SymKind::Nettype),
+            NetTypeDecl => {
+                self.enum_values(scope, n);
+                let name = name_of(t, n);
+                if !name.is_empty() {
+                    let i = self.add(scope, SymKind::Nettype, name, n);
+                    self.out.symbols[i].dtype = t.child(n, DataType);
+                    self.out.symbols[i].item = Some(n);
+                }
+            }
             SpecparamDecl => {
                 for d in t.children(n).filter(|&c| t.kind(c) == Declarator) {
                     self.add(scope, SymKind::Specparam, name_of(t, d), d);

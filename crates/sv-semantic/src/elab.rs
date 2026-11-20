@@ -125,8 +125,10 @@ struct Over {
 type Overrides = HashMap<String, Over>;
 
 /// A `bind`: its target (a definition or instance path), the instances
-/// listed after `:` (if any), the directive, and the definition holding it.
-type Bind = (String, Option<Vec<String>>, NodeRef, Option<NodeRef>);
+/// listed after `:` (if any), the directive, the definition holding it,
+/// and optional active constant values (`genvar` / parameter values) from
+/// the elaborated scope where the `bind` sat.
+type Bind = (String, Option<Vec<String>>, NodeRef, Option<NodeRef>, Option<Vals>);
 
 struct Def {
     decl: NodeRef,
@@ -184,7 +186,10 @@ pub(crate) struct Elab<'b, 't> {
     covergroups: HashSet<String>,
     nettypes: HashSet<String>,
     proc_clock_ctx: Option<(usize, NodeId)>,
+    orig_binds: Vec<Bind>,
     binds: Vec<Bind>,
+    discovered_binds: Vec<Bind>,
+    upward_defparams: HashMap<(String, String), Over>,
     defparams: Vec<Vec<(Vec<String>, Over)>>,
     envs: Vec<Env>,
     pub out: Vec<String>,
@@ -318,9 +323,10 @@ impl<'b, 't> Elab<'b, 't> {
                         .map(|k| b.toks_of(*k).concat())
                         .collect()
                 });
-                binds.push((target, list, r, container));
+                binds.push((target, list, r, container, None));
             }
         }
+        let orig_binds = binds.clone();
         Elab {
             b,
             defs,
@@ -329,7 +335,10 @@ impl<'b, 't> Elab<'b, 't> {
             covergroups,
             nettypes,
             proc_clock_ctx: None,
+            orig_binds,
             binds,
+            discovered_binds: Vec::new(),
+            upward_defparams: HashMap::default(),
             defparams: Vec::new(),
             envs: vec![Rc::new(HashMap::default())],
             out: Vec::new(),
@@ -894,6 +903,13 @@ impl<'b, 't> Elab<'b, 't> {
         let b = self.b;
         let Some(pl) = b.child(decl, Header).and_then(|h| b.child(h, ParamList)) else { return false };
         b.children(pl).into_iter().filter(|p| b.kind(*p) == ParamDecl).any(|p| {
+            let own = b.own_tokens(p);
+            if own.contains(&"type")
+                && !own.contains(&"=")
+                && b.children(p).into_iter().all(|d| b.kind(d) != Declarator)
+            {
+                return true;
+            }
             b.children(p).into_iter().filter(|d| b.kind(*d) == Declarator).any(|d| {
                 let no_default = b.children(d).into_iter().all(|c| matches!(b.kind(c), Name | Dim));
                 if !no_default {
@@ -911,6 +927,13 @@ impl<'b, 't> Elab<'b, 't> {
         let b = self.b;
         let Some(pl) = b.child(decl, Header).and_then(|h| b.child(h, ParamList)) else { return false };
         b.children(pl).into_iter().filter(|p| b.kind(*p) == ParamDecl).any(|p| {
+            let own = b.own_tokens(p);
+            if own.contains(&"type")
+                && !own.contains(&"=")
+                && b.children(p).into_iter().all(|d| b.kind(d) != Declarator)
+            {
+                return true;
+            }
             b.children(p)
                 .into_iter()
                 .filter(|d| b.kind(*d) == Declarator)
@@ -918,20 +941,32 @@ impl<'b, 't> Elab<'b, 't> {
         })
     }
 
+    #[allow(clippy::type_complexity)]
     pub fn run(&mut self) {
-        loop {
+        let mut prev_sig: Option<(Vec<(String, Option<Vec<String>>, NodeRef)>, Vec<(String, String, Option<CVal>)>)> =
+            None;
+        for _ in 0..8 {
             self.run_once();
-            let before = self.binds.len();
-            let active = &self.active_binds;
-            self.binds.retain(|bd| bd.3.is_none() || active.contains(&bd.2));
-            if self.binds.len() == before {
+            let mut next_binds: Vec<Bind> = self.orig_binds.iter().filter(|bd| bd.3.is_none()).cloned().collect();
+            next_binds.extend(self.discovered_binds.iter().cloned());
+            let bind_sig: Vec<(String, Option<Vec<String>>, NodeRef)> =
+                next_binds.iter().map(|b| (b.0.clone(), b.1.clone(), b.2)).collect();
+            let mut dp_sig: Vec<(String, String, Option<CVal>)> =
+                self.upward_defparams.iter().map(|((p, k), o)| (p.clone(), k.clone(), o.val.clone())).collect();
+            dp_sig.sort_by(|a, b| (a.0.as_str(), a.1.as_str()).cmp(&(b.0.as_str(), b.1.as_str())));
+            let cur_sig = (bind_sig, dp_sig);
+            let cur_active_sig: Vec<(String, Option<Vec<String>>, NodeRef)> =
+                self.binds.iter().map(|b| (b.0.clone(), b.1.clone(), b.2)).collect();
+            if cur_active_sig == cur_sig.0 && prev_sig.as_ref().is_some_and(|ps| ps.1 == cur_sig.1) {
                 break;
             }
+            prev_sig = Some(cur_sig);
+            self.binds = next_binds;
             self.reset();
         }
         if !self.design.tops.is_empty() {
             let inst_defs: HashSet<&str> = self.design.instances.iter().map(|i| i.definition.as_str()).collect();
-            for (target, list, bd, _) in &self.binds {
+            for (target, list, bd, _, _) in &self.binds {
                 let target_exists =
                     self.defs.contains_key(target.as_str()) || self.checkers.contains_key(target.as_str());
                 match list {
@@ -1013,6 +1048,7 @@ impl<'b, 't> Elab<'b, 't> {
         self.non_ansi_stack.clear();
         self.matched_cli_params.clear();
         self.active_binds.clear();
+        self.discovered_binds.clear();
         self.matched_binds.clear();
         self.matched_bind_items.clear();
     }
@@ -1165,6 +1201,15 @@ impl<'b, 't> Elab<'b, 't> {
         depth: usize,
     ) {
         if depth > MAX_DEPTH {
+            if let Some(d) = self.defs.get(def) {
+                if self.checked.insert(d.decl) {
+                    self.diags.push(crate::names::Diag {
+                        tree: d.decl.tree,
+                        node: d.decl.node,
+                        message: format!("maximum instance elaboration depth ({MAX_DEPTH}) exceeded in '{def}'"),
+                    });
+                }
+            }
             return;
         }
         self.defparams.push(pend);
@@ -1254,6 +1299,12 @@ impl<'b, 't> Elab<'b, 't> {
             self.non_ansi_stack.push(NonAnsiPorts::default());
         }
         self.copy(decl);
+        let mut eff_over = over.clone();
+        for ((inst_p, param_k), ov) in &self.upward_defparams {
+            if inst_p == path {
+                eff_over.insert(param_k.clone(), ov.clone());
+            }
+        }
         let b = self.b;
         let mut vals = Vals::default();
         // Header parameters: `#(parameter A = 1, int B = 2, localparam C = 3)`.
@@ -1283,7 +1334,7 @@ impl<'b, 't> Elab<'b, 't> {
                     self.record_type_params(p, scope, &vals);
                     continue;
                 }
-                self.params(p, dt, !local, path, scope, over, &mut vals);
+                self.params(p, dt, !local, path, scope, &eff_over, &mut vals);
             }
         }
         if pushed_design {
@@ -1297,8 +1348,8 @@ impl<'b, 't> Elab<'b, 't> {
             self.collect_header_ports(decl, scope, &vals);
         }
         let body: Vec<NodeRef> = b.children(decl);
-        self.defparams_of(&body, scope, over, header.is_none(), &vals);
-        self.items(&body, path, scope, over, header.is_none(), &mut vals, depth);
+        self.defparams_of(&body, path, scope, &mut eff_over, header.is_none(), &vals);
+        self.items(&body, path, scope, &eff_over, header.is_none(), &mut vals, depth);
         if pushed_design {
             self.finalize_non_ansi_ports(scope, &vals);
         }
@@ -1329,7 +1380,7 @@ impl<'b, 't> Elab<'b, 't> {
             };
         let mut binds = Vec::new();
         if self.uninst == 0 {
-            for (target, list, bd, container) in &self.binds {
+            for (target, list, bd, container, bd_vals) in &self.binds {
                 let matched = match list {
                     None if target == def => true,
                     None => matches_inst_path(target, *container, &self.design_stack, &self.design.instances),
@@ -1347,13 +1398,14 @@ impl<'b, 't> Elab<'b, 't> {
                 };
                 if matched {
                     self.matched_binds.insert(*bd);
-                    binds.push(*bd);
+                    binds.push((*bd, bd_vals.clone()));
                 }
             }
         }
-        for bd in binds {
+        for (bd, bd_vals) in binds {
             self.bound += 1;
-            self.instantiation(bd, path, scope, &vals, depth);
+            let use_vals = bd_vals.as_ref().unwrap_or(&vals);
+            self.instantiation(bd, path, scope, use_vals, depth);
             self.bound -= 1;
         }
         if pushed_design {
@@ -1486,7 +1538,16 @@ impl<'b, 't> Elab<'b, 't> {
                 Some((dt_node, dt_scope, dt_env)) => {
                     b.rtl_data_type(*dt_node, *dt_scope, dt_env, Some(name.clone()), 0)
                 }
-                None => RtlType::Integral { width: 1, signed: false, four_state: true },
+                None => {
+                    if self.checked.insert(d) {
+                        self.diags.push(crate::names::Diag {
+                            tree: d.tree,
+                            node: d.node,
+                            message: format!("type parameter '{name}' has no type assigned"),
+                        });
+                    }
+                    RtlType::Integral { width: 1, signed: false, four_state: true }
+                }
             };
             // IEEE 1800-2023 §6.20.3: enforce type parameter restriction (`type enum/struct/union/class/interface class`).
             let d_own = b.own_tokens(d);
@@ -2085,6 +2146,7 @@ impl<'b, 't> Elab<'b, 't> {
                 BindDirective => {
                     if self.uninst == 0 {
                         self.active_binds.insert(c);
+                        self.record_active_bind(c, scope, vals);
                     }
                 }
                 Instantiation => self.instantiation(c, path, scope, vals, depth),
@@ -2259,7 +2321,9 @@ impl<'b, 't> Elab<'b, 't> {
             );
         }
         let mut v = vals.child();
-        self.items(&items, &inner, scope, &Overrides::default(), false, &mut v, depth);
+        let mut blk_over = Overrides::default();
+        self.defparams_of(&items, &inner, scope, &mut blk_over, false, &v);
+        self.items(&items, &inner, scope, &blk_over, false, &mut v, depth);
         self.gen_stack.pop();
         self.set_sig_prefix();
     }
@@ -2548,6 +2612,28 @@ impl<'b, 't> Elab<'b, 't> {
                 let (Some(name), Some(e)) = (name, e) else { continue };
                 let is_type = order.iter().any(|(n, t)| *t && *n == name);
                 if b.kind(e) == DataType || is_type {
+                    if is_type
+                        && matches!(
+                            b.kind(e),
+                            Literal
+                                | BinaryExpr
+                                | PrefixExpr
+                                | PostfixExpr
+                                | CondExpr
+                                | ConcatExpr
+                                | AssignPattern
+                                | CallExpr
+                        )
+                    {
+                        if self.checked.insert(e) {
+                            self.diags.push(crate::names::Diag {
+                                tree: e.tree,
+                                node: e.node,
+                                message: format!("argument for type parameter '{name}' must be a data type"),
+                            });
+                        }
+                        continue;
+                    }
                     types.insert(name, Bound { node: e, scope, env: self.env() });
                     continue;
                 }
@@ -2572,11 +2658,18 @@ impl<'b, 't> Elab<'b, 't> {
             }
             let Some((name, _)) = b.name_of(inst) else { continue };
             let dims: Vec<NodeRef> = b.children(inst).into_iter().filter(|k| b.kind(*k) == Dim).collect();
-            let mut names = vec![name];
+            let mut names = vec![name.clone()];
             for dim in dims {
                 *b.inst.borrow_mut() = vals.clone();
                 let Some((l, r)) = b.dim_range(dim, scope, &self.env()) else { return };
                 if l.abs_diff(r) > MAX_ITER as u128 {
+                    if self.checked.insert(dim) {
+                        self.diags.push(crate::names::Diag {
+                            tree: dim.tree,
+                            node: dim.node,
+                            message: format!("instance array '{name}' exceeds maximum size"),
+                        });
+                    }
                     return;
                 }
                 let idx: Vec<i128> = if l >= r { (r..=l).collect() } else { (l..=r).collect() };
@@ -2703,7 +2796,64 @@ impl<'b, 't> Elab<'b, 't> {
         }
     }
 
-    fn defparams_of(&mut self, body: &[NodeRef], scope: usize, over: &Overrides, body_params: bool, vals: &Vals) {
+    fn eval_bind_path(&self, e: NodeRef, scope: usize, vals: &Vals) -> String {
+        let b = self.b;
+        match b.kind(e) {
+            MemberExpr => {
+                let kids = b.children(e);
+                let own = b.own_tokens(e);
+                if let (Some(&base), Some(&field)) = (kids.first(), own.get(1)) {
+                    return format!("{}.{field}", self.eval_bind_path(base, scope, vals));
+                }
+                b.toks_of(e).concat()
+            }
+            SelectExpr => {
+                let kids = b.children(e);
+                if kids.len() == 2 {
+                    let base = self.eval_bind_path(kids[0], scope, vals);
+                    let idx_s = self
+                        .eval(kids[1], scope, vals)
+                        .map(|cv| cv.i().to_string())
+                        .unwrap_or_else(|| b.toks_of(kids[1]).concat());
+                    return format!("{base}[{idx_s}]");
+                }
+                b.toks_of(e).concat()
+            }
+            _ => b.toks_of(e).concat(),
+        }
+    }
+
+    fn record_active_bind(&mut self, c: NodeRef, scope: usize, vals: &Vals) {
+        let b = self.b;
+        let container = self.design_stack.last().map(|&id| {
+            let inst = &self.design.instances[id.0 as usize];
+            NodeRef { tree: inst.def_node.0, node: inst.def_node.1 }
+        });
+        let kids: Vec<NodeRef> = b.children(c).into_iter().filter(|k| b.kind(*k) != Attribute).collect();
+        let Some(&target_node) = kids.first() else { return };
+        if b.kind(target_node) == DataType {
+            return;
+        }
+        let target = self.eval_bind_path(target_node, scope, vals);
+        let list = b.own_tokens(c).contains(&":").then(|| {
+            kids.iter()
+                .skip(1)
+                .take_while(|k| b.kind(**k) != DataType)
+                .map(|k| self.eval_bind_path(*k, scope, vals))
+                .collect()
+        });
+        self.discovered_binds.push((target, list, c, container, Some(vals.clone())));
+    }
+
+    fn defparams_of(
+        &mut self,
+        body: &[NodeRef],
+        path: &str,
+        scope: usize,
+        over: &mut Overrides,
+        body_params: bool,
+        vals: &Vals,
+    ) {
         let b = self.b;
         let mut items = Vec::new();
         let mut stack: Vec<NodeRef> = body.iter().rev().copied().collect();
@@ -2729,24 +2879,62 @@ impl<'b, 't> Elab<'b, 't> {
         self.out = saved;
         for &p in &items {
             if b.own_tokens(p).contains(&"defparam") {
-                self.defparam(p, scope, &v);
+                self.defparam(p, path, scope, over, &v);
             }
         }
     }
 
-    fn defparam(&mut self, c: NodeRef, scope: usize, vals: &Vals) {
+    fn defparam(&mut self, c: NodeRef, cur_path: &str, scope: usize, cur_over: &mut Overrides, vals: &Vals) {
         let b = self.b;
-        let kids = b.children(c);
-        let (Some(&target), Some(&e)) = (kids.first(), kids.get(1)) else { return };
-        let segs: Vec<String> = b.toks_of(target).split(|t| *t == ".").map(|p| p.concat()).collect();
-        if segs.len() < 2 {
-            return;
-        }
-        let val = self.eval(e, scope, vals);
-        let o =
-            Over { val, node: e, scope, vals: vals.clone(), env: self.env(), cli_raw: None, cli_indices: Vec::new() };
-        if let Some(d) = self.defparams.last_mut() {
-            d.push((segs, o));
+        let kids: Vec<NodeRef> = b.children(c).into_iter().filter(|k| b.kind(*k) != Attribute).collect();
+        let cur_gen = self.cur_gen_prefix();
+        for pair in kids.chunks_exact(2) {
+            let (target, e) = (pair[0], pair[1]);
+            let eval_target = self.eval_bind_path(target, scope, vals);
+            let mut segs: Vec<String> = eval_target.split('.').map(str::to_string).collect();
+            if segs.len() < 2 {
+                continue;
+            }
+            let val = self.eval(e, scope, vals);
+            let o = Over {
+                val,
+                node: e,
+                scope,
+                vals: vals.clone(),
+                env: self.env(),
+                cli_raw: None,
+                cli_indices: Vec::new(),
+            };
+            // Check upward / self module-name or instance-path `defparam` (`top.a = 1`, `o.bar = 1`):
+            let mut matched_upward = false;
+            if segs.len() == 2 {
+                for &anc_id in self.design_stack.iter().rev() {
+                    let anc = &self.design.instances[anc_id.0 as usize];
+                    if anc.definition == segs[0] || anc.rel_path == segs[0] || anc.path == segs[0] {
+                        let anc_path = anc.path.clone();
+                        let pname = segs[1].clone();
+                        if anc_path == cur_path {
+                            cur_over.insert(pname.clone(), o.clone());
+                        }
+                        self.upward_defparams.insert((anc_path, pname), o.clone());
+                        matched_upward = true;
+                        break;
+                    }
+                }
+            }
+            if matched_upward {
+                continue;
+            }
+            // If written inside a generate block (`if (1) begin : blk r r1(); defparam r1.p = 1; end`),
+            // prepend `cur_gen` if `segs` is relative to the block!
+            if !cur_gen.is_empty() && !eval_target.starts_with(&format!("{cur_gen}.")) {
+                let mut prefixed: Vec<String> = cur_gen.split('.').map(str::to_string).collect();
+                prefixed.extend(segs);
+                segs = prefixed;
+            }
+            if let Some(d) = self.defparams.last_mut() {
+                d.push((segs, o));
+            }
         }
     }
 
@@ -3039,11 +3227,12 @@ impl<'b, 't> Elab<'b, 't> {
             }
         } else {
             for &x in &header {
-                if !matches!(x, "(" | ")" | "," | "*" | ".*") {
+                if !matches!(x, "(" | ")" | "," | "." | "*" | ".*") {
                     ports.push(x.strip_prefix('\\').unwrap_or(x).to_string());
                 }
             }
         }
+        let header_had_ports = !ports.is_empty();
         let mut table_node = None;
         for c in t.children(n) {
             match t.kind(c) {
@@ -3057,7 +3246,7 @@ impl<'b, 't> Elab<'b, 't> {
                             tk.iter().copied().skip_while(|&x| x != "=").skip(1).take_while(|&x| x != ";").collect();
                         init = parse_init_lit(&rhs);
                     }
-                    if ports.is_empty() {
+                    if !header_had_ports {
                         let mut after_eq = false;
                         for &x in &tk {
                             match x {
@@ -3288,6 +3477,13 @@ impl<'b, 't> Elab<'b, 't> {
         depth: usize,
     ) {
         if depth > MAX_DEPTH {
+            if self.checked.insert(chk_decl) {
+                self.diags.push(crate::names::Diag {
+                    tree: chk_decl.tree,
+                    node: chk_decl.node,
+                    message: format!("maximum checker elaboration depth ({MAX_DEPTH}) exceeded in '{chk_key}'"),
+                });
+            }
             return;
         }
         let b = self.b;
@@ -3298,11 +3494,18 @@ impl<'b, 't> Elab<'b, 't> {
             }
             let Some((name, _)) = b.name_of(inst) else { continue };
             let dims: Vec<NodeRef> = b.children(inst).into_iter().filter(|k| b.kind(*k) == Dim).collect();
-            let mut names = vec![name];
+            let mut names = vec![name.clone()];
             for dim in dims {
                 *b.inst.borrow_mut() = vals.clone();
                 let Some((l, r)) = b.dim_range(dim, scope, &self.env()) else { return };
                 if l.abs_diff(r) > MAX_ITER as u128 {
+                    if self.checked.insert(dim) {
+                        self.diags.push(crate::names::Diag {
+                            tree: dim.tree,
+                            node: dim.node,
+                            message: format!("instance array '{name}' exceeds maximum size"),
+                        });
+                    }
                     return;
                 }
                 let idx: Vec<i128> = if l >= r { (r..=l).collect() } else { (l..=r).collect() };
