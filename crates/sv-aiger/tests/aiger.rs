@@ -89,7 +89,7 @@ fn both_aiger_forms_read_back_the_same() {
         assert_eq!(first_bad(&back, 40, |_, _| false), Some(9));
         // The symbol table brings the names back.
         assert_eq!(first_bad(&back, 40, |n, _| n == "cnt.rst"), None);
-        assert_eq!(back.bad_names, ["in_range"]);
+        assert_eq!(back.bad_names, ["cnt.in_range"]);
     }
 }
 

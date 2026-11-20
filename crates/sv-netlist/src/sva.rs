@@ -1588,7 +1588,85 @@ impl Netlist {
                 }
             });
         }
+        self.emit_immediate_related_covers(opts);
         outcomes.into_iter().map(|o| o.expect("every property has an outcome")).collect()
+    }
+
+    fn emit_immediate_related_covers(&mut self, opts: &PropertyOptions) {
+        if !opts.precondition_covers && !opts.witness_covers {
+            return;
+        }
+        let existing: sv_semantic::fx::FxSet<String> = self.checks.iter().filter_map(|c| c.label.clone()).collect();
+        let candidates: Vec<(String, ValueId, ValueId, Option<ClockSpec>, Loc)> = self
+            .checks
+            .iter()
+            .filter_map(|c| {
+                if !c.immediate || c.kind != CheckKind::Assert {
+                    return None;
+                }
+                let name = c.label.as_ref()?;
+                if name.contains(':') {
+                    return None;
+                }
+                let en_is_const_one = matches!(
+                    &self.values[c.enable.0 as usize].kind,
+                    ValueKind::Const(cv) if cv.known() && cv.is_true()
+                );
+                let expr_is_const_zero = matches!(
+                    &self.values[c.expr.0 as usize].kind,
+                    ValueKind::Const(cv) if cv.known() && !cv.is_true()
+                );
+                if en_is_const_one || expr_is_const_zero {
+                    return None;
+                }
+                Some((name.clone(), c.enable, c.expr, c.clock, c.loc))
+            })
+            .collect();
+        if candidates.is_empty() {
+            return;
+        }
+        let mut added = false;
+        for (name, enable, expr, clock, loc) in candidates {
+            if opts.precondition_covers {
+                let pre = format!("{name}:precondition");
+                if !existing.contains(&pre) {
+                    let one = self.sva_const(1, 1, loc);
+                    let en_bool = self.sva_bool(enable, loc);
+                    added = true;
+                    self.checks.push(Check {
+                        kind: CheckKind::Cover,
+                        label: Some(pre),
+                        immediate: true,
+                        enable: one,
+                        expr: en_bool,
+                        clock,
+                        loc,
+                    });
+                }
+            }
+            if opts.witness_covers {
+                let wit = format!("{name}:witness");
+                if !existing.contains(&wit) {
+                    let one = self.sva_const(1, 1, loc);
+                    let en_bool = self.sva_bool(enable, loc);
+                    let ex_bool = self.sva_bool(expr, loc);
+                    let hit = self.sva_op(NetOp::LogAnd, vec![en_bool, ex_bool], 1, loc);
+                    added = true;
+                    self.checks.push(Check {
+                        kind: CheckKind::Cover,
+                        label: Some(wit),
+                        immediate: true,
+                        enable: one,
+                        expr: hit,
+                        clock,
+                        loc,
+                    });
+                }
+            }
+        }
+        if added {
+            self.toposort();
+        }
     }
 
     /// Compiles properties that are not part of the design: each bound from text in a scope

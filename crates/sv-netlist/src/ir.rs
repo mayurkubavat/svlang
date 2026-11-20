@@ -499,7 +499,8 @@ impl CheckKind {
 pub struct Check {
     /// Directive kind.
     pub kind: CheckKind,
-    /// Optional statement label (`lbl: assert (cond)`).
+    /// Unique hierarchical check name (`"top.u0.lbl"`, `"top._assert_1"`, `"top.a_loop_2"`),
+    /// or `None` for manually constructed anonymous checks.
     pub label: Option<String>,
     /// `true` for immediate assertions (`assert (...)`), `false` if lowered from a concurrent assertion.
     pub immediate: bool,

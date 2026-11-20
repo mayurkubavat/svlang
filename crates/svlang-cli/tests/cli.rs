@@ -85,7 +85,7 @@ fn btor2_names_the_assertion() {
     let (_, f) = source("btor2", "cnt.sv", COUNTER);
     let o = svlang(&["btor2", f.to_str().unwrap()]);
     assert_eq!(o.status.code(), Some(0), "{}", stderr(&o));
-    assert!(stdout(&o).lines().any(|l| l.contains(" bad ") && l.ends_with(" in_range")), "{}", stdout(&o));
+    assert!(stdout(&o).lines().any(|l| l.contains(" bad ") && l.ends_with(" cnt.in_range")), "{}", stdout(&o));
 }
 
 #[test]
@@ -186,7 +186,7 @@ fn yosys_writes_a_json_netlist() {
     assert_eq!(o.status.code(), Some(0), "{}", stderr(&o));
     let out = stdout(&o);
     assert!(out.starts_with("{\n  \"creator\": \"svlang sv-yosys "), "{out}");
-    assert!(out.contains("\"type\": \"$dff\"") && out.contains("\"in_range\""), "{out}");
+    assert!(out.contains("\"type\": \"$dff\"") && out.contains("\"cnt.in_range\""), "{out}");
 }
 
 #[test]

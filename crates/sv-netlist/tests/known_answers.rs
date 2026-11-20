@@ -64,7 +64,7 @@ fn s7_03_counter_ok_and_param_override() {
     assert_eq!(nl.states.len(), 1);
     assert_eq!(nl.states[0].width, 3, "-G W=3 must set counter state width to 3");
     assert_eq!(nl.checks.len(), 1);
-    assert_eq!(nl.checks[0].label.as_deref(), Some("chk_bound"));
+    assert_eq!(nl.checks[0].label.as_deref(), Some("counter_ok.chk_bound"));
 
     let mut sim = NetlistSim::new(&nl);
     sim.set_u("rst", 1);
@@ -320,9 +320,95 @@ fn s7_18_assume_inside_task_inherits_enable_and_clock() {
     assert_eq!(nl.checks.len(), 1);
     let chk = &nl.checks[0];
     assert_eq!(chk.kind, CheckKind::Assume);
-    assert_eq!(chk.label.as_deref(), Some("env_req_en"));
+    assert_eq!(chk.label.as_deref(), Some("assume_task.env_req_en"));
     let clk = chk.clock.expect("task called inside always_ff must inherit active clock");
     assert_eq!(clk.edge, Edge::Posedge);
     let vld_in = nl.inputs.iter().find(|i| i.name == "vld").unwrap().value;
     assert_eq!(chk.enable, vld_in, "task called under `if (vld)` must inherit `vld` as Check::enable");
+}
+
+#[test]
+fn s7_19_hierarchical_auto_named_and_loop_unrolled_immediate_checks() {
+    use sv_netlist::{lower_trees, PropertyOptions};
+    use sv_syntax::{parse_source, Options};
+
+    let src = r#"
+module leaf (input logic clk, en, a, b);
+    always_ff @(posedge clk) begin
+        assert (a || b);
+        assume (a);
+        cover (b);
+        if (en) a_cond: assert (b);
+    end
+endmodule
+
+module top (input logic clk, en, input logic [1:0] v, input logic bad);
+    leaf u0 (.clk(clk), .en(en), .a(v[0]), .b(v[1]));
+    leaf u1 (.clk(clk), .en(en), .a(v[1]), .b(v[0]));
+
+    for (genvar g = 0; g < 2; g++) begin : gen_b
+        always_comb assert #0 (v[g] == v[g]);
+    end
+
+    always_comb begin
+        for (int i = 0; i < 2; i++) begin
+            a_loop: assert (v[i] || !v[i]);
+            assert (v[i] == v[i]);
+        end
+        if (bad) $error("unreachable");
+        if (bad) e_lbl: $fatal(1, "fatal branch");
+    end
+
+    assert final (v == v);
+    assert property (@(posedge clk) v[0] |-> v[0]);
+endmodule
+"#;
+    let tree = parse_source(src, "hier_imm.sv", Options::default());
+    let mut nl = lower_trees(&[tree], &[], &[], &LowerConfig::default()).unwrap_netlist();
+
+    let labels: Vec<&str> = nl.checks.iter().map(|c| c.label.as_deref().expect("every check named")).collect();
+    let unique: std::collections::HashSet<&str> = labels.iter().copied().collect();
+    assert_eq!(labels.len(), unique.len(), "duplicate check labels in {labels:?}");
+
+    for expected in [
+        "top.gen_b[0]._assert_1",
+        "top.gen_b[1]._assert_2",
+        "top.a_loop",
+        "top._assert_3",
+        "top.a_loop_2",
+        "top._assert_4",
+        "top._assert_5",
+        "top.e_lbl",
+        "top._assert_6",
+        "top.u0._assert_7",
+        "top.u0._assume_1",
+        "top.u0._cover_1",
+        "top.u0.a_cond",
+        "top.u1._assert_8",
+        "top.u1._assume_2",
+        "top.u1._cover_2",
+        "top.u1.a_cond",
+    ] {
+        assert!(unique.contains(expected), "missing {expected} in {labels:?}");
+    }
+    // Unnamed concurrent SVA shares the design-wide counter so it never collides with immediate checks.
+    assert_eq!(nl.property_names, vec!["top._assert_9"]);
+
+    let mut opts = PropertyOptions::default();
+    opts.precondition_covers = true;
+    opts.witness_covers = true;
+    nl.compile_properties(&opts);
+    let count_after_first = nl.checks.len();
+    nl.compile_properties(&opts);
+    assert_eq!(nl.checks.len(), count_after_first, "compile_properties must be idempotent for immediate covers");
+
+    let all_labels: std::collections::HashSet<&str> = nl.checks.iter().filter_map(|c| c.label.as_deref()).collect();
+    assert!(all_labels.contains("top.u0.a_cond:precondition"), "{all_labels:?}");
+    assert!(all_labels.contains("top.u0.a_cond:witness"), "{all_labels:?}");
+    assert!(all_labels.contains("top.u1.a_cond:precondition"), "{all_labels:?}");
+    assert!(all_labels.contains("top.u1.a_cond:witness"), "{all_labels:?}");
+    // Unconditional immediate assertions and `$error`/`$fatal` (constant-0 expr) must not emit vacuity covers.
+    assert!(!all_labels.contains("top.u0._assert_7:precondition"), "{all_labels:?}");
+    assert!(!all_labels.contains("top._assert_5:precondition"), "{all_labels:?}");
+    assert!(!all_labels.contains("top.e_lbl:precondition"), "{all_labels:?}");
 }

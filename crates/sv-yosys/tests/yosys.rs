@@ -99,7 +99,7 @@ fn counter_is_a_dff_an_adder_and_a_mux() {
         j.contains("\"cnt.q\": {\"hide_name\": 0, \"bits\": [4, 5, 6, 7], \"attributes\": {\"init\": \"0101\"}}"),
         "{j}"
     );
-    assert!(j.contains("\"in_range\": {\n          \"hide_name\": 0,\n          \"type\": \"$assert\""), "{j}");
+    assert!(j.contains("\"cnt.in_range\": {\n          \"hide_name\": 0,\n          \"type\": \"$assert\""), "{j}");
     assert!(j.contains("\"src\": \"t.sv:3."), "{j}");
 }
 

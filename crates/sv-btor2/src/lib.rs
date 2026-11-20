@@ -15,7 +15,7 @@
 //! );
 //! let netlist = lower_trees(&[tree], &[], &[], &LowerConfig::default()).unwrap_netlist();
 //! let model = sv_btor2::write(&netlist, &sv_btor2::Options::default()).unwrap();
-//! assert!(model.btor2.lines().any(|l| l.ends_with(" in_range")));
+//! assert!(model.btor2.lines().any(|l| l.ends_with(" cnt.in_range")));
 //! ```
 //!
 //! With the `svlang` crate this is `svlang::btor2::write(&comp.lower_netlist(..).unwrap_netlist(), ..)`.
@@ -283,9 +283,9 @@ fn rejected<T>(s: impl Into<String>) -> Result<T, Fail> {
 }
 
 /// A Btor2 symbol: no spaces.
-/// The name a check's line carries: its label (an immediate check's last part).
+/// The name a check's line carries: its full hierarchical label.
 fn check_label(c: &sv_netlist::Check) -> Option<&str> {
-    c.label.as_deref().map(|l| if c.immediate { l.rsplit('.').next().unwrap_or(l) } else { l })
+    c.label.as_deref()
 }
 
 fn symbol(s: &str) -> String {
@@ -1300,8 +1300,7 @@ impl<'n> Writer<'n> {
         Ok(m)
     }
 
-    /// A `bad` line for check `c`. An immediate check is named by its label, a compiled
-    /// concurrent property by its full hierarchical name.
+    /// A `bad` line for check `c`, carrying its full hierarchical name when present.
     fn bad(&mut self, cond: u32, c: &sv_netlist::Check) {
         let mut body = format!("bad {cond}");
         if let Some(l) = check_label(c) {

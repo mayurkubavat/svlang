@@ -16,9 +16,9 @@ assert.deepEqual(run("check", counter), { ok: true, output: "", diagnostics: [],
 assert.equal(run("hier", counter).output, "$root instance cnt : cnt");
 assert.match(run("cst", counter).output, /^SourceFile\n  ModuleDecl/);
 assert.match(run("netlist", counter).output, /^netlist cnt\n/);
-assert.match(run("btor2", counter).output, / bad \d+ in_range\n/);
+assert.match(run("btor2", counter).output, / bad \d+ cnt\.in_range\n/);
 assert.match(run("aiger", counter).output, /^aag /);
-assert.equal(JSON.parse(run("yosys", counter).output).modules.cnt.cells.in_range.type, "$assert");
+assert.equal(JSON.parse(run("yosys", counter).output).modules.cnt.cells["cnt.in_range"].type, "$assert");
 assert.match(run("preprocess", "`define W 8\nmodule m; logic [`W-1:0] x; endmodule\n").output, /logic \[8-1:0\] x;/);
 
 const bad = run("check", "module m;\n  assign x = ;\nendmodule\n");

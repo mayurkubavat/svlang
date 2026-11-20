@@ -162,7 +162,7 @@ endmodule
 def test_to_btor2():
     nl = pysvlang.Compilation.from_source(SAT_COUNTER, "cnt.sv").lower_netlist()
     text, notes = nl.to_btor2()
-    assert any(line.endswith(" in_range") and " bad " in line for line in text.splitlines())
+    assert any(line.endswith(" cnt.in_range") and " bad " in line for line in text.splitlines())
     assert isinstance(notes, list)
     traced, _ = nl.to_btor2(trace_outputs=True, trace_marker="; my-marker")
     assert "; my-marker" in traced
@@ -223,7 +223,7 @@ def test_to_aiger():
     nl = pysvlang.Compilation.from_source(SAT_COUNTER, "cnt.sv").lower_netlist()
     data, notes = nl.to_aiger()
     assert isinstance(data, bytes) and data.startswith(b"aig ")
-    assert b"b0 in_range" in data and b"l0 cnt.q[0]" in data
+    assert b"b0 cnt.in_range" in data and b"l0 cnt.q[0]" in data
     text, _ = nl.to_aiger(binary=False)
     header = text.splitlines()[0].split()
     # aag M I L O A B C: clk and rst, four register bits, one bad state.
@@ -254,7 +254,7 @@ def test_to_yosys_json():
     assert module["ports"]["q"] == {"direction": "output", "bits": [4, 5, 6, 7]}
     types = sorted(c["type"] for c in module["cells"].values())
     assert "$dff" in types and "$assert" in types
-    assert module["cells"]["in_range"]["type"] == "$assert"
+    assert module["cells"]["cnt.in_range"]["type"] == "$assert"
     plain, _ = nl.to_yosys_json(checks=False, src_attributes=False)
     assert "$assert" not in plain and '"src"' not in plain
 
@@ -353,7 +353,7 @@ def test_checks_and_liveness():
     )
     nl = pysvlang.Compilation.from_source(src, "c.sv").lower_netlist(compile_properties=True)
     checks = {c.label: c for c in nl.checks()}
-    assert checks["chk"].immediate and checks["chk"].kind == "assert"
+    assert checks["c.chk"].immediate and checks["c.chk"].kind == "assert"
     prop = checks["c.a_next"]
     assert not prop.immediate and prop.clock == nl.input("clk") and prop.edge == "posedge"
     assert prop.enable.width == 1 and prop.expr.width == 1

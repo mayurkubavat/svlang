@@ -983,10 +983,11 @@ impl<'a> DesignLowerer<'a> {
                 }
             }
             SyntaxKind::ExprStmt => {
+                let stmt_label = extract_stmt_label(t, stmt);
                 if let Some(expr_node) =
                     t.children(stmt).find(|&c| !matches!(t.kind(c), SyntaxKind::Attribute | SyntaxKind::StmtLabel))
                 {
-                    self.exec_expr_stmt(tree_idx, expr_node, ctx);
+                    self.exec_expr_stmt_with_label(tree_idx, expr_node, stmt_label, ctx);
                 }
             }
             other => {
@@ -1617,10 +1618,7 @@ impl<'a> DesignLowerer<'a> {
     fn exec_immediate_assert(&mut self, tree_idx: usize, stmt: NodeId, ctx: &mut ProcCtx) {
         let t = &self.trees[tree_idx];
         let loc = self.stmt_loc(tree_idx, stmt, ctx);
-        let label = t
-            .child(stmt, SyntaxKind::StmtLabel)
-            .map(|l| t.bare_text(l).trim_end_matches(':').trim().to_string())
-            .filter(|s| !s.is_empty());
+        let label = extract_stmt_label(t, stmt);
         let own = own_toks(t, stmt);
         let kind = if own.contains(&"assume") {
             CheckKind::Assume
@@ -1636,15 +1634,11 @@ impl<'a> DesignLowerer<'a> {
         };
         let Some(expr_val) = self.eval_proc_cond(tree_idx, cond_node, ctx) else { return };
         let enable = ctx.effective_reach(&mut self.builder, loc);
-        self.builder.checks.push(Check {
-            kind,
-            label,
-            immediate: true,
-            enable,
-            expr: expr_val,
-            clock: ctx.active_clock,
-            loc,
-        });
+        self.push_check(
+            ctx.inst_id,
+            &ctx.scope_prefix,
+            Check { kind, label, immediate: true, enable, expr: expr_val, clock: ctx.active_clock, loc },
+        );
     }
 
     /// An immediate assertion in an `initial` block is a check at time zero. One over
@@ -1738,6 +1732,16 @@ impl<'a> DesignLowerer<'a> {
     }
 
     pub(crate) fn exec_expr_stmt(&mut self, tree_idx: usize, expr_node: NodeId, ctx: &mut ProcCtx) {
+        self.exec_expr_stmt_with_label(tree_idx, expr_node, None, ctx);
+    }
+
+    pub(crate) fn exec_expr_stmt_with_label(
+        &mut self,
+        tree_idx: usize,
+        expr_node: NodeId,
+        stmt_label: Option<String>,
+        ctx: &mut ProcCtx,
+    ) {
         let t = &self.trees[tree_idx];
         let loc = self.stmt_loc(tree_idx, expr_node, ctx);
         if ctx.in_initial {
@@ -1775,12 +1779,12 @@ impl<'a> DesignLowerer<'a> {
                 }
             }
             SyntaxKind::CallExpr => {
-                self.exec_call_stmt(tree_idx, expr_node, ctx, loc);
+                self.exec_call_stmt(tree_idx, expr_node, stmt_label, ctx, loc);
                 return;
             }
             SyntaxKind::NameExpr | SyntaxKind::ScopedExpr | SyntaxKind::MemberExpr => {
                 // Zero-arg task call (`my_task;`, `pkg::my_task;`, or `bus.clear;`).
-                self.exec_call_stmt(tree_idx, expr_node, ctx, loc);
+                self.exec_call_stmt(tree_idx, expr_node, stmt_label, ctx, loc);
                 return;
             }
             _ => {}
@@ -3370,4 +3374,10 @@ fn contiguous_runs_with_tag(mask: &[bool], tag: &[bool]) -> Vec<(u32, u32, bool)
 
 pub(crate) fn is_assign_op(op: &str) -> bool {
     matches!(op, "=" | "<=" | "+=" | "-=" | "*=" | "/=" | "%=" | "&=" | "|=" | "^=" | "<<=" | ">>=" | "<<<=" | ">>>=")
+}
+
+pub(crate) fn extract_stmt_label(t: &Tree, stmt: NodeId) -> Option<String> {
+    t.child(stmt, SyntaxKind::StmtLabel)
+        .map(|l| t.bare_text(l).trim_end_matches(':').trim().to_string())
+        .filter(|s| !s.is_empty())
 }

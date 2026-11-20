@@ -62,7 +62,7 @@ fn counter_with_async_reset_and_labelled_assert() {
            always @(posedge clk) p_le: assert (q <= 4'd15);\n\
          endmodule\n");
     assert_eq!(lines(&b, "state").len(), 1);
-    assert!(lines(&b, "bad").iter().any(|l| l.ends_with(" p_le")));
+    assert!(lines(&b, "bad").iter().any(|l| l.ends_with(" cnt.p_le")), "{b}");
     // The reset acts synchronously: the next state picks the reset value.
     assert!(!lines(&b, "ite").is_empty());
 }
@@ -458,14 +458,63 @@ fn assertions_and_history_on_a_computed_clock() {
     );
     let m = write(&nl, &opts).unwrap();
     well_formed(&m.btor2);
-    assert!(lines(&m.btor2, "bad").iter().any(|l| l.ends_with(" a_g")), "{}", m.btor2);
+    assert!(lines(&m.btor2, "bad").iter().any(|l| l.ends_with(" ac.a_g")), "{}", m.btor2);
     // The clock input's wave, and the assumption on the computed clock, each named.
     let cons = lines(&m.btor2, "constraint");
     assert_eq!(cons.len(), 2, "{}", m.btor2);
     assert!(cons.iter().any(|l| l.ends_with(" svlang_clock")), "{cons:?}");
-    assert!(cons.iter().any(|l| l.ends_with(" m_g")), "{cons:?}");
+    assert!(cons.iter().any(|l| l.ends_with(" ac.m_g")), "{cons:?}");
     // What the edge sampled is kept from the step before.
     assert!(lines(&m.btor2, "state").iter().any(|l| l.contains(" svlang_was_")), "{}", m.btor2);
+}
+
+#[test]
+fn unlabelled_multi_instance_and_loop_immediate_checks_have_unique_symbols() {
+    let mut nl = netlist(
+        "module sub(input logic clk, en, a, b);\n\
+           always @(posedge clk) begin\n\
+             assert (a || b);\n\
+             assume (a);\n\
+             if (en) a_chk: assert (b);\n\
+           end\n\
+         endmodule\n\
+         module top(input logic clk, en, input logic [1:0] x);\n\
+           sub u0(.clk(clk), .en(en), .a(x[0]), .b(x[1]));\n\
+           sub u1(.clk(clk), .en(en), .a(x[1]), .b(x[0]));\n\
+           always_comb for (int i = 0; i < 2; i++) a_loop: assert (x[i] == x[i]);\n\
+         endmodule\n",
+    );
+    let mut popts = sv_netlist::PropertyOptions::default();
+    popts.precondition_covers = true;
+    nl.compile_properties(&popts);
+
+    let mut bopts = Options::default();
+    bopts.covers = true;
+    let m = write(&nl, &bopts).unwrap();
+    well_formed(&m.btor2);
+
+    let bad_syms: Vec<&str> =
+        lines(&m.btor2, "bad").into_iter().map(|l| l.split_whitespace().nth(3).expect("named bad")).collect();
+    let unique_bads: HashSet<&str> = bad_syms.iter().copied().collect();
+    assert_eq!(bad_syms.len(), unique_bads.len(), "duplicate bad symbols: {bad_syms:?}");
+    for expected in [
+        "top.u0._assert_1",
+        "top.u0.a_chk",
+        "top.u1._assert_2",
+        "top.u1.a_chk",
+        "top.a_loop",
+        "top.a_loop_2",
+        "top.u0.a_chk:precondition",
+        "top.u1.a_chk:precondition",
+    ] {
+        assert!(unique_bads.contains(expected), "missing {expected} in {bad_syms:?}");
+    }
+
+    let con_syms: Vec<&str> = lines(&m.btor2, "constraint")
+        .into_iter()
+        .map(|l| l.split_whitespace().nth(3).expect("named constraint"))
+        .collect();
+    assert_eq!(con_syms, vec!["top.u0._assume_1", "top.u1._assume_2"]);
 }
 
 #[test]

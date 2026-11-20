@@ -284,7 +284,7 @@ mod tests {
             ("cst", "SourceFile\\n  ModuleDecl"),
             ("hier", "$root instance cnt : cnt"),
             ("netlist", "netlist cnt\\n"),
-            ("btor2", " in_range\\n"),
+            ("btor2", " cnt.in_range\\n"),
             ("aiger", "aag "),
             ("yosys", "\\\"type\\\": \\\"$dff\\\""),
         ] {

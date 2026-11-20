@@ -668,7 +668,7 @@ impl<'a> DesignLowerer<'a> {
         let wrote_mem = self.builder.memories.iter().enumerate().any(|(mi, m)| m.writes.len() > mem_writes_before[mi]);
         let added_checks = self.builder.checks.len() > checks_before;
         if !sub_ctx.slot_writes.is_empty() || added_checks || wrote_mem {
-            self.builder.checks.truncate(checks_before);
+            self.truncate_checks(checks_before);
             for (mi, &mw) in mem_writes_before.iter().enumerate() {
                 self.builder.memories[mi].writes.truncate(mw);
             }
@@ -680,7 +680,14 @@ impl<'a> DesignLowerer<'a> {
         Some(sub_ctx.cur_locals.remove(&ret_lid).unwrap_or(def_ret))
     }
 
-    pub(crate) fn exec_call_stmt(&mut self, tree_idx: usize, expr_node: NodeId, ctx: &mut ProcCtx, loc: Loc) {
+    pub(crate) fn exec_call_stmt(
+        &mut self,
+        tree_idx: usize,
+        expr_node: NodeId,
+        stmt_label: Option<String>,
+        ctx: &mut ProcCtx,
+        loc: Loc,
+    ) {
         let t = &self.trees[tree_idx];
         let (callee_node, arg_nodes) = if t.kind(expr_node) == SyntaxKind::CallExpr {
             let Some(cn) = t.children(expr_node).find(|&c| t.kind(c) != SyntaxKind::Attribute) else { return };
@@ -712,15 +719,19 @@ impl<'a> DesignLowerer<'a> {
                         }
                         let zero = self.builder.alloc_const(CVal::new(1, false, 0), false, loc);
                         let enable = ctx.effective_reach(&mut self.builder, loc);
-                        self.builder.checks.push(crate::ir::Check {
-                            kind: crate::ir::CheckKind::Assert,
-                            label: None,
-                            immediate: true,
-                            enable,
-                            expr: zero,
-                            clock: ctx.active_clock,
-                            loc,
-                        });
+                        self.push_check(
+                            ctx.inst_id,
+                            &ctx.scope_prefix,
+                            crate::ir::Check {
+                                kind: crate::ir::CheckKind::Assert,
+                                label: stmt_label,
+                                immediate: true,
+                                enable,
+                                expr: zero,
+                                clock: ctx.active_clock,
+                                loc,
+                            },
+                        );
                         return;
                     }
                     _ => {

@@ -16,8 +16,8 @@ use crate::expr_lower::{
     prepare_streaming_unpack_rhs, ExprLowerer, FuncInliner, ObjSlot, ObjVal,
 };
 use crate::ir::{
-    ClockSpec, Edge, FreeKind, LowerConfig, LowerOutcome, MemId, Memory, NetOp, Netlist, NetlistDiag, PortInput,
-    PortOutput, State, StateId, TraceSignal, ValueId, ValueKind, ValueNode,
+    Check, CheckKind, ClockSpec, Edge, FreeKind, LowerConfig, LowerOutcome, MemId, Memory, NetOp, Netlist, NetlistDiag,
+    PortInput, PortOutput, State, StateId, TraceSignal, ValueId, ValueKind, ValueNode,
 };
 
 #[derive(Clone, Debug)]
@@ -53,6 +53,20 @@ pub(crate) struct DesignLowerer<'a> {
     /// Path condition of each concurrent assertion in procedural code, by instance,
     /// generate scope and location (constant 1 when it is always reached).
     pub proc_assert_enables: Vec<(InstanceId, String, Loc, ValueId)>,
+    /// Enclosing `(instance, scope_prefix)` for each entry pushed to `builder.checks`.
+    pub check_scopes: Vec<(InstanceId, String)>,
+}
+
+impl<'a> DesignLowerer<'a> {
+    pub(crate) fn push_check(&mut self, inst_id: InstanceId, scope_prefix: &str, check: Check) {
+        self.builder.checks.push(check);
+        self.check_scopes.push((inst_id, scope_prefix.to_string()));
+    }
+
+    pub(crate) fn truncate_checks(&mut self, len: usize) {
+        self.builder.checks.truncate(len);
+        self.check_scopes.truncate(len);
+    }
 }
 
 /// Lowers an [`ElaboratedDesign`] and its parsed CST [`Tree`]s into a word-level [`Netlist`].
@@ -84,6 +98,7 @@ pub fn lower_design(trees: &[Tree], design: &ElaboratedDesign, config: &LowerCon
         cut_seen: Default::default(),
         boxed: Default::default(),
         proc_assert_enables: Vec::new(),
+        check_scopes: Vec::new(),
     };
     if let Err(diag) = lowerer.mark_black_boxes(top_id) {
         return LowerOutcome::Error(vec![diag]);
@@ -156,7 +171,12 @@ pub fn lower_design(trees: &[Tree], design: &ElaboratedDesign, config: &LowerCon
         .collect();
     symbol_values.sort_by_key(|(sid, _)| sid.0);
 
-    let property_names = property_names(lowerer.design, &properties);
+    let property_names = assign_check_and_property_names(
+        lowerer.design,
+        &mut lowerer.builder.checks,
+        &lowerer.check_scopes,
+        &properties,
+    );
 
     // Pass 6: Tarjan SCC combinational loop check, alias resolution, and topological compaction.
     match lowerer.builder.finalize(sva_arena, properties, prop_expr_values, property_enables, symbol_values) {
@@ -2329,34 +2349,58 @@ impl FuncInliner for ExternalPropInliner {
     }
 }
 
-/// The full hierarchical name of each property: instance path, generate scope, then its label
-/// or, without one, `_<kind>_<n>` counted from 1 over the design. Made unique with a `_<k>` suffix.
-fn property_names(design: &ElaboratedDesign, properties: &[BoundProperty]) -> Vec<String> {
+/// Assigns unique full hierarchical names (`<inst_path>.[<scope>.]<leaf>[_<k>]`) to every
+/// immediate [`Check`] and concurrent [`BoundProperty`] across the elaborated design.
+///
+/// Unlabelled checks and properties synthesize `_assert_<n>`, `_assume_<n>`, `_cover_<n>`, or
+/// `_restrict_<n>` counted from 1 over the design; repeated names (such as unrolled loop
+/// iterations, repeated task calls, or split reset/sync branches) receive a `_<k>` suffix.
+fn assign_check_and_property_names(
+    design: &ElaboratedDesign,
+    checks: &mut [Check],
+    check_scopes: &[(InstanceId, String)],
+    properties: &[BoundProperty],
+) -> Vec<String> {
+    debug_assert_eq!(checks.len(), check_scopes.len());
     let mut unnamed = [0u32; 4];
     let mut seen: FxMap<String, u32> = FxMap::default();
+    let mut qualify = |inst: InstanceId, scope_prefix: &str, label: Option<String>, slot: usize, kind: &str| {
+        let leaf = label.unwrap_or_else(|| {
+            unnamed[slot] += 1;
+            format!("_{kind}_{}", unnamed[slot])
+        });
+        let scope = scope_prefix.trim_matches('.');
+        let path = &design.instance(inst).path;
+        let name = if scope.is_empty() { format!("{path}.{leaf}") } else { format!("{path}.{scope}.{leaf}") };
+        let n = seen.entry(name.clone()).or_insert(0);
+        *n += 1;
+        if *n == 1 {
+            name
+        } else {
+            format!("{name}_{n}")
+        }
+    };
+
+    for (c, (inst, scope)) in checks.iter_mut().zip(check_scopes) {
+        let (slot, kind) = match c.kind {
+            CheckKind::Assert => (0, "assert"),
+            CheckKind::Assume => (1, "assume"),
+            CheckKind::Cover => (2, "cover"),
+        };
+        let raw = c.label.take();
+        c.label = Some(qualify(*inst, scope, raw, slot, kind));
+    }
+
     properties
         .iter()
         .map(|p| {
-            let leaf = p.label.clone().unwrap_or_else(|| {
-                let (slot, kind) = match p.kind {
-                    sv_semantic::PropKind::Assert => (0, "assert"),
-                    sv_semantic::PropKind::Assume => (1, "assume"),
-                    sv_semantic::PropKind::Cover => (2, "cover"),
-                    sv_semantic::PropKind::Restrict => (3, "restrict"),
-                };
-                unnamed[slot] += 1;
-                format!("_{kind}_{}", unnamed[slot])
-            });
-            let scope = p.scope_prefix.trim_matches('.');
-            let path = &design.instance(p.instance).path;
-            let name = if scope.is_empty() { format!("{path}.{leaf}") } else { format!("{path}.{scope}.{leaf}") };
-            let n = seen.entry(name.clone()).or_insert(0);
-            *n += 1;
-            if *n == 1 {
-                name
-            } else {
-                format!("{name}_{n}")
-            }
+            let (slot, kind) = match p.kind {
+                sv_semantic::PropKind::Assert => (0, "assert"),
+                sv_semantic::PropKind::Assume => (1, "assume"),
+                sv_semantic::PropKind::Cover => (2, "cover"),
+                sv_semantic::PropKind::Restrict => (3, "restrict"),
+            };
+            qualify(p.instance, &p.scope_prefix, p.label.clone(), slot, kind)
         })
         .collect()
 }
