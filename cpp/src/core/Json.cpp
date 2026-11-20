@@ -1,6 +1,9 @@
 #include "svlang_lint/core/Json.h"
+#include <cerrno>
 #include <charconv>
+#include <cmath>
 #include <cstdint>
+#include <cstdlib>
 
 namespace svlang_lint::core::json {
 
@@ -166,9 +169,14 @@ private:
                 text[pos] == 'e' || text[pos] == 'E' || text[pos] == '+' || text[pos] == '-')) {
             pos++;
         }
-        double d = 0;
-        auto [ptr, ec] = std::from_chars(text.data() + start, text.data() + pos, d);
-        if (ec != std::errc() || ptr != text.data() + pos) {
+        if (pos == start) {
+            return fail("invalid number");
+        }
+        std::string num(text.substr(start, pos - start));
+        errno = 0;
+        char* end = nullptr;
+        double d = std::strtod(num.c_str(), &end);
+        if (errno == ERANGE || end != num.c_str() + num.size() || !std::isfinite(d)) {
             pos = start;
             return fail("invalid number");
         }

@@ -56,8 +56,9 @@ jobs:
             echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
             export PATH="$HOME/.cargo/bin:$PATH"
           fi
-          rustup toolchain install stable --profile minimal --target ${{ matrix.triple }}
-          rustup default stable
+          # rust-toolchain.toml pins the Rust version; install it and add the release target.
+          rustup toolchain install --profile minimal
+          rustup target add ${{ matrix.triple }}
 
       - name: Build
         shell: bash
@@ -104,7 +105,7 @@ jobs:
 
       - name: Smoke test
         run: |
-          ./build/svlang-lint --list-rules --json > /dev/null
+          ./build/svlang-lint --list-rules --json - > /dev/null
           python3 cpp/tests/regression.py --binary build/svlang-lint
 
       - name: Package

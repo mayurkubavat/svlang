@@ -19,6 +19,7 @@ compile, so the compile-error invariant does not apply to it.
 
 import argparse
 import json
+import os
 import random
 import re
 import shutil

@@ -821,10 +821,7 @@ fn extract_rhs_states(c: &Cst, rhs: NodeId, target_var: &str, members: &HashSet<
         }
         return true;
     }
-    if txt == target_var {
-        return true;
-    }
-    false
+    txt == target_var
 }
 
 // ---- SV-RTL-004: Elaborated Port Connection Width Mismatch ----
