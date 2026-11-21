@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.1
+
+- **Custom Monochrome `$(svlang-logo)` Status Bar Icon**: Added a dedicated die-corner `SV` WOFF icon font (`contributes.icons`) matching VS Code's monochrome status bar conventions (`rust-analyzer` / `Copilot` / `Biome` style), paired with `$(error)` / `$(warning)` on findings and `$(circle-slash)` when linting is off.
+
 ## 0.4.0
 
 - **Status Bar Control Center & Configurable Lint Cadence**: Added context-aware clickable `svlang` status bar item + Quick Pick menu (`Lint Now`, `Lint Trigger: onType / onSave / off`, `Switch Preset`, `Set Preprocessor Defines`, `Initialize / Open Project Config`, `Settings`, `Output`, `Restart`).

@@ -7,7 +7,7 @@ IEEE 1800-2023 SystemVerilog and UVM language server, compiler-backed semantic h
 ## Quick Start (60 Seconds)
 
 1. **Open any `.sv`, `.svh`, `.v`, `.vh`, or `.f` file** — syntax & semantic highlighting, inactive `` `ifdef `` dimming, hover docs, completion, go-to-definition (`F12` / `Cmd+Click`), and live diagnostics start automatically with **zero external setup**.
-2. **Use the `svlang` Status Bar item** (bottom-right) — click `✓ svlang` anytime to open the **Control Center**:
+2. **Use the `svlang` Status Bar item** (bottom-right) — click `[SV] svlang` anytime to open the **Control Center**:
    - **Lint Current File / Project Now** (on-demand check even when automatic linting is off)
    - **Set Lint Trigger** (`On Type` / `On Save` / `Off`)
    - **Switch Lint Preset** (`default`, `formal-ready`, `soundness`, `methodology`, `style`, `all`, …)

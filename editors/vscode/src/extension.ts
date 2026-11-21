@@ -576,7 +576,7 @@ function updateStatusBar() {
         statusBar.text = `$(circle-slash) svlang · off`;
         statusBar.backgroundColor = undefined;
     } else if (st === 'standalone') {
-        statusBar.text = `$(info) svlang · standalone`;
+        statusBar.text = `$(svlang-logo) svlang · standalone`;
         statusBar.backgroundColor = undefined;
     } else if (errs > 0) {
         statusBar.text = `$(error) svlang · ${errs}${preset}`;
@@ -585,7 +585,7 @@ function updateStatusBar() {
         statusBar.text = `$(warning) svlang · ${warns}${preset}`;
         statusBar.backgroundColor = undefined;
     } else {
-        statusBar.text = `$(check) svlang${preset}`;
+        statusBar.text = `$(svlang-logo) svlang${preset}`;
         statusBar.backgroundColor = undefined;
     }
 
