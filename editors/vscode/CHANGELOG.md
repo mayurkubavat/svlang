@@ -2,6 +2,12 @@
 
 All notable changes to the **svlang** VS Code / Open VSX extension (`svlang.svlang`) are documented here.
 
+## [0.2.1] - 2026-11-20
+
+### Changed
+- Upgraded the extension icon to a refined `256×256` Retina **Deep Die** QFP mark with exact 4-sided pin symmetry, recessed silicon die cavity, and top-left JEDEC Pin-1 orientation dot.
+- Added dedicated light- and dark-theme **Style 1 silicon chip-ring** open-file tab icons with crisp vector **`SV`** (`.sv`, `.svh`, `.svi`, `.svp`) and **`V`** (`.v`, `.vh`, `.vlib`) monograms.
+
 ## [0.2.0] - 2026-11-20
 
 ### Added
