@@ -3,6 +3,7 @@
 .vscode-test/**
 src/**
 scripts/**
+stage/**
 node_modules/**
 tsconfig.json
 package-lock.json

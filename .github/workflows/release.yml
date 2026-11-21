@@ -12,6 +12,11 @@ on:
   push:
     tags: ["v*"]
   workflow_dispatch:
+    inputs:
+      publish_extensions:
+        description: "Publish svlang.svlang .vsix packages to Open VSX and VS Code Marketplace"
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -152,16 +157,17 @@ jobs:
             case "$target" in
               win32-*) bin_name=dv-lsp.exe ;;
             esac
-            rm -rf bin stage && mkdir -p "bin/$target" stage
-            tar -C stage -xzf "../../artifacts/svlang-lint-$target.tar.gz"
+            rm -rf bin ../../stage && mkdir -p "bin/$target" ../../stage
+            tar -C ../../stage -xzf "../../artifacts/svlang-lint-$target.tar.gz"
             # The one server the extension starts.
-            cp "stage/svlang-lint-$target/bin/$bin_name" "bin/$target/$bin_name"
+            cp "../../stage/svlang-lint-$target/bin/$bin_name" "bin/$target/$bin_name"
             if [ "$bin_name" = "dv-lsp" ]; then
               chmod +x "bin/$target/$bin_name"
             fi
+            rm -rf ../../stage
             npx vsce package --target "$target" -o "../../artifacts/svlang-$target.vsix"
           done
-          rm -rf bin stage
+          rm -rf bin ../../stage
 
       - uses: actions/upload-artifact@v4
         with:
@@ -184,7 +190,7 @@ jobs:
           fi
 
       - name: Publish to Open VSX
-        if: startsWith(github.ref, 'refs/tags/')
+        if: startsWith(github.ref, 'refs/tags/') || inputs.publish_extensions == true
         working-directory: editors/vscode
         env:
           OVSX_PAT: ${{ secrets.OVSX_PAT }}
@@ -199,7 +205,7 @@ jobs:
           done
 
       - name: Publish to VS Code Marketplace
-        if: startsWith(github.ref, 'refs/tags/')
+        if: startsWith(github.ref, 'refs/tags/') || inputs.publish_extensions == true
         working-directory: editors/vscode
         run: |
           for vsix in ../../artifacts/svlang-*.vsix; do
