@@ -15,6 +15,10 @@ trap 'rm -rf "$work"' EXIT
 tar -C "$work" -xzf "$archive"
 root=$(echo "$work"/svlang-lint-*)
 bin=$root/bin
+ext=
+if [ -f "$bin/svlang-lint.exe" ]; then
+    ext=.exe
+fi
 cd "$work"
 
 cat > tb.sv <<'SV'
@@ -27,17 +31,17 @@ class smoke_item;
 endclass
 SV
 
-"$bin/svlang-lint" --list | grep -q '^SV-COR-008 ' || { echo "smoke: --list has no SV-COR-008" >&2; exit 1; }
+"$bin/svlang-lint$ext" --list | grep -q '^SV-COR-008 ' || { echo "smoke: --list has no SV-COR-008" >&2; exit 1; }
 
 status=0
-"$bin/svlang-lint" --no-config --no-cache tb.sv --json out.json --sarif out.sarif > out.txt || status=$?
+"$bin/svlang-lint$ext" --no-config --no-cache tb.sv --json out.json --sarif out.sarif > out.txt || status=$?
 [ "$status" -eq 1 ] || { echo "smoke: expected exit 1 (an ERROR finding), got $status" >&2; cat out.txt >&2; exit 1; }
 grep -q 'SV-COR-008' out.txt || { echo "smoke: SV-COR-008 not reported" >&2; cat out.txt >&2; exit 1; }
 grep -q '"ruleId": "SV-COR-008"' out.json || { echo "smoke: JSON report lacks the finding" >&2; exit 1; }
 grep -q '"version": "2.1.0"' out.sarif || { echo "smoke: SARIF report is not 2.1.0" >&2; exit 1; }
 
 # A project config in Python: needs python3 and the SDK from the archive.
-if command -v python3 >/dev/null; then
+if python3 -c '' >/dev/null 2>&1; then
     mkdir -p proj/.svlang-lint
     cp tb.sv proj/tb.sv
     cat > proj/.svlang-lint/config.py <<'PY'
@@ -51,7 +55,7 @@ class Project(ProjectConfig):
         enabled = False
 PY
     status=0
-    (cd proj && "$bin/svlang-lint" --no-cache > ../proj.txt 2> ../proj.err) || status=$?
+    (cd proj && "$bin/svlang-lint$ext" --no-cache > ../proj.txt 2> ../proj.err) || status=$?
     if [ "$status" -ge 2 ] || grep -q 'SV-COR-008' proj.txt; then
         echo "smoke: the Python project config was not applied (exit $status)" >&2
         cat proj.txt proj.err >&2
@@ -59,8 +63,8 @@ PY
     fi
 fi
 
-"$bin/dv-build" tb.sv > /dev/null
-"$bin/dv-filelist" tb.sv > /dev/null
-"$bin/dv-map" tb.sv > /dev/null
-"$bin/dv-lsp" --version | grep -q '^dv-lsp ' || { echo "smoke: dv-lsp --version" >&2; exit 1; }
+"$bin/dv-build$ext" tb.sv > /dev/null
+"$bin/dv-filelist$ext" tb.sv > /dev/null
+"$bin/dv-map$ext" tb.sv > /dev/null
+"$bin/dv-lsp$ext" --version | grep -q '^dv-lsp ' || { echo "smoke: dv-lsp --version" >&2; exit 1; }
 echo "smoke: $(basename "$archive") ok"

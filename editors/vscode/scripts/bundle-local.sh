@@ -2,20 +2,23 @@
 # Copies the locally built server into bin/<platform>-<arch>/ so `npm run
 # package` makes a self-contained .vsix for this machine. Build it first:
 #   cargo build --release -p dv-lsp
-set -e
+set -eu
 here=$(cd "$(dirname "$0")/.." && pwd)
 repo=$(cd "$here/../.." && pwd)
 plat=$(node -p 'process.platform + "-" + process.arch')
+ext=
+case "$plat" in
+    win32-*) ext=.exe ;;
+esac
 dest="$here/bin/$plat"
+rm -rf "$here/bin"
 mkdir -p "$dest"
-found=0
-for src in "${DV_LSP_BIN:-$repo/target/release/dv-lsp}"; do
-    if [ -x "$src" ]; then
-        cp "$src" "$dest/"
-        echo "bundled $(basename "$src") -> bin/$plat/"
-        found=$((found + 1))
-    else
-        echo "not found (skipped): $src"
-    fi
-done
-[ "$found" -gt 0 ] || { echo "nothing to bundle" >&2; exit 1; }
+src="${DV_LSP_BIN:-$repo/target/release/dv-lsp$ext}"
+if [ -f "$src" ]; then
+    cp "$src" "$dest/dv-lsp$ext"
+    [ -n "$ext" ] || chmod +x "$dest/dv-lsp"
+    echo "bundled dv-lsp$ext -> bin/$plat/"
+else
+    echo "not found: $src (run: cargo build --release -p dv-lsp)" >&2
+    exit 1
+fi

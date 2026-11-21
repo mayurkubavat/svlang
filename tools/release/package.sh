@@ -19,9 +19,13 @@ name=svlang-lint-$target
 stage=$out/$name
 rm -rf "$stage"
 mkdir -p "$stage/bin" "$stage/python"
+ext=
+case "$target" in
+    win32-*) ext=.exe ;;
+esac
 for tool in svlang-lint dv-lsp dv-build dv-map dv-filelist; do
-    cp "$bin/$tool" "$stage/bin/$tool"
-    chmod 755 "$stage/bin/$tool"
+    cp "$bin/$tool$ext" "$stage/bin/$tool$ext"
+    [ -n "$ext" ] || chmod 755 "$stage/bin/$tool"
 done
 cp -R "$repo/python/svlang_lint" "$stage/python/svlang_lint"
 find "$stage/python" -name __pycache__ -type d -prune -exec rm -rf {} +

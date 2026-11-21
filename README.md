@@ -139,10 +139,11 @@ findings match on real code. The rule catalog is in
 
 **A release build.** Tagged
 [releases](https://github.com/mayurkubavat/svlang/releases) attach
-`svlang-lint-<platform>.tar.gz` for Linux x64 and arm64 (glibc 2.28 or later)
-and macOS arm64 and x64: `svlang-lint` (the native engine), `dv-lsp`,
+`svlang-lint-<platform>.tar.gz` for Linux x64/arm64 (glibc 2.28 or later),
+macOS arm64/x64, and Windows x64: `svlang-lint` (the native engine), `dv-lsp`,
 `dv-build`, `dv-map`, `dv-filelist` and the Python SDK. Unpack it and put
-its `bin/` on your `PATH`. The VS Code extension is attached too.
+its `bin/` on your `PATH`. The VS Code / Open VSX extension (`svlang.svlang`)
+is published to both registries and attached per platform as `svlang-<target>.vsix`.
 
 **From source.** The native tools need only a Rust toolchain (1.82+):
 

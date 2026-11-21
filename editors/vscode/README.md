@@ -1,24 +1,27 @@
-# svlang-lint Extension for VS Code, Cursor & Antigravity
+# svlang for VS Code, Cursor & Antigravity
 
-<img src="images/svlang-lint.png" width="96" alt="svlang-lint logo">
-
-Real-time SystemVerilog and UVM static analysis in your editor, powered by **svlang-lint**'s native engine.
+IEEE 1800-2023 SystemVerilog and UVM language server, semantic code browser, and real-time static linter powered by **svlang**'s pure-Rust compiler front end (`dv-lsp`).
 
 ## Features
 
-- **Real-Time Diagnostics**: Instant feedback on 330+ rules covering UVM methodology, OOP soundness, race conditions, TLM connectivity, and dead code.
+- **Real-Time Diagnostics (445+ Rules)**: Instant feedback across UVM methodology, OOP soundness, randomization & constraints, RTL/FSM/CDC/dataflow, SVA, functional coverage, dead code, and style.
+- **Formal-Readiness Pack (`formal-ready`)**: Built-in pre-FPV checks (`SV-FPV-001..005`) with quick fixes (including `assume` -> `assert` on DUT outputs and auto-injecting `disable iff (<reset>)`).
 - **Deep Semantic Analysis**: Cross-component validation of objection CFGs, Config DB type matching, virtual sequencer wiring, and RAL predictor binding.
-- **Live linting**: Diagnostics as you type from the language server (`dv-lsp`), checked in the background once typing pauses, so browsing stays responsive.
-- **Project aware**: Compiles the project from `.svlang-lint/config.py` (sources, file lists, include dirs, defines) with your unsaved edits, and applies its waivers and baseline.
-- **Quick fixes**: Apply a rule's fix-it, or waive a finding with a comment on the line above.
-- **Code browsing** (the same server): outline, workspace symbols (Ctrl/Cmd+T), go to definition / declaration / type definition (including `extern` prototype and out-of-block body pairs, macros and base classes), find references, highlights, and hover with the declaration and its doc comment.
-- **Completion**: names in scope with inherited class members, `obj.` and `Class::`/`pkg::` members, `type_id::create`, `` ` `` macros (workspace and UVM) and `$` system tasks.
-- **Syntax highlighting**: Built-in SystemVerilog/Verilog grammar with UVM classes, macros, phases and verbosity constants; no other SV extension needed.
-- **UVM snippets**: `uvm_component`, `uvm_object`, `uvm_sequence_item`, `uvm_sequence`, `uvm_driver`, `uvm_monitor`, `uvm_test`, `uvm_info`, `uvm_error`, `cfgget`, `always_ff`, `module`.
+- **Project-Aware Linting**: Compiles from `.svlang-lint/config.py` or `.svlang-lint.json` (sources, filelists, include dirs, defines) over your unsaved edits, honoring scoped waivers (`svlang-lint:waive`, `svlang-lint:off`/`on`, `verissimo_lint:*`) and baselines.
+- **Quick Fixes**: Apply safe rule fix-its, formal-readiness quick fixes, or waive findings directly from the editor.
+- **Semantic Code Browsing**: Document outline, workspace symbols (`Ctrl/Cmd+T`), go to definition / declaration / type definition (including `extern` prototypes, macros, and base classes), find references, document highlights, and hover docs.
+- **Context-Aware Completion**: In-scope names with inherited class members, `obj.` and `Class::`/`pkg::` members, `type_id::create`, `` ` `` macros (workspace and UVM), and `$` system tasks.
+- **Syntax Highlighting & UVM Snippets**: Built-in SystemVerilog/Verilog grammars plus snippets (`uvm_component`, `uvm_object`, `uvm_sequence_item`, `uvm_sequence`, `uvm_driver`, `uvm_monitor`, `uvm_test`, `uvm_info`, `uvm_error`, `cfgget`, `always_ff`, `module`).
 
-## Requirements
+## Supported Platforms
 
-The extension runs one server, `dv-lsp`: lint diagnostics and quick fixes, code browsing and completion. Release builds of the extension (`.vsix` per platform, attached to each GitHub release) bundle it for Linux x64 and macOS arm64; nothing else is needed. On other platforms, or to use your own build, put `dv-lsp` on `PATH` or set `svlang-lint.navigation.serverPath`:
+Platform `.vsix` releases bundle a self-contained native `dv-lsp` binary—no external compiler, Python, or Rust toolchain required:
+
+- Linux (`linux-x64`, `linux-arm64` — glibc 2.28+)
+- macOS (`darwin-arm64`, `darwin-x64`)
+- Windows (`win32-x64`)
+
+To use your own `dv-lsp` build (or run on another platform), put `dv-lsp` on `PATH` or set `svlang.serverPath`:
 
 ```bash
 git clone https://github.com/mayurkubavat/svlang.git
@@ -27,45 +30,54 @@ cargo build --release -p dv-lsp
 export PATH="$(pwd)/target/release:$PATH"
 ```
 
-`npm run bundle:local` before `npm run package` ships your build inside the `.vsix`. To lint with the Slang reference engine instead, set `svlang-lint.executablePath` to a `svlang-lint-slang` binary; `dv-lsp` then serves code browsing only.
+To lint with the C++ Slang reference engine instead, set `svlang.executablePath` to a `svlang-lint-slang` binary (`dv-lsp` then continues serving code browsing).
 
 ## Configuration Settings
 
-You can customize svlang-lint behavior via `.vscode/settings.json` or Cursor Settings:
+Configure via User or Workspace `settings.json`:
 
 | Setting | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
-| `svlang-lint.enable` | `boolean` | `true` | Enable/disable live linting |
-| `svlang-lint.executablePath` | `string` | `""` | Only to lint with the Slang engine: path to a `svlang-lint-slang` binary |
-| `svlang-lint.navigation.enable` | `boolean` | `true` | Outline, definitions, references, hover and completion |
-| `svlang-lint.navigation.serverPath` | `string` | `"dv-lsp"` | Path to the `dv-lsp` binary (lint and code browsing) |
-| `svlang-lint.navigation.libraryPaths` | `string[]` | `[]` | Extra trees to index (UVM, VIPs); `$UVM_HOME/src` is added when set |
-| `svlang-lint.navigation.exclude` | `string[]` | `[]` | Directory names to skip when indexing |
-| `svlang-lint.trace.server` | `string` | `"off"` | LSP protocol trace logging (`off`, `messages`, `verbose`) |
+| `svlang.enable` | `boolean` | `true` | Enable/disable live linting diagnostics and quick fixes |
+| `svlang.preset` | `string` | `""` | Default lint preset when not set in project config (e.g. `default`, `formal-ready`, `all`, `soundness`, `style`) |
+| `svlang.serverPath` | `string` | `"dv-lsp"` | Path to the `dv-lsp` binary (defaults to the bundled binary, else `PATH`) |
+| `svlang.executablePath` | `string` | `""` | Optional path to `svlang-lint-slang` to lint with the C++ Slang engine |
+| `svlang.navigation.enable` | `boolean` | `true` | Outline, definitions, references, hover, and completion |
+| `svlang.navigation.libraryPaths` | `string[]` | `[]` | Extra trees to index (UVM, VIPs; `$VARS` and `~` expanded) |
+| `svlang.navigation.useUvmHome` | `boolean` | `true` | Also index `$UVM_HOME/src` when `UVM_HOME` is set |
+| `svlang.navigation.exclude` | `string[]` | `[]` | Directory names or path endings to skip when indexing |
+| `svlang.trace.server` | `string` | `"off"` | LSP protocol trace logging (`off`, `messages`, `verbose`) |
+
+*(Legacy `svlang-lint.*` settings are still read as a fallback if present.)*
 
 ## Commands
 
-- **`svlang-lint: Restart Language Servers`**: Restarts both servers, reloading the project config and the index.
+- **`svlang: Restart Language Servers`**: Restarts the language server, reloading project config, waivers, and workspace index.
 
 ## Installing
 
-The extension is one `.vsix` file that works in VS Code and in its forks (Cursor, Antigravity, VSCodium, Windsurf).
+Install **`svlang.svlang`** from the **VS Code Marketplace** or **Open VSX Registry** (Cursor, Antigravity, VSCodium, Windsurf), or via CLI:
 
 ```bash
-cd editors/vscode
-npm install
-npm run package          # writes svlang-lint-vscode-<version>.vsix
-code --install-extension svlang-lint-vscode-*.vsix      # VS Code
-cursor --install-extension svlang-lint-vscode-*.vsix    # Cursor
+code --install-extension svlang.svlang      # VS Code
+cursor --install-extension svlang.svlang    # Cursor
 ```
 
-In any of these editors you can also use **Extensions > ... > Install from VSIX...**. Cursor and Antigravity read the Open VSX registry rather than the Microsoft marketplace; `npm run publish:openvsx` (with `OVSX_PAT` set) publishes there when you want it listed.
+Or build a self-contained `.vsix` locally:
 
-## Installation for Development
+```bash
+cargo build --release -p dv-lsp
+cd editors/vscode
+npm ci
+npm run bundle:local
+npm run package
+```
+
+## Development
 
 ```bash
 cd editors/vscode
-npm install
+npm ci
 npm run compile
 # Press F5 in VS Code to launch the Extension Development Host
 ```

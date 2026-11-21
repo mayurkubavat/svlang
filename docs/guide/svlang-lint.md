@@ -302,9 +302,9 @@ steps:
   hooks: [{ id: svlang-lint }, { id: svlang-lint-full }]
 ```
 
-**Release builds.** Tagged releases attach `svlang-lint-<platform>.tar.gz` (Linux x64 and arm64 on glibc 2.28 or later, macOS arm64 and x64) with the native `svlang-lint`, `dv-lsp`, `dv-build`, `dv-map`, `dv-filelist` and the Python SDK; unpack and put `bin/` on `PATH`. `tools/release/package.sh` and `smoke.sh` build and check the same archive locally.
+**Release builds.** Tagged releases attach `svlang-lint-<platform>.tar.gz` (Linux x64/arm64 on glibc 2.28 or later, macOS arm64/x64, Windows x64) with the native `svlang-lint`, `dv-lsp`, `dv-build`, `dv-map`, `dv-filelist` and the Python SDK; unpack and put `bin/` on `PATH`. `tools/release/package.sh` and `smoke.sh` build and check the same archive locally.
 
-**VS Code.** Tagged releases attach a `.vsix` per platform (Linux x64, macOS arm64) with the binaries inside; see [editors/vscode](../../editors/vscode/README.md).
+**VS Code / Open VSX.** Tagged releases build a self-contained `svlang-<target>.vsix` (`svlang.svlang`) for all 5 platforms (`linux-x64`, `linux-arm64`, `darwin-arm64`, `darwin-x64`, `win32-x64`) with `dv-lsp` bundled inside, attach them to the GitHub release, and publish to Open VSX and VS Code Marketplace; see [editors/vscode](../../editors/vscode/README.md).
 
 ## Project Configuration
 

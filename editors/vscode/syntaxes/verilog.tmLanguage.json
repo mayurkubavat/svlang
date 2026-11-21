@@ -1,7 +1,7 @@
 {
   "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
-  "name": "Verilog (svlang-lint)",
-  "scopeName": "source.verilog.svlang-lint",
+  "name": "Verilog (svlang)",
+  "scopeName": "source.verilog.svlang",
   "patterns": [
     {
       "include": "#comments"

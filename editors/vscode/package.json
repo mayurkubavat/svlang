@@ -1,9 +1,10 @@
 {
-  "name": "svlang-lint-vscode",
-  "displayName": "svlang-lint SystemVerilog & UVM Linter",
-  "description": "SystemVerilog and UVM linter and code browser: live diagnostics, quick fixes, go to definition, outline, completion and UVM snippets",
+  "name": "svlang",
+  "displayName": "svlang — SystemVerilog & UVM",
+  "description": "IEEE 1800-2023 SystemVerilog & UVM language server and linter: 445+ live rules, quick fixes, formal-readiness checks, code browsing, completion, and UVM snippets",
   "version": "0.2.0",
-  "publisher": "mayurkubavat",
+  "publisher": "svlang",
+  "license": "Apache-2.0",
   "engines": {
     "vscode": "^1.82.0"
   },
@@ -17,7 +18,6 @@
     "uvm",
     "verilog",
     "linter",
-    "slang",
     "verification"
   ],
   "activationEvents": [
@@ -28,29 +28,66 @@
   "contributes": {
     "configuration": {
       "type": "object",
-      "title": "svlang-lint Configuration",
+      "title": "svlang",
       "properties": {
-        "svlang-lint.enable": {
+        "svlang.enable": {
           "type": "boolean",
           "default": true,
-          "description": "Lint as you type: diagnostics and quick fixes from the svlang-lint language server (`dv-lsp`), under the project's `.svlang-lint` config, waivers and baseline."
+          "description": "Lint as you type: diagnostics and quick fixes from the native `dv-lsp` language server under the project's `.svlang-lint` config, waivers, and baseline."
         },
-        "svlang-lint.executablePath": {
+        "svlang.preset": {
           "type": "string",
           "default": "",
-          "description": "Only to lint with the Slang reference engine instead: the path of a `svlang-lint-slang` binary, run with `--lsp` next to `dv-lsp`. Leave empty for the native engine."
+          "enum": [
+            "",
+            "default",
+            "all",
+            "formal-ready",
+            "soundness",
+            "methodology",
+            "performance",
+            "style",
+            "security",
+            "smells",
+            "advisory",
+            "uvm-1800.2",
+            "reuse",
+            "guide"
+          ],
+          "enumDescriptions": [
+            "Use the project config preset (or default rules when none is configured).",
+            "Bug-finding, UVM methodology, performance, and security rules.",
+            "All non-experimental lint rules.",
+            "Pre-FPV formal-readiness rule pack (SV-FPV-001..005) and SVA checks.",
+            "Soundness and correctness rules.",
+            "UVM and verification methodology rules.",
+            "Simulation and elaboration performance rules.",
+            "Formatting, naming, and style rules.",
+            "Security and unsafe-construct rules.",
+            "Maintainability and code-smell rules.",
+            "Advisory rules.",
+            "IEEE 1800.2 / UVM migration deprecation rules.",
+            "Reuse guideline rules (MG-1 through MG-5).",
+            "All guideline-tagged rules."
+          ],
+          "description": "Default lint rule preset when `.svlang-lint` project config does not specify one (for example, `formal-ready` for pre-FPV checks and quick fixes)."
         },
-        "svlang-lint.navigation.enable": {
-          "type": "boolean",
-          "default": true,
-          "description": "Code browsing from the language server: outline, go to definition, references, hover and completion."
-        },
-        "svlang-lint.navigation.serverPath": {
+        "svlang.serverPath": {
           "type": "string",
           "default": "dv-lsp",
-          "description": "Path to the `dv-lsp` executable (lint and code browsing). Left as `dv-lsp`, the binary bundled with the extension is used, else the one on PATH."
+          "description": "Path to the `dv-lsp` executable (live linting and code browsing). Left as `dv-lsp`, the binary bundled with the extension is used, else the one on PATH."
         },
-        "svlang-lint.navigation.libraryPaths": {
+        "svlang.executablePath": {
+          "type": "string",
+          "default": "",
+          "description": "Optional path to a `svlang-lint-slang` binary (run with `--lsp`) to lint with the C++ Slang reference engine instead of the native Rust engine. Leave empty for native linting."
+        },
+        "svlang.navigation.enable": {
+          "type": "boolean",
+          "default": true,
+          "description": "Code browsing from `dv-lsp`: outline, workspace symbols, go to definition/declaration/type definition, references, hover, and completion."
+        },
+        "svlang.navigation.libraryPaths": {
           "type": "array",
           "items": {
             "type": "string"
@@ -58,12 +95,12 @@
           "default": [],
           "description": "Extra source trees to index for navigation, such as a UVM or VIP install ($VARS and ~ are expanded)."
         },
-        "svlang-lint.navigation.useUvmHome": {
+        "svlang.navigation.useUvmHome": {
           "type": "boolean",
           "default": true,
           "description": "Also index $UVM_HOME/src when UVM_HOME is set."
         },
-        "svlang-lint.navigation.exclude": {
+        "svlang.navigation.exclude": {
           "type": "array",
           "items": {
             "type": "string"
@@ -71,7 +108,7 @@
           "default": [],
           "description": "Directory names (or path endings) to skip when indexing the workspace, e.g. `sim_build` or `vendor/old_vip`."
         },
-        "svlang-lint.trace.server": {
+        "svlang.trace.server": {
           "type": "string",
           "default": "off",
           "enum": [
@@ -79,14 +116,14 @@
             "messages",
             "verbose"
           ],
-          "description": "Traces the communication between VS Code / Cursor and the svlang-lint language server daemon."
+          "description": "Traces communication between the editor and the svlang language server."
         }
       }
     },
     "commands": [
       {
-        "command": "svlang-lint.restartServer",
-        "title": "svlang-lint: Restart Language Servers"
+        "command": "svlang.restartServer",
+        "title": "svlang: Restart Language Servers"
       }
     ],
     "languages": [
@@ -105,8 +142,8 @@
         ],
         "configuration": "./language-configuration.json",
         "icon": {
-          "light": "./images/svlang-lint.svg",
-          "dark": "./images/svlang-lint.svg"
+          "light": "./images/svlang.svg",
+          "dark": "./images/svlang.svg"
         }
       },
       {
@@ -131,7 +168,7 @@
       },
       {
         "language": "verilog",
-        "scopeName": "source.verilog.svlang-lint",
+        "scopeName": "source.verilog.svlang",
         "path": "./syntaxes/verilog.tmLanguage.json"
       }
     ],
@@ -143,28 +180,37 @@
     ]
   },
   "scripts": {
-    "vscode:prepublish": "npm run compile",
-    "compile": "tsc -p ./",
+    "vscode:prepublish": "npm run typecheck && npm run bundle:prod",
+    "typecheck": "tsc --noEmit -p ./",
+    "compile": "npm run typecheck && npm run bundle",
+    "bundle": "esbuild src/extension.ts --bundle --outfile=out/extension.js --external:vscode --format=cjs --platform=node --target=node18 --sourcemap",
+    "bundle:prod": "esbuild src/extension.ts --bundle --outfile=out/extension.js --external:vscode --format=cjs --platform=node --target=node18 --minify",
+    "watch": "esbuild src/extension.ts --bundle --outfile=out/extension.js --external:vscode --format=cjs --platform=node --target=node18 --sourcemap --watch",
     "package": "vsce package",
-    "watch": "tsc -watch -p ./",
     "publish:openvsx": "ovsx publish",
+    "publish:marketplace": "vsce publish",
     "bundle:local": "sh scripts/bundle-local.sh"
   },
   "devDependencies": {
     "@types/node": "^18.19.0",
     "@types/vscode": "~1.82.0",
-    "typescript": "^5.4.0",
-    "@vscode/vsce": "^3.2.0",
-    "ovsx": "^0.10.0"
+    "@vscode/vsce": "^4.1.0",
+    "esbuild": "^0.24.0",
+    "ovsx": "^0.10.0",
+    "typescript": "^5.4.0"
   },
   "dependencies": {
     "vscode-languageclient": "^9.0.1"
   },
-  "icon": "images/svlang-lint.png",
-  "license": "SEE LICENSE IN LICENSE",
+  "icon": "images/svlang.png",
+  "homepage": "https://github.com/mayurkubavat/svlang#readme",
+  "bugs": {
+    "url": "https://github.com/mayurkubavat/svlang/issues"
+  },
   "repository": {
     "type": "git",
-    "url": "https://github.com/mayurkubavat/svlang"
+    "url": "https://github.com/mayurkubavat/svlang.git",
+    "directory": "editors/vscode"
   },
   "galleryBanner": {
     "color": "#EAF2FF",
