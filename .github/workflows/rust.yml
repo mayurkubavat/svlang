@@ -1,8 +1,8 @@
 name: Rust
 
-# The native Rust tools (dv-lint, dv-lsp, dv-build, dv-map, dv-filelist):
-# format and Clippy gate, then the tests, with default features only. The
-# `slang` feature needs the C++ model library and is not built here.
+# Pure-Rust workspace CI: format and Clippy gate, unit/integration tests,
+# end-to-end Python integration suites (`tests/` + Python rule SDK), MSRV 1.82
+# check, release archive + smoke test, uvm-core ERROR budget, and WASM build.
 on:
   push:
     branches: [main]
@@ -23,9 +23,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Toolchain
-        run: |
-          # rust-toolchain.toml names the version (and its components).
-          rustup toolchain install
+        run: rustup toolchain install
 
       - uses: actions/cache@v4
         with:
@@ -39,16 +37,49 @@ jobs:
       - name: hygiene (no assistant state, keys or attribution)
         run: tools/gates/hygiene.sh
 
-      - name: rust_gate (profiles, fmt, Clippy -D warnings)
-        run: tools/gates/rust_gate.sh --native
+      - name: rust_gate (guidelines, fmt, Clippy -D warnings)
+        run: tools/gates/rust_gate.sh
 
       - name: cargo test
         run: cargo test --locked
 
       - name: Rule docs are generated from the rules
         run: |
-          cargo build --locked -p dv-lint --bin svlang-lint
-          python3 tools/codegen/gen_rule_docs.py --binary target/debug/svlang-lint --check
+          cargo build --locked -p svlang-cli --bin svlang
+          python3 tools/codegen/gen_rule_docs.py --binary target/debug/svlang --check
+
+      - name: Netlist gate
+        run: SVLANG=target/debug/svlang python3 tools/gates/netlist_gate.py
+
+  integration:
+    name: end-to-end suites
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Toolchain
+        run: rustup toolchain install
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: cargo-${{ runner.os }}-int-${{ hashFiles('Cargo.lock') }}
+          restore-keys: cargo-${{ runner.os }}-int-
+
+      - name: Build svlang (release)
+        run: cargo build --locked --release -p svlang-cli --bin svlang
+
+      - name: End-to-end CLI, fix-invariant, and Python SDK suites
+        run: |
+          for t in baseline catalog changed explain fix_invariants guidelines history init map precision waivers; do
+            echo "== tests/test_$t.py"
+            python3 "tests/test_$t.py" --binary target/release/svlang
+          done
+          echo "== python/tests/test_python_rules.py"
+          python3 python/tests/test_python_rules.py --binary target/release/svlang
 
   msrv:
     name: test (MSRV 1.82, ${{ matrix.os }})
@@ -63,8 +94,6 @@ jobs:
       - name: Toolchain
         run: |
           rustup toolchain install 1.82 --profile minimal
-          # rust-toolchain.toml would win over a default; this job's cargo
-          # calls must use the MSRV.
           echo "RUSTUP_TOOLCHAIN=1.82" >> "$GITHUB_ENV"
 
       - uses: actions/cache@v4
@@ -80,32 +109,23 @@ jobs:
         run: cargo test --locked
 
   package:
-    # What the Release workflow ships, built and checked on every change:
-    # the dist profile, the archive layout and a lint run from the unpacked
-    # archive (tools/release/).
     name: release archive
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
 
       - name: Toolchain
-        run: |
-          # rust-toolchain.toml names the version.
-          rustup toolchain install
+        run: rustup toolchain install
 
       - name: Build
-        run: cargo build --locked --profile dist
+        run: cargo build --locked --profile dist -p svlang-cli
 
       - name: Package and smoke test
         run: |
           tools/release/package.sh target/dist linux-x64 dist
-          tools/release/smoke.sh dist/svlang-lint-linux-x64.tar.gz
+          tools/release/smoke.sh dist/svlang-linux-x64.tar.gz
 
   error-budget:
-    # ERROR findings on reviewed, simulator-clean code (Accellera uvm-core)
-    # are false positives until shown otherwise. Each rule has a budget
-    # (tools/quality/error_budget.json) that can only go down; see
-    # tools/quality/error_budget.py.
     name: ERROR budget (uvm-core)
     runs-on: ubuntu-24.04
     env:
@@ -114,9 +134,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Toolchain
-        run: |
-          # rust-toolchain.toml names the version.
-          rustup toolchain install
+        run: rustup toolchain install
 
       - uses: actions/cache@v4
         with:
@@ -128,7 +146,7 @@ jobs:
           restore-keys: cargo-${{ runner.os }}-budget-
 
       - name: Build
-        run: cargo build --locked --release -p dv-lint --bin svlang-lint
+        run: cargo build --locked --release -p svlang-cli --bin svlang
 
       - name: Fetch uvm-core
         run: git clone --depth 1 --branch "$UVM_CORE_REF" https://github.com/accellera-official/uvm-core.git uvm-core
@@ -136,19 +154,16 @@ jobs:
       - name: ERROR budget
         env:
           UVM_HOME: ${{ github.workspace }}/uvm-core
-        run: python3 tools/quality/error_budget.py --binary target/release/svlang-lint
+        run: python3 tools/quality/error_budget.py --binary target/release/svlang
 
   playground:
-    # The browser build (crates/svlang-wasm): svlang as WebAssembly, checked from Node.
     name: playground (wasm)
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
 
       - name: Toolchain
-        run: |
-          # rust-toolchain.toml names the version (and the wasm target).
-          rustup toolchain install
+        run: rustup toolchain install
 
       - uses: actions/cache@v4
         with:

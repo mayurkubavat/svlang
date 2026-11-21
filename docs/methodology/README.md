@@ -48,12 +48,12 @@ svlang-lint --guideline MG-3.1,MG-4.1 -f files.f
 svlang-lint --preset reuse -f files.f
 
 # Add a pass/fail line per guideline to any run
-svlang-lint --conformance --json report.json -f files.f
+svlang lint --conformance --json report.json -f files.f
 ```
 
 With guideline selection or `--conformance`, the console summary ends with a pass/fail line per guideline and a tally per chapter, and the JSON report gains a `conformance` array. Every finding in the JSON report also lists the guidelines its rule enforces.
 
-The mapping from guidelines to rules lives in `cpp/src/rules/Guidelines.cpp`. `cpp/tests/test_guidelines.py` checks that every rule named there exists and that the chapter pages list the same rules.
+The mapping from guidelines to rules is declared on each rule in `crates/svlang-lint/src/rules/` and generated into `crates/svlang-lint/src/catalog.rs` by `tools/codegen/gen_guidelines.py`. `tests/test_guidelines.py` checks that every rule named there exists and that the chapter pages list the same rules.
 
 ## Turning a principle into a rule
 
@@ -61,10 +61,10 @@ Every new rule goes through the same steps, in order. A rule without a bad snipp
 
 1. **Pick a principle** from the software-engineering literature, such as the Law of Demeter or connascence of name.
 2. **Write the UVM symptom**: what a violation looks like in a real testbench, as a bad and a good snippet. If you cannot write the bad snippet, there is no rule.
-3. **Find a static signature**: the evidence the linter can see. That is syntax, a semantic fact from slang, a cross-file fact from the UVM model, or (later) git history.
+3. **Find a static signature**: the evidence the linter can see. That is syntax, a semantic fact from `svlang`'s front end, a cross-file fact from `svlang-model`, or (later) git history.
 4. **Measure precision** on uvm-core, open-source VIPs and internal code. Count false positives and define the escape hatches (exempt roles, phases, thresholds).
 5. **Assign a level and a profile**: Shall and Should rules report warnings and run by default; May rules go to the Advisory profile.
-6. **Encode** the rule with bad and good tests, add it to its guideline in `cpp/src/rules/Guidelines.cpp` and to the chapter page, and give the message a concrete fix.
+6. **Encode** the rule with bad and good tests, add its guideline ID to the rule registration under `crates/svlang-lint/src/rules/`, run `tools/codegen/gen_guidelines.py` and `tools/codegen/gen_rule_docs.py`, and give the message a concrete fix.
 
 ### Scoring a candidate
 

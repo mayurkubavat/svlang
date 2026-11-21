@@ -1,6 +1,6 @@
 //! IEEE 1800-2023 Clause 11.6 & 11.8 expression type rules (self-determined
 //! and context-determined shapes, literal typing, and system-function return
-//! types), shared by `sv-semantic::expr` (`ExprBinder`) and `dv-lint` (`--exprs`).
+//! types), shared by `sv-semantic::expr` (`ExprBinder`) and `svlang lint --exprs`.
 
 use crate::oracle::TypeInfo;
 

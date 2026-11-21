@@ -25,7 +25,7 @@ compile options / file lists (-f, +incdir+, +define+, -top, ...)
   sv-syntax ── lossless syntax tree per file (or one tree per unit)
         │
         ▼
-  sv-semantic ──┬─ pure SV class model ─► svlang::Design ──► dv-model::Design ◄── sv-slang (slang, C ABI)
+  sv-semantic ──┬─ pure SV class model ─► svlang::Design ──► svlang-model::Design
             ├─ elaboration (instances, generate, parameter values, ElaboratedDesign)
             ├─ typed RTL expressions (ExprBinder) and bound SVA properties (SvaBinder)
             ├─ semantic checks (names, types, constants, classes, SVA, UDPs)
@@ -38,18 +38,14 @@ compile options / file lists (-f, +incdir+, +define+, -top, ...)
   svlang ─────── single pure-Rust IEEE 1800 SDK (Driver, Compilation, re-exports)
         │
         ▼
-  tools: dv-lint (rules), dv-build (compiler errors, hierarchy, netlist), dv-lsp (editor),
-         dv-map (UVM component tree), dv-filelist (file list doctor)
+  svlang-model ─► svlang-lint ─► svlang-lsp ─► svlang-cli (single `svlang` binary)
 ```
 
-Everything from `sv-source` through `svlang` is pure IEEE 1800-2023 Rust with
-no C++, no slang, and no UVM coupling, so external Rust tools can depend on
-`svlang` alone. Slang is still reachable through `sv-slang` and `Design::load`, as
-the reference the parity gates compare against and as `dv-lint --slang`,
-but only behind the `slang` Cargo feature, which is off by default: a plain
-`cargo build` or `cargo test` builds every tool natively and needs no C++
-build, and `sv-slang` is not a default workspace member. The gates build
-with `--features slang`; see `third_party/slang/README.md`.
+Everything in the 14 publishable crates (`sv-source` through `svlang-cli`) is
+pure IEEE 1800-2023 Rust with zero C++ dependencies. Optional dev-only Slang
+compiler dumpers (`tools/oracles/`, `cmake --preset oracles`) are strictly
+external CLI oracles for differential compiler testing; see
+`third_party/slang/README.md`.
 
 ## Crates
 
@@ -61,24 +57,22 @@ with `--features slang`; see `third_party/slang/README.md`.
 | `sv-syntax` | lib | Event-based recovering parser. A `Tree` is a token array plus a node arena (`SyntaxKind` per node); trivia rides on tokens, so `Tree::file_text` rebuilds each file byte for byte. |
 | `sv-semantic` | lib | Pure IEEE 1800-2023 semantic analysis: scopes and name resolution, constant evaluation (arbitrary width, four-state), elaborated design objects (`ElaboratedDesign`), IEEE 11.6/11.8 bound typed expressions (`ExprBinder`), bound SVA property/sequence trees (`SvaBinder`), type strings, the OOP class model, and compiler checks. |
 | `sv-netlist` | lib | Format-neutral word-level RTL netlist IR (`Netlist`): procedural execution (`always_ff`, async reset metadata, `always_comb`, `always_latch`, `assign`, port stitching, SCC combinational loop detection), bit-level driver resolution, static loop unrolling, subroutine inlining, memory ports, and `blast_memories`. |
-| `svlang` | lib | Public umbrella SDK re-exporting `source`, `lexer`, `preprocessor`, `syntax`, `semantic`, and `netlist`, plus top-level `Driver` and `Compilation` APIs (`lower_netlist`, `bind_property_in_scope`). |
-| `dv-model` | lib | The UVM-aware design model DV tools read: classes, UVM roles (`UvmKind`), UVM phases (`PhaseKind`), properties, methods and body facts, all owned. Lifted from `svlang` (native) or copied from slang through `sv-slang`. |
-| `sv-slang` | lib | Raw FFI to `libsvlang_lint_model` (`cpp/include/svlang-lint/model/CApi.h`). Only `dv-model` uses it, and only with the `slang` feature. |
-| `dv-lint` | lib + bins | The linter: every svlang-lint rule ported to Rust, run in parallel over the model and the syntax trees. Its command line (`dv_lint::app`) is built under two names: `svlang-lint`, the product's command, and `dv-lint`, the name the gates call. |
-| `dv-build` | bin | The native builder: reports file list, preprocessor, syntax, semantic, and RTL lowering errors like a compiler; dumps symbols, types, values, hierarchy, and word-level netlists for the gates. |
-| `dv-lsp` | bin | The language server: code browsing (symbols, definition, references, hover, completion) on `svlang::syntax`, and lint diagnostics with quick fixes from `dv-lint`. |
-| `dv-map` | bin | Prints the static UVM component tree of a testbench (text or JSON). |
-| `dv-filelist` | bin | Checks a file list, prints it normalized or as JSON. |
+| `sv-btor2` / `sv-aiger` / `sv-yosys` | lib | Back-end writers emitting Btor2, bit-blasted AIGER, and Yosys word-level JSON from `sv-netlist`. |
+| `svlang` | lib | Public umbrella SDK re-exporting `source`, `lexer`, `preprocessor`, `syntax`, `semantic`, `netlist`, `btor2`, `aiger`, and `yosys`, plus top-level `Driver` and `Compilation` APIs. |
+| `svlang-model` | lib | Owned UVM/RAL design model: classes, UVM roles (`UvmKind`), UVM phases (`PhaseKind`), properties, methods, body facts, and RAL register maps (`ral`). |
+| `svlang-lint` | lib | Static analysis and auto-fix engine: 446+ rules run in parallel over `svlang-model` and `sv-syntax` trees, with waivers, baselines, SARIF/HTML/JSON reports, and Python config/rule support. |
+| `svlang-lsp` | lib | Language Server Protocol engine: code browsing (symbols, definition, references, hover, completion) on `svlang::syntax`, and live lint diagnostics with quick fixes from `svlang-lint`. |
+| `svlang-cli` | bin (`svlang`) | The single unified CLI: `check`, `lint`, `lsp`, `filelist`, `map`, `preprocess`, `hier`, `cst`, `netlist`, `btor2`, `aiger`, `yosys`, and `stages` (plus `argv[0]` dispatch when symlinked as `svlang-lint`). |
 
 Dependencies point strictly upward: `sv-lexer` ← `sv-preprocessor` ← `sv-syntax` ←
-`sv-semantic` ← `sv-netlist` ← `svlang` ← `dv-model` ← DV tools (`dv-lint`, `dv-lsp`, `dv-map`, `dv-filelist`), while `dv-build` depends directly on `svlang` with zero UVM layer.
+`sv-semantic` ← `sv-netlist` ← `svlang` ← `svlang-model` ← `svlang-lint` ← `svlang-lsp` ← `svlang-cli`.
 
 ## The front end in more detail
 
 **Positions.** A preprocessed token carries an `Origin` (file index and
 byte offset). For a token a macro produced, `origin` is the macro use and
 `written` is where its text was written (in the `define body or a macro
-argument). `sv_semantic::Locator` turns these into `dv_model::Loc` (1-based
+argument). `sv_semantic::Locator` turns these into `svlang_model::Loc` (1-based
 line and column) with one file table per design, and records the
 expansion site, which is where svlang-lint reports findings on macro code.
 
@@ -101,34 +95,34 @@ with constant evaluation (`consteval`, `packed`, `bigint`). From it come:
   specialization, how many specializations slang would elaborate).
 
 Each check's messages follow slang's wording where slang has the same
-check, so `dv-build`'s output can be compared with slang's.
+check, so `svlang check`'s output can be compared with slang's.
 
 ## The linter
 
-`dv_lint::rules()` lists every rule with a `Check`:
+`svlang_lint::rules()` lists every rule with a `Check`:
 
-- `Model`: reads only `dv_model::Design`, so it runs on either front end;
+- `Model`: reads only `svlang_model::Design`, so it runs on either front end;
 - `Syntax`: reads one `syntax::Cst` (a tree with parent links, per-kind
   node lists and a locator), run once per tree;
 - `Mixed`: reads the model and every tree of the compile at once.
 
-`lint_all` runs them on `DV_LINT_JOBS` threads (default: all cores). Each
-thread takes the next rule, with the slowest rules first. Work many rules
+`lint_all` runs them on `SVLANG_JOBS` threads (default: all cores; `DV_LINT_JOBS`
+also accepted). Each thread takes the next rule, with the slowest rules first. Work many rules
 share (expression types in `expr_types`, sv-semantic's checks, elaboration,
 specialization counts) lives in `shared`: built once per compile by the
 first thread that asks, while the others wait. Findings are merged back in
 the serial order and sorted by position and rule, then inline waivers are
-applied, so output is the same for any thread count. `DV_LINT_PROFILE=1`
+applied, so output is the same for any thread count. `SVLANG_PROFILE=1`
 prints the cost of each rule.
 
-Every rule is a port of a C++ rule under `cpp/src/rules/` with the same id,
+Every ported rule matches its C++ twin under `cpp/src/rules/` with the same id,
 name, severity and message text; `tools/gates/lint_parity.py` compares the two
 finding for finding.
 
 The source is laid out by rule family, as `cpp/src/rules/` is:
 
 ```
-crates/dv-lint/src/
+crates/svlang-lint/src/
   lib.rs             Rule, Check, lint_all and the parallel runner
   rules/mod.rs       collects every family
   rules/<family>/    one file per rule, named after it, plus mod.rs that
@@ -147,30 +141,27 @@ rule's id, name and what it flags, and holds the helpers only that rule
 uses.
 
 The settings a run reads (rule options, the `style` and `naming` blocks,
-`-top`, `--skip-libraries`) live in a `dv_lint::Session`. A run hands them
+`-top`, `--skip-libraries`) live in a `svlang_lint::Session`. A run hands them
 to the threads it starts, so two sessions with different settings can lint
 at the same time in one process: an editor with two workspaces, a test
 harness, a host language. The command line uses the process's own session,
-which is what the free functions (`dv_lint::options::set`,
-`dv_lint::lint_all`) work on. Still held by the process, and so next to
-move: the record of which waivers matched, the inline-waiver count, and the
-git-history switch.
+which is what the free functions (`svlang_lint::options::set`,
+`svlang_lint::lint_all`) work on.
 
 ## The language server
 
-`dv-lsp` indexes every `.sv/.svh/.v/.vh` file of the workspace on its own
-(`index`: declarations with scopes, types and doc comments, plus every
-identifier use), keeps a name table over all files (`workspace`), and
-answers requests over stdio (`server`). Includes are not followed, so
-positions always stay in the file that wrote them. `json` and `text` are
-its small JSON and position/URI helpers; it needs no crates outside the
-workspace.
+`svlang lsp` (`crates/svlang-lsp`) indexes every `.sv/.svh/.v/.vh` file of the
+workspace on its own (`index`: declarations with scopes, types and doc comments,
+plus every identifier use), keeps a name table over all files (`workspace`), and
+answers requests over stdio (`server`). Includes are not followed, so positions
+always stay in the file that wrote them. `json` and `text` are its small JSON
+and position/URI helpers; it needs no crates outside the workspace.
 
-Diagnostics come from `dv-lint` (`lint`). The editor's text of each open
+Diagnostics come from `svlang-lint` (`lint`). The editor's text of each open
 file is set as an overlay (`sv_preprocessor::overlay`), which the preprocessor
 and the waiver code read in place of the file. Every edit asks for a check;
 a thread of its own waits for typing to pause, checks the project through
-`dv_lint::Workspace` (the project's config, waivers and baseline, the rule
+`svlang_lint::Workspace` (the project's config, waivers and baseline, the rule
 selection of the command line) and publishes each open file's diagnostics.
 What it published is kept, and code actions (a rule's fix, a waiver comment)
 are answered from it. The project is reloaded when its config or waiver
@@ -178,8 +169,7 @@ files change.
 
 ## How correctness is checked
 
-Each layer has a gate against slang, run from `tools/gates/` (the Rust side
-built with `--features slang` where a gate uses `--slang`; most need
+Each layer has a gate against slang, run from `tools/gates/` (most need
 `UVM_SRC` pointing at a UVM source tree):
 
 | Gate | Compares |
@@ -187,19 +177,19 @@ built with `--features slang` where a gate uses `--slang`; most need
 | `pp_parity.py` | preprocessed tokens |
 | `cst_parity.py` | parse outline and canonical expressions (`--exprs`) |
 | `model_parity.py` | `Design::dump` of the native and slang models (`--bodies`, `--types`) |
-| `sym_gate.py` | scopes, types, values and hierarchy from `dv-build` |
+| `sym_gate.py` | scopes, types, values and hierarchy from `svlang check` |
 | `ieee_gate.py` | errors on every sv-tests file (legal and should-fail) |
 | `slang_unit_gate.py` | semantic errors on slang's own unit test cases |
-| `expr_gate.py` | expression types from `dv-lint --exprs` |
-| `spec_gate.py` | specialization counts from `dv-lint --specs` |
-| `netlist_gate.py` | word-level RTL lowering, memory blasting, and fail-closed diagnostics from `dv-build --netlist` |
-| `lint_parity.py` | dv-lint findings against svlang-lint's |
+| `expr_gate.py` | expression types from `svlang lint --exprs` |
+| `spec_gate.py` | specialization counts from `svlang lint --specs` |
+| `netlist_gate.py` | word-level RTL lowering, memory blasting, and fail-closed diagnostics from `svlang check --netlist` |
+| `lint_parity.py` | `svlang lint` findings against C++ `svlang-lint` |
 
-Plus `cargo test` (native) and `cargo test --workspace --features slang`
-(also the Slang bridge and the tests that load through Slang), and
+Plus `cargo test` (native) and `cargo test -p sv-slang`
+(the Slang bridge and the tests that load through Slang), and
 `rust_gate.sh`: `cargo fmt --check` (`rustfmt.toml`) and Clippy with
-`-D warnings` on all targets, natively and with `--features slang` when
-libsvlang_lint_model is built. Clippy takes the MSRV from `rust-version` in
+`-D warnings` on all targets, natively and on `sv-slang` when
+`libsvlang_lint_model` is built. Clippy takes the MSRV from `rust-version` in
 the root `Cargo.toml`. A change to the front end should keep
 every gate where it was; a change to a rule should keep `lint_parity.py`
 identical.

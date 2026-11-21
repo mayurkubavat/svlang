@@ -1,0 +1,1097 @@
+//! The command line of `svlang lint` (and `svlang-lint` via symlink).
+//! Runs the lint rules over a SystemVerilog/UVM design built by the pure-Rust
+//! `svlang` front end:
+//!
+//! ```text
+//! svlang lint [--time] [--history] [--skip-libraries] [--rule ID]... [--preset NAME] [--experimental]
+//!             [-top NAME]... [--json FILE] [--list] <compile options>
+//! ```
+//!
+//! By default every profile except `style`, `smells`, and `advisory` runs, with
+//! no experimental rules; `--preset NAME` and `--experimental` broaden or
+//! narrow selection (`--preset all --experimental` runs every rule); `--rule
+//! ID` runs that rule whatever its profile.
+//!
+//! `--json FILE` also writes the findings as a JSON report (`tool`,
+//! `version`, `compileErrors`, `waived`, `violations` with `ruleId`,
+//! `ruleName`, `severity`, `file`, `line`, `column`, `message` and any
+//! `related` notes).
+//!
+//! `--in-context` lints each header given as a source (`.svh`, `.vh`, or a
+//! `.sv` with no design unit) inside
+//! the file that includes it, found by indexing the repository's includes
+//! (`svlang::source::owners`), and reports only the header's findings.
+//! `--frames` prints, under each finding and note, its source line with a
+//! caret under the flagged token; a
+//! terminal gets them without asking, and `--no-frames` turns them off.
+//! `--list` prints every rule (`id name model|syntax`); `-top` names the
+//! modules elaboration starts from; `--history` lets SV-EVO-001/002 read git
+//! history. Modules the sources instantiate but do not define are looked up
+//! in `-v` library files and `-y` directories (`+libext+` extensions), as
+//! VCS does; `--skip-libraries` reports nothing in those files. For the
+//! compiler conformance gates: `--specs` prints how often each generic class is
+//! visited, `--exprs` every expression's type.
+//!
+//! Additional CLI options (see `svlang_lint::cli`): `--explain RULE`;
+//! `--changed-since REF` (with `--strict-new-files`); `--waiver-report`,
+//! `--report-unused-waivers` and `--strict-waivers` (exit 4); the result
+//! cache in `.svlang_lint_cache/native/` (`--no-cache`, `--cache-dir DIR`,
+//! `--clear-cache`; a run is replayed only when nothing it read changed);
+//! `--map FILE` (the testbench map, HTML or JSON); `--init`; and
+//! `--python-rules PATH` (rules written against the Python SDK).
+//!
+//! Rules run on one thread per core (`SVLANG_JOBS=N` to choose; 1 runs
+//! them serially); the output does not depend on it.
+//!
+//! Exit status: 1 when an ERROR finding remains (after
+//! waivers and re-grades), 0 when only warnings and infos do (or none), 2 for
+//! a load or configuration error.
+use svlang_model::Design;
+
+/// The command line entry point reading arguments from `std::env::args()`.
+pub fn run() {
+    let raw: Vec<String> = std::env::args().skip(1).collect();
+    run_with(&raw, None);
+}
+
+/// Runs the linter CLI with explicit `raw_args` and optional in-process `--lsp`
+/// handler (`serve_lsp`).
+pub fn run_with(raw_args: &[String], serve_lsp: Option<fn() -> !>) {
+    svlang::source::exit_on_closed_pipe();
+    let mut time = false;
+    // The source line under each finding: on a terminal unless --no-frames,
+    // elsewhere only with --frames (a log or a script gets one line each).
+    let mut frames = std::io::IsTerminal::is_terminal(&std::io::stdout());
+    let mut in_context = false;
+    let mut specs = false;
+    let mut exprs = false;
+    let mut only: Vec<String> = Vec::new();
+    let mut preset: Option<String> = None;
+    let mut experimental = false;
+    let mut no_config = false;
+    let mut config_file: Option<String> = None;
+    let mut waivers_file: Option<String> = None;
+    let mut baseline_file: Option<String> = None;
+    let mut update_baseline: Option<String> = None;
+    let mut sarif: Option<String> = None;
+    let mut html: Option<String> = None;
+    let mut fix_rules: Vec<String> = Vec::new();
+    let mut listing: Option<Listing> = None;
+    let mut json_bare = false;
+    // --explain, --changed-since, waiver hygiene, the cache, --map, --init,
+    // --python-rules (svlang_lint::cli).
+    let mut extra = svlang_lint::cli::Extra::default();
+    let mut args = Vec::new();
+    let mut it = raw_args.iter().cloned();
+    while let Some(a) = it.next() {
+        match extra.take(&a, &mut it) {
+            Ok(true) => continue,
+            Ok(false) => {}
+            Err(e) => {
+                eprintln!("error: {e}");
+                std::process::exit(2);
+            }
+        }
+        // `--name=value`, as svlang-lint also takes them.
+        if let Some(v) = a.strip_prefix("--preset=") {
+            preset = Some(v.to_string());
+            continue;
+        }
+        for (flag, slot) in [
+            ("--waivers=", &mut waivers_file),
+            ("--baseline=", &mut baseline_file),
+            ("--update-baseline=", &mut update_baseline),
+            ("--sarif=", &mut sarif),
+            ("--html=", &mut html),
+        ] {
+            if let Some(v) = a.strip_prefix(flag) {
+                *slot = Some(v.to_string());
+            }
+        }
+        if ["--waivers=", "--baseline=", "--update-baseline=", "--sarif=", "--html="].iter().any(|p| a.starts_with(p)) {
+            continue;
+        }
+        if let Some(v) = a.strip_prefix("--config=") {
+            config_file = Some(v.to_string());
+            continue;
+        }
+        if let Some(v) = a.strip_prefix("--rule=") {
+            only.push(v.to_string());
+            continue;
+        }
+        if let Some(v) = a.strip_prefix("--fix-rule=") {
+            fix_rules.extend(v.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()));
+            continue;
+        }
+        if let Some(v) = a.strip_prefix("--engine=") {
+            if !matches!(v, "single-pass" | "isolated") {
+                eprintln!("error: Unknown --engine '{v}' (expected single-pass or isolated)");
+                std::process::exit(2);
+            }
+            continue;
+        }
+        if let Some(v) = a.strip_prefix("--json=") {
+            let _ = JSON_OUT.set(v.to_string());
+            continue;
+        }
+        match a.as_str() {
+            "-h" | "--help" => {
+                print!("{}", svlang_lint::help::help());
+                return;
+            }
+            "--version" => {
+                println!("{}", svlang_lint::help::version());
+                return;
+            }
+            "--lsp" => {
+                if let Some(f) = serve_lsp {
+                    f()
+                }
+                serve_editor()
+            }
+            "--time" | "--profile-rules" => time = true,
+            "--engine" => {
+                let v = it.next().unwrap_or_default();
+                if !matches!(v.as_str(), "single-pass" | "isolated") {
+                    eprintln!("error: Unknown --engine '{v}' (expected single-pass or isolated)");
+                    std::process::exit(2);
+                }
+            }
+            // Under each finding and note, its source line with a caret.
+            "--frames" => frames = true,
+            "--no-frames" => frames = false,
+            // A header given as a source is linted inside the file that includes it.
+            "--in-context" => in_context = true,
+            "--specs" => specs = true,
+            // Each expression's type, as tools/oracles/exprdump.cpp prints slang's.
+            "--exprs" => exprs = true,
+            "--rule" => only.extend(it.next()),
+            // Rule selection as svlang-lint's (default: every profile but advisory).
+            "--preset" => preset = it.next(),
+            "--experimental" => experimental = true,
+            // The project configuration (docs/guide/project_config.md).
+            "--no-config" => no_config = true,
+            "--config" => config_file = it.next(),
+            // A waiver file, a baseline to filter by, a baseline to write.
+            "--waivers" => waivers_file = it.next(),
+            "--baseline" => baseline_file = it.next(),
+            "--update-baseline" => update_baseline = it.next(),
+            // A SARIF 2.1.0 report.
+            "--sarif" => sarif = it.next(),
+            // The HTML dashboard.
+            "--html" => html = it.next(),
+            // Apply fix-its: --fix rewrites files, --fix-dry-run prints the
+            // diff; --unsafe-fixes admits fixes that can change behaviour;
+            // --fix-rule limits them to rules (comma-separated IDs or names).
+            "--fix" => FIX.write().map(|mut f| f.on = true).unwrap_or(()),
+            "--fix-dry-run" => FIX.write().map(|mut f| f.dry_run = true).unwrap_or(()),
+            "--unsafe-fixes" => FIX.write().map(|mut f| f.unsafe_ok = true).unwrap_or(()),
+            "--fix-rule" => fix_rules.extend(
+                it.next().unwrap_or_default().split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()),
+            ),
+            // Also write the findings as svlang-lint's JSON report.
+            "--json" => {
+                // Alone it means standard output, for the two listings.
+                let path = it.next().unwrap_or_else(|| {
+                    json_bare = true;
+                    "-".to_string()
+                });
+                let _ = JSON_OUT.set(path);
+            }
+            // The catalog and the guide, as text or with --json.
+            "--list-rules" => listing = Some(Listing::Rules),
+            "--list-guidelines" => listing = Some(Listing::Guidelines),
+            // Read git history for SV-EVO-001 and SV-EVO-002.
+            "--history" => svlang_lint::set_history(true),
+            // Report nothing in -v/-y library files.
+            "--skip-libraries" => svlang_lint::set_skip_libraries(true),
+            // Report in the UVM library too (it is left out beside user code).
+            "--report-library" => REPORT_LIBRARY.store(true, std::sync::atomic::Ordering::Relaxed),
+            // The design's tops, as slang's --top: modules no top reaches
+            // are not elaborated.
+            "-top" | "--top" => {
+                let t: Vec<String> = it.next().into_iter().collect();
+                svlang_lint::add_tops(&t);
+            }
+            "--list" => {
+                for r in svlang_lint::rules() {
+                    let kind = if r.is_syntax() { "syntax" } else { "model" };
+                    let native = if r.native { " native" } else { "" };
+                    println!("{} {} {}{native}", r.id, r.name, kind);
+                    for s in svlang_lint::sub_rules(r.id) {
+                        println!("{} {} {kind}", s.id, s.finding_name);
+                    }
+                }
+                return;
+            }
+            _ => args.push(a),
+        }
+    }
+    let fail = |e: String| -> ! {
+        eprintln!("error: {e}");
+        // A mistyped command line: say where the options are listed.
+        if e == "no sources given" || e.starts_with("unknown command line argument") {
+            eprintln!("{}", svlang_lint::help::hint());
+        }
+        std::process::exit(2);
+    };
+    if let Some(l) = listing {
+        list(l, JSON_OUT.get().map(String::as_str)).unwrap_or_else(|e| fail(e));
+        return;
+    }
+    if json_bare {
+        fail("--json needs a file".to_string());
+    }
+    extra.validate().unwrap_or_else(|e| fail(e));
+    if let Some(path) = &extra.dump_config {
+        let p = std::path::Path::new(path);
+        if let Some(parent) = p.parent().filter(|d| !d.as_os_str().is_empty()) {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        const STARTER_CONFIG: &str = include_str!("../data/starter_config.py");
+        if let Err(e) = std::fs::write(p, STARTER_CONFIG) {
+            eprintln!("error: cannot write config template {path}: {e}");
+            std::process::exit(1);
+        }
+        println!("[svlang-lint] Default configuration template written to: {path}");
+        return;
+    }
+    let guideline_selectors =
+        svlang_lint::catalog::parse_guideline_selectors(&extra.guidelines).unwrap_or_else(|e| fail(e));
+    if let Some(q) = &extra.explain {
+        use std::io::IsTerminal;
+        print!("{}", svlang_lint::explain::explain(q, std::io::stdout().is_terminal()).unwrap_or_else(|e| fail(e)));
+        return;
+    }
+    if extra.init {
+        init_project(&args);
+    }
+    let cwd_for_cfg = std::env::current_dir().unwrap_or_default();
+    let mut loaded_cfg: Option<svlang_lint::project::Config> = None;
+    if !no_config {
+        let first = args.iter().find(|a| !a.starts_with(['-', '+'])).map(String::as_str);
+        if let Some(file) = svlang_lint::project::find(config_file.as_deref(), first) {
+            let cfg = svlang_lint::project::Config::load(&file).unwrap_or_else(|e| fail(e));
+            for w in &cfg.warnings {
+                eprintln!("Warning: {}: {w}", file.display());
+            }
+            if !cfg.unapplied.is_empty() {
+                eprintln!("note: {}: {} not applied", file.display(), cfg.unapplied.join(", "));
+            }
+            args.extend(cfg.compile_args.iter().cloned());
+            svlang_lint::options::set(&cfg.options);
+            svlang_lint::options::set_str(&cfg.str_options);
+            svlang_lint::options::set_list(&cfg.list_options);
+            svlang_lint::options::set_style(&cfg.style);
+            svlang_lint::options::set_naming(&cfg.naming);
+            loaded_cfg = Some(cfg);
+        }
+    }
+    if !extra.library_globs.is_empty() || !extra.exclude_globs.is_empty() {
+        let cfg = loaded_cfg.get_or_insert_with(Default::default);
+        let before = cfg.warnings.len();
+        cfg.add_library_globs(&extra.library_globs, &cwd_for_cfg);
+        cfg.add_exclude_globs(&extra.exclude_globs, &cwd_for_cfg);
+        for w in &cfg.warnings[before..] {
+            eprintln!("Warning: {w}");
+        }
+    }
+    if let Some(cfg) = loaded_cfg {
+        let _ = CONFIG.set(cfg);
+    }
+    let sup = svlang_lint::suppress::Suppress::load(
+        CONFIG.get(),
+        waivers_file.as_deref(),
+        baseline_file.as_deref(),
+        no_config,
+    )
+    .unwrap_or_else(|e| fail(e));
+    for w in &sup.warnings {
+        eprintln!("Warning: {w}");
+    }
+    let _ = SUPPRESS.set(sup);
+    let root = CONFIG
+        .get()
+        .map(|c| c.root.clone())
+        .filter(|r| !r.as_os_str().is_empty())
+        .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
+    if extra.clear_cache {
+        svlang_lint::cache::clear(&extra.cache_folder(&root));
+    }
+    let cache_wanted = !extra.no_cache
+        && !extra.hygiene()
+        && extra.changed_since.is_none()
+        && extra.map.is_none()
+        && update_baseline.is_none()
+        && !time
+        && !std::env::args().any(|a| a == "--history")
+        && !FIX.read().is_ok_and(|f| f.on || f.dry_run);
+    let cache = cache_wanted.then(|| {
+        let mut inputs: Vec<std::path::PathBuf> = Vec::new();
+        if let Some(c) = CONFIG.get() {
+            inputs.push(c.file.clone());
+            inputs.extend(c.layers.iter().map(std::path::PathBuf::from));
+        }
+        let dot = root.join(".svlang-lint");
+        match &waivers_file {
+            Some(w) => inputs.push(w.into()),
+            None if !no_config => inputs.push(dot.join("waivers.json")),
+            None => {}
+        }
+        match &baseline_file {
+            Some(b) => inputs.push(b.into()),
+            None if !no_config => inputs.push(dot.join("baseline.json")),
+            None => {}
+        }
+        inputs.extend(extra.python_rules.iter().map(std::path::PathBuf::from));
+        let cwd = std::env::current_dir().unwrap_or_default();
+        let lists =
+            svlang::source::FileList::read_args(&args, &cwd, svlang::source::Dialect::Any, &svlang::source::ProcessEnv);
+        inputs.extend(lists.lists);
+        let mut key: Vec<String> = vec![cwd.display().to_string()];
+        key.extend(lint_args());
+        key.push("|".into());
+        key.extend(args.iter().cloned());
+        svlang_lint::cache::Cache::new(&extra.cache_folder(&root), &key, &inputs)
+    });
+    let _ = ROOT.set(root);
+    if let Some(u) = update_baseline {
+        let _ = UPDATE_BASELINE.set(u);
+    }
+    if let Some(s) = sarif {
+        let _ = SARIF_OUT.set(s);
+    }
+    if let Some(h) = html {
+        let _ = HTML_OUT.set(h);
+    }
+    let headers = if in_context { in_owner(&mut args) } else { Vec::new() };
+    // --preset, else the project's `preset`, else the default profiles.
+    let config_preset = CONFIG.get().and_then(|c| c.preset.clone());
+    let effective_preset = preset.as_deref().or(config_preset.as_deref());
+    let selected = svlang_lint::rule_selection(effective_preset, experimental).unwrap_or_else(|e| fail(e));
+    let show_conformance = extra.conformance
+        || !guideline_selectors.is_empty()
+        || effective_preset.is_some_and(|p| matches!(p.to_ascii_lowercase().as_str(), "reuse" | "guide"));
+    SHOW_CONFORMANCE.store(show_conformance, std::sync::atomic::Ordering::Relaxed);
+    // Rules the project config configures run too, unless --preset or --guideline
+    // narrows the run from the command line.
+    let configured: std::collections::HashSet<&'static str> =
+        match (CONFIG.get(), &preset, guideline_selectors.is_empty()) {
+            (Some(c), None, true) => {
+                svlang_lint::rules().into_iter().filter(|r| c.selects(r.id, r.name)).map(|r| r.id).collect()
+            }
+            _ => Default::default(),
+        };
+    // So do the rules --fix-rule names: asking for a rule's fixes asks for
+    // the rule.
+    let fix_named: std::collections::HashSet<&'static str> = svlang_lint::rules()
+        .into_iter()
+        .filter(|r| {
+            let named = |id: &str, name: &str| fix_rules.iter().any(|f| f == id || f == name);
+            named(r.id, r.name)
+                || svlang_lint::sub_rules(r.id).iter().any(|s| named(s.id, s.name) || named(s.id, s.finding_name))
+        })
+        .map(|r| r.id)
+        .collect();
+    let rule_meta: std::collections::HashMap<&'static str, (&'static str, bool, &'static [&'static str])> =
+        svlang_lint::rules().into_iter().map(|r| (r.id, (r.name, r.experimental, r.guidelines))).collect();
+    // A rule named with --rule runs whatever its profile.
+    let user_keep = |id: &str| {
+        if !only.is_empty() {
+            let name = rule_meta.get(id).map(|m| m.0).unwrap_or("");
+            return only.iter().any(|o| o == id || o == name);
+        }
+        if !guideline_selectors.is_empty() {
+            let Some(&(_, exp, guides)) = rule_meta.get(id) else {
+                return false;
+            };
+            if exp && !experimental {
+                return false;
+            }
+            return guides
+                .iter()
+                .any(|g| guideline_selectors.iter().any(|s| svlang_lint::catalog::guideline_matches(s, g)))
+                || (guideline_selectors.iter().any(|s| s == "formal-ready") && svlang_lint::is_formal_ready_rule(id))
+                || fix_named.contains(id);
+        }
+        selected(id) || configured.contains(id) || fix_named.contains(id)
+    };
+    let fixing = FIX.read().is_ok_and(|f| f.on || f.dry_run);
+    if let Ok(mut f) = FIX.write() {
+        f.only = fix_rules.clone();
+        f.compile_errors_selected = user_keep("SV-CMP-001");
+    }
+    // A fix never touches a file with compile errors: find them whatever the
+    // selection (the findings are dropped again when not selected).
+    let keep = |id: &str| user_keep(id) || (fixing && id == "SV-CMP-001");
+    let _ = ACTIVE.set(svlang_lint::rules().into_iter().map(|r| r.id).filter(|id| user_keep(id)).collect());
+    let _ = EXTRA.set(extra.clone());
+    let _ = LIBRARY.set(svlang_lint::library::Library::of_args(&args));
+    if !exprs && !specs {
+        let looked = cache.as_ref().map(svlang_lint::cache::Cache::lookup);
+        if let Some(Err(changed)) = &looked {
+            if !changed.is_empty() {
+                // A full run: only a complete hit is replayed.
+                eprintln!("[svlang-lint] cache miss: {} changed", changed.join(", "));
+            }
+        }
+        if let Some(Ok(hit)) = looked {
+            eprintln!(
+                "[svlang-lint] cache: {} compilation unit{} served from cache",
+                hit.units,
+                if hit.units == 1 { "" } else { "s" }
+            );
+            svlang_lint::set_inline_waived(hit.inline_waived);
+            let _ = USER_FILES.set(user_files(&hit.files));
+            let t = std::time::Instant::now();
+            report(None, time, frames, t, &hit.files, only_in(&headers, &hit.files, &hit.found));
+        }
+        // The design is built while the rules' shared caches start.
+        let (trees, parse_ms) = svlang::semantic::parse_args(&args).unwrap_or_else(|e| fail(e.to_string()));
+        let t = std::time::Instant::now();
+        let (design, (mut files, mut found)) =
+            svlang_lint::lint_built(|| svlang_model::design_of(&trees, parse_ms), &trees, keep);
+        if let Some(rules) = &extra.python_rules {
+            eprintln!("[svlang-lint] Executing custom Python rules from: {rules}");
+            let options = CONFIG.get().map_or(&[][..], |c| &c.rule_options[..]);
+            let mut py = svlang_lint::plugins::run(rules, &design, &trees, &mut files, options);
+            svlang_lint::apply_inline_waivers(&mut py, &files);
+            found.extend(py);
+            found.sort_by(|a, b| (a.position_in(&files), a.rule).cmp(&(b.position_in(&files), b.rule)));
+        }
+        if extra.map.is_some() {
+            let _ = MAP.set(svlang_lint::tbmap::Map::new(&design, &trees, &files));
+        }
+        let _ = USER_FILES.set(user_files(&files));
+        if let Some(c) = &cache {
+            let mut deps: Vec<std::path::PathBuf> = trees.iter().flat_map(|t| t.files.iter().cloned()).collect();
+            deps.extend(files.iter().filter(|f| !f.is_empty()).map(std::path::PathBuf::from));
+            deps.retain(|d| d.is_file());
+            if c.store(&deps, trees.len(), &files, &found, svlang_lint::inline_waived()) {
+                eprintln!(
+                    "[svlang-lint] cache: stored {} compilation unit{}",
+                    trees.len(),
+                    if trees.len() == 1 { "" } else { "s" }
+                );
+            }
+        }
+        report(Some(&design), time, frames, t, &files, only_in(&headers, &files, &found));
+    }
+    let (design, trees) = svlang_model::load_with_trees(&args).map_err(|e| e.to_string()).unwrap_or_else(|e| fail(e));
+    if exprs {
+        for l in svlang_lint::expr_types::expr_dump(design.files().to_vec(), &trees) {
+            println!("{l}");
+        }
+        return;
+    }
+    if specs {
+        // How often the AST walk visits each generic class (`name@file:line`).
+        for l in svlang_lint::spec_report(&design, &trees) {
+            println!("{l}");
+        }
+        return;
+    }
+    let t = std::time::Instant::now();
+    let (files, found) = svlang_lint::lint_all(&design, &trees, keep);
+    let _ = USER_FILES.set(user_files(&files));
+    report(Some(&design), time, frames, t, &files, only_in(&headers, &files, &found));
+}
+
+/// What `--list-rules` and `--list-guidelines` print.
+#[derive(Clone, Copy)]
+enum Listing {
+    Rules,
+    Guidelines,
+}
+
+/// Prints a listing: as text, or as JSON to `json` (`-`: standard output).
+fn list(what: Listing, json: Option<&str>) -> Result<(), String> {
+    use svlang_lint::catalog;
+    let text = match (what, json.is_some()) {
+        (Listing::Rules, true) => catalog::rules_json(),
+        (Listing::Rules, false) => catalog::rules_text(),
+        (Listing::Guidelines, true) => catalog::guidelines_json(),
+        (Listing::Guidelines, false) => catalog::guidelines_text(),
+    };
+    match json {
+        Some(path) if path != "-" => std::fs::write(path, text).map_err(|e| format!("cannot write {path}: {e}")),
+        _ => {
+            use std::io::Write;
+            // A closed pipe (`| head`) is not an error.
+            let _ = std::io::stdout().write_all(text.as_bytes());
+            Ok(())
+        }
+    }
+}
+
+fn serve_editor() -> ! {
+    let exe = std::env::current_exe().unwrap_or_else(|_| std::path::PathBuf::from("svlang"));
+    match std::process::Command::new(&exe).arg("lsp").status() {
+        Ok(s) => std::process::exit(s.code().unwrap_or(1)),
+        Err(e) => {
+            eprintln!("error: cannot start the language server `{} lsp`: {e}", exe.display());
+            std::process::exit(2);
+        }
+    }
+}
+
+/// `--in-context`: each header source (`.svh`, `.vh`, ...) is replaced by
+/// the compile root that includes it (see `svlang::source::owners`), with the
+/// folders on the way as include directories. Returns the headers, whose
+/// findings are the ones to report; a header nothing includes stays a
+/// source of its own.
+fn in_owner(args: &mut Vec<String>) -> Vec<std::path::PathBuf> {
+    use svlang::source::owners::{is_header, search_root, IncludeIndex};
+    let incdirs: Vec<std::path::PathBuf> = args
+        .iter()
+        .filter_map(|a| a.strip_prefix("+incdir+"))
+        .flat_map(|d| d.split('+').filter(|x| !x.is_empty()).map(std::path::PathBuf::from).collect::<Vec<_>>())
+        .collect();
+    let mut headers = Vec::new();
+    let mut out: Vec<String> = Vec::new();
+    let mut extra: Vec<String> = Vec::new();
+    let mut prev = String::new();
+    for a in std::mem::take(args) {
+        let p = std::path::Path::new(&a);
+        let takes_value = matches!(prev.as_str(), "-f" | "-F" | "-v" | "-y" | "-top" | "--top" | "--rule");
+        prev = a.clone();
+        if takes_value || a.starts_with(['-', '+']) || !p.is_file() || !(is_header(p) || no_design_unit(p)) {
+            out.push(a);
+            continue;
+        }
+        let idx = IncludeIndex::scan(&[search_root(p)], &incdirs);
+        let canon = p.canonicalize().unwrap_or_else(|_| p.to_path_buf());
+        match idx.owners(p).into_iter().next() {
+            Some(o) => {
+                eprintln!(
+                    "svlang-lint: {} is linted inside {}{}",
+                    a,
+                    o.root.display(),
+                    o.package.as_ref().map(|k| format!(" (package {k})")).unwrap_or_default()
+                );
+                for d in &o.include_dirs {
+                    extra.push(format!("+incdir+{}", d.display()));
+                }
+                let root = o.root.display().to_string();
+                if !out.contains(&root) && !extra.contains(&root) {
+                    extra.push(root);
+                }
+            }
+            None => {
+                eprintln!("svlang-lint: nothing includes {a}; linting it alone");
+                out.push(a);
+            }
+        }
+        headers.push(canon);
+    }
+    out.extend(extra);
+    *args = out;
+    headers
+}
+
+/// A `.sv` file with no module, package, interface or program, such as a
+/// class meant to be included in a package (core-v-verif names those .sv).
+fn no_design_unit(p: &std::path::Path) -> bool {
+    let Ok(text) = std::fs::read_to_string(p) else { return false };
+    !text.lines().any(|l| {
+        let l = l.trim_start();
+        ["module", "package", "interface", "program", "macromodule", "primitive", "config"]
+            .iter()
+            .any(|k| l.strip_prefix(k).is_some_and(|r| r.starts_with([' ', '\t'])))
+    })
+}
+
+/// The findings in `headers` (all of them when there are none).
+fn only_in(
+    headers: &[std::path::PathBuf],
+    files: &[String],
+    found: &[svlang_lint::Finding],
+) -> Vec<svlang_lint::Finding> {
+    if headers.is_empty() {
+        return found.to_vec();
+    }
+    let canon = |f: &str| std::path::Path::new(f).canonicalize().ok();
+    found.iter().filter(|f| canon(f.position_in(files).0).is_some_and(|p| headers.contains(&p))).cloned().collect()
+}
+
+/// Prints the findings (and with `--time` the stage times) and exits.
+/// `--fix` and its options.
+#[derive(Default)]
+struct FixOpts {
+    on: bool,
+    dry_run: bool,
+    unsafe_ok: bool,
+    only: Vec<String>,
+    compile_errors_selected: bool,
+}
+static FIX: std::sync::RwLock<FixOpts> = std::sync::RwLock::new(FixOpts {
+    on: false,
+    dry_run: false,
+    unsafe_ok: false,
+    only: Vec::new(),
+    compile_errors_selected: false,
+});
+
+/// --fix runs pass after pass until nothing more changes (a fix can uncover
+/// another finding; overlapping fixes wait for the rewritten text); each pass
+/// is a fresh process, as svlang-lint's.
+const MAX_FIX_PASSES: u32 = 10;
+
+/// The waivers and baseline in use, and where `--update-baseline` writes.
+static SUPPRESS: std::sync::OnceLock<svlang_lint::suppress::Suppress> = std::sync::OnceLock::new();
+static UPDATE_BASELINE: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+/// `--sarif FILE`.
+static SARIF_OUT: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+/// `--html FILE`.
+static HTML_OUT: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+
+/// The options of svlang_lint::cli, the rules that run, the project root, the
+/// files whose waiver comments count, and the --map model.
+static EXTRA: std::sync::OnceLock<svlang_lint::cli::Extra> = std::sync::OnceLock::new();
+static ACTIVE: std::sync::OnceLock<Vec<&'static str>> = std::sync::OnceLock::new();
+static ROOT: std::sync::OnceLock<std::path::PathBuf> = std::sync::OnceLock::new();
+static USER_FILES: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
+static MAP: std::sync::OnceLock<svlang_lint::tbmap::Map> = std::sync::OnceLock::new();
+
+/// The command line without the options that only say where reports go
+/// (or how the cache is used), for the cache key: a run that writes its JSON
+/// to another file replays the same findings.
+fn lint_args() -> Vec<String> {
+    const VALUED: [&str; 6] = ["--json", "--sarif", "--html", "--map", "--update-baseline", "--cache-dir"];
+    const FLAGS: [&str; 4] = ["--frames", "--no-frames", "--clear-cache", "--no-cache"];
+    let mut out = Vec::new();
+    let mut it = std::env::args().skip(1);
+    while let Some(a) = it.next() {
+        if VALUED.contains(&a.as_str()) {
+            it.next();
+        } else if !FLAGS.contains(&a.as_str()) && !VALUED.iter().any(|v| a.starts_with(&format!("{v}="))) {
+            out.push(a);
+        }
+    }
+    out
+}
+
+/// Files whose waiver comments the hygiene report reads: not library or
+/// excluded, not the UVM test stub.
+fn user_files(files: &[String]) -> Vec<String> {
+    files
+        .iter()
+        .filter(|f| !f.is_empty() && !f.contains("uvm_mock.svh"))
+        .filter(|f| CONFIG.get().is_none_or(|c| !c.hides_file(f)))
+        .cloned()
+        .collect()
+}
+
+/// `--init`: discovers the project, learns its naming, writes
+/// `.svlang-lint/config.py`, then lints with it to write the first baseline
+/// (`.svlang-lint/baseline.json`, or `--update-baseline FILE`).
+fn init_project(args: &[String]) -> ! {
+    let fail = |e: String| -> ! {
+        eprintln!("error: {e}");
+        std::process::exit(2);
+    };
+    for existing in [".svlang-lint/config.py", ".svlang-lint/config.json", "svlang_lint_config.py"] {
+        if std::path::Path::new(existing).exists() {
+            fail(format!("{existing} already exists; remove it to run --init again"));
+        }
+    }
+    // Sources given on the command line are the sources; other options stay.
+    let mut cli_files = Vec::new();
+    let mut prev = String::new();
+    for a in args {
+        let takes_value = matches!(prev.as_str(), "-f" | "-F" | "-v" | "-y" | "-top" | "--top" | "--rule" | "--preset");
+        if !takes_value && !a.starts_with(['-', '+']) && std::path::Path::new(a).is_file() {
+            cli_files.push(std::path::PathBuf::from(a));
+        }
+        prev = a.clone();
+    }
+    let d = svlang_lint::init::discover(std::path::Path::new("."), &cli_files);
+    if cli_files.is_empty() && d.sources_rel.is_empty() && d.filelists_rel.is_empty() {
+        fail(format!("no SystemVerilog sources found under {}", d.root.display()));
+    }
+    println!(
+        "[svlang-lint] init: {} SystemVerilog files; {}; {}",
+        d.sv_files,
+        if d.filelists_rel.is_empty() {
+            format!("{} top-level sources", d.sources_rel.len())
+        } else {
+            format!("{} file list(s)", d.filelists_rel.len())
+        },
+        d.uvm_note
+    );
+    let (design, _trees) = svlang_model::load_with_trees(&d.compile_args()).unwrap_or_else(|e| fail(e.to_string()));
+    let library = d.library_rel.first().map(|l| {
+        let e = match l.strip_prefix("$UVM_HOME") {
+            Some(rest) => format!("{}{rest}", std::env::var("UVM_HOME").unwrap_or_default()),
+            None => l.clone(),
+        };
+        let p = d.root.join(e);
+        p.canonicalize().unwrap_or(p)
+    });
+    let naming = svlang_lint::init::infer_naming(&design, library.as_deref());
+    if let Err(e) = std::fs::create_dir_all(".svlang-lint")
+        .and_then(|()| std::fs::write(".svlang-lint/config.py", svlang_lint::init::render_config(&d, &naming)))
+    {
+        fail(format!("cannot write .svlang-lint/config.py: {e}"));
+    }
+    // Lint with the new config (which names the sources) for the baseline.
+    let given: Vec<String> = std::env::args().skip(1).collect();
+    let mut rerun: Vec<String> = Vec::new();
+    let mut baseline = ".svlang-lint/baseline.json".to_string();
+    let mut it = given.iter().enumerate();
+    while let Some((idx, a)) = it.next() {
+        if a == "--init" || ((idx > 0 || a != "lint") && cli_files.iter().any(|f| f.as_os_str() == a.as_str())) {
+            continue;
+        }
+        if a == "--update-baseline" {
+            baseline = it.next().map(|(_, v)| v.clone()).unwrap_or(baseline);
+            continue;
+        }
+        if let Some(b) = a.strip_prefix("--update-baseline=") {
+            baseline = b.to_string();
+            continue;
+        }
+        rerun.push(a.clone());
+    }
+    rerun.extend(["--no-cache".to_string(), "--update-baseline".to_string(), baseline.clone()]);
+    let exe = std::env::current_exe().unwrap_or_else(|_| std::path::PathBuf::from("svlang"));
+    if exe.file_stem().is_some_and(|s| s == "svlang") && rerun.first().map(String::as_str) != Some("lint") {
+        rerun.insert(0, "lint".to_string());
+    }
+    let out = std::process::Command::new(exe)
+        .args(&rerun)
+        .stderr(std::process::Stdio::inherit())
+        .output()
+        .unwrap_or_else(|e| fail(format!("cannot lint with the new config: {e}")));
+    if out.status.code() == Some(2) {
+        std::process::exit(2);
+    }
+    print!("\n[svlang-lint] Wrote .svlang-lint/config.py");
+    if naming.is_empty() {
+        print!(" (the default naming conventions already fit this code)");
+    }
+    println!();
+    for n in &naming {
+        let what = if n.disable { "disabled".to_string() } else { format!("pattern {}", n.pattern) };
+        println!("  naming {}: {what} ({})", n.target, n.evidence);
+    }
+    println!(
+        "[svlang-lint] Existing findings are in the baseline {baseline}; from now on only new findings are reported.\nReview the config, then run `svlang lint` from this folder."
+    );
+    std::process::exit(0);
+}
+
+/// The project configuration in use, if any.
+static LIBRARY: std::sync::OnceLock<svlang_lint::library::Library> = std::sync::OnceLock::new();
+static REPORT_LIBRARY: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+static SHOW_CONFORMANCE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+static CONFIG: std::sync::OnceLock<svlang_lint::project::Config> = std::sync::OnceLock::new();
+
+/// `--json FILE`: where to write the JSON report.
+static JSON_OUT: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+
+/// A JSON string literal.
+fn json_str(s: &str) -> String {
+    let mut o = String::with_capacity(s.len() + 2);
+    o.push('"');
+    for ch in s.chars() {
+        match ch {
+            '"' => o.push_str("\\\""),
+            '\\' => o.push_str("\\\\"),
+            '\n' => o.push_str("\\n"),
+            '\r' => o.push_str("\\r"),
+            '\t' => o.push_str("\\t"),
+            c if (c as u32) < 0x20 => o.push_str(&format!("\\u{:04x}", c as u32)),
+            c => o.push(c),
+        }
+    }
+    o.push('"');
+    o
+}
+
+/// The findings in svlang-lint's JSON report form (`--json`): `tool`,
+/// `version`, `compileErrors`, `waived` and one `violations` entry per
+/// finding with its rule, severity, position, message and notes.
+fn json_report(files: &[String], found: &[svlang_lint::Finding], waived: usize) -> String {
+    let mut out = String::from("{\n");
+    let compile = found.iter().filter(|f| f.rule == "SV-CMP-001").count();
+    out.push_str(&format!(
+        "  \"tool\": \"svlang-lint\",\n  \"version\": {},\n  \"compileErrors\": {compile},\n  \"waived\": {waived},\n  \"violations\": [",
+        json_str(env!("CARGO_PKG_VERSION"))
+    ));
+    let mut pos = svlang_lint::fix::Positions::default();
+    for (i, f) in found.iter().enumerate() {
+        let (file, line, column) = f.position_in(files);
+        out.push_str(if i == 0 { "\n" } else { ",\n" });
+        out.push_str(&format!(
+            "    {{\"ruleId\": {}, \"ruleName\": {}, \"severity\": {}, \"file\": {}, \"line\": {line}, \"column\": {column}, \"message\": {}",
+            json_str(f.rule),
+            json_str(f.name),
+            json_str(f.severity.as_str()),
+            json_str(file),
+            json_str(&f.message)
+        ));
+        if !f.fixes.is_empty() {
+            let fixes: Vec<String> = f
+                .fixes
+                .iter()
+                .map(|x| {
+                    let (l1, c1) = pos.at(&x.path, x.start);
+                    let (l2, c2) = pos.at(&x.path, x.end);
+                    format!(
+                        "{{\"description\": {}, \"replacement\": {}, \"safety\": \"{}\", \"line\": {l1}, \"column\": {c1}, \"endLine\": {l2}, \"endColumn\": {c2}}}",
+                        json_str(&x.description),
+                        json_str(&x.text),
+                        x.safety.as_str()
+                    )
+                })
+                .collect();
+            out.push_str(&format!(", \"fixes\": [{}]", fixes.join(", ")));
+        }
+        if !f.related.is_empty() {
+            let notes: Vec<String> = f
+                .related
+                .iter()
+                .map(|(loc, note)| {
+                    let nfile = files.get(loc.file as usize).map(String::as_str).unwrap_or("");
+                    format!(
+                        "{{\"file\": {}, \"line\": {}, \"column\": {}, \"message\": {}}}",
+                        json_str(nfile),
+                        loc.line,
+                        loc.column,
+                        json_str(note)
+                    )
+                })
+                .collect();
+            out.push_str(&format!(", \"related\": [{}]", notes.join(", ")));
+        }
+        let guides = svlang_lint::catalog::guidelines_for_rule(f.rule);
+        if !guides.is_empty() {
+            let gs: Vec<String> = guides.iter().map(|g| json_str(g)).collect();
+            out.push_str(&format!(", \"guidelines\": [{}]", gs.join(", ")));
+        }
+        out.push('}');
+    }
+    out.push_str(if found.is_empty() { "]" } else { "\n  ]" });
+    if SHOW_CONFORMANCE.load(std::sync::atomic::Ordering::Relaxed) {
+        let active = ACTIVE.get().map_or(&[][..], Vec::as_slice);
+        let rows = svlang_lint::catalog::compute_conformance(active, found);
+        if !rows.is_empty() {
+            out.push_str(&format!(",\n  \"conformance\": {}", svlang_lint::catalog::conformance_json(&rows)));
+        }
+    }
+    out.push_str("\n}\n");
+    out
+}
+
+fn report(
+    design: Option<&Design>,
+    time: bool,
+    frames: bool,
+    t: std::time::Instant,
+    files: &[String],
+    mut found: Vec<svlang_lint::Finding>,
+) -> ! {
+    let fix = FIX.read().map(|f| (f.on, f.dry_run, f.unsafe_ok, f.only.clone(), f.compile_errors_selected)).ok();
+    let (fix_on, fix_dry, fix_unsafe, fix_only, cmp_selected) = fix.unwrap_or((false, false, false, Vec::new(), true));
+    let mut broken = std::collections::HashSet::new();
+    if fix_on || fix_dry {
+        for f in found.iter().filter(|f| f.rule == "SV-CMP-001") {
+            broken.insert(f.position_in(files).0.to_string());
+        }
+        if !cmp_selected {
+            found.retain(|f| f.rule != "SV-CMP-001");
+        }
+    }
+    svlang_lint::fix::guard_macro_calls(&mut found);
+    let (bad_waivers, rest): (Vec<_>, Vec<_>) = found.into_iter().partition(svlang_lint::is_bad_waiver_pattern);
+    found = rest;
+    if !REPORT_LIBRARY.load(std::sync::atomic::Ordering::Relaxed) {
+        let none = svlang_lint::library::Library::default();
+        let lib = LIBRARY.get().unwrap_or(&none);
+        let hidden = lib.hide(&mut found, files, CONFIG.get().is_some_and(|c| c.reports_library_macros()));
+        if hidden > 0 {
+            let roots: Vec<String> = lib.roots().iter().map(|r| r.display().to_string()).collect();
+            eprintln!(
+                "[svlang-lint] {hidden} finding(s) in the UVM library ({}) are not shown; --report-library shows them",
+                roots.join(", ")
+            );
+        }
+    }
+    if let Some(c) = CONFIG.get() {
+        c.apply(&mut found, files);
+    }
+    svlang_lint::expansions::name_macros(&mut found, files);
+    if let (Some(path), Some(s)) = (UPDATE_BASELINE.get(), SUPPRESS.get()) {
+        match s.save_baseline(std::path::Path::new(path), &found, files) {
+            Ok(()) => eprintln!("[svlang-lint] Saved {} findings to baseline: {path}", found.len()),
+            Err(e) => {
+                eprintln!("error: cannot write the baseline {e}");
+                std::process::exit(2);
+            }
+        }
+    }
+    let waived = svlang_lint::inline_waived() + SUPPRESS.get().map_or(0, |s| s.apply(&mut found, files));
+    if let Some(s) = SUPPRESS.get() {
+        let regraded = s.regraded();
+        if regraded > 0 {
+            eprintln!("[svlang-lint] {regraded} finding(s) re-graded by waivers with a severity");
+        }
+        let stale = s.stale_baseline();
+        if stale > 0 && UPDATE_BASELINE.get().is_none() {
+            eprintln!(
+                "[svlang-lint] {stale} baseline entr{} matched no finding (fixed, or the flagged line changed); run with --update-baseline to drop them",
+                if stale == 1 { "y" } else { "ies" }
+            );
+        }
+    }
+    // --changed-since and the waiver hygiene reports.
+    let mut files_owned = files.to_vec();
+    let mut outcome = svlang_lint::cli::Outcome::default();
+    if let Some(x) = EXTRA.get() {
+        let active: std::collections::HashSet<&str> =
+            ACTIVE.get().map(|a| a.iter().copied().collect()).unwrap_or_default();
+        let user = USER_FILES.get().map_or(&[][..], |u| &u[..]);
+        let root = ROOT.get().cloned().unwrap_or_default();
+        outcome = x
+            .after_suppress(&mut found, &mut files_owned, &root, SUPPRESS.get(), CONFIG.get(), user, &active)
+            .unwrap_or_else(|e| {
+                eprintln!("error: {e}");
+                std::process::exit(2);
+            });
+    }
+    found.extend(bad_waivers);
+    let files = &files_owned[..];
+    if fix_on || fix_dry {
+        let pass = svlang_lint::fix::apply(&found, &fix_only, fix_unsafe, fix_dry || !fix_on, &broken);
+        if fix_dry || !fix_on {
+            print!("{}{}", pass.diffs, pass.summary);
+        } else if !pass.written.is_empty() {
+            rerun_fix_pass(&pass);
+        } else {
+            print!("{}", pass.summary);
+        }
+    }
+    let found = &found[..];
+    let mut sources = svlang_lint::frames::Sources::default();
+    if let (true, Some(design)) = (time, design) {
+        let tm = design.timings();
+        eprintln!(
+            "parse {:.0} ms, elaborate {:.0} ms, model {:.0} ms, copy {:.0} ms, rules {:.0} ms",
+            tm.parse_ms,
+            tm.elaborate_ms,
+            tm.model_ms,
+            tm.copy_ms,
+            t.elapsed().as_secs_f64() * 1e3
+        );
+    }
+    // A report written to standard output (`--json -`, `--sarif -`) takes
+    // the place of the text report, so the output parses as that report.
+    let to_stdout = |o: Option<&String>| o.is_some_and(|p| p == "-");
+    let text_report = !to_stdout(JSON_OUT.get()) && !to_stdout(SARIF_OUT.get());
+    for f in found.iter().filter(|_| text_report) {
+        let (file, line, column) = f.position_in(files);
+        println!("{}:{}:{}: [{}] {} ({}): {}", file, line, column, f.severity.as_str(), f.rule, f.name, f.message);
+        if frames {
+            print!("{}", sources.frame(file, line, column));
+        }
+        for (loc, note) in &f.related {
+            let nfile = files.get(loc.file as usize).map(String::as_str).unwrap_or("");
+            println!("    note: {}:{}:{}: {}", nfile, loc.line, loc.column, note);
+            if frames {
+                print!("{}", sources.frame(nfile, loc.line, loc.column));
+            }
+        }
+    }
+    if text_report && SHOW_CONFORMANCE.load(std::sync::atomic::Ordering::Relaxed) {
+        let active = ACTIVE.get().map_or(&[][..], Vec::as_slice);
+        let rows = svlang_lint::catalog::compute_conformance(active, found);
+        print!("{}", svlang_lint::catalog::conformance_text(&rows));
+    }
+    if let Some(path) = HTML_OUT.get() {
+        if let Err(e) = std::fs::write(path, svlang_lint::report::html(files, found)) {
+            eprintln!("error: cannot write {path}: {e}");
+            std::process::exit(2);
+        }
+    }
+    if let Some(path) = SARIF_OUT.get() {
+        if path == "-" {
+            print!("{}", svlang_lint::report::sarif(files, found));
+        } else if let Err(e) = std::fs::write(path, svlang_lint::report::sarif(files, found)) {
+            eprintln!("error: cannot write {path}: {e}");
+            std::process::exit(2);
+        }
+    }
+    if let Some(path) = JSON_OUT.get() {
+        if path == "-" {
+            print!("{}", json_report(files, found, waived));
+        } else if let Err(e) = std::fs::write(path, json_report(files, found, waived)) {
+            eprintln!("error: cannot write {path}: {e}");
+            std::process::exit(2);
+        }
+    }
+    if let (Some(path), Some(m)) = (EXTRA.get().and_then(|x| x.map.as_ref()), MAP.get()) {
+        match m.write(path, files, found) {
+            Ok(()) => eprintln!("[svlang-lint] Testbench map written to: {path}"),
+            Err(e) => {
+                eprintln!("error: cannot write {path}: {e}");
+                std::process::exit(2);
+            }
+        }
+    }
+    // As svlang-lint: warnings and infos alone do not fail the run (but a
+    // failed --strict-new-files does; a failed --strict-waivers exits 4).
+    let strict = EXTRA.get().is_some_and(|x| x.strict_waivers);
+    std::process::exit(svlang_lint::cli::exit_status(found, outcome, strict));
+}
+
+/// After a --fix pass that rewrote files: unless the fixes undo each other or
+/// the pass limit is reached, print the pass summary and run the next pass
+/// (this binary again, with the pass number and the file states seen so far
+/// in the environment); it reports on the fixed text.
+fn rerun_fix_pass(pass: &svlang_lint::fix::PassResult) {
+    let n: u32 = std::env::var("SVLANG_FIX_PASS")
+        .or_else(|_| std::env::var("DV_LINT_FIX_PASS"))
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(1)
+        .max(1);
+    let mut seen: std::collections::BTreeSet<String> = std::env::var("SVLANG_FIX_STATES")
+        .or_else(|_| std::env::var("DV_LINT_FIX_STATES"))
+        .unwrap_or_default()
+        .split(',')
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .collect();
+    let keys: Vec<String> = pass.written.iter().map(|(p, h)| format!("{p}#{h:016x}")).collect();
+    let cycled = keys.iter().all(|k| seen.contains(k));
+    if cycled || n >= MAX_FIX_PASSES {
+        eprintln!(
+            "Warning: --fix: {} after {n} pass(es); stopped. Review the remaining findings by hand.",
+            if cycled { "fixes undo each other" } else { "fixes still changing files" }
+        );
+        print!("{}", pass.summary);
+        return;
+    }
+    print!("{}", pass.summary);
+    use std::io::Write;
+    let _ = std::io::stdout().flush();
+    seen.extend(keys);
+    let states: Vec<String> = seen.into_iter().collect();
+    let exe = std::env::current_exe().unwrap_or_else(|_| std::path::PathBuf::from("svlang"));
+    let mut rerun_args: Vec<std::ffi::OsString> = std::env::args_os().skip(1).collect();
+    if exe.file_stem().is_some_and(|s| s == "svlang")
+        && rerun_args.first().map(|a| a.as_os_str()) != Some("lint".as_ref())
+    {
+        rerun_args.insert(0, "lint".into());
+    }
+    let status = std::process::Command::new(exe)
+        .args(&rerun_args)
+        .env("SVLANG_FIX_PASS", (n + 1).to_string())
+        .env("SVLANG_FIX_STATES", states.join(","))
+        .status();
+    match status {
+        Ok(s) => std::process::exit(s.code().unwrap_or(2)),
+        Err(e) => eprintln!("Warning: --fix: could not start pass {}: {e}; run --fix again to continue.", n + 1),
+    }
+}

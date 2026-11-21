@@ -2,6 +2,12 @@
 
 All notable changes to the **svlang** VS Code / Open VSX extension (`svlang.svlang`) are documented here.
 
+## [0.3.0] - 2026-11-20
+
+### Changed
+- Consolidated all native tools into the single unified **`svlang`** binary (`svlang lsp`, `svlang lint`, `svlang check`, `svlang filelist`, `svlang map`, `svlang btor2`, etc.).
+- Platform `.vsix` packages now bundle `bin/<target>/svlang[.exe]` and launch `svlang lsp` (`svlang.serverPath` defaults to `"svlang"`, with automatic backwards-compatibility for existing `"dv-lsp"` configs).
+
 ## [0.2.1] - 2026-11-20
 
 ### Changed

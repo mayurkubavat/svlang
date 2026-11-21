@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Expression types of dv-lint's typer (`dv-lint --exprs`) against slang's
+"""Expression types of svlang's typer (`svlang lint --exprs`) against slang's
 (tools/oracles/exprdump.cpp), the types rules read as `Expression::type`.
 
 Lines are keyed by (file, line, column, expression kind). slang may print
@@ -15,7 +15,7 @@ import collections, concurrent.futures, glob, os, subprocess, sys, tempfile
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(os.path.dirname(HERE))
 EXPRDUMP = os.environ.get('EXPRDUMP', os.path.join(REPO, 'build', 'svlang_exprdump'))
-DVLINT = os.environ.get('DV_LINT', os.path.join(REPO, 'target', 'release', 'dv-lint'))
+SVLANG = os.environ.get('SVLANG', os.path.join(REPO, 'target', 'release', 'svlang'))
 
 
 def dump(cmd, env=None):
@@ -80,7 +80,7 @@ def run(case):
             from corpus_gate import sv_only  # noqa: E402
             sargs = sv_only(args, tmp, env)
         ref = dump([EXPRDUMP, *sl, *sargs], env)
-    got = dump([DVLINT, '--exprs', *nat, *args], env)
+    got = dump([SVLANG, 'lint', '--exprs', *nat, *args], env)
     return label, compare(ref, got)
 
 

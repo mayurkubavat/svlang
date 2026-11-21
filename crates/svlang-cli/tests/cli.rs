@@ -250,3 +250,37 @@ fn liveness_goes_to_aiger_as_justice() {
     let o = svlang(&["yosys", "--properties", f.to_str().unwrap()]);
     assert!(stderr(&o).contains("1 liveness obligation is not written"), "{}", stderr(&o));
 }
+
+#[test]
+fn filelist_map_and_oracle_check_subcommands_work() {
+    let (dir, f) = source("unified", "cnt.sv", COUNTER);
+    let flist = dir.join("top.f");
+    std::fs::write(&flist, format!("{}\n", f.display())).unwrap();
+
+    let o = svlang(&["filelist", "--json", "-f", flist.to_str().unwrap()]);
+    assert_eq!(o.status.code(), Some(0), "{}", stderr(&o));
+    assert!(stdout(&o).contains("\"schema\":\"svlang-filelist/1\""), "{}", stdout(&o));
+
+    let tb = dir.join("tb.sv");
+    std::fs::write(
+        &tb,
+        "class uvm_object; endclass\n\
+         class uvm_component extends uvm_object; endclass\n\
+         class uvm_env extends uvm_component; endclass\n\
+         class uvm_test extends uvm_component; endclass\n\
+         class my_env extends uvm_env; endclass\n\
+         class my_test extends uvm_test; my_env env; endclass\n",
+    )
+    .unwrap();
+    let o = svlang(&["map", "--json", tb.to_str().unwrap()]);
+    assert_eq!(o.status.code(), Some(0), "{}", stderr(&o));
+    assert!(stdout(&o).contains("\"schema\":\"svlang-map/1\"") && stdout(&o).contains("\"my_env\""), "{}", stdout(&o));
+
+    let o = svlang(&["check", "--symbols", f.to_str().unwrap()]);
+    assert_eq!(o.status.code(), Some(0), "{}", stderr(&o));
+    assert!(stdout(&o).contains("cnt parameter W") && stdout(&o).contains("errors 0"), "{}", stdout(&o));
+
+    let o = svlang(&["lsp", "--version"]);
+    assert_eq!(o.status.code(), Some(0), "{}", stderr(&o));
+    assert!(stdout(&o).starts_with("svlang lsp "), "{}", stdout(&o));
+}

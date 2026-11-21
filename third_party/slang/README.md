@@ -1,55 +1,36 @@
-# Slang (third-party)
+# Slang (third-party, optional dev-only oracles)
 
-[Slang](https://github.com/MikePopoloski/slang) is the upstream SystemVerilog
-compiler front end that `svlang-lint` (`cpp/`), `libsvlang_lint_model` and the
-reference dumpers in `tools/oracles/` are built on. It is not our code, so it
-is kept out of this repository:
+[Slang](https://github.com/MikePopoloski/slang) is an upstream C++ SystemVerilog
+compiler front end used only by the optional developer-only differential
+compiler dumpers in `tools/oracles/`. It is not part of `svlang` and is kept
+out of this repository:
 
 - **Pinned, fetched, never edited in place.** [`slang.cmake`](slang.cmake)
   holds the pin (`SVLANG_LINT_SLANG_TAG`) and fetches that commit at configure
-  time into `<build>/_deps/slang-src`. Nothing under `cpp/` copies or forks
-  Slang sources.
-- **Workarounds live in our code, not in Slang.** Differences from simulators
-  and Slang bugs are handled by the overlay in `cpp/src/compat/`
-  ([docs/reference/compat.md](../../docs/reference/compat.md)): named
-  overrides that use only Slang's public API, can each be turned off with
-  `--override -<id>`, and name the upstream issue and the Slang major version
-  that fixes it, so the overlay test fails once a workaround has outlived its
-  bug.
-- **Patches are a last resort.** Only when a fix cannot be made through the
-  public API (a crash inside Slang, a missing hook) does a patch go into
-  [`patches/`](patches/). It is applied automatically after the download.
-  Today there are none.
+  time into `<build>/_deps/slang-src`.
+- **Patches are a last resort.** Any patch under [`patches/`](patches/) is
+  applied automatically after the download. Today there are none.
 
-## The `slang` Cargo feature: oracle and parity only
+## Optional Slang compiler oracles (`tools/oracles/`)
 
-The Rust tools have their own front end (`sv-lexer`, `sv-preprocessor`,
-`sv-syntax`, `sv-semantic`) and do not need Slang. Slang is reachable from Rust
-only through the C ABI bridge (`crates/sv-slang`, used by `crates/dv-model`'s
-`Design::load`), and only behind a Cargo feature named `slang`:
+The entire `svlang` toolchain (`sv-*`, `svlang`, `svlang-model`, `svlang-lint`,
+`svlang-lsp`, `svlang-cli`, `svlang-py`, `svlang-wasm`) is 100% pure Rust and
+never builds, links, or depends on Slang.
 
-- **Off by default.** `cargo build` and `cargo test` at the repository root
-  build every tool (`dv-lint`, `dv-lsp`, `dv-build`, `dv-map`, `dv-filelist`)
-  natively, with no C++ build and no libsvlang_lint_model. `sv-slang` is not a
-  default workspace member.
-- **Never the default front end.** With the feature on, a tool still loads
-  natively unless asked: `dv-lint --slang`, `dv-map --slang`,
-  `dv-filelist --load --slang`, and `model_dump --slang` (dv-model example).
-  Built without it, `--slang` exits with an error that names the feature.
-- **Who turns it on:** the parity gates (`tools/gates/lint_parity.py --slang`,
-  `model_parity.py`) and ctest's `rust_model_test`
-  (`cargo test --workspace --features slang`). Build them with
-  `cargo build --release --features slang` after `cmake --preset model &&
-  cmake --build build-model`.
+Upstream Slang is fetched only when a developer explicitly builds the optional
+differential compiler dumpers in `tools/oracles/` (~880 LOC across 8 standalone
+`.cpp` files):
 
-Removing Slang from the Rust side later means deleting `crates/sv-slang`, the
-`slang` features and the `#[cfg(feature = "slang")]` items; nothing in the
-default build changes.
+```sh
+cmake --preset oracles && cmake --build build -j 4
+```
 
-How deep the coupling goes: the C++ rules are written against Slang's AST and
-syntax tree (`slang/ast/*`, `slang/syntax/*`), so an API change in Slang can
-reach `cpp/src/rules/`. That is the price of using Slang's elaborated model;
-the canary below tells you before a bump what breaks.
+Those binaries (`svlang_pp_dump`, `svlang_cst_outline`, `svlang_cst_exprs`,
+`svlang_sym_dump`, `svlang_compile_check`, `svlang_exprdump`, `svlang_specdump`,
+`svlang_regexcheck`) power the differential compiler conformance gates in
+`tools/gates/` (`pp_parity.py`, `cst_parity.py`, `sym_gate.py`, `ieee_gate.py`,
+`slang_unit_gate.py`, `expr_gate.py`, `spec_gate.py`, `regex_gate.py`). Nothing
+in CI, releases, or `cargo build`/`cargo test` builds or requires them.
 
 ## Updating Slang
 

@@ -11,7 +11,7 @@ compiles every probe with one tool and records the result in
 `data/vendor/<tool>.json` with the tool's version and the date:
 
 ```
-tools/quality/vendor_table.py measure verilator      # or iverilog, vcs, xcelium, questa, svlang-lint, dv-build
+tools/quality/vendor_table.py measure verilator      # or iverilog, vcs, xcelium, questa, svlang-lint, svlang
 tools/quality/vendor_table.py table                  # this table, from data/vendor/
 svlang-lint $(tools/quality/vendor_table.py slang-flags data/vendor/vcs.json) -f files.f
 ```

@@ -4,7 +4,7 @@
 //! `my_driver.svh` is not compiled on its own: it means something only
 //! inside the package that includes it, after that package's imports and
 //! the defines before the include. Tools given a lone header (an editor
-//! opening it, `dv-lint --in-context`) compile its owner instead and keep
+//! opening it, `svlang lint --in-context`) compile its owner instead and keep
 //! what concerns the header.
 //!
 //! The index reads `` `include "name" `` lines as text, without

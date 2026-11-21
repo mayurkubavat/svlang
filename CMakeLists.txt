@@ -1,73 +1,58 @@
 cmake_minimum_required(VERSION 3.28...3.31)
-project(svlang_lint VERSION 0.2.0 LANGUAGES CXX)
+project(svlang_oracles VERSION 0.3.0 LANGUAGES CXX)
 
+# Optional dev-only Slang compiler dumpers (tools/oracles/*.cpp, ~880 LOC) used
+# by differential conformance gates in tools/gates/. Nothing here is shipped,
+# tested by default, or required to build or run `svlang`.
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-# The model facade is also built as a shared library (libsvlang_lint_model) that
-# Rust and other tools load through its C ABI. Everything it links, slang
-# included, must then be position independent.
-# mimalloc is off in that build: slang links it statically, and a shared
-# library loaded into a host (Rust, Python) must not mix two allocators
-# (slang's own Python bindings turn it off for the same reason). The linter
-# CLI keeps both, so the default build leaves this OFF; use the "model" preset.
-option(SVLANG_LINT_BUILD_MODEL_LIB "Build the shared model library with a C ABI" OFF)
-if(SVLANG_LINT_BUILD_MODEL_LIB)
-    set(CMAKE_POSITION_INDEPENDENT_CODE ON)
-    set(SLANG_USE_MIMALLOC OFF CACHE BOOL "" FORCE)
-endif()
-
-# Enable compiler cache (ccache) if available to accelerate rebuilds
 find_program(CCACHE_PROGRAM ccache)
 if(CCACHE_PROGRAM)
     message(STATUS "Using ccache: ${CCACHE_PROGRAM}")
     set(CMAKE_CXX_COMPILER_LAUNCHER "${CCACHE_PROGRAM}")
 endif()
 
-# Throttle concurrent compile jobs when using Ninja to prevent OOM
-# On 16GB RAM machines, max 4 heavy C++20 Clang processes prevents memory exhaustion & swap thrashing
+# Bound parallel C++20 compile RAM on laptops.
 set_property(GLOBAL PROPERTY JOB_POOLS compile_job_pool=4 link_job_pool=1)
 set(CMAKE_JOB_POOL_COMPILE compile_job_pool)
 set(CMAKE_JOB_POOL_LINK link_job_pool)
 
-# Compile options
 if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|AppleClang|GNU")
     add_compile_options(-Wall -Wextra -Wpedantic -Wno-unused-parameter $<$<COMPILE_LANGUAGE:CXX>:-fvisibility-inlines-hidden>)
 endif()
 
-# Slang, the upstream SystemVerilog compiler (not our code): pinned, fetched at
-# configure time, never edited in place. See third_party/slang/README.md.
+# Upstream Slang (pinned, fetched at configure time; see third_party/slang/README.md).
 include(third_party/slang/slang.cmake)
 
-# Every binary and library lands at the top of the build tree (build/svlang-lint,
-# build-model/libsvlang_lint_model.so), wherever its CMakeLists.txt lives.
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
-set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
-set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 
-enable_testing()
-find_package(Python3 COMPONENTS Interpreter REQUIRED)
-
-# The C++ engine (svlang-lint, libsvlang_lint_model) and its tests.
-add_subdirectory(cpp)
-
-# Reference dump of Slang's preprocessor, for checking crates/sv-preprocessor.
+# Reference dump of Slang's preprocessor (crates/sv-preprocessor, tools/gates/pp_parity.py).
 add_executable(svlang_pp_dump tools/oracles/pp_dump.cpp)
 target_link_libraries(svlang_pp_dump PRIVATE slang::slang)
 
-# Reference outline from Slang's parser, for checking crates/sv-syntax.
+# Reference syntax outline and expressions (crates/sv-syntax, tools/gates/cst_parity.py).
 add_executable(svlang_cst_outline tools/oracles/cst_outline.cpp)
 target_link_libraries(svlang_cst_outline PRIVATE slang::slang)
-add_executable(svlang_sym_dump tools/oracles/sym_dump.cpp)
-target_link_libraries(svlang_sym_dump PRIVATE slang::slang)
 add_executable(svlang_cst_exprs tools/oracles/cst_exprs.cpp)
 target_link_libraries(svlang_cst_exprs PRIVATE slang::slang)
-# Reference std::regex results, for checking dv-lint's patterns (tools/gates/regex_gate.py).
+
+# Reference symbols, types, values and hierarchy (crates/sv-semantic, tools/gates/sym_gate.py).
+add_executable(svlang_sym_dump tools/oracles/sym_dump.cpp)
+target_link_libraries(svlang_sym_dump PRIVATE slang::slang)
+
+# Reference compile acceptance/rejection (tools/gates/{ieee_gate,slang_unit_gate}.py).
+add_executable(svlang_compile_check tools/oracles/compile_check.cpp)
+target_link_libraries(svlang_compile_check PRIVATE slang::slang)
+
+# Reference std::regex answers (crates/svlang-lint, tools/gates/regex_gate.py).
 add_executable(svlang_regexcheck tools/oracles/regexcheck.cpp)
-# Reference expression types, for checking dv-lint's typer (tools/gates/expr_gate.py).
+
+# Reference expression types (crates/svlang-lint, tools/gates/expr_gate.py).
 add_executable(svlang_exprdump tools/oracles/exprdump.cpp)
 target_link_libraries(svlang_exprdump PRIVATE slang::slang)
-# Reference generic class specialization counts, for checking sv-semantic (tools/gates/spec_gate.py).
+
+# Reference generic class specialization counts (crates/sv-semantic, tools/gates/spec_gate.py).
 add_executable(svlang_specdump tools/oracles/specdump.cpp)
 target_link_libraries(svlang_specdump PRIVATE slang::slang)

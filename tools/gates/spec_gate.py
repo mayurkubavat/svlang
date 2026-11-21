@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Specialization counts: dv-lint's syntax engine (dv-lint --specs first column, which also
+"""Specialization counts: svlang's syntax engine (`svlang lint --specs` first column, which also
 folds in body-level heuristics) or, with --model, sv-semantic's (third column,
 sv_semantic::spec_counts: exact per class) against
 slang's, as svlang-lint's AST walk sees them (build/specdump, see
@@ -22,7 +22,7 @@ def _default_specdump():
 
 
 SPECDUMP = os.environ.get('SPECDUMP', _default_specdump())
-DVLINT = os.environ.get('DV_LINT', os.path.join(REPO, 'target', 'release', 'dv-lint'))
+SVLANG = os.environ.get('SVLANG', os.path.join(REPO, 'target', 'release', 'svlang'))
 
 
 COL = 'syntax'
@@ -38,7 +38,7 @@ def counts(args):
         c, k = l.split(maxsplit=1)
         ref[k] = int(c)
     ours = {}
-    for l in run([DVLINT, '--specs', *args]):
+    for l in run([SVLANG, 'lint', '--specs', *args]):
         c, k, m = l.split()
         v = m if COL == 'model' else c
         ours[k] = int(v) if v.isdigit() else -1

@@ -10,7 +10,7 @@ lines), compiled by the `ibex-dv` build with its own file list.
 
     C=references/corpus-tools
     eval "$($C/corpus.py env ibex-dv)"
-    target/release/dv-lint --no-config --no-cache --preset all --experimental \
+    target/release/svlang lint --no-config --no-cache --preset all --experimental \
         --json ibex.json $($C/corpus.py args ibex-dv)
 
 then the findings whose file is under `vendor/lowrisc_ip/`. Both engines

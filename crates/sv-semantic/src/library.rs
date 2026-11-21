@@ -9,7 +9,7 @@
 //! new is found. Names that stay missing are left as they were.
 //!
 //! Library trees are marked [`Tree::library`]: their modules are never
-//! tops, and dv-lint reports nothing in them.
+//! tops, and svlang-lint reports nothing in them.
 
 use std::collections::{BTreeSet, HashSet};
 use std::path::{Path, PathBuf};

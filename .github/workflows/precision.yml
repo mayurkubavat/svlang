@@ -1,8 +1,7 @@
 name: Precision
 
-# Nightly: lint real UVM code with every rule and compare each rule's finding
-# count with the previous night. A rule whose count jumps, drops to zero, or
-# that is new and noisy is flagged in the job summary before it ships.
+# Nightly: lint real UVM code with every rule (`svlang lint`) and compare each
+# rule's finding count with the previous night.
 on:
   schedule:
     - cron: "17 3 * * *"
@@ -10,6 +9,8 @@ on:
 
 env:
   UVM_CORE_REF: 2020.3.1
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
 
 jobs:
   precision:
@@ -17,11 +18,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install build tools
-        run: sudo apt-get update && sudo apt-get install -y ninja-build
+      - name: Toolchain
+        run: rustup toolchain install
 
-      - name: Build
-        run: cmake --preset reference && cmake --build build -j 4
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: cargo-${{ runner.os }}-precision-${{ hashFiles('Cargo.lock') }}
+          restore-keys: cargo-${{ runner.os }}-precision-
+
+      - name: Build svlang
+        run: cargo build --locked --release -p svlang-cli --bin svlang
 
       - name: Fetch uvm-core
         run: git clone --depth 1 --branch "$UVM_CORE_REF" https://github.com/accellera-official/uvm-core.git uvm-core
@@ -37,7 +47,7 @@ jobs:
         env:
           UVM_HOME: ${{ github.workspace }}/uvm-core
         run: |
-          python3 tools/quality/precision.py --binary build/svlang-lint --out precision.json \
+          python3 tools/quality/precision.py --binary target/release/svlang --out precision.json \
             --previous precision-previous.json --summary precision.md
           cp precision.json precision-previous.json
 

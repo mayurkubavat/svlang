@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Generates a UVM API pack (data/uvm-api/<version>.json) from a uvm-core checkout.
+Generates a UVM API pack (crates/svlang-lint/data/uvm-api/<version>.json) from a uvm-core checkout.
 
 uvm-core marks its API in comments: `@uvm-ieee 1800.2-2020 auto 5.3.4.1` on
 members the IEEE 1800.2 standard defines, `@uvm-accellera` on details of the
@@ -10,7 +10,7 @@ just before the declaration. This script pairs each tag with the declaration
 that follows, records the class it belongs to, and lists the library's macros,
 marking those under src/deprecated (compiled only with UVM_ENABLE_DEPRECATED_API).
 
-  tools/codegen/gen_uvm_api_pack.py <uvm-core checkout> [--out data/uvm-api]
+  tools/codegen/gen_uvm_api_pack.py <uvm-core checkout> [--out crates/svlang-lint/data/uvm-api]
 
 UVM 1.1d and 1.2 predate the tags: their packs list the library's macros and
 the methods it deprecates. Deprecated API there is what the library drops
@@ -19,7 +19,7 @@ src/deprecated); in UVM 2020 it is what needs UVM_ENABLE_DEPRECATED_API.
 A pack's "deprecatedGuard" names that define.
 
 A pack is plain data: rules read it through uvm::ApiPack (C++) and
-dv-lint's uvm_api (Rust), so supporting a new UVM release is running this
+svlang-lint's uvm_api (Rust), so supporting a new UVM release is running this
 script on it, with no code change.
 """
 
@@ -113,7 +113,7 @@ def scan(src: Path):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("uvm_core", help="uvm-core checkout (or its src/)")
-    ap.add_argument("--out", default=str(Path(__file__).resolve().parents[2] / "data" / "uvm-api"))
+    ap.add_argument("--out", default=str(Path(__file__).resolve().parents[2] / "crates" / "svlang-lint" / "data" / "uvm-api"))
     args = ap.parse_args()
     root = Path(args.uvm_core)
     src = root / "src" if (root / "src" / "uvm_pkg.sv").is_file() else root

@@ -1,0 +1,15 @@
+[package]
+name = "svlang-lsp"
+description = "SystemVerilog/UVM language server on the pure-Rust svlang front end: live lint diagnostics and quick fixes, symbols, go to definition, references, hover, and completion"
+readme = "README.md"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[dependencies]
+svlang = { version = "0.3.0", path = "../svlang" }
+svlang-lint = { version = "0.3.0", path = "../svlang-lint" }

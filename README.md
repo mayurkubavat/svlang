@@ -35,7 +35,8 @@ pip install pysvlang    # Python 3.9+, wheels for Linux, macOS and Windows
 | AIGER | [`sv-aiger`](crates/sv-aiger/) | the netlist bit-blasted to an and-inverter graph in AIGER, for bit-level model checkers and ABC |
 | Yosys | [`sv-yosys`](crates/sv-yosys/) | the netlist as a Yosys JSON netlist of word-level cells, for synthesis, equivalence and SymbiYosys |
 | All of it | [`svlang`](crates/svlang/) | one crate that re-exports the stages behind `Driver` and `Compilation` |
-| Command line | [`svlang-cli`](crates/svlang-cli/) | the `svlang` binary: check, hierarchy, syntax tree, netlist, Btor2 and AIGER from the shell |
+| Command line | [`svlang-cli`](crates/svlang-cli/) | the unified `svlang` binary: `check`, `lint`, `lsp`, `filelist`, `map`, `hier`, `cst`, `netlist`, `btor2`, `aiger`, `yosys` |
+| Model & Lint | [`svlang-model`](crates/svlang-model/), [`svlang-lint`](crates/svlang-lint/), [`svlang-lsp`](crates/svlang-lsp/) | owned SV/UVM/RAL model, 446-rule static linter & auto-fix engine, and LSP server |
 | Browser | [`svlang-wasm`](crates/svlang-wasm/) | svlang as a WebAssembly module, with a playground page |
 | Python | [`pysvlang`](crates/svlang-py/) | the same pipeline from Python |
 
@@ -106,85 +107,66 @@ how much open-source RTL lowers to a netlist, and what stops the rest.
 
 ## Tools built on svlang
 
-This repository also holds the DV tools that use the library:
+All native tools ship inside the single unified **`svlang`** binary (`cargo install svlang-cli`):
 
-- **svlang-lint** (`svlang-lint`, also built as `dv-lint`): static analysis for
-  SystemVerilog and UVM testbenches, described below.
-- **dv-lsp**: a language server, with a [VS Code extension](editors/vscode/).
-- **dv-build**, **dv-map**, **dv-filelist**: compile checking, design
-  mapping and filelist tools.
+- **`svlang lint`** ([`svlang-lint`](crates/svlang-lint/)): static analysis and auto-fix for SystemVerilog, UVM, RTL/FSM/CDC, and formal readiness (`--preset formal-ready`).
+- **`svlang lsp`** ([`svlang-lsp`](crates/svlang-lsp/)): language server powering the [`svlang.svlang`](editors/vscode/) VS Code / Open VSX extension.
+- **`svlang check`**, **`svlang filelist`**, **`svlang map`**, **`svlang hier`**, **`svlang netlist`**, **`svlang btor2`**, **`svlang aiger`**, **`svlang yosys`**: compile checking, filelist normalization, UVM testbench mapping, and RTL/SVA lowering.
 
-# svlang-lint
+# svlang lint
 
 Static analysis for SystemVerilog (IEEE 1800) and UVM (IEEE 1800.2)
 verification code: UVM methodology, OOP design, concurrency and delta-cycle
-races, SVA and coverage health, constrained random, code smells, duplication
-and style. Findings come as text, JSON, SARIF 2.1.0 or a self-contained HTML
-report, with baselines, waivers, safe autofixes, a language server and a
-VS Code extension.
-
-There are two engines that share one rule set and one test suite:
-
-| Engine | Where | Front end | Binary |
-|---|---|---|---|
-| **svlang-lint** (C++20) | [`cpp/`](cpp/) | [Slang](https://github.com/MikePopoloski/slang) | `build/svlang-lint` |
-| **dv-lint** and the DV tools (Rust): what releases ship | [`crates/`](crates/) | [`svlang`](crates/svlang/) — pure-Rust lexer, preprocessor, parser and elaborator (Slang only as an opt-in reference) | `target/release/svlang-lint` (also built as `dv-lint`), `dv-lsp`, `dv-build`, `dv-map`, `dv-filelist` |
+races, SVA and coverage health, constrained random, formal readiness (`SV-FPV-*`),
+RTL/FSM/CDC/dataflow, code smells, duplication and style. Findings come as text,
+JSON, SARIF 2.1.0 or a self-contained HTML report, with baselines, scoped
+waivers, safe autofixes, a language server (`svlang lsp`) and a VS Code / Open
+VSX extension (`svlang.svlang`).
 
 Every rule has a `bad.sv` / `good.sv` pair under [`testdata/rules/`](testdata/rules/)
-that both engines are tested against, and parity gates check that their
-findings match on real code. The rule catalog is in
-[docs/rules/README.md](docs/rules/README.md).
+tested by `cargo test` and end-to-end suites under [`tests/`](tests/). The rule
+catalog is in [docs/rules/README.md](docs/rules/README.md).
 
 ## Install
 
 **A release build.** Tagged
 [releases](https://github.com/mayurkubavat/svlang/releases) attach
-`svlang-lint-<platform>.tar.gz` for Linux x64/arm64 (glibc 2.28 or later),
-macOS arm64/x64, and Windows x64: `svlang-lint` (the native engine), `dv-lsp`,
-`dv-build`, `dv-map`, `dv-filelist` and the Python SDK. Unpack it and put
-its `bin/` on your `PATH`. The VS Code / Open VSX extension (`svlang.svlang`)
-is published to both registries and attached per platform as `svlang-<target>.vsix`.
+`svlang-<platform>.tar.gz` for Linux x64/arm64 (glibc 2.28 or later),
+macOS arm64/x64, and Windows x64: the single `svlang` binary and the Python SDK.
+Unpack it and put its `bin/` on your `PATH`. The VS Code / Open VSX extension
+(`svlang.svlang`) is published to both registries and attached per platform as
+`svlang-<target>.vsix`.
 
-**From source.** The native tools need only a Rust toolchain (1.82+):
+**From source.** The unified `svlang` binary needs only a Rust toolchain (1.82+):
 
 ```sh
+cargo install svlang-cli
+# or from a checkout:
 git clone https://github.com/mayurkubavat/svlang.git
 cd svlang
-cargo build --release            # -> target/release/svlang-lint (also as dv-lint), dv-lsp, dv-build, dv-map, dv-filelist
+cargo build --release -p svlang-cli   # -> target/release/svlang
 ```
-
-The C++ reference engine on Slang is optional: the parity gates compare
-against it, and it still serves the options the native engine does not take
-yet. It needs a C++20
-compiler (clang 15+, AppleClang 15+ or gcc 12+), CMake 3.28+, Ninja and
-Python 3.9+, and fetches Slang at configure time; `ccache` is recommended.
-
-```sh
-cmake --preset reference
-cmake --build build -j 4         # -> build/svlang-lint
-```
-
-In a checkout with both built, [`tools/front/svlang-lint`](tools/front/svlang-lint)
-runs the native engine and falls back to the C++ binary for those options.
 
 ## Quick start
 
 ```sh
 # Lint a testbench with the methodology profile
-svlang-lint tb/*.sv -I tb --preset methodology
+svlang lint tb/*.sv -I tb --preset methodology
 
-# The same with dv-lint directly, as JSON or SARIF for CI
-target/release/dv-lint +incdir+tb tb/top.sv --preset methodology
-target/release/dv-lint -f tb.f --json findings.json --sarif findings.sarif
+# JSON or SARIF reports for CI
+svlang lint -f tb.f --json findings.json --sarif findings.sarif
+
+# Pre-FPV formal-readiness checks and safe auto-fixes
+svlang lint -f rtl.f --preset formal-ready
 
 # Every rule: style, smells, advisory and experimental ones too
-target/release/dv-lint -f tb.f --preset all --experimental
+svlang lint -f tb.f --preset all --experimental
 ```
 
-Both engines take simulator-style compile options (`-f`, `+incdir+`,
-`+define+`, `-top`), read `.svlang-lint/` project config, and honor waivers and
-baselines. The Rust tools reach Slang only for the parity gates, behind the
-`slang` Cargo feature (off by default); see
+`svlang` takes simulator-style compile options (`-f`, `+incdir+`, `+define+`,
+`-top`), reads `.svlang-lint/` project config, and honors waivers and baselines.
+Optional dev-only Slang compiler dumpers live under `tools/oracles/`
+(`cmake --preset oracles`) for differential IEEE 1800 conformance gates; see
 [third_party/slang](third_party/slang/README.md).
 
 ## Rules
@@ -216,20 +198,19 @@ tools are described in [docs/architecture/rust.md](docs/architecture/rust.md).
 ## Repository layout
 
 ```
-cpp/               svlang-lint: src/, include/svlang-lint/, tests/ (drivers of the binary)
 crates/            Rust workspace members (Cargo.toml is at the root)
 crates/svlang-py/  pysvlang: Python bindings for the svlang front end (PyO3 + maturin)
 python/            Python SDK: rules, waivers and project config in Python (+ examples/, tests/)
-editors/vscode/    VS Code / Cursor extension
-testdata/          fixtures both engines read: rules/, common/, conformance/, map/, model/
-data/uvm-api/      UVM API packs, compiled into both engines
-tools/oracles/     Slang reference dumpers the gates compare against (built by CMake)
-tools/gates/       parity and conformance gates
-tools/codegen/     generators run by the build and for the docs
-tools/quality/     precision, config sweep, AST coverage, Slang canary
-third_party/slang/ the Slang pin, local patches (none today) and how to update it
+editors/vscode/    VS Code / Open VSX extension (`svlang.svlang`)
+tests/             end-to-end Python CLI, catalog, and --fix invariant suites
+testdata/          rule and compiler fixtures: rules/, common/, conformance/, map/, model/, netlist/
+tools/oracles/     optional dev-only Slang compiler dumpers (`cmake --preset oracles`)
+tools/gates/       conformance, netlist, and differential compiler gates
+tools/codegen/     rule catalog and guideline generators
+tools/quality/     precision, error budget, config sweep, census
+third_party/slang/ Slang pin for optional dev-only oracles
 docs/              guides, architecture, rule catalog, methodology guide
-.svlang-lint/         this repository's own lint config
+.svlang-lint/      this repository's own lint config
 ```
 
 [docs/README.md](docs/README.md) is the index of all documentation, and
@@ -245,11 +226,11 @@ pre-commit hook ([.pre-commit-hooks.yaml](.pre-commit-hooks.yaml)); see
 ## Tests
 
 ```sh
-ctest --test-dir build                 # svlang-lint suites
-ctest --test-dir build-model           # + C ABI, Python binding, cargo test --features slang
-python3 cpp/tests/regression.py --rule UVM-CFG-002
-cargo test                             # Rust, native only
-tools/gates/rust_gate.sh               # cargo fmt --check + Clippy -D warnings
+cargo test                                         # all pure-Rust workspace tests
+tools/gates/rust_gate.sh                           # guidelines, cargo fmt --check, Clippy -D warnings
+python3 tools/gates/netlist_gate.py                # RTL netlist lowering gate
+python3 tests/test_fix_invariants.py               # --fix mutation & idempotency invariants
+python3 python/tests/test_python_rules.py          # Python rule SDK tests
 ```
 
 ## Citing

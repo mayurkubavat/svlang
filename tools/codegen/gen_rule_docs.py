@@ -3,21 +3,20 @@
 Regenerates the rule documentation from the rules themselves.
 
 Each rule declares its metadata once, where the native engine registers it
-(crates/dv-lint/src/rules/<category>/mod.rs: ID, name, category, severity,
+(crates/svlang-lint/src/rules/<category>/mod.rs: ID, name, category, severity,
 profiles, guidelines, description; sub-rules of the naming and style engines in
-crates/dv-lint/src/support/style_config.rs). This script asks the built binary
+crates/svlang-lint/src/support/style_config.rs). This script asks the built binary
 for that metadata and writes:
 
-  docs/rules/catalog.json           machine-readable catalog (svlang-lint --list-rules --json)
+  docs/rules/catalog.json           machine-readable catalog (svlang lint --list-rules --json)
   docs/rules/README.md              human-readable catalog, grouped by category
   docs/methodology/MG-*.md          the "Enforced by:" line under each guideline
 
-The C++ engine (svlang-lint-slang) declares the same metadata in its own rule
-sources; cpp/tests/test_catalog.py checks that the two agree.
+`tests/test_catalog.py` checks that the binary and `docs/rules/catalog.json` agree.
 
 Usage:
-  tools/codegen/gen_rule_docs.py [--binary target/release/svlang-lint]   rewrite the files
-  tools/codegen/gen_rule_docs.py --check                              exit 1 if any file is stale
+  tools/codegen/gen_rule_docs.py [--binary target/release/svlang]   rewrite the files
+  tools/codegen/gen_rule_docs.py --check                            exit 1 if any file is stale
 """
 
 import argparse
@@ -35,12 +34,15 @@ TESTS = REPO / "testdata" / "rules"
 
 
 def run_json(binary, *args):
+    cmd = [binary]
+    if Path(binary).stem == "svlang":
+        cmd.append("lint")
     with tempfile.TemporaryDirectory() as tmp:
         out = Path(tmp) / "out.json"
-        res = subprocess.run([binary, *args, "--json", str(out)], capture_output=True, text=True,
+        res = subprocess.run([*cmd, *args, "--json", str(out)], capture_output=True, text=True,
                              cwd=tmp)
         if res.returncode != 0:
-            sys.exit(f"{binary} {' '.join(args)} failed:\n{res.stderr}")
+            sys.exit(f"{' '.join(cmd)} {' '.join(args)} failed:\n{res.stderr}")
         return out.read_text()
 
 
@@ -60,9 +62,8 @@ def render_markdown(catalog):
         "",
         f"{len(rules)} rules in {len(catalog['categories'])} categories. Each rule links to its "
         "tests, whose `bad.sv` and `good.sv` are the rule's examples. Run "
-        "`svlang-lint --list-rules --json -` for the same data as JSON, and `svlang-lint --explain ID` for "
-        "one rule with its options and examples. Rules marked **Native** are in the native engine "
-        "only; the C++ engine (`svlang-lint-slang`) does not have them.",
+        "`svlang lint --list-rules --json -` for the same data as JSON, and `svlang lint --explain ID` for "
+        "one rule with its options and examples.",
         "",
     ]
     by_cat = {c: [] for c in catalog["categories"]}
@@ -83,8 +84,6 @@ def render_markdown(catalog):
             desc = r["description"].replace("|", "\\|").replace("\n", " ")
             if r.get("reportedBy"):
                 desc += f" (reported by `{r['reportedBy']}`)"
-            if r.get("engine") == "native":
-                desc = "**Native.** " + desc
             if r.get("maturity") == "experimental":
                 desc = "**Experimental** (runs with `--experimental`). " + desc
             lines.append(f"| {rid} | {r['name']} | {r['severity']} | {', '.join(r['profiles'])} | "
@@ -109,13 +108,13 @@ def render_guide_page(text, rules_by_guideline):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--binary", help="the native svlang-lint (default: the newer of target/release and target/debug)")
+    ap.add_argument("--binary", help="the native svlang binary (default: the newer of target/release and target/debug)")
     ap.add_argument("--check", action="store_true", help="report stale files instead of writing them")
     args = ap.parse_args()
-    built = [p for p in (REPO / "target" / "release" / "svlang-lint", REPO / "target" / "debug" / "svlang-lint") if p.exists()]
+    built = [p for p in (REPO / "target" / "release" / "svlang", REPO / "target" / "debug" / "svlang") if p.exists()]
     built.sort(key=lambda p: p.stat().st_mtime, reverse=True)
     if not args.binary and not built:
-        sys.exit("no native svlang-lint built: run `cargo build -p dv-lint --bin svlang-lint`, or pass --binary")
+        sys.exit("no native svlang built: run `cargo build -p svlang-cli`, or pass --binary")
     binary = str(Path(args.binary or built[0]).resolve())
 
     catalog_text = run_json(binary, "--list-rules")

@@ -1,25 +1,25 @@
 #!/usr/bin/env python3
-"""Regex gate: dv-lint's patterns (crates/dv-lint/src/pattern.rs) against std::regex.
+"""Regex gate: svlang-lint's patterns (crates/svlang-lint/src/pattern.rs) against std::regex.
 
 svlang-lint matches waiver messages, file headers and names with std::regex
-(ECMAScript). dv-lint matches them with the regex crate behind an ECMAScript
+(ECMAScript). svlang-lint matches them with the regex crate behind an ECMAScript
 check, which must never change what a pattern means. For each case
 (pattern, icase, text) both sides answer regex_search and regex_match, or
 refuse the pattern. The gate fails when
-  dv-lint loads a pattern and answers differently, or
-  dv-lint loads a pattern std::regex refuses.
-dv-lint refusing a pattern std::regex accepts is allowed (it fails closed:
+  svlang-lint loads a pattern and answers differently, or
+  svlang-lint loads a pattern std::regex refuses.
+svlang-lint refusing a pattern std::regex accepts is allowed (it fails closed:
 the waiver does not load and says why) and is counted, as are cases where
 std::regex throws while matching (libc++'s complexity limit). On macOS,
 libc++ misreads '\\b' at the end of the input; a '\\b' case where only it
-differs, and Python's re (ASCII) agrees with dv-lint, counts as agreed.
+differs, and Python's re (ASCII) agrees with svlang-lint, counts as agreed.
 
 The cases: every pattern in the repository's configs, docs and tests and
 the default naming patterns, each against texts built from it, and a fuzzed
 set from a small grammar (--fuzz N, seeded, default 20000).
 
     cmake --build build --target svlang_regexcheck
-    cargo build --release -p dv-lint --example regexcheck
+    cargo build --release -p svlang-lint --example regexcheck
     tools/gates/regex_gate.py [--fuzz N] [--seed S] [--write-vectors] [--show N]
 
 --write-vectors stores the agreed cases in testdata/regex/vectors.tsv, which
@@ -71,7 +71,7 @@ INLINE = re.compile(r'svlang-lint:\s*waive\S*\s+\S+\s+"((?:[^"\\]|\\.)*)"')
 
 def harvested():
     found = set()
-    for top in ('docs', 'testdata', 'cpp/tests', 'python', 'crates', 'examples'):
+    for top in ('docs', 'testdata', 'tests', 'python', 'crates', 'examples'):
         for root, _, files in os.walk(os.path.join(REPO, top)):
             for f in files:
                 if not f.endswith(('.json', '.py', '.md', '.sv', '.svh', '.rs', '.toml')):
@@ -150,7 +150,7 @@ def main():
     ap.add_argument('--show', type=int, default=20)
     a = ap.parse_args()
     for b, how in ((ORACLE, 'cmake --build build --target svlang_regexcheck'),
-                   (NATIVE, 'cargo build --release -p dv-lint --example regexcheck')):
+                   (NATIVE, 'cargo build --release -p svlang-lint --example regexcheck')):
         if not os.access(b, os.X_OK):
             print(f'{b} is not built ({how})', file=sys.stderr)
             return 2
@@ -160,7 +160,7 @@ def main():
     differ, loads_bad, refused, agreed, threw, libcxx_b = [], [], set(), [], 0, 0
     for line, (p, f, t), s, d in zip(lines, cs, std, dv):
         if s == 'exc':
-            threw += 1  # std::regex gave up matching; dv-lint's time is linear
+            threw += 1  # std::regex gave up matching; svlang-lint's time is linear
             continue
         if d == 'err':
             if s != 'err':
@@ -172,7 +172,7 @@ def main():
             loads_bad.append((p, f, t, s, d))
         elif s != d:
             if r'\b' in p and sys.platform == 'darwin' and python_answer(p, f, t) == d:
-                libcxx_b += 1  # libc++'s '\b' bug; ECMAScript (and re) agree with dv-lint
+                libcxx_b += 1  # libc++'s '\b' bug; ECMAScript (and re) agree with svlang-lint
                 agreed.append((line, d))
                 continue
             differ.append((p, f, t, s, d))
@@ -180,12 +180,12 @@ def main():
             agreed.append((line, d))
     patterns = len(set(p for p, _, _ in cs))
     print(f'regex gate: {len(cs)} cases, {patterns} patterns; {len(agreed)} agree, '
-          f'{len(refused)} patterns refused by dv-lint (std::regex accepts them), '
+          f'{len(refused)} patterns refused by svlang-lint (std::regex accepts them), '
           f'{len(differ)} answer differently, {len(loads_bad)} load where std::regex refuses; '
           f'std::regex threw while matching {threw}; libc++ \\b cases settled by Python re {libcxx_b}')
     for title, rows in (('DIFFER', differ), ('LOADS, STD REFUSES', loads_bad)):
         for p, f, t, s, d in rows[:a.show]:
-            print(f'{title}  pattern {p!r} flags {f!r} text {t!r}: std {s}, dv-lint {d}')
+            print(f'{title}  pattern {p!r} flags {f!r} text {t!r}: std {s}, svlang-lint {d}')
     if a.write_vectors and not differ and not loads_bad:
         os.makedirs(os.path.dirname(VECTORS), exist_ok=True)
         keep = set(agreed)

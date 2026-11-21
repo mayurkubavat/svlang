@@ -1,22 +1,17 @@
-# The Rust workspace: the native SystemVerilog/UVM front end and the DV tools.
-# Crates live in crates/; see docs/architecture/rust.md. Tools depend on dv-model
-# only; sv-slang is the raw binding to libsvlang_lint_model (slang behind a C ABI)
-# and is the one crate that changes when the front end does.
+# The Rust workspace: the pure-Rust IEEE 1800-2023 SystemVerilog compiler SDK,
+# UVM/RAL model, static linter, LSP server, and unified `svlang` CLI.
+# Crates live in crates/; see docs/architecture/rust.md.
 [workspace]
 resolver = "2"
 members = ["crates/*"]
-# Everything but the Slang bridge: a plain `cargo build` / `cargo test` needs no
-# C++ build. sv-slang (the C ABI binding to libsvlang_lint_model) is built only
-# when a crate's `slang` feature asks for it; see third_party/slang/README.md.
 default-members = [
     "crates/sv-source", "crates/sv-lexer", "crates/sv-preprocessor", "crates/sv-syntax", "crates/sv-semantic",
-    "crates/sv-netlist", "crates/sv-btor2", "crates/sv-aiger", "crates/sv-yosys", "crates/svlang", "crates/svlang-cli",
-    "crates/dv-model", "crates/dv-lint", "crates/dv-lsp", "crates/dv-build", "crates/dv-map",
-    "crates/dv-filelist",
+    "crates/sv-netlist", "crates/sv-btor2", "crates/sv-aiger", "crates/sv-yosys", "crates/svlang",
+    "crates/svlang-model", "crates/svlang-lint", "crates/svlang-lsp", "crates/svlang-cli",
 ]
 
 [workspace.package]
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 license = "Apache-2.0"
 rust-version = "1.82"

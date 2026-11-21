@@ -20,8 +20,8 @@ fix or a plan within 30 days.
 svlang-lint reads untrusted SystemVerilog sources, file lists and project
 configuration. In scope:
 
-- crashes, hangs or unbounded memory use on crafted input (`dv-lint`,
-  `dv-lsp`, `svlang-lint`);
+- crashes, hangs or unbounded memory use on crafted input (`svlang`,
+  `svlang-lint`);
 - reading or writing files outside the paths a run was given, other than the
   report and cache paths it was told to write;
 - the language server or VS Code extension running commands it was not

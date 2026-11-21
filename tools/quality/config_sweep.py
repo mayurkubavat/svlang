@@ -251,7 +251,8 @@ def sweep_file(classes, type_text, path):
 
 
 def run(binary, args, defines, extra=()):
-    cmd = [binary, "--json", "-", *args, *extra]
+    base = [binary, "lint"] if Path(binary).stem == "svlang" else [binary]
+    cmd = [*base, "--json", "-", *args, *extra]
     for d in defines:
         cmd += ["-D", d]
     res = subprocess.run(cmd, capture_output=True, text=True)
@@ -267,7 +268,7 @@ def key(v):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--binary", default="build/svlang-lint")
+    ap.add_argument("--binary", default="target/release/svlang")
     ap.add_argument("--set", action="append", default=[], help="a configuration: comma-separated defines")
     ap.add_argument("--auto", action="store_true", help="add one configuration per `ifdef macro the sources test")
     ap.add_argument("--specializations", action="store_true",

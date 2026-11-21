@@ -1,33 +1,12 @@
 #!/usr/bin/env bash
-# Everything CI runs on a push, run here first: the Rust workflow (rust.yml)
-# and the C++ workflow (ci.yml). Run it before every push; a batch is ready
-# when it ends with "prepush: all green".
-# One step runs here only, to keep hosted CI light: the netlist gate.
+# Everything CI runs on a push, run locally first: rust_gate (fmt/clippy),
+# cargo test, netlist gate, rule docs freshness, end-to-end Python integration
+# suites, release archive + smoke test, and the uvm-core ERROR budget.
 #
-#   tools/gates/prepush.sh              # both flows
-#   tools/gates/prepush.sh --rust       # the Rust flow only
-#   tools/gates/prepush.sh --cpp        # the C++ flow only
-#   tools/gates/prepush.sh --quick      # both, without the two slow steps
-#                                       # (all rules on real uvm-core, dist build)
-#
-# The uvm-core steps need a uvm-core checkout of the tag CI uses (2020.3.1).
-# UVM_HOME names one; without it the script uses a checkout shared by every
-# clone on the machine, ~/.cache/svlang/uvm-core-2020.3.1, and fetches it
-# there the first time. If that fails the steps are reported as NOT RUN and
-# the script fails, so a push never goes out half checked. --quick skips
-# them on purpose and says so.
-#
-# A fixture edit changes the all-rules baselines. Regenerate both with:
-#   python3 cpp/tests/regression.py --binary build/svlang-lint --mode all-rules \
-#       --baseline cpp/tests/baselines/baseline_stub.json --update-baseline
-#   python3 cpp/tests/regression.py --binary build/svlang-lint --mode all-rules \
-#       --uvm-home "$UVM_HOME" --baseline cpp/tests/baselines/baseline_uvm_core.json --update-baseline
+#   tools/gates/prepush.sh              # full Rust + integration flow
+#   tools/gates/prepush.sh --quick      # skip slow dist archive and uvm-core steps
+#   tools/gates/prepush.sh --oracles    # also run Slang differential gates (needs build/ oracles)
 set -u
-# On the Linux box the whole gate is one job of the dvq build queue
-# (~/.local/bin/dvq, the front end of rdev queue), so it waits for CPUs and
-# memory instead of starting bare; the output and exit status pass through.
-# 4 CPUs match PREPUSH_JOBS; 10G (above the 6G build preset) covers the C++
-# build and the Rust tests. DVQ= or a missing dvq (the Mac) runs it directly.
 DVQ="${DVQ-$HOME/.local/bin/dvq run build --}"; [ -x "$HOME/.local/bin/dvq" ] || DVQ=
 if [ -n "$DVQ" ] && [ -z "${DVQ_CLASS:-}${RDEV_JOB_ID:-}" ]; then
     export DVQ_CPU="${DVQ_CPU:-${PREPUSH_JOBS:-4}00%}" DVQ_MEM="${DVQ_MEM:-10G}"
@@ -35,21 +14,19 @@ if [ -n "$DVQ" ] && [ -z "${DVQ_CLASS:-}${RDEV_JOB_ID:-}" ]; then
 fi
 cd "$(dirname "$0")/../.."
 
-rust=1 cpp=1 quick=0
+quick=0 oracles=0
 for a in "$@"; do
     case "$a" in
-        --rust) cpp=0 ;;
-        --cpp) rust=0 ;;
+        --rust) ;;
         --quick) quick=1 ;;
-        *) echo "usage: tools/gates/prepush.sh [--rust|--cpp] [--quick]" >&2; exit 2 ;;
+        --oracles) oracles=1 ;;
+        *) echo "usage: tools/gates/prepush.sh [--quick] [--oracles]" >&2; exit 2 ;;
     esac
 done
 
-jobs=${PREPUSH_JOBS:-4}
 log=$(mktemp -d)
 failed=() skipped=()
 
-# step NAME COMMAND...: runs it, keeps the output, prints one line.
 step() {
     local name=$1; shift
     local out="$log/$(echo "$name" | tr -c 'A-Za-z0-9' '_').log"
@@ -68,7 +45,7 @@ skip() {
 }
 uvm_ok() { [ -n "${UVM_HOME:-}" ] && [ -f "$UVM_HOME/src/uvm_pkg.sv" ]; }
 
-uvm_ref=2020.3.1   # UVM_CORE_REF in .github/workflows/ci.yml
+uvm_ref=2020.3.1
 if [ -z "${UVM_HOME:-}" ] && [ "$quick" = 0 ]; then
     UVM_HOME="${XDG_CACHE_HOME:-$HOME/.cache}/svlang/uvm-core-$uvm_ref"
     export UVM_HOME
@@ -83,61 +60,44 @@ fi
 
 step "hygiene: no assistant state, keys or attribution" tools/gates/hygiene.sh
 
-if [ "$rust" = 1 ]; then
-    echo "Rust flow (rust.yml)"
-    step "rust_gate: profiles, fmt, clippy" tools/gates/rust_gate.sh --native
-    step "cargo test" cargo test --locked
-    step "netlist gate (dv-build --netlist, testdata/netlist)" sh -c \
-        'cargo build --locked -q -p dv-build && DV_BUILD=target/debug/dv-build python3 tools/gates/netlist_gate.py'
-    step "rule docs are current" sh -c 'cargo build --locked -q -p dv-lint --bin svlang-lint && python3 tools/codegen/gen_rule_docs.py --binary target/debug/svlang-lint --check'
-    if [ "$quick" = 1 ]; then
-        skip "release archive and smoke test" "skipped by --quick"
-    else
-        step "dist build" cargo build --locked --profile dist
-        plat="$(uname -s | tr 'A-Z' 'a-z')-$(uname -m | sed 's/x86_64/x64/; s/aarch64/arm64/')"
-        step "release archive and smoke test" sh -c \
-            "rm -rf '$log/dist' && tools/release/package.sh target/dist '$plat' '$log/dist' && tools/release/smoke.sh '$log/dist/svlang-lint-$plat.tar.gz'"
-    fi
-    step "build svlang-lint (release)" cargo build --locked --release -p dv-lint --bin svlang-lint
+echo "Rust & integration flow (rust.yml)"
+step "rust_gate: guidelines, fmt, clippy" tools/gates/rust_gate.sh
+step "cargo test" cargo test --locked
+step "netlist gate (svlang check --netlist)" sh -c \
+    'cargo build --locked -q -p svlang-cli && SVLANG=target/debug/svlang python3 tools/gates/netlist_gate.py'
+step "rule docs are current" sh -c \
+    'cargo build --locked -q -p svlang-cli && python3 tools/codegen/gen_rule_docs.py --binary target/debug/svlang --check'
+step "build svlang (release)" cargo build --locked --release -p svlang-cli --bin svlang
+
+b=target/release/svlang
+for t in baseline catalog changed explain fix_invariants guidelines history init map precision waivers; do
+    step "tests/test_$t" python3 "tests/test_$t.py" --binary "$b"
+done
+step "python/tests/test_python_rules" python3 python/tests/test_python_rules.py --binary "$b"
+
+if [ "$quick" = 1 ]; then
+    skip "release archive and smoke test" "skipped by --quick"
+    skip "ERROR budget (uvm-core)" "skipped by --quick"
+else
+    step "dist build" cargo build --locked --profile dist -p svlang-cli
+    plat="$(uname -s | tr 'A-Z' 'a-z')-$(uname -m | sed 's/x86_64/x64/; s/aarch64/arm64/')"
+    step "release archive and smoke test" sh -c \
+        "rm -rf '$log/dist' && tools/release/package.sh target/dist '$plat' '$log/dist' && tools/release/smoke.sh '$log/dist/svlang-$plat.tar.gz'"
     if uvm_ok; then
-        step "ERROR budget (uvm-core)" python3 tools/quality/error_budget.py --binary target/release/svlang-lint
+        step "ERROR budget (uvm-core)" python3 tools/quality/error_budget.py --binary "$b"
     else
-        skip "ERROR budget (uvm-core)" "NOT RUN: no uvm-core 2020.3.1 checkout (UVM_HOME, or the fetch failed)"
+        skip "ERROR budget (uvm-core)" "NOT RUN: no uvm-core 2020.3.1 checkout"
         failed+=("ERROR budget (uvm-core): no uvm-core checkout")
     fi
 fi
 
-if [ "$cpp" = 1 ]; then
-    echo "C++ flow (ci.yml)"
-    [ -f build/build.ninja ] || step "configure" cmake --preset reference
-    step "build" cmake --build build -j "$jobs"
-    b=build/svlang-lint
-    step "rules, isolated, UVM stub" python3 cpp/tests/regression.py --binary $b --mode isolated
-    step "rules, all rules, UVM stub" python3 cpp/tests/regression.py --binary $b --mode all-rules \
-        --baseline cpp/tests/baselines/baseline_stub.json
-    if [ "$quick" = 1 ]; then
-        skip "rules, all rules, real uvm-core" "skipped by --quick"
-    elif uvm_ok; then
-        step "rules, all rules, real uvm-core" python3 cpp/tests/regression.py --binary $b --mode all-rules \
-            --uvm-home "$UVM_HOME" --baseline cpp/tests/baselines/baseline_uvm_core.json
-    else
-        skip "rules, all rules, real uvm-core" "NOT RUN: no uvm-core 2020.3.1 checkout (UVM_HOME, or the fetch failed)"
-        failed+=("rules, all rules, real uvm-core: no uvm-core checkout")
-    fi
-    step "LSP" python3 cpp/tests/test_lsp.py
-    for t in catalog config baseline findings init waivers changed fix fix_invariants report precision map explain \
-        guidelines history; do
-        step "test_$t" python3 "cpp/tests/test_$t.py" --binary $b
-    done
-    step "test_engine_gate" python3 cpp/tests/test_engine_gate.py
-    step "python rules" python3 python/tests/test_python_rules.py --binary $b
-    step "engine_equivalence" python3 cpp/tests/engine_equivalence.py --binary $b
-    if [ "$rust" = 1 ]; then
-        step "slang unit gate (dv-build vs slang)" sh -c \
-            'cargo build --locked -q --release -p dv-build -p dv-lint && python3 tools/gates/slang_unit_gate.py --max-false=1 --max-gaps=370'
-        if uvm_ok; then
-            step "spec gate (--model, uvm-core)" python3 tools/gates/spec_gate.py --model --max-differ=0 --uvm "$UVM_HOME/src"
-        fi
+if [ "$oracles" = 1 ]; then
+    echo "Optional Slang differential oracle gates"
+    [ -f build/build.ninja ] || step "configure oracles" cmake --preset oracles
+    step "build oracles" cmake --build build -j 4
+    step "slang unit gate (svlang check vs slang)" python3 tools/gates/slang_unit_gate.py --max-false=1 --max-gaps=370
+    if uvm_ok; then
+        step "spec gate (--model, uvm-core)" python3 tools/gates/spec_gate.py --model --max-differ=0 --uvm "$UVM_HOME/src"
     fi
 fi
 

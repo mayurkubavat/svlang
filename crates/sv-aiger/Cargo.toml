@@ -11,8 +11,8 @@ keywords = ["systemverilog", "aiger", "formal", "model-checking", "eda"]
 categories.workspace = true
 
 [dependencies]
-sv-netlist = { version = "0.2.0", path = "../sv-netlist" }
-sv-btor2 = { version = "0.2.0", path = "../sv-btor2" }
+sv-netlist = { version = "0.3.0", path = "../sv-netlist" }
+sv-btor2 = { version = "0.3.0", path = "../sv-btor2" }
 
 [dev-dependencies]
-sv-syntax = { version = "0.2.0", path = "../sv-syntax" }
+sv-syntax = { version = "0.3.0", path = "../sv-syntax" }

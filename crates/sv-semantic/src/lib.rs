@@ -209,7 +209,7 @@ pub fn parse_args<S: AsRef<str>>(args: &[S]) -> Result<(Vec<Tree>, f64), Error> 
     }
     let t0 = Instant::now();
     // A source that is missing or cannot be read stops the run (exit 2 in
-    // dv-lint, as in svlang-lint), rather than becoming a finding.
+    // svlang-lint), rather than becoming a finding.
     for f in &files {
         // An editor buffer stands in for its file, saved yet or not.
         if sv_syntax::overlay::get(f).is_some() {
@@ -380,7 +380,7 @@ pub struct Elaborated {
 }
 
 /// Every semantic error the native front end finds in a compile (what
-/// `dv-build` reports after the syntax errors), with the hierarchy it
+/// `svlang check` reports after the syntax errors), with the hierarchy it
 /// elaborated.
 pub fn semantic_diags(trees: &[Tree], tops: &[String]) -> (Vec<names::Diag>, Elaborated) {
     semantic_diags_with_params(trees, tops, &[])

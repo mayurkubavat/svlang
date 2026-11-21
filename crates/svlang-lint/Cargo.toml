@@ -1,0 +1,19 @@
+[package]
+name = "svlang-lint"
+description = "Static analysis and auto-fix engine for IEEE 1800-2023 SystemVerilog, UVM, and formal readiness on the pure-Rust svlang front end"
+readme = "README.md"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+keywords.workspace = true
+categories.workspace = true
+build = "build.rs"
+
+[dependencies]
+svlang-model = { version = "0.3.0", path = "../svlang-model" }
+svlang = { version = "0.3.0", path = "../svlang" }
+# Waiver, header and naming patterns (src/pattern.rs): bytes, ASCII, no
+# Unicode tables or SIMD literal search; the inputs are one line long.
+regex = { version = "1.13", default-features = false, features = ["std"] }

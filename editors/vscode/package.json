@@ -2,7 +2,7 @@
   "name": "svlang",
   "displayName": "svlang — SystemVerilog & UVM",
   "description": "IEEE 1800-2023 SystemVerilog & UVM language server and linter: 445+ live rules, quick fixes, formal-readiness checks, code browsing, completion, and UVM snippets",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "publisher": "svlang",
   "license": "Apache-2.0",
   "engines": {
@@ -33,7 +33,7 @@
         "svlang.enable": {
           "type": "boolean",
           "default": true,
-          "description": "Lint as you type: diagnostics and quick fixes from the native `dv-lsp` language server under the project's `.svlang-lint` config, waivers, and baseline."
+          "description": "Lint as you type: diagnostics and quick fixes from the native `svlang lsp` language server under the project's `.svlang-lint` config, waivers, and baseline."
         },
         "svlang.preset": {
           "type": "string",
@@ -74,18 +74,13 @@
         },
         "svlang.serverPath": {
           "type": "string",
-          "default": "dv-lsp",
-          "description": "Path to the `dv-lsp` executable (live linting and code browsing). Left as `dv-lsp`, the binary bundled with the extension is used, else the one on PATH."
-        },
-        "svlang.executablePath": {
-          "type": "string",
-          "default": "",
-          "description": "Optional path to a `svlang-lint-slang` binary (run with `--lsp`) to lint with the C++ Slang reference engine instead of the native Rust engine. Leave empty for native linting."
+          "default": "svlang",
+          "description": "Path to the `svlang` executable (launched as `svlang lsp` for live linting and code browsing). Left as `svlang`, the binary bundled with the extension is used, else the one on PATH."
         },
         "svlang.navigation.enable": {
           "type": "boolean",
           "default": true,
-          "description": "Code browsing from `dv-lsp`: outline, workspace symbols, go to definition/declaration/type definition, references, hover, and completion."
+          "description": "Code browsing from `svlang lsp`: outline, workspace symbols, go to definition/declaration/type definition, references, hover, and completion."
         },
         "svlang.navigation.libraryPaths": {
           "type": "array",

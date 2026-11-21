@@ -9,10 +9,9 @@ import {
     Executable
 } from 'vscode-languageclient/node';
 
-// One server, `dv-lsp` (Rust, native IEEE 1800-2023 front end): live lint
-// diagnostics and quick fixes, outline, workspace symbols, go to definition,
-// references, hover, and completion. With `svlang.executablePath` set, lint
-// comes from that binary instead (`svlang-lint-slang --lsp`, Slang reference).
+// Single unified server (`svlang lsp`, pure-Rust IEEE 1800-2023 front end):
+// live lint diagnostics and quick fixes, outline, workspace symbols, go to
+// definition, references, hover, and completion.
 const clients: LanguageClient[] = [];
 const watchers: vscode.Disposable[] = [];
 const warned = new Set<string>();
@@ -77,34 +76,16 @@ function startAll(context: vscode.ExtensionContext) {
 
     const lint = getSetting<boolean>(config, legacy, 'enable', 'enable', true);
     const navigation = getSetting<boolean>(config, legacy, 'navigation.enable', 'navigation.enable', true);
-    const slang = getSetting<string>(config, legacy, 'executablePath', 'executablePath', '').trim();
-    const reference = lint && slang !== '' && slang !== 'svlang-lint';
 
-    if (reference) {
-        const exe = resolveExecutable(context, slang, 'svlang-lint-slang');
-        if (exe) {
-            start(
-                'svlang-slang',
-                'svlang Lint (Slang)',
-                { command: exe, args: ['--lsp'], options: { env: process.env, cwd: workspaceRoot } },
-                {
-                    documentSelector,
-                    synchronize: { fileEvents: watcher }
-                }
-            );
-        } else {
-            missing(slang, 'svlang.executablePath', 'lint with the Slang engine');
-        }
-    }
-
-    const nativeLint = lint && !reference;
-    if (nativeLint || navigation) {
-        const serverPath = getSetting<string>(config, legacy, 'serverPath', 'navigation.serverPath', 'dv-lsp').trim();
-        const exe = resolveExecutable(context, serverPath, 'dv-lsp');
+    if (lint || navigation) {
+        const rawServerPath = getSetting<string>(config, legacy, 'serverPath', 'navigation.serverPath', 'svlang').trim();
+        // Treat the former `dv-lsp` default as the default bundled `svlang` binary.
+        const serverPath = rawServerPath === 'dv-lsp' || rawServerPath === 'dv-lsp.exe' ? 'svlang' : rawServerPath;
+        const exe = resolveExecutable(context, serverPath, 'svlang');
         if (exe) {
             const preset = getSetting<string>(config, legacy, 'preset', 'preset', '').trim();
             const initializationOptions: Record<string, unknown> = {
-                lint: nativeLint,
+                lint,
                 navigation,
                 libraryPaths: getSetting<string[]>(config, legacy, 'navigation.libraryPaths', 'navigation.libraryPaths', []),
                 exclude: getSetting<string[]>(config, legacy, 'navigation.exclude', 'navigation.exclude', []),
@@ -113,10 +94,12 @@ function startAll(context: vscode.ExtensionContext) {
             if (preset) {
                 initializationOptions.preset = preset;
             }
+            const base = path.basename(exe).toLowerCase();
+            const args = base === 'dv-lsp' || base === 'dv-lsp.exe' ? [] : ['lsp'];
             start(
                 'svlang',
                 'svlang',
-                { command: exe, args: [], options: { env: process.env, cwd: workspaceRoot } },
+                { command: exe, args, options: { env: process.env, cwd: workspaceRoot } },
                 {
                     documentSelector,
                     synchronize: { fileEvents: [watcher, configWatcher] },
@@ -124,7 +107,7 @@ function startAll(context: vscode.ExtensionContext) {
                 }
             );
         } else {
-            missing('dv-lsp', 'svlang.serverPath', 'linting and code browsing');
+            missing('svlang', 'svlang.serverPath', 'linting and code browsing');
         }
     }
 }
@@ -145,7 +128,7 @@ function missing(binary: string, setting: string, what: string) {
     warned.add(binary);
     vscode.window
         .showWarningMessage(
-            `svlang: \`${binary}\` was not found, so ${what} is off. Install \`dv-lsp\` or set ${setting}.`,
+            `svlang: \`${binary}\` was not found, so ${what} is off. Install \`svlang\` or set ${setting}.`,
             'Open Settings'
         )
         .then(choice => {

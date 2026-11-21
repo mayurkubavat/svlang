@@ -6,8 +6,8 @@ Test harness for Python rules, using the same layout as the built-in rule tests:
     <tests>/<RULE-ID>/expect.json  {"bad.sv": [{"rule": "RULE-ID", "line": 12}, ...]}
 
 Run:
-    python3 -m svlang_lint.testing --rules my_rules/ --tests my_rule_tests/ [--binary svlang-lint]
-                                [-- extra svlang-lint arguments, e.g. -I include]
+    python3 -m svlang_lint.testing --rules my_rules/ --tests my_rule_tests/ [--binary svlang]
+                                [-- extra svlang lint arguments, e.g. -I include]
 """
 
 import argparse
@@ -21,10 +21,14 @@ from pathlib import Path
 from typing import List, Tuple
 
 
+def _cmd(binary: str) -> List[str]:
+    return [binary, "lint"] if Path(binary).stem == "svlang" else [binary]
+
+
 def lint(binary: str, rules: str, source: Path, extra: List[str]) -> List[Tuple[str, int]]:
     with tempfile.TemporaryDirectory() as tmp:
         out = Path(tmp) / "report.json"
-        res = subprocess.run([binary, "--python-rules", rules, "--json", str(out), *extra, str(source)],
+        res = subprocess.run([*_cmd(binary), "--python-rules", rules, "--json", str(out), *extra, str(source)],
                              capture_output=True, text=True)
         if not out.exists():
             raise RuntimeError(f"svlang-lint failed on {source}:\n{res.stdout}{res.stderr}")
@@ -67,7 +71,10 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--rules", required=True, help="Python rule file or directory")
     ap.add_argument("--tests", required=True, help="directory of <RULE-ID>/ test folders")
-    ap.add_argument("--binary", default=os.environ.get("SVLANG_LINT", shutil.which("svlang-lint") or "svlang-lint"))
+    ap.add_argument(
+        "--binary",
+        default=os.environ.get("SVLANG", os.environ.get("SVLANG_LINT", shutil.which("svlang") or shutil.which("svlang-lint") or "svlang")),
+    )
     args = ap.parse_args(argv)
     return run_tests(args.binary, str(Path(args.rules).resolve()), Path(args.tests), extra)
 

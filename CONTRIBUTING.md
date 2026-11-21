@@ -1,6 +1,6 @@
-# Contributing to svlang-lint
+# Contributing to svlang
 
-Thank you for your interest in contributing to **svlang-lint**! We welcome bug reports, feature suggestions, architectural improvements, and new verification rules.
+Thank you for your interest in contributing to **svlang**! We welcome bug reports, feature suggestions, compiler and netlist improvements, and new verification rules.
 
 ---
 
@@ -13,258 +13,130 @@ Please be respectful, constructive, and collaborative in all issues, pull reques
 ## Development Environment Setup
 
 ### Prerequisites
-- **Compiler:** Modern C++20 compiler (`clang >= 15`, `AppleClang >= 15`, or `gcc >= 12`)
-- **Build System:** CMake `>= 3.28` and Ninja (`ninja-build` or `brew install ninja`)
-- **Acceleration:** `ccache` (strongly recommended)
-- **Scripting:** Python 3.9+ (for the regression test runner)
+- **Rust:** Rust `>= 1.82` (the workspace MSRV in `Cargo.toml`) with `cargo`, `rustfmt`, and `clippy`
+- **Python:** Python `>= 3.9` (for end-to-end CLI, fix-invariant, and netlist gates)
+- **Optional (dev-only compiler oracles):** C++20 compiler, CMake `>= 3.28`, and Ninja — only needed if running differential compiler gates via `cmake --preset oracles`
 
-### Memory-Bounded Build Workflow
-svlang-lint is configured with CMake presets and Ninja job pools to prevent out-of-memory compiler spikes when building heavy AST visitors:
-
+### Building and Testing
 ```bash
-# Clone the repository
 git clone https://github.com/mayurkubavat/svlang.git
 cd svlang
 
-# Configure using Release preset
-cmake --preset reference
+# Build the unified `svlang` CLI and run all Rust unit/integration/doc tests
+cargo build --release -p svlang-cli
+cargo test
 
-# Build with bounded concurrency (peak RAM stays < 1.8 GB)
-cmake --build build -j 4
+# Run formatting, Clippy (-D warnings), and guideline consistency checks
+./tools/gates/rust_gate.sh
+
+# Run end-to-end CLI, fix-invariant, and netlist gates
+python3 tools/gates/netlist_gate.py
+python3 tests/test_fix_invariants.py
 ```
+
+The workspace crates (`crates/sv-*`, `crates/svlang`, `crates/svlang-model`, `crates/svlang-lint`, `crates/svlang-lsp`, `crates/svlang-cli`) are pure Rust. The core compiler/netlist SDK (`svlang`) has zero external crate dependencies; `svlang-lint` uses `regex` (with Unicode/SIMD features disabled) behind an ECMAScript compatibility check (`tools/gates/regex_gate.py`).
 
 ---
 
 ### Repository hygiene
 
-Assistant and agent state (`.claude/`, `CLAUDE.md`, `.mcp.json` and the
-like), keys and credentials stay out of git; `.gitignore` covers them.
-`tools/gates/hygiene.sh` fails if any are tracked, or if a tracked file or
-an unpushed commit carries assistant attribution (co-author trailers and
-similar). CI and `tools/gates/prepush.sh` run it. To catch an attribution
-line at commit time, enable the hook once per clone:
+Assistant and agent state (`.claude/`, `CLAUDE.md`, `.mcp.json` and the like), keys and credentials stay out of git; `.gitignore` covers them. `tools/gates/hygiene.sh` fails if any are tracked, or if a tracked file or an unpushed commit carries assistant attribution (co-author trailers and similar). CI and `tools/gates/prepush.sh` run it. To catch an attribution line at commit time, enable the hook once per clone:
 
 ```sh
 git config core.hooksPath tools/hooks
 ```
 
+---
+
 ## Adding a New Verification Rule
 
-svlang-lint's architecture makes it straightforward to add new rules without modifying core engine logic.
-
 ### 1. Choose Rule Category & ID
-Locate the relevant category directory under `cpp/src/rules/`:
+Locate the relevant category folder under `crates/svlang-lint/src/rules/`:
+- `analysis/` - Cross-design analysis (covergroup sampling, uncovered analysis ports)
+- `compiler/` - Compiler diagnostics (`SV-CMP-*`)
 - `concurrency/` - Race conditions, clocking blocks, fork-join pitfalls
 - `correctness/` - Timescales, bitwidth mismatches, off-by-one errors
 - `coverage/` - Covergroup syntax, bin limits, illegal bins
+- `deadcode/` - Unreachable code, unused locals/fields/parameters
 - `deprecated/` - Legacy OVM / banned UVM APIs
-- `oop/` - Virtual methods, downcasting, constructors
-- `performance/` - Unbounded dynamic array copies, string bottlenecks
-- `random/` - Unchecked `randomize()`, constraint solving issues
-- `sva/` - Vacuous assertions, combinatorial triggers
-- `uvm/` - Factory, phasing, objections, `uvm_config_db`, sequences
-- `errors/` - Failures that are not reported, checkers that cannot fail, use after a failed check
 - `design/` - Testbench layers, hierarchy reach-through, god class, cohesion, coupling, overrides
+- `duplication/` - Copy-paste code and repeated argument groups
+- `errors/` - Unreported failures, checkers that cannot fail, use after failed check
+- `evolution/` - Git-history hotspots and change coupling
+- `formal/` - Pre-FPV formal-readiness checks (`SV-FPV-*`)
+- `methodology/` - Rules enforcing the [UVM Methodology Guide](docs/methodology/README.md)
 - `metrics/` - Cognitive complexity, routine length, nesting, argument count, class size
+- `oop/` - Virtual methods, downcasting, constructors
+- `performance/` - Dynamic array copies, string bottlenecks
+- `ral/` - Register map, address collisions, adapter/predictor wiring
+- `random/` - Unchecked `randomize()`, constraint solving issues
 - `readability/` - Flag arguments, const ref, commented-out code, magic numbers
-- `methodology/` - Rules written for the [UVM Methodology Guide](docs/methodology/README.md): reuse, component roles, coupling, pattern conformance
+- `rtl/` - Synthesizable RTL, FSM, CDC, and dataflow rules
+- `style/` - End labels, line length, formatting, naming conventions
+- `sva/` - Vacuous assertions, combinatorial triggers, reset handling
+- `types/` - Mixed-sign comparisons, redundant `$cast`, DPI prototypes
+- `uvm/` - Factory, phasing, objections, `uvm_config_db`, sequences, TLM topology
 
-Rules in `errors/`, `design/`, `metrics/` and `readability/` (and the SV-BUG, SV-RSC, SV-CNC-003/004 and
-SV-THR-003 rules) build on shared helpers instead of re-implementing them:
+Shared analysis helpers live in `crates/svlang-lint/src/support/` (class indices, UVM roles, CFG/dataflow, statement/call walkers, expression types, routine/class metrics). Rule options go through `crate::options` so project configs can override thresholds per rule. Opinionated rules belong to the `Advisory` profile (`profile::ADVISORY`), so they stay off unless `--preset advisory`, `--preset all`, or `--rule` selects them.
 
-- `svlang-lint/rules/SweSupport.h`: UVM role of a class (driver, monitor, scoreboard, env, test, config,
-  register model ...), user classes and methods with the UVM library filtered out, `uvm_*` report macro
-  handling for both the test stub and real uvm-core (`isReportGuard`, `reportLevel`, `alwaysExits`), written
-  and referenced symbols, and `UserCodeVisitor`, a visitor root that skips the UVM library.
-- `svlang-lint/rules/CodeMetrics.h`: per-routine metrics (cognitive and cyclomatic complexity, nesting,
-  statements) and per-class metrics (WMC, ATFD, TCC, LCOM4, CBO, DIT), computed once per compilation.
-- `svlang-lint/rules/PathWalker.h`: a small path-sensitive walker for rules that track state along paths.
+Assign a unique rule ID conforming to the standard naming scheme (e.g., `UVM-XYZ-001`, `SV-PRF-013`).
 
-Thresholds go through `swe::ruleOption("<RULE-ID>", "<key>", default)` so the project config can override
-them per rule. Opinionated rules use the category `Advisory`: they are off unless `--preset advisory`,
-`--preset all` or `--rule` selects them, in the CLI and in the language server.
+### 2. Implement and Register the Rule
+1. Create `crates/svlang-lint/src/rules/<category>/<rule_name>.rs`.
+   - Use `Check::Model` for rules that read only `svlang_model::Design`.
+   - Use `Check::Syntax` for rules that walk `syntax::Cst` concrete syntax trees.
+   - Use `Check::Mixed` for rules that combine both.
+   - Attach related locations (`Finding::related`) and precise source spans (`Finding::range`) when a finding involves a second declaration or call site. They flow automatically to console `note:` lines, JSON, SARIF, HTML, and the LSP server.
+2. Register the rule with its ID, name, category, severity, profiles, guidelines, maturity, and description in `crates/svlang-lint/src/rules/<category>/mod.rs`.
+3. If the rule enforces a guideline in the [UVM Methodology Guide](docs/methodology/README.md), include that guideline ID in the rule's `guidelines` slice and regenerate the guideline table (`python3 tools/codegen/gen_guidelines.py`).
 
-Assign a unique rule ID conforming to the standard naming scheme (e.g. `UVM-XYZ-001`, `SV-PRF-013`).
-
-### 2. Implement the Rule Class
-Create `cpp/src/rules/<category>/YourRule.cpp`. Rules hand their visitor to the
-engine's shared walk instead of walking the design themselves:
-
-```cpp
-#include "svlang_lint/rules/Rule.h"
-#include "svlang_lint/rules/RuleRegistry.h"
-
-namespace svlang_lint::rules::uvm {
-
-// Derive from engine::AstVisitor (elaborated AST) or engine::SyntaxVisitor
-// (syntax trees). They are drop-in replacements for slang's visitors.
-class YourRuleVisitor : public engine::AstVisitor<YourRuleVisitor> {
-public:
-    explicit YourRuleVisitor(core::DiagnosticEngine& diags) : diags(diags) {}
-
-    void handle(const slang::ast::NewClassExpression& expr) {
-        // ... report with diags.addViolation(...) ...
-        visitDefault(expr); // descend into children (omit to prune the subtree)
-    }
-
-private:
-    core::DiagnosticEngine& diags;
-};
-
-class YourRule : public Rule {
-public:
-    std::string_view getId() const override { return "UVM-XYZ-001"; }
-    std::string_view getName() const override { return "YourRuleName"; }
-    std::string_view getDescription() const override { return "What this rule detects and why."; }
-    std::string_view getCategory() const override { return "UVM"; }
-    core::Severity getDefaultSeverity() const override { return core::Severity::Warning; }
-
-    engine::RuleTask check(engine::RuleContext& ctx) override {
-        YourRuleVisitor visitor(ctx.diags());
-        co_await ctx.visitAst(visitor); // or ctx.visitSyntax(visitor)
-        // Code here runs after the walk (e.g. reporting collected state).
-    }
-};
-
-} // namespace svlang_lint::rules::uvm
-
-namespace svlang_lint::rules {
-std::unique_ptr<Rule> createYourRule() { return std::make_unique<uvm::YourRule>(); }
-} // namespace svlang_lint::rules
-
-SVLANG_LINT_REGISTER_RULE(svlang_lint::rules::createYourRule)
-```
-
-When a finding has a second half, say where it is. `addViolation` returns the
-finding (or `nullptr` if project policy dropped it); attach related locations
-and the full extent of the flagged code to it. They reach the console
-(`note:` lines), JSON (`endColumn`, `related`), SARIF (`relatedLocations`) and
-the editor:
-
-```cpp
-auto* v = diags.addViolation(getId(), getName(), msg, severity, copy.location);
-diags.addRelated(v, original.location, "first copy, in 'my_driver'");
-diags.setRange(v, stmt.sourceRange); // optional; defaults to the identifier at the location
-```
-
-`getCategory()` must return one of the categories in `ruleCategories()` (`svlang-lint/rules/Rule.h`);
-the category also sets the rule's default presets.
-
-**How the engine runs it.** `co_await ctx.visitAst(v)` suspends the rule; the
-engine then does one walk per shard and routes each node only to visitors that
-have a `handle()` for its type, on a worker pool. Shared-walk handlers must
-follow two rules:
-
-- Call `visitDefault(node)` as the **last** statement of a handler (or not at
-  all, to prune). Code after it would run *before* the children are visited.
-  If a handler needs enter/exit logic around its children (depth counters,
-  scope stacks), visit the children yourself inside the handler, or override
-  `run()` instead of `check()` to get a private walk.
-- Only read the design and write to your own `diags`. Rules run in parallel
-  and each has its own `RuleContext`.
-
-Rules that need a custom traversal can still override
-`run(compilation, uvmModel, diags)`; they run as independent parallel jobs. Querying the
-UVM model there (classes, methods) is fine, but a `run()` that walks the whole design
-(`compilation.getRoot().visit(...)` or a loop over `getSyntaxTrees()`) fails
-`cpp/tests/test_engine_gate.py` unless its file is on `cpp/tests/engine_legacy_allowlist.txt`,
-which only shrinks. `swe::UserCodeVisitor` takes part in the shared walk.
-`cpp/tests/engine_equivalence.py` checks that both styles give the same findings
-as the reference `--engine isolated` mode.
-
-### 3. Register and Document the Rule
-The `SVLANG_LINT_REGISTER_RULE` line at the end of the rule file registers it; there is no central
-list to edit. If the rule enforces a guideline of the
-[UVM Methodology Guide](docs/methodology/README.md), add its ID to that guideline in
-`cpp/src/rules/Guidelines.cpp`. The published catalog is generated from the native
-engine, where the rule declares the same ID, name, category, severity, profiles, guidelines
-and description (`crates/dv-lint/src/rules/<category>/mod.rs`). Regenerate the docs, then
-check that this engine agrees with them:
+### 3. Regenerate the Rule Catalog
+The published catalog (`docs/rules/catalog.json`, `docs/rules/README.md`, and the `Enforced by:` lines in `docs/methodology/`) is generated directly from the rule metadata in `svlang-lint`:
 
 ```bash
-cargo build -p dv-lint --bin svlang-lint
-python3 tools/codegen/gen_rule_docs.py          # docs/rules/catalog.json, docs/rules/README.md, MG "Enforced by" lines
-python3 tools/codegen/gen_rule_docs.py --check  # what CI runs: fails if any of them is stale
-python3 cpp/tests/test_catalog.py               # the C++ rules declare what the catalog says
+cargo build -p svlang-cli --bin svlang
+python3 tools/codegen/gen_rule_docs.py          # updates docs/rules/{catalog.json,README.md} & docs/methodology/
+python3 tools/codegen/gen_rule_docs.py --check  # what CI runs: fails if any generated doc is stale
 ```
 
-The guide also describes how to turn a software-engineering principle into a rule and how to
-score a candidate before it runs by default.
-
 ### 4. Create Paired Unit Tests
-Every rule in svlang-lint **must** have paired `bad.sv` and `good.sv` test cases plus an `expect.json`:
-1. Create directory `testdata/rules/<category>/<RULE_ID>/`.
-2. Add `bad.sv` containing an isolated violation that should trigger the rule.
-3. Add `good.sv` containing the compliant implementation that should pass cleanly without warnings.
-4. Add `expect.json` listing every finding `bad.sv` must produce, by rule and line:
+Every rule **must** ship with paired `bad.sv` and `good.sv` cases plus `expect.json`:
+1. Create `testdata/rules/<category>/<RULE_ID>/`.
+2. Add `bad.sv` containing an isolated violation that triggers the rule.
+3. Add `good.sv` containing the compliant implementation that passes cleanly.
+4. Add `expect.json` listing every finding `bad.sv` must produce by rule and line:
    ```json
    { "bad.sv": [ { "rule": "UVM-XYZ-001", "line": 17 } ] }
    ```
-   `python3 cpp/tests/regression.py --rule <RULE_ID> --update-expectations` writes it from the
-   current output. Check every line it records before committing: it captures what the
-   rule does, not what it should do.
-
-### 5. Verify via Regression Suite
-The runner reads findings from the linter's `--json` report and compile errors from
-slang's `--diag-json`. It has three suites, all of which run in CI:
-
-```bash
-# 1. Isolated: only the rule under test, against the UVM stub (testdata/common/uvm_mock.svh)
-python3 cpp/tests/regression.py --rule <RULE_ID>
-
-# 2. All rules enabled, against the UVM stub
-python3 cpp/tests/regression.py --mode all-rules --baseline cpp/tests/baselines/baseline_stub.json
-
-# 3. All rules enabled, against the real Accellera library
-git clone --depth 1 --branch 2020.3.1 https://github.com/accellera-official/uvm-core.git ../uvm-core
-python3 cpp/tests/regression.py --mode all-rules --uvm-home ../uvm-core \
-    --baseline cpp/tests/baselines/baseline_uvm_core.json
-
-# Everything via CTest (suite 3 only when SVLANG_LINT_UVM_HOME is set at configure time)
-cmake --preset reference -DSVLANG_LINT_UVM_HOME=$PWD/../uvm-core
-ctest --test-dir build --output-on-failure
-```
-
-In the all-rules suites, findings from *other* rules in `bad.sv`/`good.sv`, and compile
-errors (as `COMPILE:<code>@<line>`), must be listed in the suite's baseline file. A new one fails the run, and so does a baseline entry that no
-longer fires, so the baseline only shrinks. After fixing a false positive, refresh it with
-`--update-baseline` and commit the smaller file.
+5. Verify with Rust and Python suites:
+   ```bash
+   cargo test -p svlang-lint -- rules
+   python3 tests/test_catalog.py
+   python3 tests/test_guidelines.py
+   python3 tests/test_fix_invariants.py   # required when adding or changing --fix rewrites
+   ```
 
 ---
 
-## Working on the Rust tools
+## Optional Dev-Only Slang Compiler Oracles
 
-The Rust workspace (`crates/`, `Cargo.toml` at the root) builds `dv-lint`, `dv-lsp`,
-`dv-build`, `dv-map` and `dv-filelist` on a native front end. The one external crate is
-`regex` (in `dv-lint`, for waiver, header and naming patterns; Unicode and SIMD features
-off), behind an ECMAScript check that `tools/gates/regex_gate.py` holds to `std::regex`.
-It needs Rust 1.82 or newer (the MSRV in `Cargo.toml`).
+Compiler front-end changes (`crates/sv-preprocessor`, `crates/sv-syntax`, `crates/sv-semantic`) can be cross-checked against upstream Slang using the optional standalone dumpers in `tools/oracles/` (keep build parallelism at `-j 4`):
 
 ```bash
-cargo build --release              # native only; no C++ build
-cargo test                         # unit and rule tests (default members)
-tools/gates/rust_gate.sh --native  # guideline table check, cargo fmt --check, Clippy -D warnings
+cmake --preset oracles && cmake --build build -j 4
+./tools/gates/prepush.sh --oracles
 ```
 
-A Rust rule reads the same `testdata/rules/<category>/<RULE_ID>/` cases as its C++
-twin. A rule declares its category, severity, profiles, guidelines and description
-where it is registered (`crates/dv-lint/src/rules/<category>/mod.rs`); the catalog in
-`docs/rules/` is generated from those (`python3 tools/codegen/gen_rule_docs.py`) and
-the tests fail if it is stale. A rule the C++ engine also has declares the same
-metadata there, and `cpp/tests/test_catalog.py` checks the two agree. The
-`slang` Cargo feature, and the parity gates in `tools/gates/` that use it, need the
-C++ model library (`cmake --preset model && cmake --build build-model`); they are not
-required for a pull request that touches only the native engine.
+These oracles are developer-only and are not required to build, test, or ship `svlang`.
 
 ---
 
 ## Pull Request Guidelines
 
-1. **Commit Hygiene**: Ensure code compiles warning-free on Clang and GCC, and that
-   `tools/gates/rust_gate.sh --native` and `cargo test` pass for Rust changes.
-2. **Zero Regressions**: All unit and rule tests must pass before opening a PR.
-3. **Documentation**: Run `tools/codegen/gen_rule_docs.py` after adding a rule or changing its metadata; the [Rule Catalog](docs/rules/README.md) is generated, not edited.
-4. **Automated Fixes**: If your rule supports `--fix`, include test cases verifying the exact textual rewrite output.
+1. **Clean Gates**: `cargo test`, `./tools/gates/rust_gate.sh`, and `./tools/gates/hygiene.sh` must pass.
+2. **End-to-End Suites**: Run `python3 tools/gates/netlist_gate.py` for compiler/netlist changes and the relevant `tests/test_*.py` suites for linter/CLI changes.
+3. **Generated Docs**: Run `python3 tools/codegen/gen_rule_docs.py` after adding a rule or changing its metadata; never hand-edit [docs/rules/README.md](docs/rules/README.md) or [docs/rules/catalog.json](docs/rules/catalog.json).
+4. **Automated Fixes**: Safe `--fix` rewrites must preserve simulation behaviour and pass `python3 tests/test_fix_invariants.py`.
 
 ## Licensing of contributions
 

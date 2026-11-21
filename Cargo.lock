@@ -12,56 +12,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "dv-build"
-version = "0.2.0"
-dependencies = [
- "svlang",
-]
-
-[[package]]
-name = "dv-filelist"
-version = "0.2.0"
-dependencies = [
- "dv-model",
- "sv-slang",
- "svlang",
-]
-
-[[package]]
-name = "dv-lint"
-version = "0.2.0"
-dependencies = [
- "dv-model",
- "regex",
- "svlang",
-]
-
-[[package]]
-name = "dv-lsp"
-version = "0.2.0"
-dependencies = [
- "dv-lint",
- "svlang",
-]
-
-[[package]]
-name = "dv-map"
-version = "0.2.0"
-dependencies = [
- "dv-model",
- "sv-slang",
- "svlang",
-]
-
-[[package]]
-name = "dv-model"
-version = "0.2.0"
-dependencies = [
- "sv-slang",
- "svlang",
-]
-
-[[package]]
 name = "heck"
 version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -197,7 +147,7 @@ checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
 
 [[package]]
 name = "sv-aiger"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "sv-btor2",
  "sv-netlist",
@@ -206,7 +156,7 @@ dependencies = [
 
 [[package]]
 name = "sv-btor2"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "sv-netlist",
  "sv-semantic",
@@ -215,11 +165,11 @@ dependencies = [
 
 [[package]]
 name = "sv-lexer"
-version = "0.2.0"
+version = "0.3.0"
 
 [[package]]
 name = "sv-netlist"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "sv-semantic",
  "sv-syntax",
@@ -227,30 +177,26 @@ dependencies = [
 
 [[package]]
 name = "sv-preprocessor"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "sv-lexer",
 ]
 
 [[package]]
 name = "sv-semantic"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "sv-source",
  "sv-syntax",
 ]
 
 [[package]]
-name = "sv-slang"
-version = "0.2.0"
-
-[[package]]
 name = "sv-source"
-version = "0.2.0"
+version = "0.3.0"
 
 [[package]]
 name = "sv-syntax"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "sv-lexer",
  "sv-preprocessor",
@@ -258,7 +204,7 @@ dependencies = [
 
 [[package]]
 name = "sv-yosys"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "sv-netlist",
  "sv-semantic",
@@ -267,7 +213,7 @@ dependencies = [
 
 [[package]]
 name = "svlang"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "sv-aiger",
  "sv-btor2",
@@ -282,14 +228,41 @@ dependencies = [
 
 [[package]]
 name = "svlang-cli"
-version = "0.2.0"
+version = "0.3.0"
+dependencies = [
+ "svlang",
+ "svlang-lint",
+ "svlang-lsp",
+ "svlang-model",
+]
+
+[[package]]
+name = "svlang-lint"
+version = "0.3.0"
+dependencies = [
+ "regex",
+ "svlang",
+ "svlang-model",
+]
+
+[[package]]
+name = "svlang-lsp"
+version = "0.3.0"
+dependencies = [
+ "svlang",
+ "svlang-lint",
+]
+
+[[package]]
+name = "svlang-model"
+version = "0.3.0"
 dependencies = [
  "svlang",
 ]
 
 [[package]]
 name = "svlang-py"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "pyo3",
  "svlang",
@@ -297,7 +270,7 @@ dependencies = [
 
 [[package]]
 name = "svlang-wasm"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "svlang",
 ]

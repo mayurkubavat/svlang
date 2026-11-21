@@ -1,74 +1,66 @@
-# svlang-lint guide
+# svlang lint guide
 
-**svlang-lint** is a blazing-fast, static analysis and linting engine designed specifically for modern **IEEE 1800 (SystemVerilog)** and **IEEE 1800.2 (UVM)** design verification codebases. Built on modern C++20 and leveraging the high-speed Slang compiler frontend, svlang-lint provides deep semantic AST and CST analysis, full factory and phasing validation, simulation-race detection, and automated fix-it capabilities.
+**`svlang lint`** (also available via a `svlang-lint` symlink) is a fast, pure-Rust static analysis and linting engine designed for modern **IEEE 1800-2023 (SystemVerilog)** and **IEEE 1800.2 (UVM)** design verification codebases. Built directly on `svlang`'s IEEE 1800-2023 compiler front end and `svlang-model`, it provides deep semantic and CST analysis, factory and phasing validation, simulation-race detection, formal-readiness checks, and automated fix-it capabilities with zero C++ dependencies.
 
 ---
 
 ## Key Features
 
-- **400+ Specialized Verification Rules** ([catalog](../rules/README.md)): coverage across 20 categories (UVM methodology, OOP design, concurrency & delta-cycle races, SVA assertion health, coverage bins, random constraints, and code style).
+- **474 Specialized Verification Rules** ([catalog](../rules/README.md)): coverage across 20 categories (UVM methodology, OOP design, concurrency & delta-cycle races, SVA assertion health, formal readiness, RTL/FSM/CDC, coverage bins, random constraints, and code style).
 - **Deep Semantic Graph Analyzers**:
-  - **Objection Control Flow Graph (CFG)**: Verifies every `raise_objection()` path strictly reaches a matching `drop_objection()` without early-return leaks or asymmetric branch divergence.
+  - **Objection Control Flow Graph (CFG)**: Verifies every `raise_objection()` path strictly reaches a matching `drop_objection()` across routines and branches without early-return leaks or asymmetric divergence.
   - **Config DB Cross-Component Resolver**: Matches `set()` and `get()` calls across hierarchy strings to detect type mismatches and unconfigured lookups.
   - **TLM Port-to-Export Elaboration Checker**: Detects unmapped driver pull ports and unconnected analysis ports across `connect_phase()` methods.
-- **Sub-Second Execution**: Analyzes complex verification environments at rates exceeding 20,000 lines per second.
-- **Type-Safe Semantic Analysis**: Unlike regex-based linters, svlang-lint resolves complete symbol hierarchies, parameterizations, and virtual method tables using Slang's typed AST.
-- **Memory-Bounded Compilation**: Optimized build architecture with Ninja job pools, precompiled headers (PCH), and `ccache` keeping peak compile RAM strictly under 1.8 GB on Apple Silicon and Linux dev boxes.
+- **Sub-Second Execution**: Pure-Rust parallel rule engine analyzing complex verification environments across all CPU cores.
+- **Type-Safe Semantic Analysis**: Resolves symbol hierarchies, parameterizations, expression types, and virtual method tables using `svlang`'s IEEE 1800-2023 compiler front end.
 - **Automated Fix-It Engine (`--fix`)**: Applies rewrites that do not change simulation behaviour (end labels, whitespace). Fixes that can change behaviour need `--unsafe-fixes`; suggestions marked display-only are never applied.
 - **Baseline Technical Debt Management (`--baseline`)**: Snapshot legacy violations into a JSON baseline to enforce zero-regression on new pull requests.
 - **Granular Waivers (`--waivers`)**: Waive rules by rule ID, file glob pattern, or line number with mandatory rationale tracking.
 - **CI/CD Integration**: Emits industry-standard SARIF 2.1.0 (for GitHub Code Scanning / GitLab Code Quality) and interactive, self-contained HTML dashboards.
-- **Modular Unit Testsuite**: 371 per-rule test directories under `testdata/rules/`, each with paired `bad.sv` and `good.sv` cases.
+- **Modular Unit Testsuite**: Paired `bad.sv`, `good.sv`, and `expect.json` test cases under `testdata/rules/`.
 
 ---
 
 ## Rule Domain Categories
 
-| Category | Rules | Description |
-| :--- | :---: | :--- |
-| **UVM Methodology** | 53 | Factory registration, phasing, objection CFG balancing, cross-component config_db, TLM topology |
-| **Concurrency** | 13 | Delta-cycle oscillations, `always_comb` triggers, fork-join variable capture, circular wait deadlocks |
-| **SVA (Assertions)** | 14 | Vacuous antecedents, combinatorial assert glitches, disable-iff resets, multi-clock domains |
-| **Randomization** | 18 | Unchecked `randomize()`, non-pure functions in constraints, cyclic `solve-before`, randc exhaustion |
-| **Coverage** | 16 | Cross-bin explosion, illegal bin overlaps, 0-weight coverpoints, unreferenced covergroups |
-| **OOP & Architecture** | 22 | Non-virtual overrides, object slicing, downcast safety, virtual call in constructor |
-| **Performance** | 18 | Deep-copying dynamic arrays by value, string concatenation in loops, unbounded arrays in constraints |
-| **Correctness & Safety** | 30 | Off-by-one queue indexing, self-comparisons, non-blocking assignments in functions, casex hazards |
-| **Types & DPI** | 15 | Mixed-sign comparisons, redundant `$cast`, non-void task return types, DPI width mismatches |
-| **Deprecated & Smells** | 18 | OVM legacy APIs, banned `uvm_field_*` macros, `uvm_do` hiding, god-methods, magic delays |
-| **Style & Formatting** | 21 | Mandatory end labels, line length limits, capitalization, naming conventions |
-| **Software Engineering** | 47 | Copy-paste bugs, failures that are not reported, checkers that cannot fail, testbench layer rules, god classes, cohesion and coupling metrics, cognitive complexity, lock and file-handle leaks |
+| Category | Description |
+| :--- | :--- |
+| **UVM Methodology** | Factory registration, phasing, objection CFG balancing, cross-component config_db, TLM topology |
+| **Concurrency** | Delta-cycle oscillations, `always_comb` triggers, fork-join variable capture, circular wait deadlocks |
+| **SVA & Formal Readiness** | Vacuous antecedents, combinatorial assert glitches, disable-iff resets, pre-FPV checks (`SV-FPV-*`) |
+| **Randomization** | Unchecked `randomize()`, non-pure functions in constraints, contradictory constraints, cyclic `solve-before` |
+| **Coverage** | Cross-bin explosion, illegal bin overlaps, 0-weight coverpoints, unreferenced covergroups |
+| **OOP & Architecture** | Non-virtual overrides, object slicing, downcast safety, virtual call in constructor |
+| **Performance** | Deep-copying dynamic arrays by value, string concatenation in loops, unbounded arrays in constraints |
+| **Correctness & Safety** | Off-by-one queue indexing, self-comparisons, non-blocking assignments in functions, casex hazards |
+| **Types & DPI** | Mixed-sign comparisons, redundant `$cast`, non-void task return types, conflicting DPI prototypes |
+| **RTL & Dead Code** | Latches, FSM/CDC checks, unused locals/fields/parameters, unreachable statements |
+| **Deprecated & Smells** | OVM legacy APIs, banned `uvm_field_*` macros, `uvm_do` hiding, god-methods, magic delays |
+| **Style & Formatting** | Mandatory end labels, line length limits, capitalization, naming conventions |
+| **Software Engineering** | Copy-paste bugs, unreported failures, testbench layering, cohesion/coupling metrics, cognitive complexity |
 
-> Every rule, with its category, severity, presets, guidelines and links to its bad/good examples, is listed in the generated [Rule Catalog](../rules/README.md) (`svlang-lint --list-rules --json -` gives the same data as JSON).
+> Every rule, with its category, severity, presets, guidelines and links to its bad/good examples, is listed in the generated [Rule Catalog](../rules/README.md) (`svlang lint --list-rules --json -` gives the same data as JSON).
 
 ---
 
 ## Getting Started
 
-### Prerequisites
-- Modern C++20 compiler (`clang >= 15`, `AppleClang >= 15`, or `gcc >= 12`)
-- CMake `>= 3.28`
-- Ninja (`brew install ninja` or `apt-get install ninja-build`)
-- `ccache` (strongly recommended to accelerate rebuilds)
-- Python 3.9+ (for test runner)
+### Installing or Building `svlang`
 
-### Building svlang-lint
-
-svlang-lint provides pre-configured CMake presets for fast, out-of-the-box building:
+Install from crates.io, download a release tarball, or build from source (requires Rust `>= 1.82`):
 
 ```bash
-# Clone the repository
+# Option 1: Install from crates.io
+cargo install svlang-cli
+
+# Option 2: Build from source
 git clone https://github.com/mayurkubavat/svlang.git
 cd svlang
-
-# Configure using Release preset
-cmake --preset reference
-
-# Build binary (peak RAM strictly bounded < 1.8 GB)
-cmake --build build -j 4
+cargo build --release -p svlang-cli
+export PATH="$(pwd)/target/release:$PATH"
 ```
 
-The compiled binary will be located at `build/svlang-lint`.
+The unified binary is at `target/release/svlang`. Symlinking `svlang-lint -> svlang` also dispatches directly into `svlang lint`.
 
 ---
 
@@ -77,10 +69,10 @@ The compiled binary will be located at `build/svlang-lint`.
 ### Basic Lint
 ```bash
 # Lint a SystemVerilog source file with include directory
-./build/svlang-lint path/to/my_env.sv -I path/to/includes
+svlang lint path/to/my_env.sv -I path/to/includes
 
 # Lint a package with multiple source files
-./build/svlang-lint tb/top_pkg.sv tb/my_agent.sv tb/my_scoreboard.sv
+svlang lint tb/top_pkg.sv tb/my_agent.sv tb/my_scoreboard.sv
 ```
 
 ### Rule Profiles & Presets
@@ -91,37 +83,38 @@ the `soundness`, `methodology`, `performance` and `security` profiles
 (`style`), maintainability metrics (`smells`) and the opinionated
 `advisory` rules are opt-in: name the preset, use `--preset all`, set
 `preset` in the project config, or configure the rules you want there (a
-configured rule runs whatever the preset). On Accellera's uvm-core the
-default reports about 1,900 findings; `--preset all` reports about 15,900,
-of which 13,900 are style.
+configured rule runs whatever the preset).
 
 ```bash
 # Run only soundness checks (concurrency, SVA, correctness, types)
-./build/svlang-lint tb/top.sv --preset soundness
+svlang lint tb/top.sv --preset soundness
 
 # Run only UVM methodology checks
-./build/svlang-lint tb/top.sv --preset methodology
+svlang lint tb/top.sv --preset methodology
+
+# Run pre-FPV formal-readiness checks (SV-FPV-001..005)
+svlang lint tb/top.sv --preset formal-ready
 
 # Run only performance optimizations
-./build/svlang-lint tb/top.sv --preset performance
+svlang lint tb/top.sv --preset performance
 
 # Run only code style checks
-./build/svlang-lint tb/top.sv --preset style
+svlang lint tb/top.sv --preset style
 
 # Run only maintainability checks (metrics, design smells)
-./build/svlang-lint tb/top.sv --preset maintainability
+svlang lint tb/top.sv --preset maintainability
 
 # Run the opt-in advisory rules (magic numbers, commented-out code, ...)
-./build/svlang-lint tb/top.sv --preset advisory
+svlang lint tb/top.sv --preset advisory
 
 # Moving to IEEE 1800.2 UVM: deprecated and banned API checks only
-./build/svlang-lint tb/top.sv --preset uvm-1800.2
+svlang lint tb/top.sv --preset uvm-1800.2
 
 # Run everything: style, smells and advisory rules included
-./build/svlang-lint tb/top.sv --preset all
+svlang lint tb/top.sv --preset all
 ```
 
-Without `--preset`, every rule except the Advisory ones runs. `--rule <ID>` always runs the named rule.
+`--rule <ID>` always runs the named rule regardless of preset.
 
 ### Methodology Guide
 
@@ -130,92 +123,85 @@ testbenches into nine chapters (layering, coupling, component roles, reuse, desi
 usage, duplication, failure handling, evolvability), each backed by lint rules:
 
 ```bash
-./build/svlang-lint --list-guidelines                 # the guide and the rules behind each guideline
-./build/svlang-lint tb/top.sv --guideline MG-4         # one chapter (or MG-4.1 for one guideline)
-./build/svlang-lint tb/top.sv --preset reuse           # chapters MG-1 to MG-5
-./build/svlang-lint tb/top.sv --conformance            # pass/fail per guideline after any run
-./build/svlang-lint tb/top.sv --guideline MG-9.2 --history  # hotspots and change coupling from git
+svlang lint --list-guidelines                 # the guide and the rules behind each guideline
+svlang lint tb/top.sv --guideline MG-4         # one chapter (or MG-4.1 for one guideline)
+svlang lint tb/top.sv --preset reuse           # chapters MG-1 to MG-5
+svlang lint tb/top.sv --conformance            # pass/fail per guideline after any run
+svlang lint tb/top.sv --guideline MG-9.2 --history  # hotspots and change coupling from git
 ```
 
 ### Single-Rule Targeting
 Run or debug a specific rule against a source file in milliseconds:
 ```bash
-./build/svlang-lint tb/my_seq.sv --rule UVM-BAN-001
-./build/svlang-lint tb/my_scb.sv --rule ScoreboardLeftoverQueue
+svlang lint tb/my_seq.sv --rule UVM-BAN-001
+svlang lint tb/my_scb.sv --rule ScoreboardLeftoverQueue
 ```
 
 ### Compiler errors and warnings
-The compiler's own diagnostics are findings too: errors are `SV-CMP-001` and warnings `SV-CMP-002`. They appear in the console, JSON, SARIF, HTML and the editor, and can be waived or baselined like any other finding. `-W` options and `` `pragma diagnostic `` decide which warnings are reported and at what severity (`-Wno-redef-macro`, `-Werror=index-oob`). Disable the rules to get slang's plain diagnostic output back.
+The front end's own diagnostics are findings too: errors are `SV-CMP-001` and warnings `SV-CMP-002`. They appear in the console, JSON, SARIF, HTML and the editor, and can be waived or baselined like any other finding.
 
 ### Findings in macros
-A finding in code that a macro produced is reported at the line that uses the macro (column 0), because that is the line you can waive or change. The native engine adds a note that names the macro and points at the place in its body the finding is about:
+A finding in code that a macro produced is reported at the line that uses the macro (column 0), because that is the line you can waive or change, with a note naming the macro and pointing at the place in its body the finding is about:
 
 ```
 tb/env.sv:10:0: [ERROR] SV-COR-008 (SelfComparison): Self-comparison detected: ...
     note: tb/defs.svh:4:11: in the expansion of macro 'SET_ALL'
 ```
 
-The note is in the console, JSON (`related`), SARIF (`relatedLocations`) and the editor. Findings on a macro's arguments are code you wrote at the call and have no note. The C++ engine reports the same line without the note.
+The note is in the console, JSON (`related`), SARIF (`relatedLocations`) and the editor. Findings on a macro's arguments are code you wrote at the call and have no note.
 
 ### Exit status
-Both engines (the Slang-backed `svlang-lint` and the native `dv-lint`) exit with:
+`svlang lint` exits with:
 
 | Status | Meaning |
 |---|---|
 | 0 | No ERROR finding. |
 | 1 | At least one ERROR finding, compiler errors (`SV-CMP-001`) included; also `--strict-new-files` when a new file has findings. |
-| 2 | The run could not start: an unknown option, a source, file list (nested ones too), library file or `-y` directory that is missing or cannot be read (a directory or device given as a source included), or a configuration that fails to load. A missing `-I` / `+incdir+` directory is not an error. Simulator options (`+acc`, `-l run.log`) are ignored by `dv-lint`; `svlang-lint` takes them with `--override filelist-dialect` or a `--compat-profile`, and stops with status 2 otherwise. |
+| 2 | The run could not start: an unknown option, a source, file list (nested ones too), library file or `-y` directory that is missing or cannot be read (a directory or device given as a source included), or a configuration that fails to load. A missing `-I` / `+incdir+` directory is not an error. Unknown simulator options (`+acc`, `-l run.log`) are ignored. |
 | 4 | `--strict-waivers` found unused, expired or stale waivers. |
 
 A file that reads but does not parse is a finding (status 1), not status 2.
 
 ### Performance & Threading
-Rules run on a single-pass, parallel engine: most rules hand their visitors to one
-shared walk per shard, which routes each syntax/AST node only to the rules that
-handle it, and shards run on a worker pool alongside the remaining standalone rules.
-Findings are printed in file/line order and are identical for any thread count.
+Rules run in parallel across all available cores by default (override with `SVLANG_JOBS=N`).
+Findings are printed in deterministic file/line order and are identical for any thread count.
 ```bash
-# Use 8 worker threads (default: all cores)
-./build/svlang-lint tb/top.sv -j 8
+# Limit worker threads
+SVLANG_JOBS=4 svlang lint tb/top.sv
 
-# Show where time goes (elaboration, walk shards, slowest standalone rules)
-./build/svlang-lint tb/top.sv --profile-rules
-
-# Reference mode: one walk per rule, sequential (for debugging rule behavior)
-./build/svlang-lint tb/top.sv --engine isolated
+# Show timing breakdown
+svlang lint tb/top.sv --time
 ```
-On the 86k-line Accellera `uvm-core` library, a full all-rules run takes about
-0.5 s on 4 cores (previously about 2.9 s on the same machine).
 
 Results are cached in `.svlang_lint_cache/` and reused when the tool version, the rule set and its options, waivers, defines, include directories, and each file's includes and imported packages are unchanged. Whole-program rules (duplication, package layering, TLM and register wiring) are reused only when every input is unchanged. The cache is on by default; a corrupt or mismatched entry is ignored and the run is done from scratch. See [result_cache.md](result_cache.md).
 
 ```bash
-./build/svlang-lint tb/top.sv                 # writes or reuses .svlang_lint_cache/
-./build/svlang-lint tb/top.sv --no-cache      # always analyze
-./build/svlang-lint tb/top.sv --clear-cache   # delete the cache, then run
-./build/svlang-lint tb/top.sv --cache-dir /tmp/svlang-lint-cache
+svlang lint tb/top.sv                 # writes or reuses .svlang_lint_cache/
+svlang lint tb/top.sv --no-cache      # always analyze
+svlang lint tb/top.sv --clear-cache   # delete the cache, then run
+svlang lint tb/top.sv --cache-dir /tmp/svlang-lint-cache
 ```
 
 ### Automated Fix-It Rewrites
 Each fix is `safe`, `unsafe`, or `display-only`. `--fix` writes only safe fixes (end labels, whitespace, rewrites that keep the same simulation behaviour). `casex` to `casez`, `==` to `===`, scheduling changes, and edits that touch factory names, `config_db`, objections, or phase order are unsafe: they are reported, and applied only with `--unsafe-fixes`. A display-only fix (for example a suggested `at_least` value) is shown in JSON, SARIF, HTML, and the editor, and is never written automatically. Unsafe fixes that were left alone are counted: `N fixes applied, M unsafe fixes skipped (use --unsafe-fixes)`. Style fixes (safe unless noted): end labels (SV-STY-005/006/104), trailing whitespace and tabs (SV-STY-015/101/102), a space between a control keyword and `(` (SV-STY-012), one statement per line at the same indent (SV-STY-011), the `;` after a `` `uvm_* `` macro call (SV-STY-002), the width of an unsized based literal such as `'hFF` to `32'hFF` (SV-STY-010; not for `x`/`z` digits or plain decimals, whose signedness would change), and an `` `ifndef `` include guard around a header (SV-STY-013, unsafe: a header meant to be included twice stops working). Naming rules have no fix, since a rename must update every use across files. UVM fixes (all unsafe): a missing `` `uvm_object_utils `` / `` `uvm_component_utils `` is added after the class header (UVM-FAC-003, not for parameterized classes), a missing `super.<phase>(phase)` becomes the phase's first statement after its declarations (UVM-PHS-001), and a `$display("fmt", ...)` statement becomes `` `uvm_info(get_type_name(), $sformatf("fmt", ...), UVM_LOW) `` (UVM-LOG-002, instance methods only).
 ```bash
-./build/svlang-lint tb/legacy_code.sv --fix-dry-run   # print the diff, change nothing
-./build/svlang-lint tb/legacy_code.sv --fix           # rewrite safe fixes
-./build/svlang-lint tb/legacy_code.sv --fix --unsafe-fixes   # also apply behaviour-changing fixes
-./build/svlang-lint tb/legacy_code.sv --fix --fix-rule SV-COR-009,SV-STY-005   # only these rules' fixes
+svlang lint tb/legacy_code.sv --fix-dry-run   # print the diff, change nothing
+svlang lint tb/legacy_code.sv --fix           # rewrite safe fixes
+svlang lint tb/legacy_code.sv --fix --unsafe-fixes   # also apply behaviour-changing fixes
+svlang lint tb/legacy_code.sv --fix --fix-rule SV-COR-009,SV-STY-005   # only these rules' fixes
 ```
-Fixes land in the file that holds the code, including included `.svh` files. Waived and baselined findings are not fixed. A file edited after it was read is skipped, and a file with compile errors is never rewritten. Fixes inside macro expansions are left alone, and a fix whose replacement would drop a macro call the code wrote (for example `` d[1+`MSB:7] `` rewritten from the expansion) becomes display-only. One `--fix` run repeats passes until nothing changes: overlapping fixes and findings that a fix uncovers are handled in the next pass, and the final report shows what is left in the fixed code. It stops after 10 passes, or as soon as fixes start undoing each other, with a warning. `cpp/tests/test_fix_invariants.py` checks on every rule test file, and on mutated copies, that `--fix` never crashes or hangs, adds no compile errors, keeps every macro call, and settles in one run. Each file is written to a temporary copy and renamed into place. In the editor a safe fix is the preferred quick fix; unsafe and display-only fixes are offered as ordinary code actions.
+Fixes land in the file that holds the code, including included `.svh` files. Waived and baselined findings are not fixed. A file edited after it was read is skipped, and a file with compile errors is never rewritten. Fixes inside macro expansions are left alone, and a fix whose replacement would drop a macro call the code wrote (for example `` d[1+`MSB:7] `` rewritten from the expansion) becomes display-only. One `--fix` run repeats passes until nothing changes: overlapping fixes and findings that a fix uncovers are handled in the next pass, and the final report shows what is left in the fixed code. It stops after 10 passes, or as soon as fixes start undoing each other, with a warning. `tests/test_fix_invariants.py` checks on every rule test file, and on mutated copies, that `--fix` never crashes or hangs, adds no compile errors, keeps every macro call, and settles in one run. Each file is written to a temporary copy and renamed into place. In the editor a safe fix is the preferred quick fix; unsafe and display-only fixes are offered as ordinary code actions.
 
 ### Reporting (SARIF, JSON & HTML)
 ```bash
 # Machine-readable findings for scripts and CI ('-' writes to stdout)
-./build/svlang-lint tb/*.sv --json results.json
+svlang lint tb/*.sv --json results.json
 
 # Generate SARIF 2.1.0 for CI/CD code scanning
-./build/svlang-lint tb/*.sv --sarif results.sarif
+svlang lint tb/*.sv --sarif results.sarif
 
 # Generate interactive HTML dashboard
-./build/svlang-lint tb/*.sv --html report.html
+svlang lint tb/*.sv --html report.html
 ```
 
 ### Comparing and merging reports
@@ -228,13 +214,13 @@ python3 -m svlang_lint.report trend w1.json w2.json w3.json -o trend.html   # bu
 Run them from `python/`, or `pip install ./python` and use `svlang-lint-report`. JSON findings also name their rule's `category`.
 
 ### Custom Python Rules Plugin SDK
-Verification teams can author custom corporate or project verification checks in pure Python without recompiling C++:
+Verification teams can author custom corporate or project verification checks in pure Python without recompiling Rust:
 ```bash
 # Execute custom Python rules from a file or directory
-./build/svlang-lint tb/*.sv --python-rules python/examples/custom_naming_rules.py
+svlang lint tb/*.sv --python-rules python/examples/custom_naming_rules.py
 
 # Python rule violations seamlessly participate in SARIF, HTML, and baselines
-./build/svlang-lint tb/*.sv --python-rules my_rules/ --sarif results.sarif
+svlang lint tb/*.sv --python-rules my_rules/ --sarif results.sarif
 ```
 See [Python Rule SDK Documentation](python_rule_sdk.md) for full API reference, context query helpers, and tutorials.
 
@@ -254,8 +240,8 @@ in. Use a `.json` path for the same data in machine-readable form.
 ### Language Server Protocol (LSP) & IDE Integration
 Run svlang-lint as an in-editor daemon for live linting and code browsing in VS Code, Cursor or any LSP client:
 ```bash
-# The language server, over stdin/stdout (svlang-lint --lsp starts the same one)
-dv-lsp
+# The language server, over stdin/stdout (`svlang lint --lsp` starts the same one)
+svlang lsp
 ```
 One server gives lint diagnostics and quick fixes (a rule's fix, or a waiver
 comment on the line above), outline, go to definition, references, hover and
@@ -302,9 +288,9 @@ steps:
   hooks: [{ id: svlang-lint }, { id: svlang-lint-full }]
 ```
 
-**Release builds.** Tagged releases attach `svlang-lint-<platform>.tar.gz` (Linux x64/arm64 on glibc 2.28 or later, macOS arm64/x64, Windows x64) with the native `svlang-lint`, `dv-lsp`, `dv-build`, `dv-map`, `dv-filelist` and the Python SDK; unpack and put `bin/` on `PATH`. `tools/release/package.sh` and `smoke.sh` build and check the same archive locally.
+**Release builds.** Tagged releases attach `svlang-<platform>.tar.gz` (Linux x64/arm64 on glibc 2.28 or later, macOS arm64/x64, Windows x64) with the unified `svlang` binary (`check`, `lint`, `lsp`, `filelist`, `map`, `hier`, `netlist`, `btor2`, `aiger`, `yosys`) and the Python SDK; unpack and put `bin/` on `PATH`. `tools/release/package.sh` and `smoke.sh` build and check the same archive locally.
 
-**VS Code / Open VSX.** Tagged releases build a self-contained `svlang-<target>.vsix` (`svlang.svlang`) for all 5 platforms (`linux-x64`, `linux-arm64`, `darwin-arm64`, `darwin-x64`, `win32-x64`) with `dv-lsp` bundled inside, attach them to the GitHub release, and publish to Open VSX and VS Code Marketplace; see [editors/vscode](../../editors/vscode/README.md).
+**VS Code / Open VSX.** Tagged releases build a self-contained `svlang-<target>.vsix` (`svlang.svlang`) for all 5 platforms (`linux-x64`, `linux-arm64`, `darwin-arm64`, `darwin-x64`, `win32-x64`) with `svlang` bundled inside, attach them to the GitHub release, and publish to Open VSX and VS Code Marketplace; see [editors/vscode](../../editors/vscode/README.md).
 
 ## Project Configuration
 
@@ -346,11 +332,11 @@ Establish a zero-new-defects baseline without fixing thousands of pre-existing l
 
 ```bash
 # 1. Snapshot all current legacy violations into baseline JSON
-./build/svlang-lint tb/*.sv --update-baseline .svlang-lint/baseline.json
+svlang lint tb/*.sv --update-baseline .svlang-lint/baseline.json
 
 # 2. Enforce zero regressions on new PRs (only new violations fail CI)
 # Note: .svlang-lint/baseline.json is auto-discovered if present!
-./build/svlang-lint tb/*.sv
+svlang lint tb/*.sv
 ```
 
 Baseline entries are matched by a fingerprint of the rule, the file's path relative to the
@@ -389,7 +375,7 @@ Document approved exceptions in `.svlang-lint/waivers.json` (auto-discovered) or
 ```
 Run with waivers automatically discovered:
 ```bash
-./build/svlang-lint tb/*.sv
+svlang lint tb/*.sv
 ```
 (Or pass `--waivers path/to/waivers.json` explicitly).
 
@@ -402,7 +388,7 @@ Warnings on edited lines of a file that already existed stay warnings and do not
 the run. In a pull request job:
 
 ```bash
-./build/svlang-lint --changed-since origin/main --strict-new-files
+svlang lint --changed-since origin/main --strict-new-files
 ```
 
 ### Keeping suppressions honest
@@ -417,7 +403,7 @@ turns those warnings on, prints the same hygiene report, and exits with status 4
 unused, expired or stale entry remains:
 
 ```bash
-./build/svlang-lint --strict-waivers   # in CI, after the normal lint step
+svlang lint --strict-waivers   # in CI, after the normal lint step
 ```
 
 ---
@@ -427,44 +413,34 @@ unused, expired or stale entry remains:
 
 `tools/quality/precision.py` lints a fixed corpus (`tools/quality/precision_corpus.json`, uvm-core by default) with every rule and records findings per rule per kLOC. Given the previous result it flags rules whose count jumped (+50% and at least +5), dropped to zero, or that are new and report 2 or more per kLOC. The nightly `Precision` workflow runs it and shows the table in the job summary.
 
-New rules can declare `getMaturity()` as `RuleMaturity::Experimental`: they stay off unless `--experimental` or `--rule` names them (and in the editor), are marked in the catalog and in `--explain`, and are listed separately in the precision summary until they are promoted.
+New rules can set `experimental: true` in their registration metadata: they stay off unless `--experimental` or `--rule` names them, are marked in the catalog and in `--explain`, and are listed separately in the precision summary until they are promoted.
 
 ## Regression & Unit Testsuite
 
-svlang-lint features a modular unit test suite with 648 test cases covering 324 rules:
-
 ```bash
-# Run entire testsuite via Python runner (~2.8 seconds)
-python3 cpp/tests/regression.py
+# Run all Rust unit, rule, and CLI integration tests
+cargo test
 
-# Run only UVM methodology tests (~0.5 seconds)
-python3 cpp/tests/regression.py --category uvm
+# Run the paired per-rule test suite (testdata/rules/)
+cargo test -p svlang-lint -- rules
 
-# Run single-rule test (~7 ms)
-python3 cpp/tests/regression.py --rule UVM-CFG-002
-
-# Check the parallel engine gives identical findings to the reference engine
-python3 cpp/tests/engine_equivalence.py
-
-# Git-history rules (SV-EVO-001/002) against throwaway repositories
-python3 cpp/tests/test_history.py
-
-# Run via CTest
-ctest --test-dir build --output-on-failure
+# Run end-to-end Python CLI and --fix invariant suites
+python3 tests/test_fix_invariants.py
+python3 tests/test_history.py
+python3 tests/test_catalog.py
+python3 tests/test_guidelines.py
 ```
 
 ---
 
 ## Contributing & Adding New Rules
 
-Every rule in svlang-lint inherits from `svlang_lint::rules::Rule`:
-1. Create `cpp/src/rules/<category>/YourRule.cpp`.
-2. Implement either `slang::ast::ASTVisitor` (typed AST) or `slang::syntax::SyntaxVisitor` (CST/tokens).
-3. Register the rule factory in `cpp/src/rules/BuiltinRules.cpp`.
-4. Add unit tests in `testdata/rules/<category>/<RULE_ID>/bad.sv` and `good.sv`.
-5. Run `python3 cpp/tests/regression.py --rule <RULE_ID>` to verify.
+1. Create `crates/svlang-lint/src/rules/<category>/<rule_name>.rs` implementing a `Check::Model`, `Check::Syntax`, or `Check::Mixed` rule.
+2. Register the rule with its metadata in `crates/svlang-lint/src/rules/<category>/mod.rs`.
+3. Add paired test cases in `testdata/rules/<category>/<RULE_ID>/{bad.sv, good.sv, expect.json}`.
+4. Regenerate docs with `python3 tools/codegen/gen_rule_docs.py` and verify with `cargo test` and `./tools/gates/rust_gate.sh`.
 
-See [CONTRIBUTING.md](../../CONTRIBUTING.md) for full development guidelines, memory-bounded compilation instructions, and pull request conventions.
+See [CONTRIBUTING.md](../../CONTRIBUTING.md) for full development guidelines and pull request conventions.
 
 ---
 

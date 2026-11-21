@@ -1,45 +1,39 @@
 # `svlang` command line
 
-The [svlang](https://crates.io/crates/svlang) SystemVerilog front end as a
-command: check a design, look at what the compiler sees, and write the design
-out for formal tools. One self-contained binary, no C++ and no other crates.
+The unified [svlang](https://crates.io/crates/svlang) SystemVerilog (IEEE 1800-2023)
+and UVM command line: compile and elaborate, lint and auto-fix, serve LSP to
+editors, normalize simulator filelists, map UVM testbenches, and lower RTL + SVA
+to netlist / Btor2 / AIGER / Yosys JSON. One self-contained pure-Rust binary.
 
 ```sh
 cargo install svlang-cli        # installs the `svlang` binary
 ```
 
 ```sh
-svlang check   -f sim/top.f -top top           # errors and warnings; exit 1 on errors
-svlang check   --json rtl/*.sv                 # the same as a JSON array, for CI and editors
-svlang preprocess rtl/top.sv +define+SYNTH    # the source after macros, includes and `ifdef
-svlang hier    -f sim/top.f -top top -G W=16   # elaborated instances and parameter values
-svlang cst     rtl/fifo.sv                     # the lossless syntax tree
-svlang netlist -f sim/top.f -top top           # the word-level RTL netlist
-svlang btor2   -f sim/top.f -top top -o top.btor2
-svlang aiger   -f sim/top.f -top top --blast-memories 1024 -o top.aig
-svlang yosys   -f sim/top.f -top top --blast-memories 1024 -o top.json   # yosys: read_json
+svlang check    -f sim/top.f -top top              # compiler errors and warnings; exit 1 on errors
+svlang check    --json rtl/*.sv                    # diagnostics as JSON for CI and editors
+svlang lint     -f sim/top.f --preset formal-ready # static SV/UVM/FPV lint (+ --fix, --sarif, --html)
+svlang lsp                                         # Language Server Protocol (LSP) over stdio
+svlang filelist -f sim/top.f --args                # validate and normalize VCS/Xcelium filelists
+svlang map      -f sim/tb.f --json                 # UVM testbench component hierarchy
+svlang preprocess rtl/top.sv +define+SYNTH         # preprocessed source
+svlang hier     -f sim/top.f -top top -G W=16      # elaborated instances and parameter values
+svlang cst      rtl/fifo.sv                        # lossless concrete syntax tree
+svlang netlist  -f sim/top.f -top top              # word-level RTL netlist
+svlang btor2    -f sim/top.f -top top -o top.btor2
+svlang aiger    -f sim/top.f -top top --blast-memories 1024 -o top.aig
+svlang yosys    -f sim/top.f -top top --blast-memories 1024 -o top.json
 ```
 
 The compile arguments are the ones a simulator takes: source files, `-f` and
 `-F` file lists, `+incdir+DIR`, `+define+NAME=VALUE`, `-y`/`-v` libraries,
-`-top MODULE`, `-G NAME=VALUE` and `--single-unit`.
+`-top MODULE`, `-G NAME=VALUE`, `--single-unit`, and `--separate-units`.
 
-`btor2` and `aiger` write the model that
-[`sv-btor2`](https://crates.io/crates/sv-btor2) and
-[`sv-aiger`](https://crates.io/crates/sv-aiger) describe, ready for a model
-checker (`ric3 check top.btor2 ic3`). `--cut PATH`, `--black-box MODULE` and
-`--black-box-instance PATH` free a signal or leave a module out, and
-`--blast-memories N` expands memories into registers.
+If invoked via a symlink named `svlang-lint`, `svlang` automatically dispatches
+to `svlang lint`.
 
-`--properties` compiles the design's concurrent properties
-(`assert property`, `assume property`, `cover property`) over bounded
-sequences into checks, so they are written too; `--skip-cycles N` leaves out
-attempts that start in the first N clock ticks, and `--covers` writes covers
-as reachable bad states. Properties that are not compiled are listed as
-notes.
-
-`svlang help` lists every option. Exit status: 0 success, 1 the design has
-errors or cannot be written in the requested form, 2 bad usage.
+`svlang help` (and `svlang <command> --help`) lists every option. Exit status:
+0 success, 1 errors or lint findings, 2 bad usage.
 
 ## License
 

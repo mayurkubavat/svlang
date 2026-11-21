@@ -33,7 +33,8 @@ def check(cond, msg):
 
 def lint(binary, cwd, rules, source, *extra):
     out = Path(cwd) / "report.json"
-    res = subprocess.run([binary, "--python-rules", str(rules), "--json", str(out), "-I", str(COMMON),
+    cmd = [binary, "lint"] if Path(binary).stem == "svlang" else [binary]
+    res = subprocess.run([*cmd, "--python-rules", str(rules), "--json", str(out), "-I", str(COMMON),
                           *extra, str(source)], cwd=cwd, capture_output=True, text=True)
     return json.loads(out.read_text())["violations"], res.stderr
 

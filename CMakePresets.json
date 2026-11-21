@@ -7,53 +7,21 @@
   },
   "configurePresets": [
     {
-      "name": "reference",
-      "displayName": "Reference engine: svlang-lint on Slang (Release, Ninja)",
-      "description": "The C++/Slang engine (build/svlang-lint) and the oracles the parity gates compare the native Rust tools against; the tools themselves build with cargo",
+      "name": "oracles",
+      "displayName": "Slang compiler differential oracles (Release, Ninja)",
+      "description": "Optional dev-only Slang dumpers in tools/oracles/ for differential compiler gates (tools/gates/). Not required to build or run svlang.",
       "generator": "Ninja",
       "binaryDir": "${sourceDir}/build",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
       }
-    },
-    {
-      "name": "fast-dev",
-      "displayName": "Fast Dev (Unity Build + Ninja)",
-      "description": "Fast development configuration with Unity Build and Ninja",
-      "generator": "Ninja",
-      "binaryDir": "${sourceDir}/build-dev",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
-        "SVLANG_LINT_ENABLE_UNITY_BUILD": "ON",
-        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
-      }
-    },
-    {
-      "name": "model",
-      "displayName": "Release + shared model library (Rust/Python)",
-      "description": "Builds libsvlang_lint_model.so with its C ABI for crates/ (Rust) and other tools; position independent, no mimalloc",
-      "generator": "Ninja",
-      "binaryDir": "${sourceDir}/build-model",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Release",
-        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
-        "SVLANG_LINT_BUILD_MODEL_LIB": "ON"
-      }
     }
   ],
   "buildPresets": [
     {
-      "name": "reference",
-      "configurePreset": "reference"
-    },
-    {
-      "name": "fast-dev",
-      "configurePreset": "fast-dev"
-    },
-    {
-      "name": "model",
-      "configurePreset": "model"
+      "name": "oracles",
+      "configurePreset": "oracles"
     }
   ]
 }

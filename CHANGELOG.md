@@ -1,7 +1,39 @@
 # Changelog
 
 What changed in each release of the svlang crates (`svlang`, `sv-*`,
-`svlang-cli`) and of `pysvlang`. They share one version number.
+`svlang-model`, `svlang-lint`, `svlang-lsp`, `svlang-cli`), `pysvlang`, and the
+`svlang.svlang` VS Code / Open VSX extension. They share one version number.
+
+## 0.3.0 (2026-11-20)
+
+### Unified `svlang` CLI & `svlang-*` Crate Family
+
+- **Single unified `svlang` binary (`svlang-cli`)**: consolidated all native
+  tools (`svlang`, `svlang-lint` / `dv-lint`, `dv-lsp`, `dv-build`,
+  `dv-filelist`, `dv-map`) into one zero-async-bloat pure-Rust binary:
+  - `svlang check` (with oracle/gate inspection flags replacing `dv-build`)
+  - `svlang lint` (static SV/UVM/FPV linter & `--fix`, plus `argv[0]`
+    auto-dispatch when symlinked as `svlang-lint`)
+  - `svlang lsp` (in-process Language Server Protocol server replacing `dv-lsp`)
+  - `svlang filelist` (VCS/Xcelium filelist doctor & normalizer replacing `dv-filelist`)
+  - `svlang map` (UVM testbench component hierarchy replacing `dv-map`)
+  - plus `preprocess`, `hier`, `cst`, `netlist`, `btor2`, `aiger`, `yosys`, `stages`
+- **Retired `dv-*` crate names & made all 14 pure-Rust crates publishable**:
+  renamed `dv-model` -> **`svlang-model`**, `dv-lint` -> **`svlang-lint`**,
+  `dv-lsp` -> **`svlang-lsp`**, removed `dv-build`/`dv-filelist`/`dv-map`,
+  inverted the internal `sv-slang` oracle dependency so zero publishable crates
+  reference unpublished C++ bindings, and embedded `crates/svlang-lint/data/`
+  directly inside `svlang-lint`.
+- **Deliverables**: release archives ship as `svlang-<target>.tar.gz` (one
+  `bin/svlang[.exe]` binary + Python SDK); VS Code / Open VSX `svlang.svlang`
+  `0.3.0` `.vsix` packages bundle `svlang[.exe]` and launch `svlang lsp` with
+  automatic backwards-compatibility for existing `"dv-lsp"` user settings.
+- **Retired legacy C++20 linter (`cpp/` + `crates/sv-slang/`)**: deleted the
+  51k-LOC C++ linter engine, C ABI FFI bridge, and C++ CI/release jobs;
+  migrated end-to-end Python suites (`tests/test_*.py`) and nightly precision
+  monitoring directly onto Rust `svlang lint`. Retained only the tiny (~880 LOC)
+  opt-in Slang compiler differential dumpers (`tools/oracles/`, `cmake --preset oracles`)
+  for IEEE 1800 conformance gates.
 
 ## 0.2.0 (2026-11-19)
 

@@ -264,9 +264,9 @@ class ProjectConfig:
                    the preset.
     waivers        List of Waiver objects or Waiver subclasses.
     style, naming  Optional dicts with the same keys as the JSON config.
-    compat         Opt-in slang overlay (docs/reference/compat.md), e.g.
-                   {"profile": "questa", "overrides": ["-auto-uvm"],
-                    "uvm_home": "$UVM_HOME"}.
+    compat         Legacy compatibility dictionary accepted for backwards
+                   compatibility with older configs (ignored by the native
+                   Rust engine).
 
     Rule settings are RuleConfig subclasses defined in (or assigned to) the
     class body. Subclasses inherit them and may replace one by defining a

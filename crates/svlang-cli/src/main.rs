@@ -9,6 +9,10 @@
 //! Exit status: 0 success, 1 the design has errors or cannot be written in the
 //! requested form, 2 bad usage or unreadable input.
 
+mod check;
+mod filelist;
+mod map;
+
 use std::fmt::Write as _;
 use std::io::Write as _;
 use std::process::ExitCode;
@@ -17,12 +21,16 @@ use svlang::netlist::{PropertyOptions, PropertyOutcome, ValueKind};
 use svlang::{Compilation, Diagnostic, DiagnosticStage, Driver, LowerConfig, LowerOutcome, Netlist, Severity};
 
 const USAGE: &str = "\
-svlang: a SystemVerilog (IEEE 1800-2023) front end
+svlang: SystemVerilog (IEEE 1800-2023) compiler, linter, and language server
 
 usage: svlang <command> [options] <compile arguments>
 
 commands:
-  check      report every error and warning; exit 1 when there are errors
+  check      report every compiler error and warning; exit 1 when there are errors
+  lint       static analysis and auto-fix for SystemVerilog, UVM, and formal readiness
+  lsp        run the Language Server Protocol (LSP) server over stdio
+  filelist   validate and normalize VCS/Xcelium -f/-F file lists
+  map        print a UVM testbench component tree as text or JSON
   preprocess print the source after macro expansion, includes and conditionals
   hier       print the elaborated instance hierarchy and parameter values
   cst        print the syntax tree of every source file
@@ -61,6 +69,7 @@ options:
   --black-box MODULE      netlist, btor2, aiger, yosys: do not lower MODULE (repeatable)
   --black-box-instance PATH   the same for one instance (repeatable)
 
+Run 'svlang <command> --help' for command-specific options (lint, lsp, filelist, map).
 exit status: 0 success, 1 errors in the design, 2 bad usage
 ";
 
@@ -115,7 +124,7 @@ fn parse(args: &[String]) -> Result<Opts, Usage> {
                 let v = value(a, &mut it)?;
                 o.skip_cycles = v.parse().map_err(|_| Usage(format!("--skip-cycles needs a number, not '{v}'")))?;
             }
-            "--four-state" => o.lower.allow_four_state_ops = true,
+            "--four-state" | "--allow-four-state-ops" => o.lower.allow_four_state_ops = true,
             "--skip-initial-checks" => o.lower.skip_initial_checks = true,
             "--isunknown-is-false" => o.lower.isunknown_is_false = true,
             "-o" | "--output" => o.output = Some(value(a, &mut it)?),
@@ -515,9 +524,24 @@ fn run(command: &str, o: &Opts) -> Result<ExitCode, Usage> {
     }
 }
 
+fn serve_lsp_inproc() -> ! {
+    std::process::exit(svlang_lsp::run(&[]));
+}
+
+fn invoked_as_lint() -> bool {
+    std::env::args()
+        .next()
+        .and_then(|a| std::path::Path::new(&a).file_stem().map(|s| s.to_string_lossy().into_owned()))
+        .is_some_and(|stem| stem == "svlang-lint")
+}
+
 fn main() -> ExitCode {
     svlang::source::exit_on_closed_pipe();
     let args: Vec<String> = std::env::args().skip(1).collect();
+    if invoked_as_lint() {
+        svlang_lint::app::run_with(&args, Some(serve_lsp_inproc));
+        return ExitCode::SUCCESS;
+    }
     let Some(command) = args.first() else {
         eprint!("{USAGE}");
         return ExitCode::from(2);
@@ -530,6 +554,22 @@ fn main() -> ExitCode {
         "version" | "--version" | "-V" => {
             println!("svlang {}", env!("CARGO_PKG_VERSION"));
             return ExitCode::SUCCESS;
+        }
+        "lint" => {
+            svlang_lint::app::run_with(&args[1..], Some(serve_lsp_inproc));
+            return ExitCode::SUCCESS;
+        }
+        "lsp" => {
+            return ExitCode::from(svlang_lsp::run(&args[1..]) as u8);
+        }
+        "filelist" => {
+            return filelist::run(&args[1..]);
+        }
+        "map" => {
+            return map::run(&args[1..]);
+        }
+        "check" if check::is_oracle_mode(&args[1..]) => {
+            return check::run_oracle(&args[1..]);
         }
         _ => {}
     }

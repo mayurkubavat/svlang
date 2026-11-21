@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Semantic-check gate for the native builder (dv-build) on Slang's own unit tests.
+"""Semantic-check gate for the native compiler (`svlang check`) on Slang's own unit tests.
 
 Each TEST_CASE in Slang's tests/unittests/ast/*.cpp that compiles one
 source text is a small design with a known verdict. The text is run
-through dv-build and through svlang-lint (Slang); per test file it reports
+through `svlang check` and through svlang-lint (Slang); per test file it reports
 how many both accept, both reject, only Slang rejects (a native gap) and
-only dv-build rejects (a native false error). Cases that set compilation
+only `svlang check` rejects (a native false error). Cases that set compilation
 options or use several trees are skipped.
 
     tools/gates/slang_unit_gate.py [--list=gap|false|hang] [Assertion Cover ...]
@@ -26,8 +26,8 @@ def _default_bin(env_key, candidates):
     return os.path.join(REPO, *candidates[0])
 
 
-SVLANG_LINT = _default_bin('SVLANG_LINT', [('build', 'svlang-lint'), ('build-model', 'svlang-lint')])
-DVBUILD = _default_bin('DV_BUILD', [('target', 'release', 'dv-build'), ('target', 'debug', 'dv-build')])
+SLANG_CHECK = _default_bin('SLANG_COMPILE_CHECK', [('build', 'svlang_compile_check')])
+SVLANG = _default_bin('SVLANG', [('target', 'release', 'svlang'), ('target', 'debug', 'svlang')])
 
 
 def _default_tests():
@@ -126,19 +126,11 @@ def verdicts(texts, is_2023):
             open(f, 'w').write(text)
             files.append(f)
         nat_flags = ['--separate-units'] if len(files) > 1 else []
-        nat_rc = run_bounded([DVBUILD, '--quiet', *nat_flags, *files], timeout=20)
+        nat_rc = run_bounded([SVLANG, 'check', '--quiet', *nat_flags, *files], timeout=20)
         nat = nat_rc if isinstance(nat_rc, str) else (nat_rc != 0)
-        out = os.path.join(tmp, 'r.json')
         sl_flags = ['--std', '1800-2023'] if is_2023 else []
-        # Only compiler diagnostics are checked here: skip all lint rules and CrashGuard forking.
-        run_bounded(
-            [SVLANG_LINT, '--no-config', '--no-cache', '--rule', 'SV-CMP-001', '--override', '-crash-guard', *sl_flags, '--json', out, *files],
-            timeout=20,
-        )
-        try:
-            sl = json.load(open(out)).get('compileErrors', 0) > 0
-        except (OSError, ValueError):
-            sl = True
+        sl_rc = run_bounded([SLANG_CHECK, *sl_flags, *files], timeout=20)
+        sl = True if isinstance(sl_rc, str) else (sl_rc != 0)
         return nat, sl
 
 

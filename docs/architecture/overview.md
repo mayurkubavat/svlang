@@ -1,88 +1,43 @@
 # Architecture overview
 
-svlang-lint has two engines, one rule set and one test suite. This page is the
-map of how they fit together; [rust.md](rust.md) goes deeper into the Rust
-workspace.
+`svlang` is a 100% pure-Rust IEEE 1800-2023 SystemVerilog & UVM compiler,
+static linter (`svlang lint`), language server (`svlang lsp`), and RTL/formal
+lowering toolchain in one binary (`crates/`). [rust.md](rust.md) goes deeper
+into the Rust workspace.
 
-## The two engines
+## Architecture
 
 ```
-                    testdata/rules/<area>/<ID>/{bad,good}.sv   data/uvm-api/*.json
-                                 │   (shared fixtures)              │ (shared packs)
-              ┌──────────────────┴───────────────────┐              │
-              ▼                                      ▼              │
-  cpp/  svlang-lint (C++20)                 crates/  dv-lint (Rust) ◄──┤
-        Slang front end                          native front end   │
-        rules in cpp/src/rules/                  sv-source → sv-lexer → sv-preprocessor
-        reporting, fixes, LSP,                   → sv-syntax → sv-semantic
-        baselines, waivers, Python rules         rules in crates/dv-lint
-              │                                      ▲
-              │ libsvlang_lint_model (C ABI)            │ --slang: Slang as the reference
-              └──► crates/sv-slang → crates/dv-model ┘
-                   python/svlang_lint/model.py (same ABI)
+  sv-source -> sv-lexer -> sv-preprocessor -> sv-syntax -> sv-semantic -> sv-netlist
+                                                               |               |
+                                                               |               +-> sv-btor2 / sv-aiger / sv-yosys
+                                                               v
+                                                            svlang  (Rust SDK + pysvlang + svlang-wasm)
+                                                               |
+                                                               v
+                                                         svlang-model -> svlang-lint -> svlang-lsp -> svlang-cli (`svlang`)
 ```
 
-- **svlang-lint** (`cpp/`) is the Slang-based CLI. It owns reporting (text, JSON,
-  SARIF, HTML), fixes, baselines, waivers, project config and the Python rule
-  SDK. Its own `--lsp` server remains for linting an editor with Slang.
-- **dv-lint** (`crates/dv-lint`) runs every svlang-lint rule on the native Rust
-  front end, in parallel. Built with the `slang` Cargo feature (off by
-  default), `--slang` builds the design through Slang instead, so the two
-  front ends can be compared.
-- **libsvlang_lint_model** (built by the `model` CMake preset) puts Slang's view
-  of a design behind a C ABI. `sv-slang` binds it, `dv-model` wraps it in safe
-  Rust, and `python/svlang_lint/model.py` reads the same ABI from Python.
-- The other Rust tools: `dv-lsp` (the editor's language server: lint
-  diagnostics and quick fixes from dv-lint, code browsing and completion), `dv-build` (the native builder: parses, elaborates and reports errors as a
-  compiler would), `dv-map`
-  (the component tree of a UVM testbench) and `dv-filelist` (checks and
-  normalizes VCS/Xcelium file lists).
+- **`svlang`** (`crates/svlang-cli`) is the single unified binary:
+  `svlang check`, `svlang lint`, `svlang lsp`, `svlang filelist`, `svlang map`,
+  `svlang preprocess`, `svlang hier`, `svlang cst`, `svlang netlist`,
+  `svlang btor2`, `svlang aiger`, `svlang yosys`, and `svlang stages`.
+- **`python/svlang_lint/`** is the Python configuration and custom-rule SDK
+  (invoked by `svlang lint` for `.svlang-lint/config.py` and `--python-rules`).
+- **`tools/oracles/`** (~880 LOC of standalone C++ Slang dumpers) is an
+  optional dev-only differential compiler reference (`cmake --preset oracles`)
+  used by compiler conformance gates in `tools/gates/`. Nothing in CI,
+  releases, or `cargo build`/`cargo test` builds or requires C++.
 
-## What is shared
+## Verification & Gates
 
-| Folder | Read by | Purpose |
-|---|---|---|
-| `testdata/rules/` | ctest (`cpp/tests/regression.py`), `cargo test` (`dv-lint/tests/rules.rs`), the rule catalog, `--explain` | one `bad.sv` / `good.sv` pair per rule |
-| `testdata/common/` | both engines' tests | `uvm_mock.svh`, `test_fixtures.svh`, real-UVM shim |
-| `testdata/conformance/` | `cpp/tests/test_conformance.py`, `tools/quality/ast_coverage.py` | IEEE 1800 clause probes |
-| `testdata/map/`, `testdata/model/` | `dv-map`, the C ABI, Python and Rust model tests | small designs with known facts |
-| `data/uvm-api/` | CMake (embedded by `tools/codegen/embed_uvm_api_packs.py`) and `dv-lint` (`include_str!`) | UVM API per release |
-
-## How the engines are checked against each other
-
-- `tools/oracles/*.cpp` are small Slang programs that print what Slang sees
-  (preprocessor output, syntax outline, symbols, expression types). They are
-  built by the top-level CMakeLists.txt.
-- `tools/gates/` compare the Rust side with them: `pp_parity.py`,
-  `cst_parity.py`, `sym_gate.py`, `expr_gate.py`, `model_parity.py`,
-  `ieee_gate.py` (sv-tests), `slang_unit_gate.py`, `spec_gate.py`, and
-  `lint_parity.py` (dv-lint findings against svlang-lint's). `rust_gate.sh`
-  is the Rust format and Clippy gate (`cargo fmt --check`, `clippy -D
-  warnings`).
-- The real-code corpus (UVM releases, riscv-dv, ibex, core-v-verif, cva6,
-  common_cells) and its gate live outside git, under the ignored
-  `references/` folder.
-
-## Slang, the third-party front end
-
-Slang is fetched at a pinned commit and never edited in place:
-[third_party/slang/](../../third_party/slang/README.md) holds the pin, the
-(empty) patch folder and the update procedure. Workarounds for Slang live in
-our own code, in the overlay under `cpp/src/compat/`
-([compat.md](../reference/compat.md)).
-
-## Build trees
-
-| Command | Output |
-|---|---|
-| `cargo build --release` (repository root) | `target/release/svlang-lint` (the linter, also built as `dv-lint`), `dv-lsp`, `dv-build`, `dv-map`, `dv-filelist`: the tools |
-| `cargo build --profile dist` and `tools/release/package.sh` | `svlang-lint-<platform>.tar.gz`, what a release ships (stripped, no debug info, with the Python SDK) |
-| `cmake --preset reference && cmake --build build` | `build/svlang-lint` (the C++ reference engine on Slang) and the oracles, for the parity gates |
-| `cmake --preset model && cmake --build build-model` | the same plus `build-model/libsvlang_lint_model.so` (position independent, no mimalloc) |
-
-There is no default CMake preset: the tools build with cargo, and the Slang
-builds exist to check them.
-
-A plain `cargo build` needs neither CMake build. Only with
-`--features slang` (the parity gates) does the Rust build link the model
-library, from `build-model/` or wherever `SVLANG_LINT_BUILD_DIR` points.
+- `cargo test` runs unit, integration, and rule fixture suites (`testdata/rules/`).
+- `tests/test_*.py` and `python/tests/test_python_rules.py` run end-to-end CLI,
+  catalog, waiver, baseline, `--init`, `--map`, `--explain`, and `--fix`
+  mutation/idempotency invariant suites against `target/release/svlang`.
+- `tools/gates/rust_gate.sh` enforces guideline freshness, `cargo fmt --check`,
+  and `cargo clippy --all-targets -- -D warnings`.
+- `tools/gates/netlist_gate.py` checks RTL lowering determinism and fail-closed diagnostics.
+- Optional Slang differential gates (`pp_parity.py`, `cst_parity.py`,
+  `sym_gate.py`, `ieee_gate.py`, `slang_unit_gate.py`, `expr_gate.py`,
+  `spec_gate.py`, `regex_gate.py`) compare `svlang` against `tools/oracles/`.

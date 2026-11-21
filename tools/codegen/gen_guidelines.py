@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Generates crates/dv-lint/src/guidelines.rs from the methodology guide
+Generates crates/svlang-lint/src/guidelines.rs from the methodology guide
 (docs/methodology/MG-*.md): each guideline's chapter, level and statement,
 for `--explain`, `--list-guidelines` and the `reuse` and `guide` presets.
 Rerun this after the guide changes:
@@ -10,7 +10,7 @@ Rerun this after the guide changes:
 
 The rules themselves are not generated: each declares its category,
 severity, profiles, guidelines and description where it is registered
-(crates/dv-lint/src/rules/<category>/mod.rs), and the catalog is generated
+(crates/svlang-lint/src/rules/<category>/mod.rs), and the catalog is generated
 from them (tools/codegen/gen_rule_docs.py).
 """
 
@@ -22,7 +22,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
 GUIDE = REPO / "docs" / "methodology"
-OUT = REPO / "crates" / "dv-lint" / "src" / "guidelines.rs"
+OUT = REPO / "crates" / "svlang-lint" / "src" / "guidelines.rs"
 
 
 def guidelines():

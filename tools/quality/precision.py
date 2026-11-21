@@ -58,8 +58,12 @@ def count_kloc(folders):
     return lines / 1000.0
 
 
+def _cmd(binary):
+    return [binary, "lint"] if Path(binary).stem == "svlang" else [binary]
+
+
 def catalog(binary):
-    res = subprocess.run([binary, "--list-rules", "--json"], capture_output=True, text=True)
+    res = subprocess.run([*_cmd(binary), "--list-rules", "--json"], capture_output=True, text=True)
     try:
         return {r["id"]: r for r in json.loads(res.stdout)["rules"]}
     except (json.JSONDecodeError, KeyError):
@@ -69,7 +73,7 @@ def catalog(binary):
 def lint(binary, args):
     with tempfile.TemporaryDirectory() as tmp:
         out = Path(tmp) / "report.json"
-        res = subprocess.run([binary, *args, "--no-config", "--preset", "all", "--experimental", "--json", str(out)],
+        res = subprocess.run([*_cmd(binary), *args, "--no-config", "--preset", "all", "--experimental", "--json", str(out)],
                              capture_output=True, text=True)
         if not out.exists():
             raise RuntimeError(f"svlang-lint failed (exit {res.returncode}):\n{res.stdout[-2000:]}{res.stderr[-2000:]}")
@@ -149,7 +153,7 @@ def summary(now, flags, rules_meta, have_previous):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0].strip())
-    ap.add_argument("--binary", default="build/svlang-lint")
+    ap.add_argument("--binary", default="target/release/svlang")
     ap.add_argument("--corpus", default=str(Path(__file__).with_name("precision_corpus.json")))
     ap.add_argument("--out", required=True, help="result JSON to write")
     ap.add_argument("--previous", help="result JSON of the previous run")

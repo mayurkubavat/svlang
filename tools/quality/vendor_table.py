@@ -15,7 +15,7 @@ svlang-lint accept what a measured tool accepts, for use as
 
     svlang-lint $(tools/quality/vendor_table.py slang-flags data/vendor/vcs.json) -f files.f
 
-  tools/quality/vendor_table.py measure verilator|iverilog|vcs|xcelium|questa|svlang-lint|dv-build [--out DIR]
+  tools/quality/vendor_table.py measure verilator|iverilog|vcs|xcelium|questa|svlang-lint|svlang [--out DIR]
   tools/quality/vendor_table.py table [DIR]
   tools/quality/vendor_table.py slang-flags data/vendor/<tool>.json
 
@@ -37,8 +37,8 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[2]
 PROBES = REPO / "testdata" / "vendor"
 OUT = REPO / "data" / "vendor"
-SVLANG_LINT = os.environ.get("SVLANG_LINT", str(REPO / "build" / "svlang-lint"))
-DVBUILD = os.environ.get("DV_BUILD", str(REPO / "target" / "release" / "dv-build"))
+SLANG_CHECK = os.environ.get("SLANG_COMPILE_CHECK", str(REPO / "build" / "svlang_compile_check"))
+SVLANG = os.environ.get("SVLANG", str(REPO / "target" / "release" / "svlang"))
 
 # tool -> (version command, compile command for one file; run in a scratch dir)
 TOOLS = {
@@ -47,8 +47,8 @@ TOOLS = {
     "vcs": (["vcs", "-ID"], lambda f: ["vcs", "-full64", "-sverilog", "-top", "probe", "-o", "simv", f]),
     "xcelium": (["xrun", "-version"], lambda f: ["xrun", "-sv", "-elaborate", "-top", "probe", f]),
     "questa": (["qrun", "-version"], lambda f: ["qrun", "-sv", "-optimize", "-top", "probe", f]),
-    "svlang-lint": ([SVLANG_LINT, "--version"], lambda f: [SVLANG_LINT, "--no-config", "--no-cache", "--rule", "SV-CMP-001", f]),
-    "dv-build": ([DVBUILD, "--help"], lambda f: [DVBUILD, f]),
+    "slang": ([SLANG_CHECK, "--version"], lambda f: [SLANG_CHECK, f]),
+    "svlang": ([SVLANG, "--version"], lambda f: [SVLANG, "check", f]),
 }
 
 
@@ -66,7 +66,7 @@ def accepted(tool, res):
     text = res.stdout + res.stderr
     if tool == "svlang-lint":
         return "SV-CMP-001 (" not in text
-    if tool == "dv-build":
+    if tool == "svlang":
         return res.returncode == 0
     if tool == "verilator":
         return res.returncode == 0 and "%Error" not in text
@@ -88,7 +88,7 @@ def measure(tool, out_dir):
         print(f"{tool}: cannot run {ver_cmd[0]}: {e}", file=sys.stderr)
         return 2
     version = (v.stdout or v.stderr).strip().splitlines()[0] if (v.stdout or v.stderr).strip() else "unknown"
-    if tool in ("dv-build", "svlang-lint"):
+    if tool in ("svlang", "svlang-lint"):
         # Ours: the commit it was built from says more than a version number.
         g = subprocess.run(["git", "-C", str(REPO), "describe", "--always", "--dirty"], capture_output=True, text=True)
         version = f"{tool} at {g.stdout.strip() or 'unknown commit'}"

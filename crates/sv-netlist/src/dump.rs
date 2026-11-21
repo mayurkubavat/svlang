@@ -1,4 +1,4 @@
-//! Deterministic text representation of a [`Netlist`] (`dv-build --netlist`).
+//! Deterministic text representation of a [`Netlist`] (`svlang check --netlist`).
 //!
 //! # Text Dump Grammar
 //!
@@ -35,7 +35,7 @@ use crate::ir::{ClockSpec, NetOp, Netlist, ValueId, ValueKind};
 
 impl Netlist {
     /// Formats this [`Netlist`] into a deterministic, line-oriented text dump for
-    /// golden tests and gate diffing (`dv-build --netlist`).
+    /// golden tests and gate diffing (`svlang check --netlist`).
     ///
     /// See the [module documentation](self) for the exact line grammar, `<u|s><W>.<2|4>`
     /// shape tags, and `vN`/`sN`/`mN`/`smpN` identifier conventions.

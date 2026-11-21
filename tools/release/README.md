@@ -1,23 +1,27 @@
-# svlang-lint
+# svlang
 
-Static analysis for SystemVerilog (IEEE 1800) and UVM (IEEE 1800.2)
-verification code.
+Pure-Rust IEEE 1800-2023 SystemVerilog & UVM compiler, static linter,
+language server, and formal/RTL lowering toolchain in one binary.
 
-    bin/svlang-lint      the linter
-    bin/dv-lsp        language server: outline, go to definition, references, hover, completion
-    bin/dv-build      compiler-style errors from the same front end
-    bin/dv-map        the component tree of a UVM testbench
-    bin/dv-filelist   checks and normalizes VCS/Xcelium file lists
-    python/           the Python SDK that project configs and Python rules import
+    bin/svlang        the unified command line (`check`, `lint`, `lsp`, `filelist`,
+                      `map`, `preprocess`, `hier`, `cst`, `netlist`, `btor2`,
+                      `aiger`, `yosys`, `stages`)
+    python/           the Python SDK that `.svlang-lint/config.py` and Python
+                      rules import
 
-Put `bin/` on your `PATH` and keep `python/` beside it: `svlang-lint` looks for
+Put `bin/` on your `PATH` and keep `python/` beside it: `svlang lint` looks for
 the SDK there when a project has a `.svlang-lint/config.py` or you pass
 `--python-rules` (both need `python3`; set `SVLANG_LINT_PYTHON` to choose the
 interpreter).
 
-    svlang-lint tb/*.sv +incdir+tb --preset methodology
-    svlang-lint -f tb.f --json findings.json --sarif findings.sarif
-    svlang-lint --init            # write a starter .svlang-lint/config.py for this project
-    svlang-lint --explain SV-RND-001
+    svlang check -f sim/top.f -top top
+    svlang lint tb/*.sv +incdir+tb --preset methodology
+    svlang lint -f tb.f --json findings.json --sarif findings.sarif
+    svlang lint --init            # write a starter .svlang-lint/config.py
+    svlang lint --explain SV-RND-001
+    svlang lsp                    # serve LSP over stdio to any editor
+    svlang btor2 -f rtl.f -top top -o top.btor2
+
+Tip: symlinking `svlang-lint -> svlang` automatically invokes `svlang lint`.
 
 Guide, rule catalog and source: https://github.com/mayurkubavat/svlang

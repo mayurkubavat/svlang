@@ -14,7 +14,7 @@ A compilation unit is one primary file, a file named on the command line or in a
 - defines, include directories, and the bytes of the project config, waiver file, baseline, command files, and Python rule sources
 - the bytes of the primary file, every file it transitively includes, and every file of every package it imports, including packages those packages import
 
-Includes come from slang's source manager (`getIncludedFrom` / the syntax tree's buffers). Imports come from the elaborated import symbols, and the imported package's files come from the locations of that package's members. Nothing is detected by scanning source text for `` `include `` or `import`.
+Includes come from `svlang`'s preprocessor file graph, and imports come from semantic elaboration and the files declaring each imported package's members. Nothing is detected by scanning source text with regexes for `` `include `` or `import`.
 
 Files that contribute declarations to `$unit` (anything that is not itself a package) also depend on the other `$unit` files in the same run, because those files can see each other without an import.
 

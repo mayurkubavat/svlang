@@ -1,24 +1,25 @@
 #!/usr/bin/env python3
-"""IEEE 1800 conformance gate for the native builder (dv-build) against Slang.
+"""IEEE 1800 conformance gate for the native compiler (`svlang check`) against Slang.
 
-Runs every sv-tests file through dv-build and through svlang-lint (Slang) and
+Runs every sv-tests file through `svlang check` and through svlang-lint (Slang) and
 reports, per LRM clause (the sv-tests chapter):
   legal        tests that must compile: how many each front end accepts;
   should_fail  tests that must be rejected: how many each front end rejects.
-A legal test that dv-build rejects is a native false error and fails the
+A legal test that `svlang check` rejects is a native false error and fails the
 gate; a should_fail test only Slang rejects is a known gap, listed with
 --gaps. Runtime-only should_fail tests (`:type: simulation` alone) are
 counted apart: no front end can reject them.
 
-    cmake --build build && cargo build --release -p dv-build
+    cmake --preset oracles && cmake --build build --target svlang_compile_check
+    cargo build --release -p svlang-cli
     UVM_SRC=uvm-core/src tools/gates/ieee_gate.py ~/sv-tests [--gaps] [chapter-8]
 """
 import collections, concurrent.futures, json, os, re, subprocess, sys, tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(os.path.dirname(HERE))
-SVLANG_LINT = os.environ.get('SVLANG_LINT', os.path.join(REPO, 'build', 'svlang-lint'))
-DVBUILD = os.environ.get('DV_BUILD', os.path.join(REPO, 'target', 'release', 'dv-build'))
+SLANG_CHECK = os.environ.get('SLANG_COMPILE_CHECK', os.path.join(REPO, 'build', 'svlang_compile_check'))
+SVLANG = os.environ.get('SVLANG', os.path.join(REPO, 'target', 'release', 'svlang'))
 
 CLAUSES = {
     '5': 'Lexical conventions', '6': 'Data types', '7': 'Aggregate data types', '8': 'Classes',
@@ -54,18 +55,12 @@ def args_for(root, f, h):
 
 
 def slang_rejects(args):
-    with tempfile.TemporaryDirectory() as tmp:
-        out = os.path.join(tmp, 'r.json')
-        subprocess.run([SVLANG_LINT, '--no-config', '--no-cache', '--json', out, *args], capture_output=True,
-                       text=True, errors='replace', timeout=120)
-        try:
-            return json.load(open(out)).get('compileErrors', 0) > 0
-        except (OSError, ValueError):
-            return True
+    r = subprocess.run([SLANG_CHECK, *args], capture_output=True, text=True, errors='replace', timeout=120)
+    return r.returncode != 0
 
 
 def native_rejects(args):
-    r = subprocess.run([DVBUILD, '--quiet', *args], capture_output=True, text=True, errors='replace', timeout=120)
+    r = subprocess.run([SVLANG, 'check', '--quiet', *args], capture_output=True, text=True, errors='replace', timeout=120)
     return r.returncode != 0
 
 

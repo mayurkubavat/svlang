@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
-"""Symbol gate for builder phase N1: the scopes dv-build builds against Slang's.
+"""Symbol gate for compiler phase N1: the scopes `svlang check` builds against Slang's.
 
 For every legal sv-tests file (or each file given with --files), runs
-`dv-build --symbols` and build/svlang_sym_dump on the same options and
+`svlang check --symbols` and build/svlang_sym_dump on the same options and
 compares the sorted `<scope path> <kind> <name>` lines. Prints per clause
 how many files match, then the most common differing lines (--show=N
 prints the first N differing files in full). --types also compares each
-value's and typedef's type (builder phase N2); --values each parameter's,
+value's and typedef's type (phase N2); --values each parameter's,
 specparam's and enum value's value (phase N3). --hier compares the
-elaborated design instead (`dv-build --hier`, phase N4).
+elaborated design instead (`svlang check --hier`, phase N4).
 
-    cmake --build build --target svlang_sym_dump && cargo build --release -p dv-build
+    cmake --build build --target svlang_sym_dump && cargo build --release -p svlang-cli
     UVM_SRC=uvm-core/src tools/gates/sym_gate.py ~/sv-tests [--types] [--values] [--hier] [--show=N] [chapter-8]
     tools/gates/sym_gate.py --repo UVM_SRC [--show=N]      # each repo test and example alone
     tools/gates/sym_gate.py --files [options] FILE...      # one design
@@ -18,7 +18,7 @@ elaborated design instead (`dv-build --hier`, phase N4).
 import collections, concurrent.futures, os, re, subprocess, sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from ieee_gate import DVBUILD, REPO, args_for, header  # noqa: E402
+from ieee_gate import SVLANG, REPO, args_for, header  # noqa: E402
 
 SPECS = '--specs' in sys.argv
 
@@ -74,7 +74,7 @@ HIER = '--hier' in sys.argv
 def compare(args):
     flag = ((['--types'] if TYPES else []) + (['--values'] if VALUES else [])
             + (['--hier'] if HIER else []) + (['--specs'] if SPECS else []))
-    native = dump([DVBUILD, '--quiet', '--symbols', *flag, *args])
+    native = dump([SVLANG, 'check', '--quiet', '--symbols', *flag, *args])
     slang = dump([SYMDUMP, *flag, *args])
     n, s = collections.Counter(native), collections.Counter(slang)
     return sorted((n - s).elements()), sorted((s - n).elements())

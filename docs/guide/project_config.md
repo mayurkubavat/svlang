@@ -138,7 +138,7 @@ Running from `blocks/dma/` prints the layers that were loaded.
 | `preset` | The rule set when `--preset` is not given: `"default"` (soundness, methodology, performance and security), `"all"`, `"style"` and the other preset names. `--preset` on the command line wins. |
 | `waivers` | `Waiver(...)` objects or `Waiver` subclasses with `rules`, `paths`, `line`, `reason` (mandatory), `owner`, `expires` (YYYY-MM-DD), and optional `message`. Empty `rules` / `paths` mean every rule / file. `message` is a regular expression searched against the diagnostic text; the waiver applies only when rule, path, line, and that expression all match. An invalid expression is an error that names the config file and the waiver. With `severity` (`Severity.Error` / `Warning` / `Info`, or the name as a string; `"severity"` in a waivers JSON file) the waiver does not hide the finding but reports it at that severity, with `[re-graded by ...]` after its message, for example to keep known issues visible at Info while a fix is tracked. |
 | `style`, `naming` | Same dicts as the legacy JSON `style` / `naming` blocks. |
-| `compat` | Opt-in slang overlay: `profile` (`questa`, `xcelium`, `vcs`, `none`), `overrides` (`"id"` on, `"-id"` off) and `uvm_home`. See [compat.md](../reference/compat.md). |
+| `compat` | Legacy compatibility dict accepted for backwards compatibility with older configs (ignored by the native Rust engine). |
 | `RuleConfig.rule` | Rule ID (`"SV-STY-016"`) or name (`"MaxLineLength"`); defaults to the class name. |
 | `RuleConfig.enabled` | `False` skips the rule entirely (also for Python plugin rules). A rule you configure in any other way runs even when the preset leaves it out: a `RuleConfig` for a style rule, or a `style` / `naming` block, turns those checks on without `preset = "all"`. `--preset` on the command line narrows the run to that preset. |
 | `RuleConfig.severity` | `Severity.Error`, `Severity.Warning` or `Severity.Info`. |
@@ -146,12 +146,12 @@ Running from `blocks/dma/` prints the layers that were loaded.
 | `RuleConfig.only_paths` | Globs where this rule reports; elsewhere it is silent. For example strict naming only under `env/**`, or a rule kept out of generated code without listing every other folder. `exclude_paths` still applies inside them. |
 | any other attribute | A rule option, e.g. `max_columns` (SV-STY-016), `max_complexity` / `warning_complexity` (SV-SML-004). |
 
-**The UVM library needs no configuration (native engine).** When a compile holds `uvm_pkg.sv` and files outside
+**The UVM library needs no configuration.** When a compile holds `uvm_pkg.sv` and files outside
 its folder, that folder is library code: nothing is reported in its files, nor for what its macros expand to in your
 code (the routines of `` `uvm_object_utils ``, the method of `` `uvm_field_int ``), and a note says how many
 findings were left out. `--report-library` shows them. A compile of the library alone reports everything, and
 `report_library_macro_expansions = True` keeps the macro expansions. Other libraries (VIP) are named with
-`library_paths`. The C++ engine (`svlang-lint-slang`) leaves the UVM library out only when `library_paths` names it.
+`library_paths`.
 
 Unknown rule names produce a warning so typos do not go unnoticed.
 
@@ -169,7 +169,7 @@ Unknown rule names produce a warning so typos do not go unnoticed.
 ### Command line
 
 ```bash
-./build/svlang-lint tb/top.sv -I $UVM_HOME/src --library '$UVM_HOME' --exclude 'tb/gen/**'
+svlang lint tb/top.sv -I $UVM_HOME/src --library '$UVM_HOME' --exclude 'tb/gen/**'
 ```
 
 A waiver comment can carry the same expression in quotes. It is searched, not matched against the whole message:

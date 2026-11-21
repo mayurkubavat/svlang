@@ -26,24 +26,24 @@
 
 ## Reference
 
-- [Slang compatibility layer](reference/compat.md): the overlay that works
-  around Slang limitations.
 - [IEEE 1800 conformance corpus](reference/conformance.md).
 - [Measured vendor tables](reference/vendor-tables.md): which non-standard
-  SystemVerilog each tool accepts, and the slang options that match it.
+  SystemVerilog each tool accepts.
 - [sv-tests conformance](reference/sv-tests.md): svlang on the public
   SystemVerilog conformance suite, by clause.
 - [Front-end census](reference/census.md): which constructs stop open RTL
   designs from lowering to the netlist, ranked by the modules they block.
 - Robustness: `tools/quality/mutate_smoke.py` damages source files in small
   ways and checks that svlang reports errors and never crashes or hangs.
-- [Rules only dv-lint has](rules/native-rules.md).
-- [Slang: pin, patches and updating it](../third_party/slang/README.md).
+- [Semantic-analysis rules](rules/native-rules.md): constraint solver,
+  declaration-resolved interface rules, and cross-routine objection pairing.
+- [Optional Slang differential oracles](../third_party/slang/README.md): pin,
+  patches and updating it for `tools/oracles/`.
 
 ## Architecture
 
-- [Overview](architecture/overview.md): the two engines, what they share, and
-  how they are checked against each other.
+- [Overview](architecture/overview.md): workspace layout, crates, and optional
+  differential compiler oracles.
 - [Rust workspace](architecture/rust.md): crates, pipeline, parallel rule
   engine, language server, gates.
 - [Rust history](architecture/rust-history.md): build and tool usage, and the

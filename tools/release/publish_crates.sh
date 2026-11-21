@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Publish the 11 publishable svlang crates to crates.io in strict topological
+# Publish the 14 publishable svlang crates to crates.io in strict topological
 # dependency order:
 #
 #   tools/release/publish_crates.sh --dry-run    # verify metadata + package tarballs locally
-#   tools/release/publish_crates.sh --execute    # publish all 11 crates to crates.io
+#   tools/release/publish_crates.sh --execute    # publish all 14 crates to crates.io
 #
 # Tier order (each tier depends only on earlier tiers):
 #   1. sv-source, sv-lexer
@@ -14,7 +14,10 @@
 #   6. sv-btor2, sv-yosys
 #   7. sv-aiger
 #   8. svlang
-#   9. svlang-cli
+#   9. svlang-model
+#  10. svlang-lint
+#  11. svlang-lsp
+#  12. svlang-cli
 set -euo pipefail
 
 cd "$(dirname "$0")/../.."
@@ -39,6 +42,9 @@ CRATES=(
     sv-yosys
     sv-aiger
     svlang
+    svlang-model
+    svlang-lint
+    svlang-lsp
     svlang-cli
 )
 
@@ -48,7 +54,7 @@ echo "svlang crates.io release ($mode) for version $ver"
 if [ "$mode" = "--dry-run" ]; then
     # Root leaf crates have no unpublished workspace dependencies, so `cargo package --locked`
     # validates full tarball verification including compile check; dependent crates validate
-    # manifest metadata and file inclusion with `--no-verify` before upstream tiers are on crates.io.
+    # manifest metadata and file inclusion with `--list` before upstream tiers are on crates.io.
     for c in sv-source sv-lexer; do
         echo "== packaging + verifying leaf crate $c ($ver)"
         CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-2}" cargo package --locked --allow-dirty -p "$c"
@@ -61,7 +67,11 @@ if [ "$mode" = "--dry-run" ]; then
     python3 -c '
 import json, subprocess, sys
 meta = json.loads(subprocess.check_output(["cargo", "metadata", "--no-deps", "--format-version", "1"]))
-want = {"sv-source","sv-lexer","sv-preprocessor","sv-syntax","sv-semantic","sv-netlist","sv-btor2","sv-yosys","sv-aiger","svlang","svlang-cli"}
+want = {
+    "sv-source", "sv-lexer", "sv-preprocessor", "sv-syntax", "sv-semantic",
+    "sv-netlist", "sv-btor2", "sv-yosys", "sv-aiger", "svlang",
+    "svlang-model", "svlang-lint", "svlang-lsp", "svlang-cli",
+}
 by_name = {p["name"]: p for p in meta["packages"]}
 missing = []
 for name in sorted(want):
@@ -69,9 +79,11 @@ for name in sorted(want):
     for field in ("description", "license", "repository", "readme"):
         if not p.get(field):
             missing.append(f"{name} missing {field}")
+    if p.get("publish") == []:
+        missing.append(f"{name} has publish = false")
 if missing:
     sys.exit("FAIL: " + "; ".join(missing))
-print(f"cargo metadata: all {len(want)} publishable crates have description, license, repository, and readme")
+print(f"cargo metadata: all {len(want)} publishable crates have description, license, repository, readme, and publish enabled")
 '
     echo "publish_crates.sh: dry-run clean (${#CRATES[@]} crates packaged)"
     exit 0

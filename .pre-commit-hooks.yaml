@@ -1,20 +1,20 @@
-# pre-commit hooks (https://pre-commit.com). svlang-lint must be on PATH.
+# pre-commit hooks (https://pre-commit.com). `svlang` must be on PATH.
 # The project is compiled from .svlang-lint/config.py (sources, file lists,
 # include dirs), and only findings on lines changed since HEAD are reported,
 # so a commit is held to "new code is clean" without a baseline.
 - id: svlang-lint
-  name: svlang-lint (changed lines)
-  description: Lint SystemVerilog/UVM changes with svlang-lint
-  entry: svlang-lint --changed-since HEAD
+  name: svlang lint (changed lines)
+  description: Lint SystemVerilog/UVM changes with `svlang lint`
+  entry: svlang lint --changed-since HEAD
   language: system
   pass_filenames: false
   files: \.(sv|svh|v|vh|f)$
   require_serial: true
 
 - id: svlang-lint-full
-  name: svlang-lint (whole project)
-  description: Lint the whole project with svlang-lint, honouring the baseline and waivers
-  entry: svlang-lint
+  name: svlang lint (whole project)
+  description: Lint the whole project with `svlang lint`, honouring the baseline and waivers
+  entry: svlang lint
   language: system
   pass_filenames: false
   files: \.(sv|svh|v|vh|f)$

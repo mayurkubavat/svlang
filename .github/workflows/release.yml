@@ -1,13 +1,11 @@
 name: Release
 
-# On a version tag: build the native tools (svlang-lint, dv-lsp, dv-build,
-# dv-map, dv-filelist) for Linux x64/arm64, macOS arm64/x64, and Windows x64
-# and attach them to the GitHub release as svlang-lint-<target>.tar.gz. The
-# C++ engine on Slang is built too, as svlang-lint-slang-<target>.tar.gz. The
-# `svlang.svlang` VS Code / Open VSX extension is packaged for all 5 platforms
-# with `dv-lsp` bundled inside, attached to the GitHub release, and published
-# to Open VSX (when OVSX_PAT is set) and VS Code Marketplace (via OIDC Trusted
-# Publishing).
+# On a version tag: build the unified `svlang` native binary for Linux x64/arm64,
+# macOS arm64/x64, and Windows x64 and attach them to the GitHub release as
+# svlang-<target>.tar.gz. The `svlang.svlang` VS Code / Open VSX extension is
+# packaged for all 5 platforms with `svlang` bundled inside, attached to the
+# GitHub release, and published to Open VSX (when OVSX_PAT is set) and VS Code
+# Marketplace (via OIDC Trusted Publishing).
 on:
   push:
     tags: ["v*"]
@@ -72,7 +70,7 @@ jobs:
 
       - name: Build
         shell: bash
-        run: cargo build --locked --profile dist --target ${{ matrix.triple }}
+        run: cargo build --locked --profile dist -p svlang-cli --target ${{ matrix.triple }}
 
       - name: Package
         shell: bash
@@ -81,57 +79,15 @@ jobs:
       - name: Smoke test
         # The x64 macOS binaries run under Rosetta on the arm64 runner.
         shell: bash
-        run: tools/release/smoke.sh "dist/svlang-lint-${{ matrix.target }}.tar.gz"
+        run: tools/release/smoke.sh "dist/svlang-${{ matrix.target }}.tar.gz"
 
       - uses: actions/upload-artifact@v4
         with:
           name: native-${{ matrix.target }}
-          path: dist/svlang-lint-${{ matrix.target }}.tar.gz
-
-  slang:
-    name: slang (${{ matrix.target }})
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-24.04
-            target: linux-x64
-          - os: macos-15
-            target: darwin-arm64
-    runs-on: ${{ matrix.os }}
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install build tools (Linux)
-        if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y ninja-build
-
-      - name: Install build tools (macOS)
-        if: runner.os == 'macOS'
-        run: brew install ninja
-
-      - name: Build
-        run: cmake --preset reference && cmake --build build -j 4 --target svlang-lint
-
-      - name: Smoke test
-        run: |
-          ./build/svlang-lint --list-rules --json - > /dev/null
-          python3 cpp/tests/regression.py --binary build/svlang-lint
-
-      - name: Package
-        run: |
-          mkdir -p dist/svlang-lint-slang-${{ matrix.target }}/bin
-          cp build/svlang-lint dist/svlang-lint-slang-${{ matrix.target }}/bin/svlang-lint-slang
-          cp LICENSE NOTICE THIRD_PARTY_NOTICES.md dist/svlang-lint-slang-${{ matrix.target }}/
-          tar -C dist -czf "dist/svlang-lint-slang-${{ matrix.target }}.tar.gz" "svlang-lint-slang-${{ matrix.target }}"
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: slang-${{ matrix.target }}
-          path: dist/svlang-lint-slang-${{ matrix.target }}.tar.gz
+          path: dist/svlang-${{ matrix.target }}.tar.gz
 
   publish:
-    needs: [native, slang]
+    needs: [native]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -153,15 +109,15 @@ jobs:
         run: |
           npm ci
           for target in linux-x64 linux-arm64 darwin-arm64 darwin-x64 win32-x64; do
-            bin_name=dv-lsp
+            bin_name=svlang
             case "$target" in
-              win32-*) bin_name=dv-lsp.exe ;;
+              win32-*) bin_name=svlang.exe ;;
             esac
             rm -rf bin ../../stage && mkdir -p "bin/$target" ../../stage
-            tar -C ../../stage -xzf "../../artifacts/svlang-lint-$target.tar.gz"
-            # The one server the extension starts.
-            cp "../../stage/svlang-lint-$target/bin/$bin_name" "bin/$target/$bin_name"
-            if [ "$bin_name" = "dv-lsp" ]; then
+            tar -C ../../stage -xzf "../../artifacts/svlang-$target.tar.gz"
+            # The unified svlang binary (run as `svlang lsp` by the extension).
+            cp "../../stage/svlang-$target/bin/$bin_name" "bin/$target/$bin_name"
+            if [ "$bin_name" = "svlang" ]; then
               chmod +x "bin/$target/$bin_name"
             fi
             rm -rf ../../stage
@@ -180,13 +136,13 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           cd artifacts
-          sha256sum svlang-lint-*.tar.gz svlang-*.vsix > SHA256SUMS
+          sha256sum svlang-*.tar.gz svlang-*.vsix > SHA256SUMS
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
             gh release upload "$GITHUB_REF_NAME" --clobber \
-              svlang-lint-*.tar.gz svlang-*.vsix SHA256SUMS
+              svlang-*.tar.gz svlang-*.vsix SHA256SUMS
           else
             gh release create "$GITHUB_REF_NAME" --generate-notes \
-              svlang-lint-*.tar.gz svlang-*.vsix SHA256SUMS
+              svlang-*.tar.gz svlang-*.vsix SHA256SUMS
           fi
 
       - name: Publish to Open VSX
