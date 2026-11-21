@@ -60,10 +60,7 @@ fn has_sensitive_asset_name(expr: &str) -> bool {
     // identifier itself is a qualified key (`aes_key`, `root_key`, `key_0`, ...).
     let last_seg = low.rsplit(['.', ':']).next().unwrap_or(&low);
     let last_ident = last_seg.split(['[', '(']).next().unwrap_or(last_seg).trim();
-    if (low.contains('.') || low.contains("::")) && last_ident == "key" {
-        return false;
-    }
-    true
+    !((low.contains('.') || low.contains("::")) && last_ident == "key")
 }
 
 pub(crate) fn ast_plaintext_key(d: &Design, csts: &[Cst], s: &mut Sink) {
