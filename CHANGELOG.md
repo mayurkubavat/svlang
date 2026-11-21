@@ -4,6 +4,49 @@ What changed in each release of the svlang crates (`svlang`, `sv-*`,
 `svlang-model`, `svlang-lint`, `svlang-lsp`, `svlang-cli`), `pysvlang`, and the
 `svlang.svlang` VS Code / Open VSX extension. They share one version number.
 
+## 0.4.0 (2026-11-21)
+
+### IDE / LSP Highlighting, Code Tracing & Control Center (`svlang-lsp` + `svlang.svlang`)
+
+- **Semantic Highlighting & Inactive `` `ifdef `` Dimming**: implemented
+  `textDocument/semanticTokens/full` (`namespace`, `class`, `interface`, `type`,
+  `enumMember`, `parameter`, `variable`, `property`, `function`, `method`,
+  `macro` + `declaration`, `readonly`, `static`, `modification` modifiers) and
+  `svlang/inactiveRanges` dimming untaken `` `ifdef `` / `` `ifndef `` /
+  `` `elsif `` / `` `else `` regions (`svlang.inactiveRegions.*`), updating live
+  when `svlang.compile.defines` changes.
+- **RTL Hierarchy, Signal Driver/Load Tracing & Type/Call Hierarchies**:
+  implemented `svlang/rtlHierarchy` (workspace module/interface instantiation
+  tree), `svlang/traceSignal` (separating procedural, continuous, and
+  output-port **Drivers / Writes** from **Loads / Reads**),
+  `textDocument/prepareTypeHierarchy` (`supertypes` / `subtypes`), and
+  `textDocument/prepareCallHierarchy` (`incomingCalls` / `outgoingCalls`), plus
+  Explorer `RTL Hierarchy` and `Signal Trace` sidebar views.
+- **Status Bar Control Center & 3-Layer Configuration**: added a context-aware
+  clickable `svlang` status bar item + Quick Pick control menu, dynamic
+  live-reconfiguration (`svlang/setLintOptions`, `svlang/lintNow`,
+  `svlang.lint.trigger`: `onType` / `onSave` / `off`), `EditorOptions`
+  (`svlang_lint::EditorOptions`: `requireConfig`, `configPath`,
+  `configPreference` `filesystemFirst` vs `editorFirst`, `select`, `ignore`,
+  `filelists`, `defines`, `includeDirs`), `source.fixAll.svlang` on-save
+  autofix, `.f`/`.vc` filelist syntax support, one-click `Ignore <RULE>` code
+  actions, and Atom-Material-inspired die-corner `.sv`/`.v` file icons.
+
+### Linter Precision Fixes (`svlang-lint`)
+
+- **`SV-OOP-011` (`DowncastWithoutDynamicCast`)**: eliminated false positives on
+  uncompiled UVM integral/enum typedef casts (such as `uvm_bitstream_t'(1)`) by
+  consulting the embedded UVM class API pack (`uvm_api`), excluding value/enum
+  typedef suffixes (`_t`, `_e`, `_enum`, `_s`, `_u`), and skipping arithmetic /
+  literal / concatenation operands.
+- **`SV-DED-006`, `UVM-BAN-001/002`, `SV-DED-001`, `SEC-LOG-001`**: recognized
+  mutating queue/collection/IPC method calls (`push_back`, `insert`, `delete`,
+  `pop_front`, `put`, …) and indexed LHS roots as property writes in
+  `SV-DED-006`; switched `UVM-BAN-001/002` to lexer `Directive` tokens so
+  comments and strings never trigger; added syntactic identifier fallback in
+  `SV-DED-001` when external imports are uncompiled; and trimmed trivia +
+  excluded generic `.key` struct lookups in `SEC-LOG-001`.
+
 ## 0.3.0 (2026-11-20)
 
 ### Unified `svlang` CLI & `svlang-*` Crate Family

@@ -49,17 +49,83 @@ struct Diagnostic {
     fixes: Vec<Edit>,
 }
 
+/// When automatic lint checks run in the editor.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LintTrigger {
+    OnType,
+    OnSave,
+    Off,
+}
+
+impl LintTrigger {
+    pub fn from_str(s: &str) -> Self {
+        match s.trim() {
+            "onSave" | "on_save" | "save" => LintTrigger::OnSave,
+            "off" | "manual" | "none" | "false" => LintTrigger::Off,
+            _ => LintTrigger::OnType,
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            LintTrigger::OnType => "onType",
+            LintTrigger::OnSave => "onSave",
+            LintTrigger::Off => "off",
+        }
+    }
+}
+
+#[derive(Clone, Default)]
+pub struct LintStatus {
+    pub state: String,
+    pub has_config: bool,
+    pub config_path: Option<String>,
+    pub preset: String,
+    pub trigger: String,
+    pub errors: u32,
+    pub warnings: u32,
+}
+
+impl LintStatus {
+    pub fn to_json(&self, files: usize, symbols: usize) -> Json {
+        let mut fields = vec![
+            ("state", (if self.state.is_empty() { "ready" } else { &self.state }).into()),
+            ("hasConfig", self.has_config.into()),
+            ("preset", (if self.preset.is_empty() { "default" } else { &self.preset }).into()),
+            ("trigger", (if self.trigger.is_empty() { "onType" } else { &self.trigger }).into()),
+            ("errors", self.errors.into()),
+            ("warnings", self.warnings.into()),
+            ("files", (files as u32).into()),
+            ("symbols", (symbols as u32).into()),
+        ];
+        if let Some(cfg) = &self.config_path {
+            fields.push(("configPath", cfg.as_str().into()));
+        }
+        obj(fields)
+    }
+}
+
 #[derive(Default)]
 struct State {
     /// Open files, with the URI the editor names each by.
     open: HashMap<PathBuf, String>,
     /// What was last published per open file.
     published: HashMap<PathBuf, Vec<Diagnostic>>,
+    trigger: Option<LintTrigger>,
+    editor: svlang_lint::EditorOptions,
+    status: LintStatus,
+}
+
+enum WakeMsg {
+    Debounced,
+    AutoImmediate,
+    ManualImmediate,
+    Reconfigure,
 }
 
 /// The lint side of the server.
 pub struct Linter {
-    wake: Sender<()>,
+    wake: Sender<WakeMsg>,
     state: Arc<Mutex<State>>,
     out: Out,
 }
@@ -136,18 +202,23 @@ impl Texts {
 /// Files with their modification times: what a loaded project depends on.
 type Stamps = Vec<(PathBuf, Option<SystemTime>)>;
 
-/// The project of `root`, reloaded when its config or waiver files change.
+/// The project of `root`, reloaded when its config, waivers, or editor options change.
 struct Project {
     root: PathBuf,
-    default_preset: Option<String>,
+    editor: svlang_lint::EditorOptions,
     loaded: Option<(Stamps, Result<svlang_lint::Workspace, String>)>,
 }
 
 impl Project {
-    fn stamps(root: &Path, ws: Option<&svlang_lint::Workspace>) -> Stamps {
+    fn stamps(root: &Path, editor: &svlang_lint::EditorOptions, ws: Option<&svlang_lint::Workspace>) -> Stamps {
         let mut files: Vec<PathBuf> = Vec::new();
         let base = ws.map_or(root, |w| w.root()).to_path_buf();
         files.extend(ws.and_then(|w| w.config_file()).map(Path::to_path_buf));
+        files.extend(editor.config_path.clone());
+        for fl in &editor.filelists {
+            let p = Path::new(fl);
+            files.push(if p.is_relative() { base.join(p) } else { p.to_path_buf() });
+        }
         for n in [
             ".svlang-lint/config.py",
             ".svlang-lint/config.json",
@@ -167,28 +238,93 @@ impl Project {
 
     fn workspace(&mut self) -> &Result<svlang_lint::Workspace, String> {
         let stale = match &self.loaded {
-            Some((stamps, ws)) => *stamps != Self::stamps(&self.root, ws.as_ref().ok()),
+            Some((stamps, ws)) => *stamps != Self::stamps(&self.root, &self.editor, ws.as_ref().ok()),
             None => true,
         };
         if stale {
-            let ws = svlang_lint::Workspace::open_with_preset(&self.root, self.default_preset.as_deref());
-            self.loaded = Some((Self::stamps(&self.root, ws.as_ref().ok()), ws));
+            let ws = svlang_lint::Workspace::open_with_editor(&self.root, &self.editor);
+            self.loaded = Some((Self::stamps(&self.root, &self.editor, ws.as_ref().ok()), ws));
         }
         &self.loaded.as_ref().expect("just loaded").1
     }
 }
 
+fn emit_status(out: &Out, status: &LintStatus) {
+    send(
+        out,
+        &obj(vec![("jsonrpc", "2.0".into()), ("method", "svlang/status".into()), ("params", status.to_json(0, 0))]),
+    );
+}
+
 /// Checks the project and publishes each open file's diagnostics.
-fn check(project: &mut Project, state: &Mutex<State>, out: &Out) {
-    let open: HashMap<PathBuf, String> = state.lock().unwrap_or_else(|e| e.into_inner()).open.clone();
+fn check(project: &mut Project, state: &Mutex<State>, out: &Out, manual: bool) {
+    let (open, trig_str, preset_str, require_cfg, has_explicit_cfg) = {
+        let st = state.lock().unwrap_or_else(|e| e.into_inner());
+        let trig = st.trigger.unwrap_or(LintTrigger::OnType);
+        let pstr = project.editor.preset.clone().unwrap_or_else(|| "default".into());
+        (
+            st.open.clone(),
+            trig.as_str().to_string(),
+            pstr,
+            project.editor.require_config,
+            project.editor.config_path.as_ref().is_some_and(|p| p.is_file()),
+        )
+    };
     if open.is_empty() {
+        let mut st = state.lock().unwrap_or_else(|e| e.into_inner());
+        let trig = st.trigger.unwrap_or(LintTrigger::OnType);
+        st.status.state = if trig == LintTrigger::Off { "off".into() } else { "ready".into() };
+        st.status.errors = 0;
+        st.status.warnings = 0;
+        emit_status(out, &st.status);
         return;
     }
+
+    // Check `requireConfig` before running rules unless invoked manually (`Lint Now`).
+    if require_cfg && !manual {
+        let has_any_cfg = match project.workspace() {
+            Ok(ws) => ws.has_repo_config() || has_explicit_cfg,
+            Err(_) => false,
+        };
+        if !has_any_cfg {
+            let mut st = state.lock().unwrap_or_else(|e| e.into_inner());
+            st.published.clear();
+            let uris: Vec<String> = st.open.values().cloned().collect();
+            st.status = LintStatus {
+                state: "standalone".into(),
+                has_config: false,
+                config_path: None,
+                preset: preset_str,
+                trigger: trig_str,
+                errors: 0,
+                warnings: 0,
+            };
+            emit_status(out, &st.status);
+            drop(st);
+            for u in uris {
+                publish(out, &u, &[]);
+            }
+            return;
+        }
+    }
+
+    {
+        let mut st = state.lock().unwrap_or_else(|e| e.into_inner());
+        st.status.state = "linting".into();
+        st.status.trigger = trig_str.clone();
+        st.status.preset = preset_str.clone();
+        emit_status(out, &st.status);
+    }
+
     let paths: Vec<PathBuf> = open.keys().cloned().collect();
-    let checked = match project.workspace() {
-        Ok(ws) => std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| ws.check(&paths)))
-            .unwrap_or_else(|_| Err("the linter stopped on an internal error".to_string())),
-        Err(e) => Err(e.clone()),
+    let (has_cfg, cfg_path, checked) = match project.workspace() {
+        Ok(ws) => {
+            let cfg_p = ws.config_file().map(|p| p.to_string_lossy().into_owned());
+            let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| ws.check(&paths)))
+                .unwrap_or_else(|_| Err("the linter stopped on an internal error".to_string()));
+            (cfg_p.is_some(), cfg_p, res)
+        }
+        Err(e) => (false, None, Err(e.clone())),
     };
     let checked = match checked {
         Ok(c) => c,
@@ -198,15 +334,27 @@ fn check(project: &mut Project, state: &Mutex<State>, out: &Out) {
                 out,
                 &obj(vec![("jsonrpc", "2.0".into()), ("method", "window/logMessage".into()), ("params", params)]),
             );
+            let mut st = state.lock().unwrap_or_else(|e| e.into_inner());
+            st.status.state = "error".into();
+            st.status.has_config = has_cfg;
+            st.status.config_path = cfg_path;
+            emit_status(out, &st.status);
             return;
         }
     };
     let by_canonical: HashMap<PathBuf, &PathBuf> = open.keys().map(|p| (canonical(p), p)).collect();
     let mut texts = Texts::default();
     let mut found: HashMap<PathBuf, Vec<Diagnostic>> = HashMap::new();
+    let mut total_errors = 0u32;
+    let mut total_warnings = 0u32;
     for f in &checked.findings {
         let (file, line, col) = f.position_in(&checked.files);
         let Some(&path) = by_canonical.get(&canonical(Path::new(file))) else { continue };
+        match f.severity {
+            svlang_lint::Severity::Error => total_errors += 1,
+            svlang_lint::Severity::Info => {}
+            _ => total_warnings += 1,
+        }
         let range = texts.range(file, line, col);
         let related: Vec<Json> = f
             .related
@@ -275,6 +423,17 @@ fn check(project: &mut Project, state: &Mutex<State>, out: &Out) {
         publish(out, uri, &list);
         state.published.insert(path.clone(), list);
     }
+    let cur_trig = state.trigger.unwrap_or(LintTrigger::OnType);
+    state.status = LintStatus {
+        state: if cur_trig == LintTrigger::Off { "off".into() } else { "ready".into() },
+        has_config: has_cfg,
+        config_path: cfg_path,
+        preset: preset_str,
+        trigger: trig_str,
+        errors: total_errors,
+        warnings: total_warnings,
+    };
+    emit_status(out, &state.status);
 }
 
 fn publish(out: &Out, uri: &str, list: &[Diagnostic]) {
@@ -287,24 +446,98 @@ fn publish(out: &Out, uri: &str, list: &[Diagnostic]) {
 }
 
 impl Linter {
-    /// Starts the lint thread with an optional editor-supplied default `preset`
-    /// (for example `"formal-ready"`).
-    pub fn start_with_preset(root: PathBuf, default_preset: Option<String>, out: Out) -> Linter {
-        let (wake, asked) = channel::<()>();
-        let state: Arc<Mutex<State>> = Default::default();
+    /// Starts the lint thread with initial `trigger` and `editor` options.
+    pub fn start_with_options(
+        root: PathBuf,
+        initial_trigger: LintTrigger,
+        editor: svlang_lint::EditorOptions,
+        out: Out,
+    ) -> Linter {
+        let (wake, asked) = channel::<WakeMsg>();
+        let has_cfg_initial = svlang_lint::project::find(None, None).is_some()
+            || editor.config_path.as_ref().is_some_and(|p| p.is_file());
+        let initial_state = State {
+            open: HashMap::new(),
+            published: HashMap::new(),
+            trigger: Some(initial_trigger),
+            editor: editor.clone(),
+            status: LintStatus {
+                state: if initial_trigger == LintTrigger::Off {
+                    "off".into()
+                } else if editor.require_config && !has_cfg_initial {
+                    "standalone".into()
+                } else {
+                    "ready".into()
+                },
+                has_config: has_cfg_initial,
+                config_path: None,
+                preset: editor.preset.clone().unwrap_or_else(|| "default".into()),
+                trigger: initial_trigger.as_str().into(),
+                errors: 0,
+                warnings: 0,
+            },
+        };
+        let state: Arc<Mutex<State>> = Arc::new(Mutex::new(initial_state));
         let (thread_state, thread_out) = (state.clone(), out.clone());
         let spawned = std::thread::Builder::new().name("lint".into()).stack_size(256 << 20).spawn(move || {
-            let mut project = Project { root, default_preset, loaded: None };
-            while asked.recv().is_ok() {
-                // One check for a burst of edits: wait for typing to pause.
-                loop {
-                    match asked.recv_timeout(QUIET) {
-                        Ok(()) => continue,
-                        Err(RecvTimeoutError::Timeout) => break,
-                        Err(RecvTimeoutError::Disconnected) => return,
+            let mut project = Project { root, editor, loaded: None };
+            while let Ok(mut first) = asked.recv() {
+                if matches!(first, WakeMsg::Debounced) {
+                    loop {
+                        match asked.recv_timeout(QUIET) {
+                            Ok(WakeMsg::ManualImmediate) => {
+                                first = WakeMsg::ManualImmediate;
+                                break;
+                            }
+                            Ok(WakeMsg::AutoImmediate) => {
+                                first = WakeMsg::AutoImmediate;
+                                break;
+                            }
+                            Ok(WakeMsg::Reconfigure) => {
+                                first = WakeMsg::Reconfigure;
+                                break;
+                            }
+                            Ok(WakeMsg::Debounced) => continue,
+                            Err(RecvTimeoutError::Timeout) => break,
+                            Err(RecvTimeoutError::Disconnected) => return,
+                        }
                     }
                 }
-                check(&mut project, &thread_state, &thread_out);
+                if matches!(first, WakeMsg::Reconfigure) {
+                    let (new_trig, new_editor, uris_to_clear) = {
+                        let mut st = thread_state.lock().unwrap_or_else(|e| e.into_inner());
+                        let trig = st.trigger.unwrap_or(LintTrigger::OnType);
+                        let ed = st.editor.clone();
+                        let uris: Vec<String> = if trig == LintTrigger::Off {
+                            st.published.clear();
+                            st.open.values().cloned().collect()
+                        } else {
+                            Vec::new()
+                        };
+                        st.status.trigger = trig.as_str().into();
+                        st.status.preset = ed.preset.clone().unwrap_or_else(|| "default".into());
+                        if trig == LintTrigger::Off {
+                            st.status.state = "off".into();
+                            st.status.errors = 0;
+                            st.status.warnings = 0;
+                        }
+                        (trig, ed, uris)
+                    };
+                    if project.editor != new_editor {
+                        project.editor = new_editor;
+                        project.loaded = None;
+                    }
+                    if new_trig == LintTrigger::Off {
+                        for u in uris_to_clear {
+                            publish(&thread_out, &u, &[]);
+                        }
+                        let st = thread_state.lock().unwrap_or_else(|e| e.into_inner());
+                        emit_status(&thread_out, &st.status);
+                        continue;
+                    }
+                }
+                let manual = matches!(first, WakeMsg::ManualImmediate);
+                check(&mut project, &thread_state, &thread_out, manual);
             }
         });
         if let Err(e) = spawned {
@@ -313,52 +546,152 @@ impl Linter {
         Linter { wake, state, out }
     }
 
-    /// Asks for a check of the project (soon, once typing pauses).
-    pub fn request(&self) {
-        let _ = self.wake.send(());
+    pub fn trigger(&self) -> LintTrigger {
+        self.state.lock().unwrap_or_else(|e| e.into_inner()).trigger.unwrap_or(LintTrigger::OnType)
     }
 
-    /// The editor opened `path` or changed its text.
+    /// Asks for a debounced check (once typing pauses), if `trigger != Off`.
+    pub fn request(&self) {
+        if self.trigger() != LintTrigger::Off {
+            let _ = self.wake.send(WakeMsg::Debounced);
+        }
+    }
+
+    /// Runs an immediate manual check regardless of `trigger` or `requireConfig`.
+    pub fn lint_now(&self) {
+        let _ = self.wake.send(WakeMsg::ManualImmediate);
+    }
+
+    /// Updates `trigger` and/or `editor` options dynamically without restarting the server.
+    pub fn set_options(&self, trigger: Option<LintTrigger>, editor: Option<svlang_lint::EditorOptions>) {
+        {
+            let mut st = self.state.lock().unwrap_or_else(|e| e.into_inner());
+            if let Some(t) = trigger {
+                st.trigger = Some(t);
+            }
+            if let Some(ed) = editor {
+                st.editor = ed;
+            }
+        }
+        let _ = self.wake.send(WakeMsg::Reconfigure);
+    }
+
+    pub fn editor_options(&self) -> svlang_lint::EditorOptions {
+        self.state.lock().unwrap_or_else(|e| e.into_inner()).editor.clone()
+    }
+
+    pub fn status(&self) -> LintStatus {
+        self.state.lock().unwrap_or_else(|e| e.into_inner()).status.clone()
+    }
+
+    /// The editor opened `path`.
+    pub fn opened(&self, path: &Path, uri: &str, text: &str) {
+        svlang::syntax::overlay::set(path, text);
+        let trig = {
+            let mut st = self.state.lock().unwrap_or_else(|e| e.into_inner());
+            st.open.insert(path.to_path_buf(), uri.to_string());
+            st.trigger.unwrap_or(LintTrigger::OnType)
+        };
+        if trig != LintTrigger::Off {
+            let _ = self.wake.send(WakeMsg::Debounced);
+        }
+    }
+
+    /// The editor changed `path`'s text in memory.
     pub fn changed(&self, path: &Path, uri: &str, text: &str) {
         svlang::syntax::overlay::set(path, text);
-        self.state.lock().unwrap_or_else(|e| e.into_inner()).open.insert(path.to_path_buf(), uri.to_string());
-        self.request();
+        let trig = {
+            let mut st = self.state.lock().unwrap_or_else(|e| e.into_inner());
+            st.open.insert(path.to_path_buf(), uri.to_string());
+            st.trigger.unwrap_or(LintTrigger::OnType)
+        };
+        if trig == LintTrigger::OnType {
+            let _ = self.wake.send(WakeMsg::Debounced);
+        }
+    }
+
+    /// The editor saved `path`.
+    pub fn saved(&self) {
+        if self.trigger() != LintTrigger::Off {
+            let _ = self.wake.send(WakeMsg::AutoImmediate);
+        }
     }
 
     /// The editor closed `path`: the file on disk counts again, and its
     /// diagnostics go away.
     pub fn closed(&self, path: &Path, uri: &str) {
         svlang::syntax::overlay::clear(path);
-        {
+        let trig = {
             let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
             state.open.remove(path);
             state.published.remove(path);
-        }
+            state.trigger.unwrap_or(LintTrigger::OnType)
+        };
         publish(&self.out, uri, &[]);
-        self.request();
+        if trig != LintTrigger::Off {
+            let _ = self.wake.send(WakeMsg::Debounced);
+        }
     }
 
-    /// Quick fixes for the diagnostics of `path` that touch lines
-    /// `first..=last`.
-    pub fn code_actions(&self, path: &Path, uri: &str, first: u32, last: u32) -> Json {
+    /// Quick fixes for the diagnostics of `path` that touch lines `first..=last`,
+    /// plus `source.fixAll.svlang` across all safe non-overlapping fixes in `path`.
+    pub fn code_actions(&self, path: &Path, uri: &str, first: u32, last: u32, only: &[String]) -> Json {
         let state = self.state.lock().unwrap_or_else(|e| e.into_inner());
+        let all_diags = state.published.get(path).map_or(&[][..], |l| &l[..]);
         let mut actions = Vec::new();
-        for d in state.published.get(path).map_or(&[][..], |l| &l[..]) {
-            if d.range[2] < first || d.range[0] > last {
-                continue;
+        let want_quickfix = only.is_empty() || only.iter().any(|k| k == "quickfix" || k.starts_with("quickfix."));
+        let want_fix_all = only.is_empty() || only.iter().any(|k| k == "source.fixAll" || k == "source.fixAll.svlang");
+
+        if want_quickfix {
+            for d in all_diags {
+                if d.range[2] < first || d.range[0] > last {
+                    continue;
+                }
+                for fix in &d.fixes {
+                    let edit = obj(vec![("range", range_json(fix.range)), ("newText", fix.text.as_str().into())]);
+                    let changes = obj(vec![(uri, Json::Arr(vec![edit]))]);
+                    actions.push(obj(vec![
+                        ("title", fix.title.as_str().into()),
+                        ("kind", "quickfix".into()),
+                        ("diagnostics", Json::Arr(vec![d.json.clone()])),
+                        ("isPreferred", fix.preferred.into()),
+                        ("edit", obj(vec![("changes", changes)])),
+                    ]));
+                }
             }
-            for fix in &d.fixes {
-                let edit = obj(vec![("range", range_json(fix.range)), ("newText", fix.text.as_str().into())]);
-                let changes = obj(vec![(uri, Json::Arr(vec![edit]))]);
+        }
+
+        if want_fix_all {
+            // Collect safe (`preferred == true`, excluding inline waiver insertions) non-overlapping fixes across the file.
+            let mut safe: Vec<&Edit> = all_diags
+                .iter()
+                .flat_map(|d| d.fixes.iter())
+                .filter(|f| f.preferred && !f.title.starts_with("Waive "))
+                .collect();
+            safe.sort_by_key(|f| (f.range[0], f.range[1], f.range[2], f.range[3]));
+            let mut chosen: Vec<Json> = Vec::new();
+            let mut last_end: Option<(u32, u32)> = None;
+            for f in safe {
+                if let Some(le) = last_end {
+                    if (f.range[0], f.range[1]) < le {
+                        continue;
+                    }
+                }
+                chosen.push(obj(vec![("range", range_json(f.range)), ("newText", f.text.as_str().into())]));
+                last_end = Some((f.range[2], f.range[3]));
+            }
+            if !chosen.is_empty() {
+                let n = chosen.len();
+                let changes = obj(vec![(uri, Json::Arr(chosen))]);
                 actions.push(obj(vec![
-                    ("title", fix.title.as_str().into()),
-                    ("kind", "quickfix".into()),
-                    ("diagnostics", Json::Arr(vec![d.json.clone()])),
-                    ("isPreferred", fix.preferred.into()),
+                    ("title", format!("Fix all {n} safe svlang-lint issue(s)").into()),
+                    ("kind", "source.fixAll.svlang".into()),
+                    ("isPreferred", true.into()),
                     ("edit", obj(vec![("changes", changes)])),
                 ]));
             }
         }
+
         Json::Arr(actions)
     }
 }

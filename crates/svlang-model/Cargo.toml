@@ -11,4 +11,4 @@ keywords.workspace = true
 categories.workspace = true
 
 [dependencies]
-svlang = { version = "0.3.0", path = "../svlang" }
+svlang = { version = "0.4.0", path = "../svlang" }

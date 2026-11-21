@@ -15,7 +15,7 @@ name = "svlang"
 path = "src/main.rs"
 
 [dependencies]
-svlang = { version = "0.3.0", path = "../svlang" }
-svlang-model = { version = "0.3.0", path = "../svlang-model" }
-svlang-lint = { version = "0.3.0", path = "../svlang-lint" }
-svlang-lsp = { version = "0.3.0", path = "../svlang-lsp" }
+svlang = { version = "0.4.0", path = "../svlang" }
+svlang-model = { version = "0.4.0", path = "../svlang-model" }
+svlang-lint = { version = "0.4.0", path = "../svlang-lint" }
+svlang-lsp = { version = "0.4.0", path = "../svlang-lsp" }

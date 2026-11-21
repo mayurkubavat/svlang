@@ -16,7 +16,7 @@ pub fn program() -> String {
     }
 }
 
-/// `svlang lint 0.3.0`.
+/// `svlang lint 0.4.0`.
 pub fn version() -> String {
     format!("{} {}", program(), env!("CARGO_PKG_VERSION"))
 }

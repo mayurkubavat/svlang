@@ -94,7 +94,7 @@ pub mod suppress;
 pub mod tbgraph;
 pub mod tbmap;
 mod workspace;
-pub use workspace::{Checked, Workspace};
+pub use workspace::{Checked, EditorOptions, Workspace};
 
 /// How many findings inline waiver comments have dropped so far in the process session.
 pub fn inline_waived() -> usize {

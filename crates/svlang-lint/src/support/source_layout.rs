@@ -74,53 +74,63 @@ pub(crate) fn at(c: &Cst, file: u32, offset: usize) -> Loc {
     c.loc_at(Origin { file, offset: offset as u32 })
 }
 
-/// UVM-BAN-001/002 scan the main file of each tree (not included files)
-/// line by line.
+/// UVM-BAN-001/002 scan real macro tokens in the main file of each tree
+/// (ignoring comments, string literals, and included files), reporting at most
+/// once per line.
 pub(crate) fn banned_macros(c: &Cst, s: &mut Sink, field: bool) {
     let Some(&main) = c.tree.mains.first() else {
         return;
     };
-    let mut text = c.tree.sources[main as usize].to_string();
-    text.push('\0');
-    let mut offset = 0;
-    while offset < text.len() {
-        let nl = text[offset..].find('\n').map_or(text.len(), |e| offset + e);
-        let line = &text[offset..nl];
-        let trimmed = line.trim_start_matches([' ', '\t']);
-        if !trimmed.is_empty() && !trimmed.starts_with("//") && !trimmed.starts_with("/*") {
-            if field {
-                let hit = line.find("`uvm_field_").or_else(|| {
-                    line.find("`uvm_object_utils_begin").or_else(|| line.find("`uvm_component_utils_begin"))
-                });
-                if let Some(h) = hit {
-                    s.add(
-                        "UVM-BAN-001",
-                        "UvmBannedFieldMacros",
-                        Severity::Warning,
-                        "The `uvm_field_* macro suite is banned in high-performance verification environments (Cliff Cummings / Verification Academy). \
-                         Field macros introduce severe simulation overhead (3x-10x execution drag), uncontrollable deep copying, \
-                         and opaque compile errors. Implement explicit 'do_copy', 'do_compare', and 'do_print' methods instead."
-                            .into(),
-                        at(c, main, offset + h),
-                    );
-                }
-            } else if let Some(h) = line.find("`uvm_do") {
-                let rest = &line[h + 7..];
-                if rest.is_empty() || ["(", " ", "_with", "_on", "_pri"].iter().any(|p| rest.starts_with(p)) {
-                    s.add(
-                        "UVM-BAN-002",
-                        "UvmBannedUvmDoMacros",
-                        Severity::Warning,
-                        "Macro '`uvm_do' is discouraged in modern sequence development. \
-                         It obscures the sequence-driver protocol handshake and conceals transaction randomization. \
-                         Use explicit driver handshake: 'start_item(req)' -> 'assert(req.randomize())' -> 'finish_item(req)'."
-                            .into(),
-                        at(c, main, offset + h),
-                    );
-                }
+    let src = &c.tree.sources[main as usize];
+    let mut reported_line: Option<u32> = None;
+    for tok in svlang::lexer::lex(src) {
+        if tok.kind != svlang::lexer::Kind::Directive {
+            continue;
+        }
+        let end = tok.start as usize + tok.len as usize;
+        let name = &src[tok.start as usize..end];
+        let loc = at(c, main, tok.start as usize);
+        if reported_line == Some(loc.line) {
+            continue;
+        }
+        if field {
+            if name.starts_with("`uvm_field_")
+                || name == "`uvm_object_utils_begin"
+                || name == "`uvm_component_utils_begin"
+            {
+                reported_line = Some(loc.line);
+                s.add(
+                    "UVM-BAN-001",
+                    "UvmBannedFieldMacros",
+                    Severity::Warning,
+                    "The `uvm_field_* macro suite is banned in high-performance verification environments (Cliff Cummings / Verification Academy). \
+                     Field macros introduce severe simulation overhead (3x-10x execution drag), uncontrollable deep copying, \
+                     and opaque compile errors. Implement explicit 'do_copy', 'do_compare', and 'do_print' methods instead."
+                        .into(),
+                    loc,
+                );
+            }
+        } else if let Some(rest) = name.strip_prefix("`uvm_do") {
+            let after = &src[end..];
+            let valid = if rest.is_empty() {
+                after.is_empty() || after.starts_with(['(', ' ', '\t', '\r', '\n'])
+            } else {
+                ["_with", "_on", "_pri"].iter().any(|p| rest.starts_with(p))
+            };
+            if valid {
+                reported_line = Some(loc.line);
+                s.add(
+                    "UVM-BAN-002",
+                    "UvmBannedUvmDoMacros",
+                    Severity::Warning,
+                    "Macro '`uvm_do' is discouraged in modern sequence development. \
+                     It obscures the sequence-driver protocol handshake and conceals transaction randomization. \
+                     Use explicit driver handshake: 'start_item(req)' -> 'assert(req.randomize())' -> 'finish_item(req)'."
+                        .into(),
+                    loc,
+                );
             }
         }
-        offset = nl + 1;
     }
 }
 

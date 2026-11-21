@@ -56,9 +56,55 @@ pub(crate) struct Usage {
     pub(crate) read: HashSet<String>,
 }
 
-/// slang's `IdentifierNameSyntax` reads, assignments and increments, as
-/// `ClassPropertyUsageVisitor` (`unwritten` false) and
-/// `ClassPropertyReadWriteVisitor` (`unwritten` true) record them.
+/// Root property/variable name of an LHS or receiver expression (`arr[i]` -> `arr`,
+/// `this.fields` -> `fields`, `p.fields[i].settable` -> `fields` / `settable`).
+fn root_prop_names(c: &Cst, n: NodeId, out: &mut Vec<String>) {
+    match c.kind(n) {
+        NameExpr => {
+            if let Some(t) = c.first_tok(n).filter(|&t| is_ident(c, t)) {
+                out.push(c.text_of(t).to_string());
+            }
+        }
+        SelectExpr => {
+            if let Some(&base) = kids(c, n).first() {
+                root_prop_names(c, base, out);
+            }
+        }
+        MemberExpr => {
+            let ks = kids(c, n);
+            if let Some(&base) = ks.first() {
+                let base_is_self = c.kind(base) == NameExpr
+                    && c.first_tok(base).is_some_and(|t| matches!(c.text_of(t), "this" | "super"));
+                if !base_is_self {
+                    root_prop_names(c, base, out);
+                }
+            }
+            if let Some(t) = last_tok(c, n).filter(|&t| is_ident(c, t)) {
+                out.push(c.text_of(t).to_string());
+            }
+        }
+        _ => {}
+    }
+}
+
+const MUTATING_METHODS: &[&str] = &[
+    "push_back",
+    "push_front",
+    "insert",
+    "delete",
+    "pop_front",
+    "pop_back",
+    "sort",
+    "rsort",
+    "reverse",
+    "shuffle",
+    "put",
+    "try_put",
+    "get",
+    "try_get",
+];
+
+/// Records property reads, assignments, increments, and mutating collection calls.
 pub(crate) fn usage(c: &Cst, n: NodeId, unwritten: bool, u: &mut Usage) {
     let k = kids(c, n);
     match c.kind(n) {
@@ -70,8 +116,29 @@ pub(crate) fn usage(c: &Cst, n: NodeId, unwritten: bool, u: &mut Usage) {
                     u.read.insert(lhs.clone());
                 }
                 u.written.insert(lhs);
+                let mut roots = Vec::new();
+                root_prop_names(c, k[0], &mut roots);
+                for r in roots {
+                    u.written.insert(r);
+                }
                 usage(c, k[1], unwritten, u);
                 return;
+            }
+        }
+        CallExpr => {
+            if let Some(&callee) = k.first() {
+                if c.kind(callee) == MemberExpr {
+                    let mname = c.last_text(callee);
+                    if MUTATING_METHODS.contains(&mname) {
+                        if let Some(&recv) = kids(c, callee).first() {
+                            let mut roots = Vec::new();
+                            root_prop_names(c, recv, &mut roots);
+                            for r in roots {
+                                u.written.insert(r);
+                            }
+                        }
+                    }
+                }
             }
         }
         PrefixExpr | PostfixExpr => {

@@ -420,3 +420,161 @@ fn json_str(s: &str) -> String {
     o.push('"');
     o
 }
+
+#[test]
+fn semantic_tokens_inactive_ifdef_hierarchies_and_rtl_signal_trace() {
+    let dir = std::env::temp_dir().join(format!("svlang-lsp-wave2-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+
+    let rtl = r#"module child_alu (
+  input  logic [7:0] a_i,
+  output logic [7:0] y_o
+);
+  assign y_o = a_i + 8'd1;
+endmodule
+
+module top_soc (
+  input  logic       clk,
+  input  logic [7:0] req_data,
+  output logic [7:0] out_data
+);
+  logic [7:0] pipe_sig;
+`ifdef USE_BYPASS
+  assign pipe_sig = req_data;
+`else
+  child_alu u_alu (
+    .a_i (req_data),
+    .y_o (pipe_sig)
+  );
+`endif
+  always_ff @(posedge clk) begin
+    out_data <= pipe_sig;
+  end
+endmodule
+"#;
+    let rtl_file = dir.join("soc.sv");
+    std::fs::write(&rtl_file, rtl).unwrap();
+
+    let tb = r#"package tb_pkg;
+  class base_txn;
+    function void helper(); endfunction
+  endclass
+  class axi_txn extends base_txn;
+    function void run_txn();
+      helper();
+    endfunction
+  endclass
+endpackage
+"#;
+    let tb_file = dir.join("tb_pkg.sv");
+    std::fs::write(&tb_file, tb).unwrap();
+
+    let mut c = Client::start_with_opts(&dir, r#"{"lintTrigger":"off"}"#);
+
+    // 1. Semantic tokens
+    let sem = c.request(
+        "textDocument/semanticTokens/full",
+        &format!(r#"{{"textDocument":{{"uri":"file://{}"}}}}"#, rtl_file.display()),
+    );
+    assert!(sem.contains(r#""data":["#) && !sem.contains(r#""data":[]"#), "{sem}");
+
+    // 2. Inactive `ifdef ranges: without USE_BYPASS, the `ifdef branch (line 14) is inactive;
+    // once USE_BYPASS is defined via svlang/setLintOptions, the `else branch becomes inactive!
+    let inact1 =
+        c.request("svlang/inactiveRanges", &format!(r#"{{"textDocument":{{"uri":"file://{}"}}}}"#, rtl_file.display()));
+    assert!(inact1.contains(r#""line":14"#), "{inact1}");
+
+    let _ = c.request("svlang/setLintOptions", r#"{"defines":["USE_BYPASS"]}"#);
+    let inact2 =
+        c.request("svlang/inactiveRanges", &format!(r#"{{"textDocument":{{"uri":"file://{}"}}}}"#, rtl_file.display()));
+    assert!(inact2.contains(r#""line":16"#), "{inact2}");
+
+    // 3. RTL module hierarchy (`top_soc` -> `u_alu : child_alu`)
+    let hier = c.request("svlang/rtlHierarchy", "{}");
+    assert!(hier.contains(r#""moduleName":"top_soc""#), "{hier}");
+    assert!(hier.contains(r#""instanceName":"u_alu""#), "{hier}");
+    assert!(hier.contains(r#""moduleName":"child_alu""#), "{hier}");
+
+    // 4. Signal driver/load trace on `pipe_sig`:
+    //    - `.y_o(pipe_sig)` is a DRIVER (output port of `child_alu`) and `assign pipe_sig = ...` is a DRIVER
+    //    - `out_data <= pipe_sig;` is a LOAD!
+    let (pl, pc) = pos(rtl, "pipe_sig", 0, 2);
+    let trace = c.at("svlang/traceSignal", &rtl_file, pl, pc);
+    assert!(trace.contains(r#""name":"pipe_sig""#), "{trace}");
+    assert!(trace.contains(r#""drivers":[{"#), "{trace}");
+    assert!(trace.contains(r#".y_o (pipe_sig)"#), "{trace}");
+    assert!(trace.contains(r#"out_data <= pipe_sig;"#), "{trace}");
+
+    // 5. Type hierarchy on `base_txn` -> subtype `axi_txn`, and `axi_txn` -> supertype `base_txn`
+    let (bl, bc) = pos(tb, "base_txn", 0, 2);
+    let prep_ty = c.at("textDocument/prepareTypeHierarchy", &tb_file, bl, bc);
+    assert!(prep_ty.contains(r#""name":"base_txn""#), "{prep_ty}");
+    let item_start = prep_ty.find(r#""result":["#).unwrap() + 10;
+    let item_end = prep_ty.rfind(']').unwrap();
+    let base_item = &prep_ty[item_start..item_end];
+    let subs = c.request("typeHierarchy/subtypes", &format!(r#"{{"item":{base_item}}}"#));
+    assert!(subs.contains(r#""name":"axi_txn""#), "{subs}");
+
+    // 6. Call hierarchy on `helper` -> incoming call from `run_txn`
+    let (hl, hc) = pos(tb, "helper", 0, 2);
+    let prep_call = c.at("textDocument/prepareCallHierarchy", &tb_file, hl, hc);
+    assert!(prep_call.contains(r#""name":"helper""#), "{prep_call}");
+    let c_start = prep_call.find(r#""result":["#).unwrap() + 10;
+    let c_end = prep_call.rfind(']').unwrap();
+    let helper_item = &prep_call[c_start..c_end];
+    let incoming = c.request("callHierarchy/incomingCalls", &format!(r#"{{"item":{helper_item}}}"#));
+    assert!(incoming.contains(r#""name":"run_txn""#), "{incoming}");
+
+    let _ = c.request("shutdown", "null");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn lint_trigger_require_config_ignore_and_fix_all() {
+    let dir = std::env::temp_dir().join(format!("svlang-lsp-cfg-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+
+    // Style violation with safe autofix: missing matching end label (SV-STY-104) + trailing space (SV-STY-102).
+    let src = "module demo;\n  logic a;   \nendmodule\n";
+    let file = dir.join("demo.sv");
+    std::fs::write(&file, src).unwrap();
+
+    // Start with `requireConfig: true` and `preset: "style"`: automatic open stays in `standalone` mode (0 diags),
+    // then `svlang/lintNow` runs on demand and reports SV-STY-104 & SV-STY-102 + `source.fixAll.svlang`!
+    let mut c = Client::start_with_opts(&dir, r#"{"requireConfig":true,"preset":"style"}"#);
+    let open = format!(
+        r#"{{"textDocument":{{"uri":"file://{}","languageId":"systemverilog","version":1,"text":{}}}}}"#,
+        file.display(),
+        json_str(src)
+    );
+    c.notify("textDocument/didOpen", &open);
+    let d_initial = c.diagnostics(&file);
+    assert!(d_initial.contains(r#""diagnostics":[]"#), "requireConfig should suppress auto-lint: {d_initial}");
+    let st = c.request("svlang/status", "{}");
+    assert!(st.contains(r#""state":"standalone""#), "{st}");
+
+    // Manual `svlang/lintNow` runs even without a config file!
+    let _ = c.request("svlang/lintNow", "{}");
+    let d_manual = c.diagnostics(&file);
+    assert!(d_manual.contains(r#""code":"SV-STY-102""#), "{d_manual}");
+
+    // `source.fixAll.svlang` returns combined safe fixes!
+    let fix_all = c.request(
+        "textDocument/codeAction",
+        &format!(
+            r#"{{"textDocument":{{"uri":"file://{}"}},"range":{{"start":{{"line":0,"character":0}},"end":{{"line":2,"character":9}}}},"context":{{"diagnostics":[],"only":["source.fixAll.svlang"]}}}}"#,
+            file.display()
+        ),
+    );
+    assert!(fix_all.contains(r#""kind":"source.fixAll.svlang""#), "{fix_all}");
+
+    // Adding `SV-STY-102` to `ignore` via `svlang/setLintOptions` (with `requireConfig: false`) silences `SV-STY-102`!
+    let _ = c.request("svlang/setLintOptions", r#"{"requireConfig":false,"preset":"style","ignore":["SV-STY-102"]}"#);
+    let d_ignored = c.diagnostics(&file);
+    assert!(!d_ignored.contains(r#""code":"SV-STY-102""#), "{d_ignored}");
+
+    let _ = c.request("shutdown", "null");
+    let _ = std::fs::remove_dir_all(&dir);
+}

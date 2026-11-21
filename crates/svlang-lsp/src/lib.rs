@@ -9,9 +9,12 @@
 //! svlang lsp --index DIR...  # index and print a summary (for testing)
 //! ```
 
+mod hierarchy;
 mod index;
 mod json;
 mod lint;
+mod rtl_trace;
+mod semantic_tokens;
 mod server;
 mod text;
 mod workspace;

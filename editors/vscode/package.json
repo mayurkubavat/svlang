@@ -1,126 +1,384 @@
 {
   "name": "svlang",
   "displayName": "svlang — SystemVerilog & UVM",
-  "description": "IEEE 1800-2023 SystemVerilog & UVM language server and linter: 445+ live rules, quick fixes, formal-readiness checks, code browsing, completion, and UVM snippets",
-  "version": "0.3.0",
+  "description": "IEEE 1800-2023 SystemVerilog and UVM language server, semantic highlighting, RTL/signal tracing, and static linter (474 rules, quick fixes).",
+  "version": "0.4.0",
   "publisher": "svlang",
   "license": "Apache-2.0",
   "engines": {
     "vscode": "^1.82.0"
   },
   "categories": [
-    "Linters",
     "Programming Languages",
+    "Linters",
     "Snippets"
   ],
   "keywords": [
     "systemverilog",
-    "uvm",
     "verilog",
-    "linter",
-    "verification"
+    "uvm",
+    "rtl",
+    "formal",
+    "sva",
+    "lint",
+    "eda",
+    "asic",
+    "fpga"
   ],
   "activationEvents": [
     "onLanguage:systemverilog",
-    "onLanguage:verilog"
+    "onLanguage:verilog",
+    "onLanguage:sv-filelist",
+    "workspaceContains:**/*.{sv,svh,v,vh,svi,svp}",
+    "workspaceContains:**/.svlang-lint/*"
   ],
   "main": "./out/extension.js",
   "contributes": {
-    "configuration": {
-      "type": "object",
-      "title": "svlang",
-      "properties": {
-        "svlang.enable": {
-          "type": "boolean",
-          "default": true,
-          "description": "Lint as you type: diagnostics and quick fixes from the native `svlang lsp` language server under the project's `.svlang-lint` config, waivers, and baseline."
-        },
-        "svlang.preset": {
-          "type": "string",
-          "default": "",
-          "enum": [
-            "",
-            "default",
-            "all",
-            "formal-ready",
-            "soundness",
-            "methodology",
-            "performance",
-            "style",
-            "security",
-            "smells",
-            "advisory",
-            "uvm-1800.2",
-            "reuse",
-            "guide"
-          ],
-          "enumDescriptions": [
-            "Use the project config preset (or default rules when none is configured).",
-            "Bug-finding, UVM methodology, performance, and security rules.",
-            "All non-experimental lint rules.",
-            "Pre-FPV formal-readiness rule pack (SV-FPV-001..005) and SVA checks.",
-            "Soundness and correctness rules.",
-            "UVM and verification methodology rules.",
-            "Simulation and elaboration performance rules.",
-            "Formatting, naming, and style rules.",
-            "Security and unsafe-construct rules.",
-            "Maintainability and code-smell rules.",
-            "Advisory rules.",
-            "IEEE 1800.2 / UVM migration deprecation rules.",
-            "Reuse guideline rules (MG-1 through MG-5).",
-            "All guideline-tagged rules."
-          ],
-          "description": "Default lint rule preset when `.svlang-lint` project config does not specify one (for example, `formal-ready` for pre-FPV checks and quick fixes)."
-        },
-        "svlang.serverPath": {
-          "type": "string",
-          "default": "svlang",
-          "description": "Path to the `svlang` executable (launched as `svlang lsp` for live linting and code browsing). Left as `svlang`, the binary bundled with the extension is used, else the one on PATH."
-        },
-        "svlang.navigation.enable": {
-          "type": "boolean",
-          "default": true,
-          "description": "Code browsing from `svlang lsp`: outline, workspace symbols, go to definition/declaration/type definition, references, hover, and completion."
-        },
-        "svlang.navigation.libraryPaths": {
-          "type": "array",
-          "items": {
-            "type": "string"
+    "configuration": [
+      {
+        "title": "svlang — Linting",
+        "order": 1,
+        "properties": {
+          "svlang.enable": {
+            "type": "boolean",
+            "default": true,
+            "scope": "resource",
+            "markdownDescription": "Master switch for `svlang` lint diagnostics. When `false`, navigation, semantic highlighting, and RTL tracing remain active while lint diagnostics stay off."
           },
-          "default": [],
-          "description": "Extra source trees to index for navigation, such as a UVM or VIP install ($VARS and ~ are expanded)."
-        },
-        "svlang.navigation.useUvmHome": {
-          "type": "boolean",
-          "default": true,
-          "description": "Also index $UVM_HOME/src when UVM_HOME is set."
-        },
-        "svlang.navigation.exclude": {
-          "type": "array",
-          "items": {
-            "type": "string"
+          "svlang.lint.trigger": {
+            "type": "string",
+            "default": "onType",
+            "scope": "resource",
+            "enum": [
+              "onType",
+              "onSave",
+              "off"
+            ],
+            "enumDescriptions": [
+              "Lint automatically after typing pauses (250 ms debounce) and on save.",
+              "Lint automatically only when files are opened or saved.",
+              "Disable automatic linting; run checks on demand via the Status Bar or `svlang: Lint Current File / Project Now`."
+            ],
+            "markdownDescription": "Controls when automatic lint checks run."
           },
-          "default": [],
-          "description": "Directory names (or path endings) to skip when indexing the workspace, e.g. `sim_build` or `vendor/old_vip`."
-        },
-        "svlang.trace.server": {
-          "type": "string",
-          "default": "off",
-          "enum": [
-            "off",
-            "messages",
-            "verbose"
-          ],
-          "description": "Traces communication between the editor and the svlang language server."
+          "svlang.lint.requireConfig": {
+            "type": "boolean",
+            "default": false,
+            "scope": "resource",
+            "markdownDescription": "When `true`, automatic linting only runs in workspaces that have a `.svlang-lint/config.py` (or `.svlang-lint.json`, or `svlang.lint.configPath`). Unconfigured folders stay in quiet navigation-only mode until `Lint Now` or `Initialize Project Config` is invoked."
+          },
+          "svlang.lint.configPath": {
+            "type": "string",
+            "default": "",
+            "scope": "resource",
+            "markdownDescription": "Optional path to a shared or global `.svlang-lint/config.py` (for example `~/.config/svlang/config.py`). Supports `~` and `$ENV_VAR` expansion."
+          },
+          "svlang.lint.configPreference": {
+            "type": "string",
+            "default": "filesystemFirst",
+            "scope": "resource",
+            "enum": [
+              "filesystemFirst",
+              "editorFirst"
+            ],
+            "enumDescriptions": [
+              "Repository `.svlang-lint/config.py` takes precedence over VS Code rule/preset settings so Editor and CI match (editor settings act as fallback when no repo config exists).",
+              "VS Code settings (`preset`, `select`, `ignore`, `configPath`) override repository `.svlang-lint/config.py`."
+            ],
+            "markdownDescription": "Precedence between repository `.svlang-lint/config.py` and VS Code settings."
+          },
+          "svlang.preset": {
+            "type": "string",
+            "default": "",
+            "scope": "resource",
+            "enum": [
+              "",
+              "default",
+              "all",
+              "formal-ready",
+              "soundness",
+              "methodology",
+              "performance",
+              "style",
+              "security",
+              "maintainability",
+              "advisory",
+              "uvm-1800.2",
+              "reuse",
+              "guidelines"
+            ],
+            "enumDescriptions": [
+              "Use `.svlang-lint/config.py` preset (or `default` when unset).",
+              "Soundness, methodology, performance, and security rules.",
+              "All non-experimental lint rules (including style, smells, and advisory).",
+              "Pre-FPV formal-readiness rule pack (`SV-FPV-001..005`) and SVA checks.",
+              "Soundness and correctness rules.",
+              "UVM and verification methodology rules.",
+              "Simulation and elaboration performance rules.",
+              "Formatting, naming, and style rules.",
+              "Security and unsafe-construct rules.",
+              "Maintainability and code-smell rules.",
+              "Opinionated advisory rules.",
+              "IEEE 1800.2 / UVM migration deprecation rules.",
+              "Reuse guideline rules (`MG-1` through `MG-5`).",
+              "All guideline-tagged rules."
+            ],
+            "markdownDescription": "Rule preset to run (for example `formal-ready` for pre-FPV checks or `soundness` for bug-finding rules)."
+          },
+          "svlang.lint.select": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "default": [],
+            "scope": "resource",
+            "markdownDescription": "Additional rule IDs or names to enable (for example `[\"SV-RND-040\", \"UVM-NAM-101\"]`)."
+          },
+          "svlang.lint.ignore": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "default": [],
+            "scope": "resource",
+            "markdownDescription": "Rule IDs or names to silence in User or Workspace settings (for example `[\"SV-STY-104\", \"SV-STY-009\"]`). In `filesystemFirst` mode, applies when no repo config exists (switch `configPreference` to `editorFirst` to override repo configs too)."
+          }
+        }
+      },
+      {
+        "title": "svlang — Preprocessor, Filelists & Files",
+        "order": 2,
+        "properties": {
+          "svlang.files.extraExtensions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "default": [],
+            "scope": "resource",
+            "markdownDescription": "Additional file extensions to treat as SystemVerilog (for example `[\".sva\", \".inc\", \".vams\"]`). Automatically updates workspace `files.associations`."
+          },
+          "svlang.compile.filelists": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "default": [],
+            "scope": "resource",
+            "markdownDescription": "Simulator `.f` command files to compile when no `.svlang-lint/config.py` is present (for example `[\"sim/top.f\"]`). Relative paths resolve from the workspace root."
+          },
+          "svlang.compile.defines": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "default": [],
+            "scope": "resource",
+            "markdownDescription": "Active preprocessor macro defines (`\"SYNTHESIS\"`, `\"WIDTH=64\"`). Updates both live linting and inactive `` `ifdef `` region dimming."
+          },
+          "svlang.compile.includeDirs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "default": [],
+            "scope": "resource",
+            "markdownDescription": "Extra `+incdir+` include directories (`$VARS` and `~` expanded)."
+          },
+          "svlang.inactiveRegions.enable": {
+            "type": "boolean",
+            "default": true,
+            "scope": "resource",
+            "markdownDescription": "Dim untaken `` `ifdef `` / `` `ifndef `` / `` `elsif `` / `` `else `` preprocessor blocks in the editor."
+          },
+          "svlang.inactiveRegions.opacity": {
+            "type": "number",
+            "default": 0.5,
+            "minimum": 0.15,
+            "maximum": 1,
+            "scope": "resource",
+            "markdownDescription": "Opacity (`0.15`–`1.0`) applied to inactive preprocessor conditional regions."
+          }
+        }
+      },
+      {
+        "title": "svlang — Navigation & Highlighting",
+        "order": 3,
+        "properties": {
+          "svlang.navigation.enable": {
+            "type": "boolean",
+            "default": true,
+            "scope": "resource",
+            "markdownDescription": "Enable semantic code browsing (`svlang lsp`): outline, workspace symbols, go to definition/type definition, references, call/type hierarchy, hover, and completion."
+          },
+          "svlang.semanticHighlighting.enable": {
+            "type": "boolean",
+            "default": true,
+            "scope": "resource",
+            "markdownDescription": "Enable compiler-backed LSP semantic highlighting (`class`, `interface`, `namespace`, `type`, `enumMember`, `parameter`, `property`, `method`, `macro`)."
+          },
+          "svlang.navigation.libraryPaths": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "default": [],
+            "scope": "resource",
+            "markdownDescription": "Extra source trees to index for navigation, such as a UVM or VIP install (`$VARS` and `~` expanded)."
+          },
+          "svlang.navigation.useUvmHome": {
+            "type": "boolean",
+            "default": true,
+            "scope": "resource",
+            "markdownDescription": "Automatically index `$UVM_HOME/src` when `UVM_HOME` is set."
+          },
+          "svlang.navigation.exclude": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "default": [],
+            "scope": "resource",
+            "markdownDescription": "Directory names (or path endings) to skip when indexing the workspace, e.g. `sim_build` or `vendor/old_vip`."
+          }
+        }
+      },
+      {
+        "title": "svlang — Server & Status Bar",
+        "order": 4,
+        "properties": {
+          "svlang.statusBar.show": {
+            "type": "string",
+            "default": "whenSvOpen",
+            "scope": "window",
+            "enum": [
+              "whenSvOpen",
+              "always",
+              "never"
+            ],
+            "enumDescriptions": [
+              "Show the `svlang` status bar item whenever a SystemVerilog, Verilog, `.f` filelist, or `.svlang-lint` file is open.",
+              "Always show the `svlang` status bar item.",
+              "Hide the `svlang` status bar item."
+            ],
+            "markdownDescription": "Controls visibility of the clickable `svlang` status bar item."
+          },
+          "svlang.serverPath": {
+            "type": "string",
+            "default": "svlang",
+            "scope": "machine-overridable",
+            "markdownDescription": "Path to the `svlang` executable (launched as `svlang lsp`). Left as `svlang`, the bundled platform binary is used, else `PATH`."
+          },
+          "svlang.trace.server": {
+            "type": "string",
+            "default": "off",
+            "scope": "window",
+            "enum": [
+              "off",
+              "messages",
+              "verbose"
+            ],
+            "markdownDescription": "Traces LSP JSON-RPC communication between the editor and `svlang lsp`."
+          }
         }
       }
-    },
+    ],
     "commands": [
       {
+        "command": "svlang.openMenu",
+        "title": "svlang: Control Menu"
+      },
+      {
+        "command": "svlang.lintNow",
+        "title": "svlang: Lint Current File / Project Now",
+        "icon": "$(play)"
+      },
+      {
+        "command": "svlang.switchTrigger",
+        "title": "svlang: Set Lint Trigger (On Type / On Save / Off)"
+      },
+      {
+        "command": "svlang.switchPreset",
+        "title": "svlang: Switch Lint Preset"
+      },
+      {
+        "command": "svlang.setDefines",
+        "title": "svlang: Set Preprocessor Defines"
+      },
+      {
+        "command": "svlang.initConfig",
+        "title": "svlang: Initialize Project Config (.svlang-lint/config.py)"
+      },
+      {
+        "command": "svlang.openConfig",
+        "title": "svlang: Open Active Project Config"
+      },
+      {
+        "command": "svlang.openSettings",
+        "title": "svlang: Open Extension Settings"
+      },
+      {
+        "command": "svlang.traceSignal",
+        "title": "svlang: Trace Signal Drivers & Loads",
+        "icon": "$(CallIncoming)"
+      },
+      {
+        "command": "svlang.refreshRtlHierarchy",
+        "title": "svlang: Refresh RTL Hierarchy",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "svlang.ignoreRuleWorkspace",
+        "title": "svlang: Ignore Rule in Workspace Settings"
+      },
+      {
+        "command": "svlang.ignoreRuleUser",
+        "title": "svlang: Ignore Rule in User Settings"
+      },
+      {
+        "command": "svlang.showOutput",
+        "title": "svlang: Show Language Server Output"
+      },
+      {
         "command": "svlang.restartServer",
-        "title": "svlang: Restart Language Servers"
+        "title": "svlang: Restart Language Server"
       }
     ],
+    "views": {
+      "explorer": [
+        {
+          "id": "svlang.rtlHierarchy",
+          "name": "RTL Hierarchy",
+          "when": "svlang.active"
+        },
+        {
+          "id": "svlang.signalTrace",
+          "name": "Signal Trace",
+          "when": "svlang.active"
+        }
+      ]
+    },
+    "menus": {
+      "editor/context": [
+        {
+          "command": "svlang.traceSignal",
+          "when": "editorLangId == systemverilog || editorLangId == verilog",
+          "group": "navigation@5"
+        }
+      ],
+      "view/title": [
+        {
+          "command": "svlang.refreshRtlHierarchy",
+          "when": "view == svlang.rtlHierarchy",
+          "group": "navigation"
+        },
+        {
+          "command": "svlang.traceSignal",
+          "when": "view == svlang.signalTrace && (editorLangId == systemverilog || editorLangId == verilog)",
+          "group": "navigation"
+        }
+      ]
+    },
     "languages": [
       {
         "id": "systemverilog",
@@ -157,6 +415,19 @@
           "light": "./images/v-file-light.svg",
           "dark": "./images/v-file-dark.svg"
         }
+      },
+      {
+        "id": "sv-filelist",
+        "aliases": [
+          "SystemVerilog Filelist",
+          "sv-filelist"
+        ],
+        "extensions": [
+          ".f",
+          ".F",
+          ".vc"
+        ],
+        "configuration": "./filelist-language-configuration.json"
       }
     ],
     "grammars": [
@@ -169,6 +440,11 @@
         "language": "verilog",
         "scopeName": "source.verilog.svlang",
         "path": "./syntaxes/verilog.tmLanguage.json"
+      },
+      {
+        "language": "sv-filelist",
+        "scopeName": "source.sv-filelist",
+        "path": "./syntaxes/sv-filelist.tmLanguage.json"
       }
     ],
     "snippets": [

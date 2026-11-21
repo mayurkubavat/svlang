@@ -19,6 +19,8 @@ const EMBEDDED: &[&str] = &[
 /// What one pack says.
 pub(crate) struct ApiPack {
     pub version: String,
+    /// Every UVM class declared in this release.
+    pub classes: HashSet<String>,
     /// Classes tagged `accellera`.
     pub accellera_classes: HashSet<String>,
     /// (class, member) tagged `accellera`.
@@ -195,6 +197,7 @@ fn parse(text: &str) -> Option<ApiPack> {
     let version = root.get("version")?.str()?.to_string();
     let mut p = ApiPack {
         version,
+        classes: HashSet::new(),
         accellera_classes: HashSet::new(),
         accellera_members: HashSet::new(),
         contrib_classes: HashSet::new(),
@@ -212,6 +215,7 @@ fn parse(text: &str) -> Option<ApiPack> {
     let contrib = |j: &Json| j.get("tag").and_then(Json::str) == Some("contrib");
     let dep = |j: &Json| matches!(j.get("deprecated"), Some(Json::Bool(true)));
     for (name, info) in root.get("classes").map_or(&[][..], Json::entries) {
+        p.classes.insert(name.clone());
         if tag(info) {
             p.accellera_classes.insert(name.clone());
         }

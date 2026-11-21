@@ -20,10 +20,36 @@ use crate::{project, suppress, Finding, Session};
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
+/// Editor-supplied configuration overrides (from VS Code / LSP settings).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct EditorOptions {
+    /// Explicit fallback or override config file path (`svlang.lint.configPath`).
+    pub config_path: Option<PathBuf>,
+    /// `"filesystemFirst"` (default: repo config wins) or `"editorFirst"` (editor settings win).
+    pub config_preference: String,
+    /// Only run automatic lint when a repo config file exists (`svlang.lint.requireConfig`).
+    pub require_config: bool,
+    /// Default/override rule preset (`svlang.lint.preset`).
+    pub preset: Option<String>,
+    /// Explicit rule IDs/names to enable (`svlang.lint.select`).
+    pub select: Vec<String>,
+    /// Explicit rule IDs/names to silence (`svlang.lint.ignore`).
+    pub ignore: Vec<String>,
+    /// Extra `.f` filelists (`svlang.compile.filelists`).
+    pub filelists: Vec<String>,
+    /// Extra preprocessor defines `"NAME"` or `"NAME=VAL"` (`svlang.compile.defines`).
+    pub defines: Vec<String>,
+    /// Extra `+incdir+` include directories (`svlang.compile.includeDirs`).
+    pub include_dirs: Vec<String>,
+}
+
 /// A project folder with its configuration, waivers and baseline.
 pub struct Workspace {
     root: PathBuf,
     config: Option<project::Config>,
+    has_repo_config: bool,
+    extra_args: Vec<String>,
+    ignored: HashSet<String>,
     suppress: suppress::Suppress,
     session: Session,
     keep: HashSet<&'static str>,
@@ -75,8 +101,20 @@ impl Workspace {
     /// Like [`Self::open`], using `default_preset` when the project config does
     /// not specify a `"preset"` (e.g., an LSP client passing `initializationOptions.preset`).
     pub fn open_with_preset(root: &Path, default_preset: Option<&str>) -> Result<Workspace, String> {
+        let ed = EditorOptions { preset: default_preset.map(String::from), ..Default::default() };
+        Self::open_with_editor(root, &ed)
+    }
+
+    /// Opens `root` merging repository `.svlang-lint` config with `editor` settings
+    /// according to `editor.config_preference` (`"filesystemFirst"` vs `"editorFirst"`).
+    pub fn open_with_editor(root: &Path, editor: &EditorOptions) -> Result<Workspace, String> {
         let mut warnings = Vec::new();
-        let config = match find_config(root) {
+        let editor_first = editor.config_preference.eq_ignore_ascii_case("editorFirst");
+        let repo_cfg_file = find_config(root);
+        let has_repo_config = repo_cfg_file.is_some();
+        let explicit_cfg = editor.config_path.clone().filter(|p| p.is_file());
+        let chosen_file = if editor_first { explicit_cfg.or(repo_cfg_file) } else { repo_cfg_file.or(explicit_cfg) };
+        let config = match chosen_file {
             Some(file) => {
                 let cfg = project::Config::load(&file)?;
                 warnings.extend(cfg.warnings.iter().map(|w| format!("{}: {w}", file.display())));
@@ -84,12 +122,16 @@ impl Workspace {
             }
             None => None,
         };
-        let root = config
-            .as_ref()
-            .map(|c| c.root.clone())
-            .filter(|r| !r.as_os_str().is_empty())
-            .unwrap_or_else(|| root.to_path_buf());
-        let suppress = suppress::Suppress::load_in(&root, config.as_ref(), None, None, false)?;
+        let ws_root = if has_repo_config {
+            config
+                .as_ref()
+                .map(|c| c.root.clone())
+                .filter(|r| !r.as_os_str().is_empty())
+                .unwrap_or_else(|| root.to_path_buf())
+        } else {
+            root.to_path_buf()
+        };
+        let suppress = suppress::Suppress::load_in(&ws_root, config.as_ref(), None, None, false)?;
         warnings.extend(suppress.warnings.iter().cloned());
         let mut session = Session::new();
         if let Some(c) = &config {
@@ -100,16 +142,79 @@ impl Workspace {
                 .set_style(&c.style)
                 .set_naming(&c.naming);
         }
-        // The command line's selection: the project's preset (or editor default),
-        // else the default profiles, plus the rules the config configures.
-        let preset = config.as_ref().and_then(|c| c.preset.as_deref()).or(default_preset);
+
+        let cfg_preset = config.as_ref().and_then(|c| c.preset.as_deref());
+        let ed_preset = editor.preset.as_deref().filter(|s| !s.is_empty());
+        let preset = if editor_first || !has_repo_config { ed_preset.or(cfg_preset) } else { cfg_preset.or(ed_preset) };
         let selected = crate::rule_selection(preset, false)?;
+        let apply_editor_rules = editor_first || !has_repo_config;
+        let sel_set: HashSet<&str> = editor.select.iter().map(String::as_str).collect();
+        let ign_set: HashSet<String> = if apply_editor_rules {
+            editor.ignore.iter().map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect()
+        } else {
+            HashSet::new()
+        };
+
         let keep = crate::rules()
             .into_iter()
-            .filter(|r| selected(r.id) || config.as_ref().is_some_and(|c| c.selects(r.id, r.name)))
+            .filter(|r| {
+                if apply_editor_rules && (ign_set.contains(r.id) || ign_set.contains(r.name)) {
+                    return false;
+                }
+                if apply_editor_rules
+                    && !sel_set.is_empty()
+                    && !editor_first
+                    && editor.preset.is_none()
+                    && config.is_none()
+                {
+                    return sel_set.contains(r.id) || sel_set.contains(r.name);
+                }
+                selected(r.id)
+                    || config.as_ref().is_some_and(|c| c.selects(r.id, r.name))
+                    || (apply_editor_rules && (sel_set.contains(r.id) || sel_set.contains(r.name)))
+            })
             .map(|r| r.id)
             .collect();
-        Ok(Workspace { root, config, suppress, session, keep, warnings })
+
+        let mut extra_args = Vec::new();
+        for inc in &editor.include_dirs {
+            let p = Path::new(inc);
+            let resolved = if p.is_relative() { ws_root.join(p) } else { p.to_path_buf() };
+            extra_args.push(format!("+incdir+{}", resolved.display()));
+        }
+        for def in &editor.defines {
+            let d = def.trim();
+            if !d.is_empty() {
+                extra_args.push(format!("+define+{d}"));
+            }
+        }
+        if !has_repo_config || editor_first {
+            for fl in &editor.filelists {
+                let p = Path::new(fl);
+                let resolved = if p.is_relative() { ws_root.join(p) } else { p.to_path_buf() };
+                if resolved.is_file() {
+                    extra_args.push("-F".to_string());
+                    extra_args.push(resolved.display().to_string());
+                }
+            }
+        }
+
+        Ok(Workspace {
+            root: ws_root,
+            config,
+            has_repo_config,
+            extra_args,
+            ignored: ign_set,
+            suppress,
+            session,
+            keep,
+            warnings,
+        })
+    }
+
+    /// True when a repository config file (`.svlang-lint/config.py`, etc.) was discovered in or above `root`.
+    pub fn has_repo_config(&self) -> bool {
+        self.has_repo_config
     }
 
     /// The project's folder (the config's, when there is one).
@@ -127,7 +232,9 @@ impl Workspace {
     /// no sources). Headers nothing compiled are left out: alone they do
     /// not parse.
     pub fn check(&self, open: &[PathBuf]) -> Result<Checked, String> {
-        let args: &[String] = self.config.as_ref().map_or(&[], |c| &c.compile_args);
+        let mut combined_args: Vec<String> = self.config.as_ref().map_or_else(Vec::new, |c| c.compile_args.clone());
+        combined_args.extend(self.extra_args.iter().cloned());
+        let args: &[String] = &combined_args;
         let cwd = std::env::current_dir().unwrap_or_default();
         let list =
             svlang::source::FileList::read_args(args, &cwd, svlang::source::Dialect::Any, &svlang::source::ProcessEnv);
@@ -159,6 +266,9 @@ impl Workspace {
         let design = svlang_model::design_of(&trees, 0.0);
         self.session.reset_waivers();
         let (files, mut findings) = self.session.lint_all(&design, &trees, |id| self.keep.contains(id));
+        if !self.ignored.is_empty() {
+            findings.retain(|f| !self.ignored.contains(f.rule) && !self.ignored.contains(f.name));
+        }
         let inline = self.session.inline_waived();
         crate::fix::guard_macro_calls(&mut findings);
         // The editor shows the user's code: never the UVM library's findings.

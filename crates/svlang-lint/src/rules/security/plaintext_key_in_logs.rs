@@ -19,9 +19,8 @@ fn plaintext_key(c: &Cst, a: &Ast, s: &mut Sink) {
             continue;
         }
         for arg in call.args.iter().skip(1).copied().flatten() {
-            let text = source_text(c, arg);
-            let low = text.to_lowercase();
-            if !["key", "secret", "seed", "token", "priv_"].iter().any(|w| low.contains(w)) {
+            let text = source_text(c, arg).trim().to_string();
+            if !has_sensitive_asset_name(&text) {
                 continue;
             }
             // The text keeps the parentheses; the location is inside them.
@@ -40,6 +39,31 @@ fn plaintext_key(c: &Cst, a: &Ast, s: &mut Sink) {
             a.again(s, c, n);
         }
     }
+}
+
+/// Checks whether `expr` names a cryptographic key, seed, token, or secret
+/// (excluding string literals and plain `.key` config/dictionary member lookups
+/// unless qualified with a security prefix like `aes_key`, `secret_key`, etc.).
+fn has_sensitive_asset_name(expr: &str) -> bool {
+    let trimmed = expr.trim_matches(['(', ')', ' ', '\t', '\r', '\n']);
+    if trimmed.starts_with('"') {
+        return false;
+    }
+    let low = trimmed.to_lowercase();
+    if ["secret", "seed", "token", "priv_"].iter().any(|w| low.contains(w)) {
+        return true;
+    }
+    if !low.contains("key") {
+        return false;
+    }
+    // `obj.key` on a struct/config entry is a dictionary/config key unless the
+    // identifier itself is a qualified key (`aes_key`, `root_key`, `key_0`, ...).
+    let last_seg = low.rsplit(['.', ':']).next().unwrap_or(&low);
+    let last_ident = last_seg.split(['[', '(']).next().unwrap_or(last_seg).trim();
+    if (low.contains('.') || low.contains("::")) && last_ident == "key" {
+        return false;
+    }
+    true
 }
 
 pub(crate) fn ast_plaintext_key(d: &Design, csts: &[Cst], s: &mut Sink) {

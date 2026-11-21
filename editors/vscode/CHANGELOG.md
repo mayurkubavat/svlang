@@ -1,25 +1,21 @@
 # Changelog
 
-All notable changes to the **svlang** VS Code / Open VSX extension (`svlang.svlang`) are documented here.
+## 0.4.0
 
-## [0.3.0] - 2026-11-20
+- **Status Bar Control Center & Configurable Lint Cadence**: Added context-aware clickable `svlang` status bar item + Quick Pick menu (`Lint Now`, `Lint Trigger: onType / onSave / off`, `Switch Preset`, `Set Preprocessor Defines`, `Initialize / Open Project Config`, `Settings`, `Output`, `Restart`).
+- **Compiler-Backed Semantic Highlighting & `` `ifdef `` Dimming**: Added `textDocument/semanticTokens/full` and configurable dimming of untaken `` `ifdef `` / `` `ifndef `` / `` `else `` conditional blocks (`svlang.inactiveRegions.*`), updating live with `svlang.compile.defines`.
+- **RTL Hierarchy, Signal Driver/Load Tracing & Type/Call Hierarchies**: Added **Explorer → RTL Hierarchy** and **Explorer → Signal Trace** (separating Drivers/Writes from Loads/Reads via right-click `Trace Signal Drivers & Loads`), plus LSP `TypeHierarchy` (UVM/SV class inheritance) and `CallHierarchy`.
+- **Rich 3-Layer Configuration & One-Click Rule Ignore**: Added categorized Settings UI (`svlang.lint.{requireConfig, configPath, configPreference, select, ignore}`, `svlang.compile.{filelists, defines, includeDirs}`, `svlang.files.extraExtensions`), `.f`/`.vc` filelist syntax support, `source.fixAll.svlang` on-save autofix, and `Cmd+.` quick actions to ignore rules in Workspace or User settings.
+- **Refined Atom-Material File Icons & Rule Precision Fixes**: Updated `.sv`/`.v` file icons to airy die-corner `SV`/`V` icons (`M5`) and eliminated standalone-mode false positives in `SV-OOP-011` (`uvm_bitstream_t`), `SV-DED-006` (queue/collection mutations), `UVM-BAN-001/002` (comments/strings), `SV-DED-001`, and `SEC-LOG-001`.
 
-### Changed
-- Consolidated all native tools into the single unified **`svlang`** binary (`svlang lsp`, `svlang lint`, `svlang check`, `svlang filelist`, `svlang map`, `svlang btor2`, etc.).
-- Platform `.vsix` packages now bundle `bin/<target>/svlang[.exe]` and launch `svlang lsp` (`svlang.serverPath` defaults to `"svlang"`, with automatic backwards-compatibility for existing `"dv-lsp"` configs).
+## 0.3.0
 
-## [0.2.1] - 2026-11-20
+- **Unified `svlang` CLI & LSP**: Consolidated the bundled binary into `svlang` (`svlang lsp`), eliminating multi-binary packaging and retiring the legacy C++ engine.
 
-### Changed
-- Upgraded the extension icon to a refined `256×256` Retina **Deep Die** QFP mark with exact 4-sided pin symmetry, recessed silicon die cavity, and top-left JEDEC Pin-1 orientation dot.
-- Added dedicated light- and dark-theme **Style 1 silicon chip-ring** open-file tab icons with crisp vector **`SV`** (`.sv`, `.svh`, `.svi`, `.svp`) and **`V`** (`.v`, `.vh`, `.vlib`) monograms.
+## 0.2.1
 
-## [0.2.0] - 2026-11-20
+- Refined 256×256 silicon die Marketplace icon and `.sv` / `.v` file tab icons.
 
-### Added
-- Initial release under the `svlang.svlang` extension ID with bundled native Rust `dv-lsp` across `linux-x64`, `linux-arm64`, `darwin-arm64`, `darwin-x64`, and `win32-x64`.
-- Live diagnostics and quick fixes across 446 IEEE 1800-2023 SystemVerilog, UVM, RTL/FSM/CDC/dataflow, SVA, coverage, and style rules, with Verissimo-compatible scoped block waivers (`svlang-lint:off`/`on`, `verissimo_lint:*`).
-- `svlang.preset` setting forwarding to `dv-lsp` (`initializationOptions.preset`), including the `formal-ready` pre-FPV rule pack (`SV-FPV-001..005`) and quick fixes.
-- Semantic code browsing (outline, workspace symbols, go to definition/declaration/type definition, references, hover) and context-aware completion.
-- Built-in SystemVerilog/Verilog TextMate grammars and UVM snippets.
-- Single-file `esbuild` extension bundle for fast cold activation and minimal `.vsix` footprint.
+## 0.2.0
+
+- Initial public release under `svlang.svlang` across Open VSX and VS Code Marketplace (`linux-x64`, `linux-arm64`, `darwin-arm64`, `darwin-x64`, `win32-x64`).

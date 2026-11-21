@@ -42,10 +42,16 @@ pub(crate) fn unused_variable(c: &Cst, out: &mut Sink) {
             if locals.is_empty() {
                 continue;
             }
-            let used = body_refs(c, body);
+            let used_nodes = body_refs_if_good(c, body);
+            let fallback_names: HashSet<String> =
+                if used_nodes.is_none() { syntactic_body_names(c, body) } else { HashSet::new() };
             let mname = last_name_of(c, m);
             for (decl, nm, name) in locals {
-                if used.contains(&decl) {
+                if let Some(ref used) = used_nodes {
+                    if used.contains(&decl) {
+                        continue;
+                    }
+                } else if fallback_names.contains(&name) {
                     continue;
                 }
                 let Some(loc) = c.first_tok(nm).map(|t| c.loc(t)) else { continue };
@@ -61,13 +67,37 @@ pub(crate) fn unused_variable(c: &Cst, out: &mut Sink) {
     }
 }
 
-/// The declarations slang's AST visit of a routine body reads (its
-/// NamedValue expressions): not in declaration initializers (also a for
-/// loop's); foreach loop variables shadow; none when a statement does not
-/// bind (the whole body is then bad; an error in a declaration's
-/// initializer does not count).
-fn body_refs(c: &Cst, body: NodeId) -> HashSet<NodeId> {
-    body_refs_if_good(c, body).unwrap_or_default()
+/// Fallback when semantic binding in `body` fails due to uncompiled imports:
+/// records every identifier referenced outside `Declarator`s in `body` so
+/// clearly used local variables are not falsely reported as unused.
+fn syntactic_body_names(c: &Cst, body: NodeId) -> HashSet<String> {
+    let mut names = HashSet::new();
+    let in_decl_name = |e: NodeId| {
+        crate::support::slang_ast::ancestors(c, e).take_while(|&a| a != body).any(|a| {
+            c.kind(a) == Declarator
+                && c.tree.child(a, Name).is_some_and(|nm| {
+                    c.tree
+                        .token_bounds(nm)
+                        .zip(c.tree.token_bounds(e))
+                        .is_some_and(|((a0, a1), (b0, b1))| a0 <= b0 && b1 <= a1)
+                })
+        })
+    };
+    for e in crate::support::slang_ast::subtree(c, body) {
+        if c.kind(e) == NameExpr && !in_decl_name(e) {
+            if let Some(t) = c.first_tok(e) {
+                names.insert(c.text_of(t).to_string());
+            }
+        } else if c.kind(e) == LoopStmt && c.keyword(e).is_some_and(|k| c.text_of(k) == "foreach") {
+            let toks: Vec<u32> = c.toks(e).collect();
+            if let Some(&t) = toks.get(2).filter(|_| toks.get(1).is_some_and(|&p| c.text_of(p) == "(")) {
+                names.insert(c.text_of(t).to_string());
+            }
+        } else if c.kind(e) == ScopedExpr {
+            names.insert(c.last_text(e).to_string());
+        }
+    }
+    names
 }
 
 fn last_name_of(c: &Cst, m: NodeId) -> String {

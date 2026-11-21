@@ -139,7 +139,7 @@ impl Server {
                 let text = p.at(&["textDocument", "text"]).as_str()?.to_string();
                 self.open.insert(path.clone());
                 if let Some(l) = &self.linter {
-                    l.changed(&path, uri, &text);
+                    l.opened(&path, uri, &text);
                 }
                 self.ws.update(&path, text);
                 None
@@ -173,7 +173,7 @@ impl Server {
             "textDocument/didSave" => {
                 // A saved file may be one other open files include.
                 if let Some(l) = &self.linter {
-                    l.request();
+                    l.saved();
                 }
                 None
             }
@@ -181,8 +181,10 @@ impl Server {
                 let uri = p.at(&["textDocument", "uri"]).as_str()?;
                 let first = p.at(&["range", "start", "line"]).as_u32()?;
                 let last = p.at(&["range", "end", "line"]).as_u32().unwrap_or(first);
+                let only: Vec<String> =
+                    p.at(&["context", "only"]).as_arr().iter().filter_map(|v| v.as_str().map(String::from)).collect();
                 Some(match &self.linter {
-                    Some(l) => l.code_actions(&uri_to_path(uri), uri, first, last),
+                    Some(l) => l.code_actions(&uri_to_path(uri), uri, first, last, &only),
                     None => Json::Arr(Vec::new()),
                 })
             }
@@ -218,6 +220,39 @@ impl Server {
             "textDocument/documentHighlight" => Some(self.highlights(p)),
             "textDocument/hover" => Some(self.hover(p)),
             "textDocument/completion" => Some(self.completion(p)),
+            "textDocument/semanticTokens/full" => {
+                let uri = p.at(&["textDocument", "uri"]).as_str().unwrap_or("");
+                Some(crate::semantic_tokens::semantic_tokens_full(&mut self.ws, uri))
+            }
+            "textDocument/prepareTypeHierarchy" => Some(crate::hierarchy::prepare_type_hierarchy(&mut self.ws, p)),
+            "typeHierarchy/supertypes" => Some(crate::hierarchy::supertypes(&self.ws, p)),
+            "typeHierarchy/subtypes" => Some(crate::hierarchy::subtypes(&self.ws, p)),
+            "textDocument/prepareCallHierarchy" => Some(crate::hierarchy::prepare_call_hierarchy(&mut self.ws, p)),
+            "callHierarchy/incomingCalls" => Some(crate::hierarchy::incoming_calls(&self.ws, p)),
+            "callHierarchy/outgoingCalls" => Some(crate::hierarchy::outgoing_calls(&self.ws, p)),
+            "svlang/inactiveRanges" => {
+                let uri = p.at(&["textDocument", "uri"]).as_str().unwrap_or("");
+                let defs = self.active_defines();
+                Some(crate::semantic_tokens::inactive_ranges(&mut self.ws, uri, &defs))
+            }
+            "svlang/rtlHierarchy" => Some(crate::rtl_trace::rtl_hierarchy(&self.ws, &self.libraries)),
+            "svlang/traceSignal" => Some(crate::rtl_trace::trace_signal(&mut self.ws, p)),
+            "svlang/lintNow" => {
+                if let Some(l) = &self.linter {
+                    l.lint_now();
+                }
+                Some(obj(vec![("ok", true.into())]))
+            }
+            "svlang/setLintOptions" => {
+                if let Some(l) = &self.linter {
+                    let trig = p.get("trigger").as_str().map(crate::lint::LintTrigger::from_str);
+                    let mut ed = l.editor_options();
+                    apply_editor_json(&mut ed, p);
+                    l.set_options(trig, Some(ed));
+                }
+                Some(obj(vec![("ok", true.into())]))
+            }
+            "svlang/status" => Some(self.current_status()),
             _ => None,
         }
     }
@@ -259,18 +294,27 @@ impl Server {
                 self.exclude.push(s.trim_matches('/').trim_start_matches("**/").trim_end_matches("/**").to_string());
             }
         }
-        // Diagnostics and quick fixes, unless the editor asks for navigation
-        // only (`"lint": false`).
-        let lint = opts.get("lint").as_bool() != Some(false);
-        if lint {
-            let root = self.roots.first().cloned().or_else(|| std::env::current_dir().ok()).unwrap_or_default();
-            let preset = opts.get("preset").as_str().map(String::from);
-            self.linter = Some(crate::lint::Linter::start_with_preset(root, preset, self.out.clone()));
-        }
+        // Always start the background lint worker unless explicitly disabled with
+        // `"lint": false` AND no trigger given, so `svlang/lintNow` and dynamic
+        // `svlang/setLintOptions` work without restarting the language server.
+        let lint_enabled = opts.get("lint").as_bool() != Some(false);
+        let initial_trigger = if !lint_enabled {
+            crate::lint::LintTrigger::Off
+        } else if let Some(t) = opts.get("lintTrigger").as_str() {
+            crate::lint::LintTrigger::from_str(t)
+        } else {
+            crate::lint::LintTrigger::OnType
+        };
+        let root = self.roots.first().cloned().or_else(|| std::env::current_dir().ok()).unwrap_or_default();
+        let mut editor = svlang_lint::EditorOptions::default();
+        apply_editor_json(&mut editor, opts);
+        self.linter = Some(crate::lint::Linter::start_with_options(root, initial_trigger, editor, self.out.clone()));
+
         let sync = obj(vec![("openClose", true.into()), ("change", 1u32.into()), ("save", true.into())]);
         // Code browsing, unless the editor asks for lint only
         // (`"navigation": false`).
         let nav = opts.get("navigation").as_bool() != Some(false);
+        let sem_hl = opts.get("semanticHighlighting").as_bool() != Some(false);
         let completion = obj(vec![
             ("triggerCharacters", Json::Arr(vec![".".into(), ":".into(), "`".into(), "$".into()])),
             ("resolveProvider", false.into()),
@@ -286,33 +330,59 @@ impl Server {
                 "referencesProvider",
                 "documentHighlightProvider",
                 "hoverProvider",
+                "typeHierarchyProvider",
+                "callHierarchyProvider",
             ] {
                 caps.push((c, true.into()));
             }
             caps.push(("completionProvider", completion));
+            if sem_hl {
+                caps.push(("semanticTokensProvider", crate::semantic_tokens::capabilities()));
+            }
         }
-        if lint {
-            caps.push(("codeActionProvider", obj(vec![("codeActionKinds", Json::Arr(vec!["quickfix".into()]))])));
-        }
+        caps.push((
+            "codeActionProvider",
+            obj(vec![(
+                "codeActionKinds",
+                Json::Arr(vec!["quickfix".into(), "source.fixAll".into(), "source.fixAll.svlang".into()]),
+            )]),
+        ));
         obj(vec![
             ("capabilities", obj(caps)),
             ("serverInfo", obj(vec![("name", "svlang".into()), ("version", env!("CARGO_PKG_VERSION").into())])),
         ])
     }
 
+    fn active_defines(&self) -> Vec<String> {
+        self.linter
+            .as_ref()
+            .map(|l| {
+                l.editor_options().defines.into_iter().map(|d| d.trim().to_string()).filter(|d| !d.is_empty()).collect()
+            })
+            .unwrap_or_default()
+    }
+
+    fn current_status(&self) -> Json {
+        let files = self.ws.files.iter().flatten().count();
+        let symbols: usize = self.ws.files.iter().flatten().map(|f| f.symbols.len()).sum();
+        match &self.linter {
+            Some(l) => l.status().to_json(files, symbols),
+            None => crate::lint::LintStatus::default().to_json(files, symbols),
+        }
+    }
+
     fn index_workspace(&mut self) {
+        self.notify("svlang/status", obj(vec![("state", "indexing".into())]));
         let t0 = Instant::now();
         let mut roots = self.roots.clone();
         roots.extend(self.libraries.iter().cloned());
         let n = self.ws.scan(&roots, &self.exclude);
-        let msg = format!(
-            "svlang: indexed {} files ({} symbols) in {} ms",
-            n,
-            self.ws.globals.values().map(|v| v.len()).sum::<usize>(),
-            t0.elapsed().as_millis()
-        );
+        let syms: usize = self.ws.globals.values().map(|v| v.len()).sum();
+        let msg = format!("svlang: indexed {} files ({} symbols) in {} ms", n, syms, t0.elapsed().as_millis());
         eprintln!("[{}]", msg);
         self.log(&msg);
+        let status = self.current_status();
+        self.notify("svlang/status", status);
     }
 
     /// The file and byte offset of a TextDocumentPositionParams.
@@ -738,7 +808,46 @@ fn expand_env(s: &str) -> String {
     out
 }
 
-fn symbol_kind(s: &Symbol, in_class: bool) -> u32 {
+fn str_list(j: &Json, key: &str) -> Option<Vec<String>> {
+    let v = j.get(key);
+    if v.is_null() {
+        return None;
+    }
+    Some(v.as_arr().iter().filter_map(|x| x.as_str().map(|s| expand_env(s.trim()))).filter(|s| !s.is_empty()).collect())
+}
+
+fn apply_editor_json(ed: &mut svlang_lint::EditorOptions, j: &Json) {
+    if !j.get("preset").is_null() {
+        ed.preset = j.get("preset").as_str().map(str::trim).filter(|s| !s.is_empty()).map(String::from);
+    }
+    if let Some(cp) = j.get("configPath").as_str() {
+        let expanded = expand_env(cp.trim());
+        ed.config_path = if expanded.is_empty() { None } else { Some(PathBuf::from(expanded)) };
+    }
+    if let Some(pref) = j.get("configPreference").as_str() {
+        ed.config_preference = pref.trim().to_string();
+    }
+    if let Some(req) = j.get("requireConfig").as_bool() {
+        ed.require_config = req;
+    }
+    if let Some(sel) = str_list(j, "select") {
+        ed.select = sel;
+    }
+    if let Some(ign) = str_list(j, "ignore") {
+        ed.ignore = ign;
+    }
+    if let Some(fl) = str_list(j, "filelists") {
+        ed.filelists = fl;
+    }
+    if let Some(defs) = str_list(j, "defines") {
+        ed.defines = defs;
+    }
+    if let Some(incs) = str_list(j, "includeDirs") {
+        ed.include_dirs = incs;
+    }
+}
+
+pub(crate) fn symbol_kind(s: &Symbol, in_class: bool) -> u32 {
     match s.kind {
         SymKind::Module | SymKind::Program | SymKind::Checker => 2,
         SymKind::Interface => 11,

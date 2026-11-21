@@ -1,0 +1,37 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "SystemVerilog Filelist",
+  "scopeName": "source.sv-filelist",
+  "patterns": [
+    {
+      "name": "comment.line.number-sign.sv-filelist",
+      "match": "^\\s*#.*$"
+    },
+    {
+      "name": "comment.line.double-slash.sv-filelist",
+      "match": "//.*$"
+    },
+    {
+      "name": "comment.block.sv-filelist",
+      "begin": "/\\*",
+      "end": "\\*/"
+    },
+    {
+      "name": "keyword.operator.plusarg.sv-filelist",
+      "match": "(?<=^|\\s)\\+(incdir|define|libext|svlang)[+\\S]*"
+    },
+    {
+      "name": "keyword.operator.flag.sv-filelist",
+      "match": "(?<=^|\\s)-(f|F|y|v|I|D|top|uvm|uvmhome|ntb_opts)\\b"
+    },
+    {
+      "name": "variable.other.env.sv-filelist",
+      "match": "\\$\\{[A-Za-z_][A-Za-z0-9_]*\\}|\\$[A-Za-z_][A-Za-z0-9_]*"
+    },
+    {
+      "name": "string.quoted.double.sv-filelist",
+      "begin": "\"",
+      "end": "\""
+    }
+  ]
+}

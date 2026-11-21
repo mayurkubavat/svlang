@@ -118,9 +118,9 @@ dependencies = [
 
 [[package]]
 name = "regex"
-version = "1.13.1"
+version = "1.13.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f020237b6c8eed93db2e2cb53c00c60a8e1bc73da7d073199a1180401450218d"
+checksum = "9807af0e638c12e753aa1b4e601791bf2a8f71274023c8bbeec12fc149950857"
 dependencies = [
  "aho-corasick",
  "memchr",
@@ -130,9 +130,9 @@ dependencies = [
 
 [[package]]
 name = "regex-automata"
-version = "0.4.18"
+version = "0.4.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ad8553b9b26413251cbf30e620595c7a41b3887f03da04579c0e6b0d6a06b4b2"
+checksum = "41d60ef07df457506a0a1a2073112eb4aae5733dbd2813c3da77d1b0fd441158"
 dependencies = [
  "aho-corasick",
  "memchr",
@@ -141,13 +141,13 @@ dependencies = [
 
 [[package]]
 name = "regex-syntax"
-version = "0.8.11"
+version = "0.8.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
+checksum = "d902046e6a28a1e4c3cab97258a0ce11e994903f01c2d97a9447a0b3df85f4f6"
 
 [[package]]
 name = "sv-aiger"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "sv-btor2",
  "sv-netlist",
@@ -156,7 +156,7 @@ dependencies = [
 
 [[package]]
 name = "sv-btor2"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "sv-netlist",
  "sv-semantic",
@@ -165,11 +165,11 @@ dependencies = [
 
 [[package]]
 name = "sv-lexer"
-version = "0.3.0"
+version = "0.4.0"
 
 [[package]]
 name = "sv-netlist"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "sv-semantic",
  "sv-syntax",
@@ -177,14 +177,14 @@ dependencies = [
 
 [[package]]
 name = "sv-preprocessor"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "sv-lexer",
 ]
 
 [[package]]
 name = "sv-semantic"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "sv-source",
  "sv-syntax",
@@ -192,11 +192,11 @@ dependencies = [
 
 [[package]]
 name = "sv-source"
-version = "0.3.0"
+version = "0.4.0"
 
 [[package]]
 name = "sv-syntax"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "sv-lexer",
  "sv-preprocessor",
@@ -204,7 +204,7 @@ dependencies = [
 
 [[package]]
 name = "sv-yosys"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "sv-netlist",
  "sv-semantic",
@@ -213,7 +213,7 @@ dependencies = [
 
 [[package]]
 name = "svlang"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "sv-aiger",
  "sv-btor2",
@@ -228,7 +228,7 @@ dependencies = [
 
 [[package]]
 name = "svlang-cli"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "svlang",
  "svlang-lint",
@@ -238,7 +238,7 @@ dependencies = [
 
 [[package]]
 name = "svlang-lint"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "regex",
  "svlang",
@@ -247,7 +247,7 @@ dependencies = [
 
 [[package]]
 name = "svlang-lsp"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "svlang",
  "svlang-lint",
@@ -255,14 +255,14 @@ dependencies = [
 
 [[package]]
 name = "svlang-model"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "svlang",
 ]
 
 [[package]]
 name = "svlang-py"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "pyo3",
  "svlang",
@@ -270,7 +270,7 @@ dependencies = [
 
 [[package]]
 name = "svlang-wasm"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "svlang",
 ]

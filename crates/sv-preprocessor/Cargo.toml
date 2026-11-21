@@ -11,4 +11,4 @@ keywords.workspace = true
 categories.workspace = true
 
 [dependencies]
-sv-lexer = { version = "0.3.0", path = "../sv-lexer" }
+sv-lexer = { version = "0.4.0", path = "../sv-lexer" }

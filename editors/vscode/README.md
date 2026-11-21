@@ -1,80 +1,105 @@
 # svlang for VS Code, Cursor & Antigravity
 
-IEEE 1800-2023 SystemVerilog and UVM language server, semantic code browser, and real-time static linter powered by **svlang**'s pure-Rust compiler front end (`svlang lsp`).
+IEEE 1800-2023 SystemVerilog and UVM language server, compiler-backed semantic highlighter, RTL/signal tracer, and static linter (`474` rules + quick fixes) powered by **svlang**'s self-contained pure-Rust engine (`svlang lsp`).
 
-## Features
+---
 
-- **Real-Time Diagnostics (445+ Rules)**: Instant feedback across UVM methodology, OOP soundness, randomization & constraints, RTL/FSM/CDC/dataflow, SVA, functional coverage, dead code, and style.
-- **Formal-Readiness Pack (`formal-ready`)**: Built-in pre-FPV checks (`SV-FPV-001..005`) with quick fixes (including `assume` -> `assert` on DUT outputs and auto-injecting `disable iff (<reset>)`).
-- **Deep Semantic Analysis**: Cross-component validation of objection CFGs, Config DB type matching, virtual sequencer wiring, and RAL predictor binding.
-- **Project-Aware Linting**: Compiles from `.svlang-lint/config.py` or `.svlang-lint.json` (sources, filelists, include dirs, defines) over your unsaved edits, honoring scoped waivers (`svlang-lint:waive`, `svlang-lint:off`/`on`, `verissimo_lint:*`) and baselines.
-- **Quick Fixes**: Apply safe rule fix-its, formal-readiness quick fixes, or waive findings directly from the editor.
-- **Semantic Code Browsing**: Document outline, workspace symbols (`Ctrl/Cmd+T`), go to definition / declaration / type definition (including `extern` prototypes, macros, and base classes), find references, document highlights, and hover docs.
-- **Context-Aware Completion**: In-scope names with inherited class members, `obj.` and `Class::`/`pkg::` members, `type_id::create`, `` ` `` macros (workspace and UVM), and `$` system tasks.
-- **Syntax Highlighting & UVM Snippets**: Built-in SystemVerilog/Verilog grammars plus snippets (`uvm_component`, `uvm_object`, `uvm_sequence_item`, `uvm_sequence`, `uvm_driver`, `uvm_monitor`, `uvm_test`, `uvm_info`, `uvm_error`, `cfgget`, `always_ff`, `module`).
+## Quick Start (60 Seconds)
+
+1. **Open any `.sv`, `.svh`, `.v`, `.vh`, or `.f` file** — syntax & semantic highlighting, inactive `` `ifdef `` dimming, hover docs, completion, go-to-definition (`F12` / `Cmd+Click`), and live diagnostics start automatically with **zero external setup**.
+2. **Use the `svlang` Status Bar item** (bottom-right) — click `✓ svlang` anytime to open the **Control Center**:
+   - **Lint Current File / Project Now** (on-demand check even when automatic linting is off)
+   - **Set Lint Trigger** (`On Type` / `On Save` / `Off`)
+   - **Switch Lint Preset** (`default`, `formal-ready`, `soundness`, `methodology`, `style`, `all`, …)
+   - **Set Preprocessor Defines** (live-updates `` `ifdef `` dimming and lint elaboration)
+   - **Initialize Project Config** (`svlang lint --init` — auto-discovers `.f` filelists, `$UVM_HOME`, and naming conventions, writing `.svlang-lint/config.py`)
+3. **Trace RTL & UVM code**:
+   - **Signal Drivers & Loads**: Right-click any signal, port, variable, or class field → **`svlang: Trace Signal Drivers & Loads`** (opens **Explorer → Signal Trace** separating **Drivers / Writes** from **Loads / Reads**).
+   - **RTL Module Hierarchy**: Open **Explorer → RTL Hierarchy** to browse your top-to-leaf module/interface instantiation tree.
+   - **UVM Type & Call Hierarchy**: Right-click any class or task/function → **Show Type Hierarchy** / **Show Call Hierarchy**.
+
+---
+
+## Key Features
+
+- **Compiler-Backed Highlighting + `` `ifdef `` Dimming**: Full LSP semantic tokens (`class`, `interface`, `namespace`, `type`, `enumMember`, `parameter`, `property`, `method`, `macro`) plus configurable dimming of untaken `` `ifdef `` / `` `ifndef `` / `` `else `` regions.
+- **RTL Hierarchy & Signal Driver/Load Tracing**: Built-in Explorer panes separating procedural/continuous/output-port **Drivers** from **Loads**, plus module instantiation trees.
+- **474 Verification & RTL Rules**: UVM factory/phasing/objections/config_db/TLM, formal readiness (`formal-ready`: `SV-FPV-001..005`), randomization & constraint solver checks, RTL/FSM/CDC/dataflow, SVA, coverage, and style.
+- **One-Click Quick Fixes (`Cmd+.` / `Ctrl+.`)**:
+  - Apply safe rule rewrites (or auto-apply all safe fixes on save with `"editor.codeActionsOnSave": { "source.fixAll.svlang": "explicit" }`).
+  - Insert scoped waivers (`// svlang-lint-disable-next-line <RULE>`).
+  - **Ignore `<RULE>` in Workspace or User Settings** with a single click.
+- **Simulator `.f` Filelist Support**: Built-in syntax highlighting for `.f` / `.F` / `.vc` command files and lightweight `svlang.compile.filelists` configuration.
+
+---
+
+## Keyboard Shortcuts & Editor Actions
+
+| Action | macOS | Linux / Windows |
+| :--- | :--- | :--- |
+| Quick Fix / Waive / Ignore Rule | `Cmd + .` | `Ctrl + .` |
+| Go to Definition / Declaration | `F12` or `Cmd + Click` | `F12` or `Ctrl + Click` |
+| Find All References | `Shift + F12` | `Shift + F12` |
+| Trace Signal Drivers & Loads | Right-click → `Trace Signal Drivers & Loads` | Right-click → `Trace Signal Drivers & Loads` |
+| Document Outline | `Cmd + Shift + O` | `Ctrl + Shift + O` |
+| Workspace Symbols | `Cmd + T` | `Ctrl + T` |
+| Control Menu | Click `svlang` in Status Bar | Click `svlang` in Status Bar |
+
+---
+
+## Configuration Hierarchy (Global vs. Workspace vs. Repo)
+
+`svlang` follows a clean 3-layer configuration model (inspired by Ruff, clangd, and Biome):
+
+1. **Repo `.svlang-lint/config.py` (Checked into Git — Team & CI Truth)**: Wins by default (`svlang.lint.configPreference = "filesystemFirst"`) so editor diagnostics match CI (`svlang lint`) 1:1.
+2. **Workspace `.vscode/settings.json`**: Point at existing simulator `.f` filelists (`svlang.compile.filelists`), set active `` `ifdef `` defines (`svlang.compile.defines`), or switch `svlang.lint.trigger` to `"onSave"`.
+3. **Global User `settings.json`**: Personal defaults across every repo — for example, set `"svlang.lint.requireConfig": true` to stay in quiet navigation-only mode in unconfigured folders, or set `"svlang.lint.ignore": ["SV-STY-104", "SV-STY-009"]` globally.
+
+### Settings Reference (`Settings → Extensions → svlang`)
+
+#### 1. Linting
+| Setting | Default | Description |
+| :--- | :--- | :--- |
+| `svlang.enable` | `true` | Master switch for lint diagnostics (navigation & highlighting stay on when `false`) |
+| `svlang.lint.trigger` | `"onType"` | `"onType"` (250 ms debounce), `"onSave"`, or `"off"` (manual `Lint Now` only) |
+| `svlang.lint.requireConfig` | `false` | Only auto-lint workspaces with `.svlang-lint/config.py` (or `lint.configPath`) |
+| `svlang.lint.configPath` | `""` | Optional shared/global `config.py` path (`~` and `$VARS` expanded) |
+| `svlang.lint.configPreference` | `"filesystemFirst"` | `"filesystemFirst"` (repo config wins) or `"editorFirst"` (VS Code settings win) |
+| `svlang.preset` | `""` | Rule preset (`default`, `formal-ready`, `soundness`, `methodology`, `style`, `all`, …) |
+| `svlang.lint.select` | `[]` | Additional rule IDs/names to enable |
+| `svlang.lint.ignore` | `[]` | Rule IDs/names to silence in User or Workspace settings |
+
+#### 2. Preprocessor, Filelists & Files
+| Setting | Default | Description |
+| :--- | :--- | :--- |
+| `svlang.files.extraExtensions` | `[]` | Extra extensions treated as SystemVerilog (e.g. `[".sva", ".inc", ".vams"]`) |
+| `svlang.compile.filelists` | `[]` | Simulator `.f` command files to compile when no `config.py` exists |
+| `svlang.compile.defines` | `[]` | Active preprocessor defines (`["SYNTHESIS", "WIDTH=64"]`) for lint & `` `ifdef `` dimming |
+| `svlang.compile.includeDirs` | `[]` | Extra `+incdir+` directories (`~` and `$VARS` expanded) |
+| `svlang.inactiveRegions.enable` | `true` | Dim untaken `` `ifdef `` / `` `ifndef `` / `` `else `` regions |
+| `svlang.inactiveRegions.opacity` | `0.5` | Opacity (`0.15`–`1.0`) for dimmed inactive preprocessor regions |
+
+#### 3. Navigation, Highlighting & Server
+| Setting | Default | Description |
+| :--- | :--- | :--- |
+| `svlang.navigation.enable` | `true` | Outline, workspace symbols, definitions, references, hierarchies, hover, completion |
+| `svlang.semanticHighlighting.enable` | `true` | Compiler-backed LSP semantic token highlighting |
+| `svlang.navigation.libraryPaths` | `[]` | Extra trees to index (UVM, VIPs; `~` and `$VARS` expanded) |
+| `svlang.navigation.useUvmHome` | `true` | Automatically index `$UVM_HOME/src` when `UVM_HOME` is set |
+| `svlang.navigation.exclude` | `[]` | Directory names or path endings to skip when indexing |
+| `svlang.statusBar.show` | `"whenSvOpen"` | `"whenSvOpen"`, `"always"`, or `"never"` |
+| `svlang.serverPath` | `"svlang"` | Path to `svlang` binary (defaults to bundled platform binary, else `PATH`) |
+| `svlang.trace.server` | `"off"` | LSP protocol trace logging (`"off"`, `"messages"`, `"verbose"`) |
+
+---
 
 ## Supported Platforms
 
-Platform `.vsix` releases bundle the self-contained native `svlang` binary—no external compiler, Python, or Rust toolchain required:
-
+Platform `.vsix` packages bundle the self-contained native `svlang` binary — no external C++, Python, or Rust toolchain required:
 - Linux (`linux-x64`, `linux-arm64` — glibc 2.28+)
 - macOS (`darwin-arm64`, `darwin-x64`)
 - Windows (`win32-x64`)
 
-To use your own `svlang` build (or run on another platform), install via `cargo install svlang-cli` or build from source and put `svlang` on `PATH` (or set `svlang.serverPath`):
+## License
 
-```bash
-git clone https://github.com/mayurkubavat/svlang.git
-cd svlang
-cargo build --release -p svlang-cli
-export PATH="$(pwd)/target/release:$PATH"
-```
-
-## Configuration Settings
-
-Configure via User or Workspace `settings.json`:
-
-| Setting | Type | Default | Description |
-| :--- | :--- | :--- | :--- |
-| `svlang.enable` | `boolean` | `true` | Enable/disable live linting diagnostics and quick fixes |
-| `svlang.preset` | `string` | `""` | Default lint preset when not set in project config (e.g. `default`, `formal-ready`, `all`, `soundness`, `style`) |
-| `svlang.serverPath` | `string` | `"svlang"` | Path to the `svlang` binary, launched as `svlang lsp` (defaults to the bundled binary, else `PATH`) |
-| `svlang.navigation.enable` | `boolean` | `true` | Outline, definitions, references, hover, and completion |
-| `svlang.navigation.libraryPaths` | `string[]` | `[]` | Extra trees to index (UVM, VIPs; `$VARS` and `~` expanded) |
-| `svlang.navigation.useUvmHome` | `boolean` | `true` | Also index `$UVM_HOME/src` when `UVM_HOME` is set |
-| `svlang.navigation.exclude` | `string[]` | `[]` | Directory names or path endings to skip when indexing |
-| `svlang.trace.server` | `string` | `"off"` | LSP protocol trace logging (`off`, `messages`, `verbose`) |
-
-*(Legacy `svlang-lint.*` settings and legacy `dv-lsp` server paths continue to work automatically.)*
-
-## Commands
-
-- **`svlang: Restart Language Servers`**: Restarts the language server, reloading project config, waivers, and workspace index.
-
-## Installing
-
-Install **`svlang.svlang`** from the **VS Code Marketplace** or **Open VSX Registry** (Cursor, Antigravity, VSCodium, Windsurf), or via CLI:
-
-```bash
-code --install-extension svlang.svlang      # VS Code
-cursor --install-extension svlang.svlang    # Cursor
-```
-
-Or build a self-contained `.vsix` locally:
-
-```bash
-cargo build --release -p svlang-cli
-cd editors/vscode
-npm ci
-npm run bundle:local
-npm run package
-```
-
-## Development
-
-```bash
-cd editors/vscode
-npm ci
-npm run compile
-# Press F5 in VS Code to launch the Extension Development Host
-```
+Apache-2.0 — see `LICENSE.txt` and `NOTICE`.
