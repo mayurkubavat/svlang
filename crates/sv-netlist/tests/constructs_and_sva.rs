@@ -1537,7 +1537,7 @@ endmodule
 }
 
 #[test]
-fn tier4_unrolled_loop_task_concurrent_sva_and_external_prop_user_functions() {
+fn unrolled_loop_task_concurrent_sva_and_external_prop_user_functions() {
     let src = r#"
 package pkt_pkg;
   function automatic logic is_valid_pair(input logic [3:0] hdr, input logic [3:0] mask);
@@ -1583,7 +1583,7 @@ module lane_chk (
   end
 endmodule
 "#;
-    let tree = sv_syntax::parse_source(src, "tier4.sv", sv_syntax::Options::default());
+    let tree = sv_syntax::parse_source(src, "loop_task_sva.sv", sv_syntax::Options::default());
     assert!(tree.errors.is_empty(), "{:?}", tree.errors);
     let trees = vec![tree];
     let elab = sv_semantic::elaborate_with_options(&trees, &["lane_chk".to_string()], &[], &[]);

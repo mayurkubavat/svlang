@@ -16,6 +16,8 @@ pub(crate) fn formal_assert_missing_disable_iff(c: &Cst, out: &mut Sink) {
                 hit.prop_name
             ),
             hit.loc,
-        );
+        )
+        .fixes
+        .extend(hit.fix.iter().cloned());
     }
 }

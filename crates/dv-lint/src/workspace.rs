@@ -69,6 +69,12 @@ impl Workspace {
     /// Opens the project of folder `root`: the config found there or above
     /// (none is fine), the waiver file and the baseline next to it.
     pub fn open(root: &Path) -> Result<Workspace, String> {
+        Self::open_with_preset(root, None)
+    }
+
+    /// Like [`Self::open`], using `default_preset` when the project config does
+    /// not specify a `"preset"` (e.g., an LSP client passing `initializationOptions.preset`).
+    pub fn open_with_preset(root: &Path, default_preset: Option<&str>) -> Result<Workspace, String> {
         let mut warnings = Vec::new();
         let config = match find_config(root) {
             Some(file) => {
@@ -94,9 +100,10 @@ impl Workspace {
                 .set_style(&c.style)
                 .set_naming(&c.naming);
         }
-        // The command line's selection: the project's preset, else the
-        // default profiles, plus the rules the config configures.
-        let selected = crate::rule_selection(config.as_ref().and_then(|c| c.preset.as_deref()), false)?;
+        // The command line's selection: the project's preset (or editor default),
+        // else the default profiles, plus the rules the config configures.
+        let preset = config.as_ref().and_then(|c| c.preset.as_deref()).or(default_preset);
+        let selected = crate::rule_selection(preset, false)?;
         let keep = crate::rules()
             .into_iter()
             .filter(|r| selected(r.id) || config.as_ref().is_some_and(|c| c.selects(r.id, r.name)))

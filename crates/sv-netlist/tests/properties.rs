@@ -1831,7 +1831,7 @@ fn unbounded_always_safety_and_liveness() {
 }
 
 #[test]
-fn tier4_implies_iff_ifelse_snexttime_and_compound_always_semantics() {
+fn sva_implies_iff_ifelse_snexttime_and_compound_always_semantics() {
     // Rows are `"rst,a,b,c"`.
     // 1. `(a ##1 b) implies (##1 c)`: at tick t, if `a(t) && b(t+1)`, then `c(t+1)` must hold.
     let p_imp = "p: assert property (@(posedge clk) (a ##1 b) implies (##1 c));";
@@ -1865,7 +1865,7 @@ fn tier4_implies_iff_ifelse_snexttime_and_compound_always_semantics() {
 }
 
 #[test]
-fn tier8_sva_local_vars_bounded_prophecy_case_xmr_and_macro_attr() {
+fn sva_local_vars_bounded_prophecy_case_xmr_and_macro_attr() {
     // 1. SVA `case (...) ... endcase` (IEEE 1800-2023 §16.12.17):
     let p_case = "\
         p: assert property (@(posedge clk)\n\

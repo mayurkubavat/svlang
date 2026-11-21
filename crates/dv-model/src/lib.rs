@@ -25,6 +25,8 @@ use std::time::Instant;
 #[cfg(feature = "slang")]
 use sv_slang as ffi;
 
+pub mod ral;
+
 pub use svlang::semantic::model::{
     Argument, Assignment, Call, ClassId, Constraint, Direction, Error, Loc, Local, MacroUse, Property, RootKind,
     Timings, TypeShape, Typedef, Visibility,

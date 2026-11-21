@@ -139,6 +139,7 @@ type Stamps = Vec<(PathBuf, Option<SystemTime>)>;
 /// The project of `root`, reloaded when its config or waiver files change.
 struct Project {
     root: PathBuf,
+    default_preset: Option<String>,
     loaded: Option<(Stamps, Result<dv_lint::Workspace, String>)>,
 }
 
@@ -170,7 +171,7 @@ impl Project {
             None => true,
         };
         if stale {
-            let ws = dv_lint::Workspace::open(&self.root);
+            let ws = dv_lint::Workspace::open_with_preset(&self.root, self.default_preset.as_deref());
             self.loaded = Some((Self::stamps(&self.root, ws.as_ref().ok()), ws));
         }
         &self.loaded.as_ref().expect("just loaded").1
@@ -286,13 +287,14 @@ fn publish(out: &Out, uri: &str, list: &[Diagnostic]) {
 }
 
 impl Linter {
-    /// Starts the lint thread for the project of `root`.
-    pub fn start(root: PathBuf, out: Out) -> Linter {
+    /// Starts the lint thread with an optional editor-supplied default `preset`
+    /// (for example `"formal-ready"`).
+    pub fn start_with_preset(root: PathBuf, default_preset: Option<String>, out: Out) -> Linter {
         let (wake, asked) = channel::<()>();
         let state: Arc<Mutex<State>> = Default::default();
         let (thread_state, thread_out) = (state.clone(), out.clone());
         let spawned = std::thread::Builder::new().name("lint".into()).stack_size(256 << 20).spawn(move || {
-            let mut project = Project { root, loaded: None };
+            let mut project = Project { root, default_preset, loaded: None };
             while asked.recv().is_ok() {
                 // One check for a burst of edits: wait for typing to pause.
                 loop {

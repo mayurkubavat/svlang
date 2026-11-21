@@ -264,7 +264,8 @@ impl Server {
         let lint = opts.get("lint").as_bool() != Some(false);
         if lint {
             let root = self.roots.first().cloned().or_else(|| std::env::current_dir().ok()).unwrap_or_default();
-            self.linter = Some(crate::lint::Linter::start(root, self.out.clone()));
+            let preset = opts.get("preset").as_str().map(String::from);
+            self.linter = Some(crate::lint::Linter::start_with_preset(root, preset, self.out.clone()));
         }
         let sync = obj(vec![("openClose", true.into()), ("change", 1u32.into()), ("save", true.into())]);
         // Code browsing, unless the editor asks for lint only

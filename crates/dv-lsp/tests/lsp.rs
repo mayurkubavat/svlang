@@ -49,6 +49,10 @@ struct Client {
 
 impl Client {
     fn start(root: &Path) -> Client {
+        Self::start_with_opts(root, "{}")
+    }
+
+    fn start_with_opts(root: &Path, init_opts: &str) -> Client {
         let mut child = Command::new(env!("CARGO_BIN_EXE_dv-lsp"))
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -59,7 +63,10 @@ impl Client {
         let stdout = BufReader::new(child.stdout.take().unwrap());
         let mut c = Client { child, stdin, stdout, next: 1 };
         let root_uri = format!("file://{}", root.display());
-        c.request("initialize", &format!(r#"{{"rootUri":"{}","capabilities":{{}}}}"#, root_uri));
+        c.request(
+            "initialize",
+            &format!(r#"{{"rootUri":"{}","initializationOptions":{},"capabilities":{{}}}}"#, root_uri, init_opts),
+        );
         c.notify("initialized", "{}");
         c
     }
@@ -333,6 +340,69 @@ fn diagnostics_and_quick_fixes() {
     assert!(d.contains(r#""diagnostics":[]"#), "{d}");
     let r = c.request("shutdown", "null");
     assert!(r.contains(r#""result":null"#));
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn formal_ready_diagnostics_and_quick_fixes() {
+    let dir = std::env::temp_dir().join(format!("dv-lsp-fpv-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let dir = dir.canonicalize().unwrap();
+    let file = dir.join("fifo_fpv.sv");
+    let src = "module fifo_fpv (\n\
+  input  logic clk,\n\
+  input  logic rst_ni,\n\
+  input  logic req,\n\
+  output logic gnt\n\
+);\n\
+  always_ff @(posedge clk or negedge rst_ni) begin\n\
+    if (!rst_ni) gnt <= 1'b0;\n\
+    else         gnt <= req;\n\
+  end\n\
+  m_bad_out: assume property (@(posedge clk) disable iff (!rst_ni) !gnt);\n\
+  a_no_rst:  assert property (@(posedge clk) req |=> gnt);\n\
+endmodule\n";
+    std::fs::write(&file, src).unwrap();
+
+    let mut c = Client::start_with_opts(&dir, r#"{"preset":"formal-ready"}"#);
+    let open = format!(
+        r#"{{"textDocument":{{"uri":"file://{}","languageId":"systemverilog","version":1,"text":{}}}}}"#,
+        file.display(),
+        json_str(src)
+    );
+    c.notify("textDocument/didOpen", &open);
+    let d = c.diagnostics(&file);
+    assert!(d.contains(r#""code":"SV-FPV-001""#), "{d}");
+    assert!(d.contains(r#""code":"SV-FPV-003""#), "{d}");
+
+    let actions = c.request(
+        "textDocument/codeAction",
+        &format!(
+            r#"{{"textDocument":{{"uri":"file://{}"}},"range":{{"start":{{"line":10,"character":0}},"end":{{"line":11,"character":60}}}},"context":{{"diagnostics":[]}}}}"#,
+            file.display()
+        ),
+    );
+    assert!(actions.contains("Replace 'assume' on DUT output/state with 'assert'"), "{actions}");
+    assert!(actions.contains(r#""newText":"assert""#), "{actions}");
+    assert!(actions.contains("Insert 'disable iff (!rst_ni)'"), "{actions}");
+    assert!(actions.contains(r#""newText":") disable iff (!rst_ni)""#), "{actions}");
+
+    // Applying both quick fixes clears SV-FPV-001 and SV-FPV-003.
+    let fixed = src.replace("m_bad_out: assume property", "m_bad_out: assert property").replace(
+        "a_no_rst:  assert property (@(posedge clk) req",
+        "a_no_rst:  assert property (@(posedge clk) disable iff (!rst_ni) req",
+    );
+    let change = format!(
+        r#"{{"textDocument":{{"uri":"file://{}","version":2}},"contentChanges":[{{"text":{}}}]}}"#,
+        file.display(),
+        json_str(&fixed)
+    );
+    c.notify("textDocument/didChange", &change);
+    let d2 = c.diagnostics(&file);
+    assert!(!d2.contains(r#""code":"SV-FPV-001""#), "{d2}");
+    assert!(!d2.contains(r#""code":"SV-FPV-003""#), "{d2}");
+
+    let _ = c.request("shutdown", "null");
     let _ = std::fs::remove_dir_all(&dir);
 }
 

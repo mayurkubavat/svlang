@@ -16,6 +16,7 @@ use crate::syntax::Cst;
 pub(crate) struct AssumeOutputOrStateHit {
     pub target_desc: String,
     pub loc: Loc,
+    pub fix: Option<crate::fix::Fix>,
 }
 
 #[derive(Clone, Debug)]
@@ -29,6 +30,7 @@ pub(crate) struct ResetlessControlHit {
 pub(crate) struct MissingDisableIffHit {
     pub prop_name: String,
     pub loc: Loc,
+    pub fix: Option<crate::fix::Fix>,
 }
 
 #[derive(Clone, Debug)]
@@ -124,14 +126,14 @@ fn compute(c: &Cst) -> FormalReadyFacts {
             continue;
         }
 
-        analyze_missing_disable_iff(nl, &path_to_file, &mut seen_fpv003, &mut out);
+        analyze_missing_disable_iff(c, nl, &path_to_file, &mut seen_fpv003, &mut out);
         analyze_wide_complexity(nl, &path_to_file, &mut seen_fpv004, &mut out);
 
         let mut compiled = nl.clone();
         if !compiled.properties.is_empty() {
             let _ = compiled.compile_properties(&PropertyOptions::default());
         }
-        analyze_assumes_on_netlist(&compiled, &path_to_file, &mut seen_fpv001, &mut seen_fpv005, &mut out);
+        analyze_assumes_on_netlist(c, &compiled, &path_to_file, &mut seen_fpv001, &mut seen_fpv005, &mut out);
     }
 
     out
@@ -209,8 +211,12 @@ fn collect_ast_assume_on_outputs(c: &Cst, out: &mut FormalReadyFacts) {
                 }
             }
             if let Some(port_name) = hit_port {
-                out.assume_output_or_state
-                    .push(AssumeOutputOrStateHit { target_desc: format!("module output port '{port_name}'"), loc });
+                let fix = build_assume_to_assert_fix(c, loc);
+                out.assume_output_or_state.push(AssumeOutputOrStateHit {
+                    target_desc: format!("module output port '{port_name}'"),
+                    loc,
+                    fix,
+                });
             }
         }
     }
@@ -337,7 +343,99 @@ fn analyze_resetless_control(
     }
 }
 
+fn infer_module_reset_expr(nl: &Netlist) -> Option<String> {
+    for s in &nl.states {
+        if let Some(ar) = s.async_reset {
+            if let Some(raw) = nl.value(ar.signal).name.as_deref() {
+                let leaf = raw.rsplit('.').next().unwrap_or(raw);
+                if !leaf.is_empty() {
+                    return Some(if ar.active_high { leaf.to_string() } else { format!("!{leaf}") });
+                }
+            }
+        }
+    }
+    for inp in &nl.inputs {
+        let low = inp.name.to_ascii_lowercase();
+        if is_clock_or_reset_name(&inp.name) && !low.contains("clk") && !low.contains("clock") {
+            let leaf = inp.name.rsplit('.').next().unwrap_or(&inp.name);
+            let active_low =
+                low.ends_with("_n") || low.ends_with("_ni") || low.ends_with("rstn") || low.ends_with("resetn");
+            return Some(if active_low { format!("!{leaf}") } else { leaf.to_string() });
+        }
+    }
+    None
+}
+
+fn build_assume_to_assert_fix(c: &Cst, loc: Loc) -> Option<crate::fix::Fix> {
+    for (ti, tok) in c.tree.tokens.iter().enumerate() {
+        if tok.from_macro || &*tok.text != "assume" {
+            continue;
+        }
+        let tl = c.loc(ti as u32);
+        if tl.file == loc.file && tl.line == loc.line {
+            let raw =
+                c.token_fix(ti as u32, ti as u32, "assert", "Replace 'assume' on DUT output/state with 'assert'")?;
+            return crate::fix::with_safety(Some(raw), crate::fix::FixSafety::Unsafe).into_iter().next();
+        }
+    }
+    None
+}
+
+fn build_disable_iff_fix(c: &Cst, loc: Loc, rst_expr: &str) -> Option<crate::fix::Fix> {
+    for ca in c.nodes(SyntaxKind::ConcurrentAssert) {
+        let Some((t_lo, t_hi)) = c.tree.token_bounds(ca) else { continue };
+        let ca_loc = c.loc(t_lo);
+        if ca_loc.file != loc.file || (loc.line < ca_loc.line || loc.line > c.loc(t_hi).line) {
+            continue;
+        }
+        // Locate `property` `(` then optional `@(...)`.
+        let mut prop_kw: Option<u32> = None;
+        for ti in t_lo..=t_hi {
+            if c.text_of(ti) == "property" {
+                prop_kw = Some(ti);
+                break;
+            }
+        }
+        let p_ti = prop_kw?;
+        let mut open_p: Option<u32> = None;
+        for ti in (p_ti + 1)..=t_hi {
+            if c.text_of(ti) == "(" {
+                open_p = Some(ti);
+                break;
+            }
+        }
+        let open_ti = open_p?;
+        let desc = format!("Insert 'disable iff ({rst_expr})'");
+        if open_ti < t_hi && c.text_of(open_ti + 1) == "@" {
+            let mut depth = 0i32;
+            let mut saw_open = false;
+            for ti in (open_ti + 2)..=t_hi {
+                let txt = c.text_of(ti);
+                if txt == "(" {
+                    depth += 1;
+                    saw_open = true;
+                } else if txt == ")" {
+                    depth -= 1;
+                    if saw_open && depth == 0 {
+                        let raw = c.token_fix(ti, ti, format!(") disable iff ({rst_expr})"), &desc)?;
+                        return crate::fix::with_safety(Some(raw), crate::fix::FixSafety::Unsafe).into_iter().next();
+                    }
+                } else if !saw_open {
+                    // `@clk` identifier without parentheses.
+                    let raw = c.token_fix(ti, ti, format!("{txt} disable iff ({rst_expr})"), &desc)?;
+                    return crate::fix::with_safety(Some(raw), crate::fix::FixSafety::Unsafe).into_iter().next();
+                }
+            }
+        } else {
+            let raw = c.token_fix(open_ti, open_ti, format!("(disable iff ({rst_expr}) "), &desc)?;
+            return crate::fix::with_safety(Some(raw), crate::fix::FixSafety::Unsafe).into_iter().next();
+        }
+    }
+    None
+}
+
 fn analyze_missing_disable_iff(
+    c: &Cst,
     nl: &Netlist,
     path_to_file: &HashMap<String, u32>,
     seen: &mut HashSet<(u32, u32)>,
@@ -348,6 +446,7 @@ fn analyze_missing_disable_iff(
     if !has_reset {
         return;
     }
+    let rst_expr = infer_module_reset_expr(nl);
     for (idx, p) in nl.properties.iter().enumerate() {
         if !matches!(p.kind, PropKind::Assert | PropKind::Cover) || p.disable_iff.is_some() {
             continue;
@@ -355,7 +454,8 @@ fn analyze_missing_disable_iff(
         let Some(loc) = map_sv_loc(path_to_file, nl, p.loc) else { continue };
         if seen.insert((loc.file, loc.line)) {
             let name = nl.property_names.get(idx).cloned().or_else(|| p.label.clone()).unwrap_or_default();
-            out.missing_disable_iff.push(MissingDisableIffHit { prop_name: name, loc });
+            let fix = rst_expr.as_deref().and_then(|re| build_disable_iff_fix(c, loc, re));
+            out.missing_disable_iff.push(MissingDisableIffHit { prop_name: name, loc, fix });
         }
     }
 }
@@ -553,6 +653,7 @@ fn eval_bool_cone_over_bits(nl: &Netlist, root: ValueId) -> Option<(bool, bool)>
 }
 
 fn analyze_assumes_on_netlist(
+    c: &Cst,
     nl: &Netlist,
     path_to_file: &HashMap<String, u32>,
     seen_fpv001: &mut HashSet<(u32, u32)>,
@@ -651,9 +752,11 @@ fn analyze_assumes_on_netlist(
         if !has_data_input {
             if let Some(sname) = user_state {
                 if seen_fpv001.insert((loc.file, loc.line)) {
+                    let fix = build_assume_to_assert_fix(c, loc);
                     out.assume_output_or_state.push(AssumeOutputOrStateHit {
                         target_desc: format!("internal sequential state '{sname}'"),
                         loc,
+                        fix,
                     });
                 }
             }

@@ -16,6 +16,8 @@ pub(crate) fn assume_on_output_or_state(c: &Cst, out: &mut Sink) {
                 hit.target_desc
             ),
             hit.loc,
-        );
+        )
+        .fixes
+        .extend(hit.fix.iter().cloned());
     }
 }
