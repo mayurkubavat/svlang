@@ -163,7 +163,41 @@ pub fn lower_design(trees: &[Tree], design: &ElaboratedDesign, config: &LowerCon
     if !lowerer.builder.diags.is_empty() {
         return classify_diags(lowerer.builder.diags);
     }
+    let mut pending_prophecy_clocks: Vec<(usize, Vec<StateId>)> = Vec::new();
+    for (idx, prop) in properties.iter_mut().enumerate() {
+        if !prop.sva_locals.is_empty() {
+            let prophecy = crate::sva_locals::desugar_property_locals(&mut sva_arena, prop);
+            if !prophecy.is_empty() {
+                let map = prop_locals[idx].get_or_insert_with(FxMap::default);
+                let sids = crate::sva_locals::alloc_prophecy_states(&mut lowerer.builder, &prophecy, prop.loc, map);
+                pending_prophecy_clocks.push((idx, sids));
+            } else if !prop.sva_locals.is_empty() {
+                // Fallback placeholder so unsupported local-variable forms fail per-property rather than design-wide.
+                let map = prop_locals[idx].get_or_insert_with(FxMap::default);
+                for (lid, ty, _) in &prop.sva_locals {
+                    if let Some((w, s, four)) = ty.integral_shape() {
+                        let z = lowerer.builder.alloc_const(CVal::new(w, s, 0), four, prop.loc);
+                        map.insert(*lid, ObjVal::Packed(z));
+                    }
+                }
+            }
+        }
+    }
     let prop_expr_values = lowerer.lower_sva_properties(&sva_arena, &properties, &prop_locals);
+    for (pidx, sids) in pending_prophecy_clocks {
+        if let Some(clk) = &properties[pidx].clock {
+            let edge = match clk.edge {
+                sv_semantic::sva_ir::SvaEdge::Negedge => Edge::Negedge,
+                _ => Edge::Posedge,
+            };
+            if let Some(sig) = prop_expr_values.get(clk.signal.0 as usize).copied().flatten() {
+                let cspec = ClockSpec { signal: sig, edge };
+                for sid in sids {
+                    lowerer.builder.states[sid.0 as usize].clock = Some(cspec);
+                }
+            }
+        }
+    }
     if !lowerer.builder.diags.is_empty() {
         return classify_diags(lowerer.builder.diags);
     }
@@ -2507,6 +2541,12 @@ fn lower_bound_property_exprs<I: FuncInliner>(
             SeqExpr::Repeat { seq: inner, .. } | SeqExpr::FirstMatch(inner) => {
                 walk_seq(inner, clk, lower_one, builder);
             }
+            SeqExpr::MatchItems { seq: inner, assigns } => {
+                walk_seq(inner, clk, lower_one, builder);
+                for (_, rhs) in assigns {
+                    let _ = lower_one(*rhs, false, clk, builder);
+                }
+            }
             SeqExpr::Throughout { cond, seq: inner } => {
                 let _ = lower_one(*cond, false, clk, builder);
                 walk_seq(inner, clk, lower_one, builder);
@@ -2731,19 +2771,45 @@ pub(crate) fn lower_external_property_on_netlist(
 
     let config = LowerConfig { allow_four_state_ops, ..LowerConfig::default() };
     let empty_syms = FxMap::default();
-    let empty_locals = FxMap::default();
-    let mut lowered_map: Vec<Option<ValueId>> = vec![None; arena.exprs.len()];
+    let mut owned_arena;
+    let mut owned_prop;
+    let mut ext_locals = FxMap::default();
+    let mut ext_prophecy_sids = Vec::new();
+    let (arena_ref, prop_ref): (&ExprArena, &BoundProperty) = if !prop.sva_locals.is_empty() {
+        owned_arena = arena.clone();
+        owned_prop = prop.clone();
+        let prophecy = if crate::sva_locals::prop_has_match_items(&owned_prop.expr) {
+            crate::sva_locals::desugar_property_locals(&mut owned_arena, &mut owned_prop)
+        } else {
+            owned_prop.sva_locals.iter().map(|(id, ty, _)| (*id, ty.clone())).collect()
+        };
+        if !prophecy.is_empty() {
+            ext_prophecy_sids =
+                crate::sva_locals::alloc_prophecy_states(&mut builder, &prophecy, owned_prop.loc, &mut ext_locals);
+        } else if !owned_prop.sva_locals.is_empty() {
+            for (lid, ty, _) in &owned_prop.sva_locals {
+                if let Some((w, s, four)) = ty.integral_shape() {
+                    let z = builder.alloc_const(CVal::new(w, s, 0), four, owned_prop.loc);
+                    ext_locals.insert(*lid, ObjVal::Packed(z));
+                }
+            }
+        }
+        (&owned_arena, &owned_prop)
+    } else {
+        (arena, prop)
+    };
+    let mut lowered_map: Vec<Option<ValueId>> = vec![None; arena_ref.exprs.len()];
 
     if trees.is_empty() {
         let mut inliner = ExternalPropInliner;
         lower_bound_property_exprs(
-            arena,
-            prop,
+            arena_ref,
+            prop_ref,
             &config,
             &sym_slots,
             &placeholders,
             &empty_syms,
-            &empty_locals,
+            &ext_locals,
             &mut inliner,
             &mut builder,
             &mut lowered_map,
@@ -2791,13 +2857,13 @@ pub(crate) fn lower_external_property_on_netlist(
             check_scopes: Vec::new(),
         };
         lower_bound_property_exprs(
-            arena,
-            prop,
+            arena_ref,
+            prop_ref,
             &config,
             &sym_rc,
             &ph_rc,
             &empty_syms,
-            &empty_locals,
+            &ext_locals,
             &mut lowerer,
             &mut builder,
             &mut lowered_map,
@@ -2808,12 +2874,29 @@ pub(crate) fn lower_external_property_on_netlist(
         return Err(builder.diags);
     }
 
+    if !ext_prophecy_sids.is_empty() {
+        if let Some(clk) = &prop_ref.clock {
+            let edge = match clk.edge {
+                sv_semantic::sva_ir::SvaEdge::Negedge => Edge::Negedge,
+                _ => Edge::Posedge,
+            };
+            if let Some(sig) = lowered_map.get(clk.signal.0 as usize).copied().flatten() {
+                let cspec = ClockSpec { signal: sig, edge };
+                for sid in ext_prophecy_sids {
+                    builder.states[sid.0 as usize].clock = Some(cspec);
+                }
+            }
+        }
+    }
+
     let mut pairs: Vec<(ExprId, ValueId)> =
         lowered_map.into_iter().enumerate().filter_map(|(i, opt)| opt.map(|vid| (ExprId(i as u32), vid))).collect();
 
     let old_val_len = nl.values.len();
     let old_samp_len = nl.sampled.len();
-    if builder.nodes.len() > old_val_len || builder.sampled.len() > old_samp_len {
+    let old_state_len = nl.states.len();
+    if builder.nodes.len() > old_val_len || builder.sampled.len() > old_samp_len || builder.states.len() > old_state_len
+    {
         let resolve_alias = |mut v: ValueId| -> ValueId {
             while let BuildKind::Alias(next) = builder.nodes[v.0 as usize].kind {
                 v = next;
@@ -2857,6 +2940,17 @@ pub(crate) fn lower_external_property_on_netlist(
             }
             sn.out = resolve_alias(sn.out);
             nl.sampled.push(sn);
+        }
+        for mut st in builder.states.into_iter().skip(old_state_len) {
+            st.next = resolve_alias(st.next);
+            st.out = resolve_alias(st.out);
+            if let Some(clk) = &mut st.clock {
+                clk.signal = resolve_alias(clk.signal);
+            }
+            if let Some(le) = &mut st.latch_enable {
+                *le = resolve_alias(*le);
+            }
+            nl.states.push(st);
         }
         for (_, vid) in &mut pairs {
             *vid = resolve_alias(*vid);

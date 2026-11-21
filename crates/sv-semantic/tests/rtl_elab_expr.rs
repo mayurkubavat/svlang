@@ -614,7 +614,7 @@ fn sva_and_expr_fail_closed_guards() {
         ),
         (
             "module m(input logic clk, a, b); logic v; assert property (@(posedge clk) first_match(a ##1 b, v = 1'b1)); endmodule",
-            "first_match",
+            "not a declared SVA local variable",
         ),
         (
             "module m(input logic clk, a, b); sequence s; a |-> b; endsequence assert property (@(posedge clk) s); endmodule",

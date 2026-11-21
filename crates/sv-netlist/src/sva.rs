@@ -516,6 +516,9 @@ impl<'a> Matcher<'a> {
                     earlier = self.terms.or(earlier, cond)?;
                 }
             }
+            SeqExpr::MatchItems { .. } => {
+                return Err("unbounded local-variable reassignment or assumption".into());
+            }
             SeqExpr::Clocked { .. } => return Err("a sequence with its own clock".into()),
             #[allow(unreachable_patterns)]
             _ => return Err("a sequence operator".into()),
@@ -1821,9 +1824,27 @@ impl Netlist {
         // Lowering one property's expressions may re-index the values, so the expressions
         // already lowered ride at the end of `prop_expr_values`, which is kept in step.
         let base = self.prop_expr_values.len();
+        let mut owned_ext: Vec<Option<(ExprArena, sv_semantic::BoundProperty)>> = vec![None; properties.len()];
+        for (i, x) in properties.iter().enumerate() {
+            if !x.property.sva_locals.is_empty() {
+                let mut a = x.arena.clone();
+                let mut p = x.property.clone();
+                let prophecy = crate::sva_locals::desugar_property_locals(&mut a, &mut p);
+                if !prophecy.is_empty() {
+                    // Re-attach prophecy vars to `sva_locals` so `lower_external_property_on_netlist`
+                    // allocates their constant state registers on `self`!
+                    p.sva_locals = prophecy.into_iter().map(|(id, ty)| (id, ty, None)).collect();
+                }
+                owned_ext[i] = Some((a, p));
+            }
+        }
         let mut lowered: Vec<Result<(usize, Vec<ExprId>), String>> = Vec::new();
-        for x in properties {
-            lowered.push(match self.lower_external_property_with_trees(trees, design, x.arena, x.property, false) {
+        for (i, x) in properties.iter().enumerate() {
+            let (ar, pr) = match &owned_ext[i] {
+                Some((a, p)) => (a, p),
+                None => (x.arena, x.property),
+            };
+            lowered.push(match self.lower_external_property_with_trees(trees, design, ar, pr, false) {
                 Ok(pairs) => {
                     let at = self.prop_expr_values.len();
                     self.prop_expr_values.extend(pairs.iter().map(|&(_, v)| Some(v)));
@@ -1844,14 +1865,18 @@ impl Netlist {
                     continue;
                 }
             };
-            let mut leaves = vec![None; x.arena.exprs.len()];
+            let (ar, pr) = match &owned_ext[i] {
+                Some((a, p)) => (a, p),
+                None => (x.arena, x.property),
+            };
+            let mut leaves = vec![None; ar.exprs.len()];
             for (k, e) in exprs.iter().enumerate() {
                 leaves[e.0 as usize] = self.prop_expr_values[at + k];
             }
-            let planned_res = match self.plan(x.property, &leaves, None, opts, &mut memo) {
+            let planned_res = match self.plan(pr, &leaves, None, opts, &mut memo) {
                 Ok(p) => Ok(p),
                 Err(why) if why == "`always` with no upper bound" => {
-                    self.plan_compound_always(x.property, &leaves, None, opts, &mut memo)
+                    self.plan_compound_always(pr, &leaves, None, opts, &mut memo)
                 }
                 Err(why) => Err(why),
             };

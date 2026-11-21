@@ -336,6 +336,13 @@ fn fmt_seq_expr(s: &SeqExpr, arena: &ExprArena, prop_vals: &[Option<ValueId>]) -
             format!("({} throughout {})", fmt_sva_expr(*cond, arena, prop_vals), fmt_seq_expr(seq, arena, prop_vals))
         }
         SeqExpr::FirstMatch(inner) => format!("first_match({})", fmt_seq_expr(inner, arena, prop_vals)),
+        SeqExpr::MatchItems { seq, assigns } => {
+            let mut items = vec![fmt_seq_expr(seq, arena, prop_vals)];
+            for (lid, rhs) in assigns {
+                items.push(format!("loc#{} = {}", lid.0, fmt_sva_expr(*rhs, arena, prop_vals)));
+            }
+            format!("({})", items.join(", "))
+        }
         SeqExpr::Clocked { clock, seq } => {
             format!("({} {})", fmt_sva_clock(clock, arena, prop_vals), fmt_seq_expr(seq, arena, prop_vals))
         }

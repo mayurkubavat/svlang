@@ -1863,3 +1863,149 @@ fn tier4_implies_iff_ifelse_snexttime_and_compound_always_semantics() {
     // Tick 0: a=1, b=1, c=0 -> waits for c; Tick 1: a=1, b=0, c=1 -> satisfies tick 0; Tick 2: a=0, c=0 -> fails immediately!
     assert_eq!(fails(p_nfa_if, &["0110", "0101", "0000"]), [2]);
 }
+
+#[test]
+fn tier8_sva_local_vars_bounded_prophecy_case_xmr_and_macro_attr() {
+    // 1. SVA `case (...) ... endcase` (IEEE 1800-2023 §16.12.17):
+    let p_case = "\
+        p: assert property (@(posedge clk)\n\
+          case ({a, b})\n\
+            2'b00: 1'b1;\n\
+            2'b01, 2'b10: c;\n\
+            default: ##1 c;\n\
+          endcase);";
+    // Tick 0: 00 -> ok; Tick 1: 01, c=1 -> ok; Tick 2: 10, c=0 -> reported at tick 3 (span=1); Tick 3: 11, Tick 4: c=0 -> fails at tick 4!
+    assert_eq!(fails(p_case, &["0000", "0011", "0100", "0110", "0000"]), [3, 4]);
+
+    // 2. Bounded SVA local variables with declaration initializer, `+=`, `++`, and pipelined `##[1:2]` tag match:
+    let src_bounded = "\
+        module scoreboard (\n\
+          input logic clk,\n\
+          input logic rst,\n\
+          input logic start,\n\
+          input logic step,\n\
+          input logic req,\n\
+          input logic rsp,\n\
+          input logic [1:0] req_tag,\n\
+          input logic [1:0] rsp_tag,\n\
+          input logic [7:0] din,\n\
+          input logic [7:0] dout\n\
+        );\n\
+          property p_accum;\n\
+            logic [7:0] acc = 8'd0;\n\
+            @(posedge clk) disable iff (rst)\n\
+              (start, acc = din) ##1 (step, acc += din, acc++) |=> (dout == acc);\n\
+          endproperty\n\
+          property p_pipe;\n\
+            logic [1:0] tag_s;\n\
+            logic [7:0] dat_s;\n\
+            @(posedge clk) disable iff (rst)\n\
+              (req, tag_s = req_tag, dat_s = din) ##[1:2] (rsp && rsp_tag == tag_s) |-> (dout == dat_s);\n\
+          endproperty\n\
+          a_accum: assert property (p_accum);\n\
+          a_pipe:  assert property (p_pipe);\n\
+        endmodule\n";
+    let mut nl_b = lower_src(src_bounded).unwrap_netlist();
+    let out_b = nl_b.compile_properties(&PropertyOptions::default());
+    assert!(out_b.iter().all(|o| matches!(o, PropertyOutcome::Compiled { .. })), "{out_b:?}");
+    assert_eq!(nl_b.checks.len(), 2);
+
+    // Cycle-accurate check of `a_accum`:
+    // Tick 0: start=1, din=10 -> acc=10
+    // Tick 1: step=1, din=5   -> acc=10+5+1=16
+    // Tick 2: dout=16 -> PASS; if instead dout=15 -> FAIL!
+    for (dout_t2, expect_fail) in [(16i128, false), (15i128, true)] {
+        let mut sim = NetlistSim::new(&nl_b);
+        let mut tick = |start: i128, step: i128, din: i128, dout: i128| -> bool {
+            sim.set_u("rst", 0);
+            sim.set_u("start", start);
+            sim.set_u("step", step);
+            sim.set_u("req", 0);
+            sim.set_u("rsp", 0);
+            sim.set_u("req_tag", 0);
+            sim.set_u("rsp_tag", 0);
+            sim.set_u("din", din);
+            sim.set_u("dout", dout);
+            let before = sim.failed_asserts.len();
+            sim.tick_posedge("clk");
+            sim.failed_asserts[before..].iter().any(|l| l.ends_with("a_accum"))
+        };
+        assert!(!tick(1, 0, 10, 0));
+        assert!(!tick(0, 1, 5, 0));
+        assert_eq!(tick(0, 0, 0, dout_t2), expect_fail);
+    }
+
+    // 3. Unbounded SVA local variable scoreboard via symbolic prophecy constant (`##[1:$]` and `s_eventually`):
+    let src_unbounded = "\
+        module fifo_sb (\n\
+          input logic clk,\n\
+          input logic rst,\n\
+          input logic push,\n\
+          input logic pop_match,\n\
+          input logic [7:0] wdata,\n\
+          input logic [7:0] rdata\n\
+        );\n\
+          property p_data_safety;\n\
+            logic [7:0] d;\n\
+            @(posedge clk) disable iff (rst)\n\
+              (push, d = wdata) |-> ##[1:$] (!pop_match || (rdata == d));\n\
+          endproperty\n\
+          property p_data_live;\n\
+            logic [7:0] d;\n\
+            @(posedge clk) disable iff (rst)\n\
+              (push, d = wdata) |=> s_eventually (pop_match && rdata == d);\n\
+          endproperty\n\
+          cover_match: cover property (@(posedge clk) disable iff (rst) s_cap ##[1:$] pop_match);\n\
+          sequence s_cap;\n\
+            logic [7:0] d;\n\
+            (push, d = wdata) ##1 (rdata == d);\n\
+          endsequence\n\
+          a_safety: assert property (p_data_safety);\n\
+          a_live:   assert property (p_data_live);\n\
+        endmodule\n";
+    let mut nl_u = lower_src(src_unbounded).unwrap_netlist();
+    let out_u = nl_u.compile_properties(&PropertyOptions::default());
+    assert!(matches!(out_u[0], PropertyOutcome::Compiled { .. }), "{out_u:?}");
+    assert!(matches!(out_u[1], PropertyOutcome::Compiled { .. }), "{out_u:?}");
+    assert!(matches!(out_u[2], PropertyOutcome::Liveness { .. }), "{out_u:?}");
+
+    // 4. Macro-defined `-D FORMAL_KEEP="(* keep *)"` + pasted `(``* keep *``)` + recursive generate XMR + `bind` XMR:
+    let src_xmr = "\
+        `define PASTE_KEEP (``* keep *``)\n\
+        module fib_rec #(parameter int N = 0) (output logic [7:0] val);\n\
+          if (N <= 0) assign val = 8'd0;\n\
+          else if (N == 1) assign val = 8'd1;\n\
+          else begin : rec\n\
+            fib_rec #(N - 1) f1();\n\
+            fib_rec #(N - 2) f2();\n\
+            assign val = f1.val + f2.val;\n\
+          end\n\
+        endmodule\n\
+        module sub_unit(input logic clk, input logic [3:0] d, output logic [3:0] q);\n\
+          `FORMAL_KEEP `PASTE_KEEP logic [3:0] secret_q;\n\
+          always_ff @(posedge clk) begin secret_q <= d; q <= secret_q; end\n\
+        endmodule\n\
+        module top_xmr(input logic clk, input logic [3:0] d, output logic [3:0] q, output logic [7:0] fib5);\n\
+          sub_unit u_sub(.clk(clk), .d(d), .q(q));\n\
+          fib_rec #(5) u_fib(.val(fib5));\n\
+        endmodule\n\
+        module top_props(input logic clk, input logic [3:0] q, input logic [7:0] fib5);\n\
+          a_xmr: assert property (@(posedge clk) (fib5 == 8'd5) && (top_xmr.u_sub.secret_q == $past(top_xmr.d) || 1'b1));\n\
+        endmodule\n\
+        bind top_xmr top_props u_props(.clk(clk), .q(q), .fib5(fib5));\n";
+    let mut opts = sv_syntax::Options::default();
+    opts.defines.push("FORMAL_KEEP=(* keep *)".into());
+    let tree = sv_syntax::parse_source(src_xmr, "xmr.sv", opts);
+    assert!(tree.errors.is_empty(), "{:?}", tree.errors);
+    let mut nl_x = match sv_netlist::lower_trees(
+        &[tree],
+        &["top_xmr".into()],
+        &[],
+        &sv_netlist::LowerConfig { top: Some("top_xmr".into()), ..Default::default() },
+    ) {
+        sv_netlist::LowerOutcome::Lowered(nl) => nl,
+        other => panic!("expected lowered netlist, got {other:?}"),
+    };
+    let out_x = nl_x.compile_properties(&PropertyOptions::default());
+    assert!(matches!(out_x[0], PropertyOutcome::Compiled { .. }), "{out_x:?}");
+}

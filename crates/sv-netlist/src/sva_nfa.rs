@@ -147,9 +147,10 @@ pub(crate) fn seq_needs_automaton(s: &SeqExpr) -> bool {
                 || range.max == CycleBound::Unbounded
                 || seq_needs_automaton(seq)
         }
-        SeqExpr::Throughout { seq, .. } | SeqExpr::FirstMatch(seq) | SeqExpr::Clocked { seq, .. } => {
-            seq_needs_automaton(seq)
-        }
+        SeqExpr::Throughout { seq, .. }
+        | SeqExpr::FirstMatch(seq)
+        | SeqExpr::MatchItems { seq, .. }
+        | SeqExpr::Clocked { seq, .. } => seq_needs_automaton(seq),
     }
 }
 
@@ -351,6 +352,7 @@ enum NfaSeq {
     Intersect(Box<NfaSeq>, Box<NfaSeq>),
     Within(Box<NfaSeq>, Box<NfaSeq>),
     Clocked,
+    UnsupportedLocal,
 }
 
 impl NfaSeq {
@@ -375,12 +377,13 @@ impl NfaSeq {
             SeqExpr::Intersect(a, b) => Self::Intersect(Box::new(Self::from_seq(a)), Box::new(Self::from_seq(b))),
             SeqExpr::Within(a, b) => Self::Within(Box::new(Self::from_seq(a)), Box::new(Self::from_seq(b))),
             SeqExpr::Clocked { .. } => Self::Clocked,
+            SeqExpr::MatchItems { .. } => Self::UnsupportedLocal,
         }
     }
 
     fn has_unbounded_wait(&self) -> bool {
         match self {
-            Self::Bool(_) | Self::NotBool(_) | Self::Clocked => false,
+            Self::Bool(_) | Self::NotBool(_) | Self::Clocked | Self::UnsupportedLocal => false,
             Self::Delay { range, lhs, rhs } => {
                 range.max == CycleBound::Unbounded
                     || lhs.as_deref().is_some_and(Self::has_unbounded_wait)
@@ -1034,6 +1037,7 @@ impl<'a> SeqNfaBuilder<'a> {
             NfaSeq::Intersect(..) => Err("sequence `intersect` with an unbounded operand".into()),
             NfaSeq::Within(..) => Err("sequence `within` with an unbounded operand".into()),
             NfaSeq::Clocked => Err("a sequence with its own clock".into()),
+            NfaSeq::UnsupportedLocal => Err("unbounded local-variable reassignment or assumption".into()),
         }
     }
 
@@ -1060,6 +1064,9 @@ impl<'a> SeqNfaBuilder<'a> {
             }
             NfaSeq::Within(a, b) => self.build_probe_nullable(a)? && self.build_probe_nullable(b)?,
             NfaSeq::Clocked => return Err("a sequence with its own clock".into()),
+            NfaSeq::UnsupportedLocal => {
+                return Err("unbounded local-variable reassignment or assumption".into());
+            }
         })
     }
 }

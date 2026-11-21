@@ -205,14 +205,14 @@ fn compiled_properties_are_bad_lines_and_constraints() {
 fn a_property_outside_the_subset_is_left_out_and_named() {
     let mut nl = netlist(
         "module un(input logic clk, a, b);\n\
-           a_unsup: assert property (@(posedge clk) a |-> always (b ##1 b));\n\
+           a_unsup: assert property (@(posedge clk iff a) b);\n\
            a_ok: assert property (@(posedge clk) a |-> b);\n\
            a_win: assert property (@(posedge clk) a |-> ##[1:3] b);\n\
            a_goto: assert property (@(posedge clk) a |-> b [->1] ##1 a);\n\
          endmodule\n",
     );
     let out = nl.compile_properties(&Default::default());
-    assert!(matches!(&out[0], sv_netlist::PropertyOutcome::Unsupported(w) if w.contains("always")), "{out:?}");
+    assert!(matches!(&out[0], sv_netlist::PropertyOutcome::Unsupported(w) if w.contains("iff")), "{out:?}");
     assert!(matches!(out[1], sv_netlist::PropertyOutcome::Compiled { .. }), "{out:?}");
     assert!(matches!(out[2], sv_netlist::PropertyOutcome::Compiled { .. }), "{out:?}");
     assert!(matches!(out[3], sv_netlist::PropertyOutcome::Compiled { .. }), "{out:?}");

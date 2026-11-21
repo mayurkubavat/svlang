@@ -60,6 +60,7 @@ mod loops_sub;
 mod lower;
 mod proc;
 pub mod sva;
+mod sva_locals;
 mod sva_nfa;
 
 pub use ir::*;

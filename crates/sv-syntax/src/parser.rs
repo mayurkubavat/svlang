@@ -122,9 +122,14 @@ impl<'t> Parser<'t> {
             (Some(a), Some(b)) => {
                 // Text from a macro has the place of the macro's use as its origin, so
                 // two of its tokens are compared where they were written (`(*` in a
-                // `define body).
+                // `define body); tokens synthesized without distinct written offsets
+                // (`-D` defines or token paste) fall back to `space_before`.
                 let (x, y) = if a.from_macro || b.from_macro { (a.written, b.written) } else { (a.origin, b.origin) };
-                x.file == y.file && x.offset + a.text.len() as u32 == y.offset
+                if a.from_macro && b.from_macro && x == y {
+                    !b.space_before
+                } else {
+                    x.file == y.file && x.offset + a.text.len() as u32 == y.offset
+                }
             }
             _ => false,
         }

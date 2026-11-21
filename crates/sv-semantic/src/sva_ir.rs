@@ -14,8 +14,8 @@
 
 use sv_syntax::{Child, NodeId, SyntaxKind, Tree};
 
-use crate::elab_ir::{ElabItemKind, ElaboratedDesign, InstanceId};
-use crate::expr::{ExprArena, ExprBinder, ExprDiag, ExprId};
+use crate::elab_ir::{ElabItemKind, ElaboratedDesign, InstanceId, RtlType};
+use crate::expr::{BinaryOp, ExprArena, ExprBinder, ExprDiag, ExprId, ExprKind, LocalBinding, LocalId};
 use crate::fx::FxMap;
 use crate::model::Loc;
 use crate::types::CVal;
@@ -125,6 +125,13 @@ pub enum SeqExpr {
     },
     /// `first_match(seq)`.
     FirstMatch(Box<SeqExpr>),
+    /// Sequence with IEEE 1800-2023 §16.10 local-variable match-item assignments `(seq, v = expr, ...)`.
+    MatchItems {
+        /// Inner sequence; `assigns` execute in order at each completion tick of `seq`.
+        seq: Box<SeqExpr>,
+        /// Ordered `(local_id, rhs_expr)` updates.
+        assigns: Vec<(LocalId, ExprId)>,
+    },
     /// Explicitly clocked sub-sequence `@(posedge clk) seq`.
     Clocked {
         /// Clock event.
@@ -273,6 +280,8 @@ pub struct BoundProperty {
     pub disable_iff: Option<ExprId>,
     /// Bound property body.
     pub expr: PropExpr,
+    /// SVA sequence/property local variables `(id, ty, optional_init_expr)` allocated during expansion.
+    pub sva_locals: Vec<(LocalId, RtlType, Option<ExprId>)>,
     /// Source location (`1`-based line/column).
     pub loc: Loc,
 }
@@ -352,6 +361,9 @@ pub struct SvaBinder<'a> {
     /// Optional procedural local typedefs in scope (for unrolled loops and inlined tasks).
     pub extra_local_typedefs: FxMap<String, crate::RtlType>,
     cur_pkg: Option<String>,
+    next_sva_local_id: u32,
+    cur_sva_locals: Vec<(LocalId, RtlType, Option<ExprId>)>,
+    active_sva_local_ids: std::collections::HashSet<LocalId>,
 }
 
 impl<'a> SvaBinder<'a> {
@@ -366,6 +378,9 @@ impl<'a> SvaBinder<'a> {
             extra_local_decls: FxMap::default(),
             extra_local_typedefs: FxMap::default(),
             cur_pkg: None,
+            next_sva_local_id: 0x4000_0000,
+            cur_sva_locals: Vec::new(),
+            active_sva_local_ids: std::collections::HashSet::new(),
         }
     }
 
@@ -499,8 +514,12 @@ impl<'a> SvaBinder<'a> {
                 substs.insert(pname, act);
             }
         }
+        self.cur_sva_locals.clear();
+        self.active_sva_local_ids.clear();
         let (explicit_clk, explicit_dis, mut expr) =
             self.bind_property_spec(tree_idx, prop_spec, inst_id, scope_prefix, gen_consts, &substs, 0)?;
+        let sva_locals = std::mem::take(&mut self.cur_sva_locals);
+        self.active_sva_local_ids.clear();
 
         // Lift leading `PropExpr::Clocked` if written inside parentheses `@(posedge clk) ...`.
         let inner_clk = match &expr {
@@ -527,6 +546,7 @@ impl<'a> SvaBinder<'a> {
             clock,
             disable_iff,
             expr,
+            sva_locals,
             loc,
         })
     }
@@ -872,19 +892,20 @@ impl<'a> SvaBinder<'a> {
                     });
                 }
                 "first_match" => {
-                    if own.contains(&",") || kids.len() > 1 {
-                        self.unsup(loc, "sequence match-item assignments inside first_match(...) are not supported");
-                        return None;
-                    }
                     let inner = *kids.first()?;
                     let v = self.bind_seq_or_prop(tree_idx, inner, inst_id, scope_prefix, gen_consts, substs, depth)?;
-                    let seq = match v.into_seq() {
+                    let mut seq = match v.into_seq() {
                         Ok(s) => s,
                         Err(msg) => {
                             self.err(loc, msg);
                             return None;
                         }
                     };
+                    if kids.len() > 1 {
+                        let assigns =
+                            self.bind_sva_match_items(tree_idx, &kids[1..], inst_id, scope_prefix, gen_consts, substs)?;
+                        seq = SeqExpr::MatchItems { seq: Box::new(seq), assigns };
+                    }
                     return Some(SvaValue::Seq(SeqExpr::FirstMatch(Box::new(seq))));
                 }
                 "if" => {
@@ -914,12 +935,21 @@ impl<'a> SvaBinder<'a> {
                     return self.bind_property_case(tree_idx, node, inst_id, scope_prefix, gen_consts, substs, depth);
                 }
                 "(" => {
-                    if own.contains(&",") || kids.len() > 1 {
-                        self.unsup(loc, "sequence local-variable match items '(seq, v = expr)' are not supported");
-                        return None;
-                    }
                     let inner = *kids.first()?;
-                    return self.bind_seq_or_prop(tree_idx, inner, inst_id, scope_prefix, gen_consts, substs, depth);
+                    let v = self.bind_seq_or_prop(tree_idx, inner, inst_id, scope_prefix, gen_consts, substs, depth)?;
+                    if kids.len() > 1 {
+                        let seq = match v.into_seq() {
+                            Ok(s) => s,
+                            Err(msg) => {
+                                self.err(loc, msg);
+                                return None;
+                            }
+                        };
+                        let assigns =
+                            self.bind_sva_match_items(tree_idx, &kids[1..], inst_id, scope_prefix, gen_consts, substs)?;
+                        return Some(SvaValue::Seq(SeqExpr::MatchItems { seq: Box::new(seq), assigns }));
+                    }
+                    return Some(v);
                 }
                 "posedge" | "negedge" | "edge" => {
                     self.err(loc, format!("unexpected event keyword '{first_tok}' outside clocking event"));
@@ -1492,6 +1522,8 @@ impl<'a> SvaBinder<'a> {
         }
 
         let saved_pkg = std::mem::replace(&mut self.cur_pkg, d_pkg);
+        let saved_locals = self.extra_local_decls.clone();
+        let saved_active = self.active_sva_local_ids.clone();
         let res = (|| -> Option<SvaValue> {
             let dt = self.tree(d_tree);
             if decl_kind == ElabItemKind::LetDecl {
@@ -1502,6 +1534,12 @@ impl<'a> SvaBinder<'a> {
                 return Some(SvaValue::Seq(SeqExpr::Bool(b)));
             }
 
+            let data_decls: Vec<NodeId> = dt.children(d_node).filter(|&c| dt.kind(c) == SyntaxKind::DataDecl).collect();
+            for dd in data_decls {
+                self.bind_sva_data_decl(d_tree, dd, inst_id, d_prefix, d_consts, &next_substs)?;
+            }
+
+            let dt = self.tree(d_tree);
             let Some(prop_spec) = dt.child(d_node, SyntaxKind::PropertyExpr) else {
                 self.err(loc, "empty sequence/property declaration body");
                 return None;
@@ -1528,8 +1566,166 @@ impl<'a> SvaBinder<'a> {
             }
             Some(SvaValue::Prop { prop: p, disable_iff: dis })
         })();
+        self.extra_local_decls = saved_locals;
+        self.active_sva_local_ids = saved_active;
         self.cur_pkg = saved_pkg;
         res
+    }
+
+    fn bind_sva_data_decl(
+        &mut self,
+        tree_idx: usize,
+        stmt: NodeId,
+        inst_id: InstanceId,
+        scope_prefix: &str,
+        gen_consts: &[(String, CVal)],
+        substs: &FxMap<String, ActualSubst>,
+    ) -> Option<()> {
+        let t = self.tree(tree_idx);
+        let explicit_dt = t.child(stmt, SyntaxKind::DataType);
+        let decls: Vec<NodeId> = t.children(stmt).filter(|&c| t.kind(c) == SyntaxKind::Declarator).collect();
+        let loc = self.loc_of(tree_idx, stmt, inst_id, scope_prefix, gen_consts);
+        for decl in decls {
+            let t = self.tree(tree_idx);
+            let Some(nm_node) = t.child(decl, SyntaxKind::Name) else { continue };
+            let Some(&tok) = t.token_range(nm_node).last() else { continue };
+            let raw = &*t.tokens[tok as usize].text;
+            let name = raw.strip_prefix('\\').unwrap_or(raw).to_string();
+            let init_node = t
+                .children(decl)
+                .find(|&c| !matches!(t.kind(c), SyntaxKind::Name | SyntaxKind::Dim | SyntaxKind::Attribute));
+
+            let (ty, packed_bounds) = {
+                let mut binder = self.make_expr_binder(inst_id, scope_prefix, gen_consts, substs);
+                let resolved =
+                    binder.resolve_subroutine_dtype(tree_idx, explicit_dt, Some(decl), Some(inst_id), scope_prefix);
+                let pbounds = match (&resolved, explicit_dt) {
+                    (Some(RtlType::Integral { .. }), Some(dt_n)) => {
+                        let bt = binder.tree(tree_idx);
+                        let pdims: Vec<NodeId> = bt.children(dt_n).filter(|&c| bt.kind(c) == SyntaxKind::Dim).collect();
+                        if pdims.len() == 1 {
+                            binder.eval_dim_bounds(tree_idx, pdims[0])
+                        } else {
+                            None
+                        }
+                    }
+                    _ => None,
+                };
+                let diags = std::mem::take(&mut binder.diags);
+                self.diags.extend(diags);
+                (resolved?, pbounds)
+            };
+            if ty.integral_shape().is_none() {
+                self.unsup(loc, format!("non-integral SVA local variable '{name}' is not supported"));
+                return None;
+            }
+            let init_expr = if let Some(in_n) = init_node {
+                let (w, s, four) = ty.integral_shape()?;
+                let raw_e = self.bind_self_expr(tree_idx, in_n, inst_id, scope_prefix, gen_consts, substs)?;
+                Some(self.arena.coerce(raw_e, w, s, four, loc))
+            } else {
+                None
+            };
+            let lid = LocalId(self.next_sva_local_id);
+            self.next_sva_local_id += 1;
+            self.cur_sva_locals.push((lid, ty.clone(), init_expr));
+            self.active_sva_local_ids.insert(lid);
+            self.extra_local_decls.insert(name, LocalBinding { id: lid, ty, packed_bounds, cval: None });
+        }
+        Some(())
+    }
+
+    fn bind_sva_match_items(
+        &mut self,
+        tree_idx: usize,
+        items: &[NodeId],
+        inst_id: InstanceId,
+        scope_prefix: &str,
+        gen_consts: &[(String, CVal)],
+        substs: &FxMap<String, ActualSubst>,
+    ) -> Option<Vec<(LocalId, ExprId)>> {
+        let mut assigns = Vec::with_capacity(items.len());
+        for &item in items {
+            let loc = self.loc_of(tree_idx, item, inst_id, scope_prefix, gen_consts);
+            let t = self.tree(tree_idx);
+            let kind = t.kind(item);
+            let kids = Self::expr_kids(t, item);
+            let own = Self::own_toks(t, item);
+            let Some(&lhs_node) = kids.first() else {
+                self.err(loc, "invalid SVA sequence match item");
+                return None;
+            };
+            if t.kind(lhs_node) != SyntaxKind::NameExpr {
+                self.unsup(loc, "SVA match-item target must be a local variable identifier");
+                return None;
+            }
+            let raw_lhs = t.bare_text(lhs_node);
+            let vname = raw_lhs.trim().strip_prefix('\\').unwrap_or(raw_lhs.trim());
+            let Some(lb) = self.extra_local_decls.get(vname).cloned() else {
+                self.err(loc, format!("SVA match-item target '{vname}' is not a declared SVA local variable"));
+                return None;
+            };
+            if !self.active_sva_local_ids.contains(&lb.id) {
+                self.err(loc, format!("SVA match-item target '{vname}' is not a modifiable SVA local variable"));
+                return None;
+            }
+            let (w, signed, four) = lb.ty.integral_shape()?;
+            match kind {
+                SyntaxKind::PostfixExpr | SyntaxKind::PrefixExpr
+                    if own.first().is_some_and(|op| matches!(*op, "++" | "--")) =>
+                {
+                    let op = if own[0] == "++" { BinaryOp::Add } else { BinaryOp::Sub };
+                    let cur = self.arena.alloc(ExprKind::Local(lb.id), lb.ty.clone(), None, loc);
+                    let one = self.arena.alloc_const(CVal::new(w, signed, 1), four, loc);
+                    let sum = self.arena.alloc(ExprKind::Binary { op, lhs: cur, rhs: one }, lb.ty.clone(), None, loc);
+                    assigns.push((lb.id, sum));
+                }
+                SyntaxKind::BinaryExpr if kids.len() == 2 && !own.is_empty() => {
+                    let op_tok = own[0];
+                    let rhs_raw = self.bind_self_expr(tree_idx, kids[1], inst_id, scope_prefix, gen_consts, substs)?;
+                    if op_tok == "=" {
+                        let coerced = self.arena.coerce(rhs_raw, w, signed, four, loc);
+                        assigns.push((lb.id, coerced));
+                    } else {
+                        let bin_op = match op_tok {
+                            "+=" => BinaryOp::Add,
+                            "-=" => BinaryOp::Sub,
+                            "*=" => BinaryOp::Mul,
+                            "/=" => BinaryOp::Div,
+                            "%=" => BinaryOp::Mod,
+                            "&=" => BinaryOp::BitAnd,
+                            "|=" => BinaryOp::BitOr,
+                            "^=" => BinaryOp::BitXor,
+                            "<<=" | "<<<=" => BinaryOp::Shl,
+                            ">>=" => BinaryOp::LShr,
+                            ">>>=" => BinaryOp::AShr,
+                            _ => {
+                                self.unsup(loc, format!("unsupported SVA match-item operator '{op_tok}'"));
+                                return None;
+                            }
+                        };
+                        let cur = self.arena.alloc(ExprKind::Local(lb.id), lb.ty.clone(), None, loc);
+                        let rhs_c = if matches!(bin_op, BinaryOp::Shl | BinaryOp::LShr | BinaryOp::AShr) {
+                            rhs_raw
+                        } else {
+                            self.arena.coerce(rhs_raw, w, signed, four, loc)
+                        };
+                        let res = self.arena.alloc(
+                            ExprKind::Binary { op: bin_op, lhs: cur, rhs: rhs_c },
+                            lb.ty.clone(),
+                            None,
+                            loc,
+                        );
+                        assigns.push((lb.id, res));
+                    }
+                }
+                _ => {
+                    self.unsup(loc, "unsupported SVA sequence match-item form");
+                    return None;
+                }
+            }
+        }
+        Some(assigns)
     }
 
     #[allow(clippy::too_many_arguments)]
