@@ -4,7 +4,7 @@ What changed in each release of the svlang crates (`svlang`, `sv-*`,
 `svlang-model`, `svlang-lint`, `svlang-lsp`, `svlang-cli`), `pysvlang`, and the
 `svlang.svlang` VS Code / Open VSX extension. They share one version number.
 
-## Unreleased
+## 0.5.1 (2026-11-22)
 
 ### Elaboration Fixes (`sv-semantic`, `sv-expr`, `sv-ir`)
 

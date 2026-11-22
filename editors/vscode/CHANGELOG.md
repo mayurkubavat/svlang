@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.1
+
+- **Bundled `svlang` 0.5.1 language server**: picks up three elaboration fixes (generate conditions with a reduction operator, `'1` as a sized parameter default, selects on packed struct members with their own range). No extension settings or commands changed.
+
 ## 0.5.0
 
 - **Bundled `svlang` 0.5.0 language server**: picks up the compiler front-end fixes of the 0.5.0 release (unnamed UDP instances, transition-bin repetitions, constraints that start with a concatenation, based literals split across lines, `default clocking <name>;`, implicit `genblk<n>` names, `` `begin_keywords `` names) and three new diagnostics (unnamed module instance, import of a name the package does not declare, assignment to a `const` variable). No extension settings or commands changed.
