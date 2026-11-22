@@ -833,11 +833,15 @@ primitive my_mux (output z, input a, b, s);
   table 0 ? 0 : 0; 1 ? 0 : 1; ? 0 1 : 0; ? 1 1 : 1; endtable
 endprimitive
 module top;
-  wire z1, z2, z3;
+  wire z1, z2, z3, z4, z5, z6, z7, z8;
   reg a, b, s;
   my_mux u (z1, a, b, s);
   my_mux (z2, a, b, s);
   my_mux #0 (z3, a, b, s);
+  my_mux #0 (z4, a, b, s), (z5, a, b, s);
+  my_mux (strong0, weak1) (z6, a, b, s);
+  my_mux (strong0, weak1) #1 (z7, a, b, s);
+  my_mux #2 u2 (z8, a, b, s);
 endmodule
 "#,
         ),
@@ -899,6 +903,16 @@ fn differential_run_fixes_keep_their_errors() {
         "module top; int q[4]; initial begin foreach (q[i]); end endmodule\n",
     );
     assert!(!foreach_null.diagnostics().is_empty());
+    // 23.3.2: a module instance needs a name.
+    let unnamed = Compilation::from_source(
+        "unnamed_module_instance.sv",
+        "module leaf (output o, input i); assign o = i; endmodule\nmodule top; reg i; wire o; leaf #0 (o, i); endmodule\n",
+    );
+    assert!(
+        unnamed.diagnostics().iter().any(|d| d.message.contains("has no instance name")),
+        "{:?}",
+        unnamed.diagnostics()
+    );
     // Two clocking blocks of one name are still a redefinition.
     let twice = Compilation::from_source(
         "clocking_twice.sv",

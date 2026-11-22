@@ -909,6 +909,9 @@ fn is_unnamed_instantiation(p: &Parser) -> bool {
         return false;
     }
     let mut j = i + 1;
+    if p.text_at(j) == "(" && STRENGTHS.contains(&p.text_at(j + 1)) {
+        j = skip_group_at(p, j);
+    }
     if p.text_at(j) == "#" {
         if p.text_at(j + 1) == "(" {
             j = skip_group_at(p, j + 1);
@@ -1197,6 +1200,8 @@ fn instantiation(p: &mut Parser) {
         p.bump();
         name_token(p);
     }
+    // 29.8: `udp_instantiation ::= udp_identifier [ drive_strength ] [ delay2 ] ...`.
+    strength(p);
     if p.at("#") && p.nth(1) == "(" {
         param_values(p);
     } else if p.at("#") {

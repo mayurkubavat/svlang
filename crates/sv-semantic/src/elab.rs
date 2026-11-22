@@ -2556,13 +2556,25 @@ impl<'b, 't> Elab<'b, 't> {
         }
         let b = self.b;
         let Some(dt) = b.child(c, DataType) else { return };
-        let def_lookup: String = b.toks_of(dt).into_iter().take_while(|&t| t != "#").collect();
+        let def_lookup: String = b.toks_of(dt).into_iter().take_while(|&t| t != "#" && t != "(").collect();
         if def_lookup.is_empty() {
             return;
         }
         if self.design.udps.contains_key(&def_lookup) {
             self.instantiate_udp(c, &def_lookup, vals);
             return;
+        }
+        // IEEE 1800 23.3.2: only gate and UDP instances may have no name.
+        for inst in b.children(c) {
+            if b.kind(inst) == Instance && b.name_of(inst).is_none() && self.checked.insert(inst) {
+                self.diags.push(crate::names::Diag {
+                    tree: inst.tree,
+                    node: inst.node,
+                    message: format!(
+                        "instance of '{def_lookup}' has no instance name; only gate and UDP instances may omit it"
+                    ),
+                });
+            }
         }
         if let Some((chk_key, chk_decl, chk_scope)) = self.resolve_checker(&def_lookup, scope) {
             self.instantiate_checker(c, &chk_key, chk_decl, chk_scope, path, scope, vals, depth);
