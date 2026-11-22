@@ -903,6 +903,13 @@ fn differential_run_fixes_keep_their_errors() {
         "module top; int q[4]; initial begin foreach (q[i]); end endmodule\n",
     );
     assert!(!foreach_null.diagnostics().is_empty());
+    // 26.3: an explicit import names something the package declares.
+    let bad_import = Compilation::from_source(
+        "bad_import.sv",
+        "package p; typedef int good_t; endpackage\nmodule top; import p::missing_t; import p::good_t; endmodule\n",
+    );
+    let msgs: Vec<_> = bad_import.diagnostics().iter().map(|d| d.message.clone()).collect();
+    assert_eq!(msgs, ["no member named 'missing_t' in package 'p'"]);
     // 23.3.2: a module instance needs a name.
     let unnamed = Compilation::from_source(
         "unnamed_module_instance.sv",

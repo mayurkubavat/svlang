@@ -189,6 +189,7 @@ pub fn check(trees: &[Tree]) -> Vec<Diag> {
         let root = At { tree: ix, node: t.root };
         b.walk(ix, t.root, root, &mut out);
     }
+    b.check_imports(&mut out);
     out
 }
 
@@ -203,6 +204,36 @@ fn parents(t: &Tree) -> Vec<u32> {
 }
 
 impl Binder<'_> {
+    /// IEEE 1800 26.3: `import p::x;` needs `x` to be declared in package
+    /// `p`. Nothing is reported when the package or its names are not known.
+    fn check_imports(&self, out: &mut Vec<Diag>) {
+        for (ix, t) in self.trees.iter().enumerate() {
+            for n in t.preorder() {
+                if t.kind(n) != ImportDecl {
+                    continue;
+                }
+                let mut text = String::new();
+                walk(t, n, |i| text.push_str(&t.tokens[i as usize].text));
+                for part in text.trim_start_matches("import").trim_end_matches(';').split(',') {
+                    let Some((p, item)) = part.split_once("::") else { continue };
+                    let (p, item) = (p.trim(), item.trim());
+                    if item == "*" {
+                        continue;
+                    }
+                    let Some(&pk) = self.packages.get(p) else { continue };
+                    let Some(names) = self.visible(pk, 0) else { continue };
+                    if !names.contains(self, norm(item)) {
+                        out.push(Diag {
+                            tree: ix,
+                            node: n,
+                            message: format!("no member named '{item}' in package '{p}'"),
+                        });
+                    }
+                }
+            }
+        }
+    }
+
     /// The names a scope declares itself (not inside the classes and
     /// design units in it, whose names it does declare), and its imports.
     fn own_names(&self, s: At) -> Own {
