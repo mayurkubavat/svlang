@@ -34,6 +34,7 @@ pip install pysvlang    # Python 3.9+, wheels for Linux, macOS and Windows
 | Scopes | [`sv-scopes`](crates/sv-scopes/) | the symbol table of every design unit and the name checks on it |
 | Checks | [`sv-checks`](crates/sv-checks/) | the compiler checks that need only syntax trees and scopes: types, binding, classes, calls, declaration order, SVA, UDPs |
 | Design IR | [`sv-ir`](crates/sv-ir/) | the elaborated design, four-state constant values and source positions the semantic passes share |
+| Expressions | [`sv-expr`](crates/sv-expr/) | expressions bound against the elaborated design, typed and sized by IEEE 1800 11.6 and 11.8 |
 | Semantics | [`sv-semantic`](crates/sv-semantic/) | scopes, 4-state constant evaluation, elaboration, bound expressions and SVA, compiler checks, class model |
 | Netlist | [`sv-netlist`](crates/sv-netlist/) | word-level RTL netlist: procedural blocks, driver analysis, loop unrolling, SVA lowering, memories, cut points and black boxes |
 | Btor2 | [`sv-btor2`](crates/sv-btor2/) | the netlist as a Btor2 transition system for model checkers (rIC3, Pono, AVR, BtorMC) |

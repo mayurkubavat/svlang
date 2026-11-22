@@ -15,9 +15,9 @@ use crate::expr_types::{
     assigned_shape, binary_shape, is_unbased_unsized_tok, literal_type, ARITH, ASSIGN, COMPARE, LOGICAL, SHIFT,
 };
 use crate::fx::FxMap;
-use crate::model::Loc;
-use crate::types::{range_len_u32, BitState, CVal, MAX_ARRAY_ELEMS, MAX_BIT_WIDTH, MAX_SVA_CYCLES};
 use crate::Locator;
+use sv_ir::cval::{range_len_u32, BitState, CVal, MAX_ARRAY_ELEMS, MAX_BIT_WIDTH, MAX_SVA_CYCLES};
+use sv_ir::Loc;
 
 /// Dense arena index for a [`BoundExpr`] inside an [`ExprArena`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -4467,7 +4467,8 @@ fn total_type_bits(ty: &RtlType) -> Option<u64> {
     }
 }
 
-pub(crate) fn cval_nonneg_u32(cv: &CVal, max_val: u32) -> Option<u32> {
+#[doc(hidden)]
+pub fn cval_nonneg_u32(cv: &CVal, max_val: u32) -> Option<u32> {
     if !cv.known() {
         return None;
     }
@@ -4504,15 +4505,17 @@ fn types_assignment_compatible(lhs: &RtlType, rhs: &RtlType) -> bool {
     }
 }
 
+#[doc(hidden)]
 #[derive(Clone, Debug)]
-pub(crate) enum CallArgSlot {
+pub enum CallArgSlot {
     Positional(NodeId),
     EmptyPositional,
     Named { name: String, expr: Option<NodeId> },
     Wildcard,
 }
 
-pub(crate) fn parse_arg_list_slots(t: &Tree, arg_list: Option<NodeId>) -> Vec<CallArgSlot> {
+#[doc(hidden)]
+pub fn parse_arg_list_slots(t: &Tree, arg_list: Option<NodeId>) -> Vec<CallArgSlot> {
     let Some(al) = arg_list else { return Vec::new() };
     let mut out = Vec::new();
     let mut saw_any_content = false;
@@ -4582,7 +4585,8 @@ pub(crate) fn parse_arg_list_slots(t: &Tree, arg_list: Option<NodeId>) -> Vec<Ca
     out
 }
 
-pub(crate) fn resolve_call_arg_map(
+#[doc(hidden)]
+pub fn resolve_call_arg_map(
     slots: &[CallArgSlot],
     formal_names: &[&str],
     callee_desc: &str,

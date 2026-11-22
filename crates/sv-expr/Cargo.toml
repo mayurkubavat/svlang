@@ -1,0 +1,17 @@
+[package]
+name = "sv-expr"
+description = "IEEE 1800-2023 typed RTL expression binding against an elaborated SystemVerilog design (svlang)"
+readme = "../../README.md"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[dependencies]
+sv-bigint.workspace = true
+sv-fxhash.workspace = true
+sv-ir.workspace = true
+sv-syntax.workspace = true

@@ -7,7 +7,7 @@ members = ["crates/*"]
 default-members = [
     "crates/sv-source", "crates/sv-lexer", "crates/sv-preprocessor", "crates/sv-syntax",
     "crates/sv-bigint", "crates/sv-fxhash", "crates/sv-scopes", "crates/sv-checks", "crates/sv-ir",
-    "crates/sv-semantic",
+    "crates/sv-expr", "crates/sv-semantic",
     "crates/sv-netlist", "crates/sv-btor2", "crates/sv-aiger", "crates/sv-yosys", "crates/svlang",
     "crates/svlang-model", "crates/svlang-lint", "crates/svlang-lsp", "crates/svlang-cli",
 ]
@@ -35,6 +35,7 @@ sv-syntax = { version = "0.4.0", path = "crates/sv-syntax" }
 sv-scopes = { version = "0.4.0", path = "crates/sv-scopes" }
 sv-checks = { version = "0.4.0", path = "crates/sv-checks" }
 sv-ir = { version = "0.4.0", path = "crates/sv-ir" }
+sv-expr = { version = "0.4.0", path = "crates/sv-expr" }
 sv-semantic = { version = "0.4.0", path = "crates/sv-semantic" }
 sv-netlist = { version = "0.4.0", path = "crates/sv-netlist" }
 sv-btor2 = { version = "0.4.0", path = "crates/sv-btor2" }

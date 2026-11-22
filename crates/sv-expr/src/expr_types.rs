@@ -2,7 +2,7 @@
 //! and context-determined shapes, literal typing, and system-function return
 //! types), shared by `sv-semantic::expr` (`ExprBinder`) and `svlang lint --exprs`.
 
-use crate::oracle::TypeInfo;
+use sv_ir::TypeInfo;
 
 /// Arithmetic and bitwise binary operators whose width/sign propagate context (`+`, `-`, `*`, `/`, `%`, `&`, `|`, `^`, `^~`, `~^`).
 pub const ARITH: &[&str] = &["+", "-", "*", "/", "%", "&", "|", "^", "^~", "~^"];
@@ -136,7 +136,7 @@ pub fn literal_type(text: &str) -> Option<TypeInfo> {
             }
             n = n.checked_add(1)?;
         }
-        let width = n.max(1).checked_mul(8).filter(|&w| w <= crate::types::MAX_BIT_WIDTH)?;
+        let width = n.max(1).checked_mul(8).filter(|&w| w <= sv_ir::cval::MAX_BIT_WIDTH)?;
         return Some(ranged(width, false, false));
     }
     let t = text.replace('_', "");
@@ -147,7 +147,7 @@ pub fn literal_type(text: &str) -> Option<TypeInfo> {
     }
     if let Some(q) = t.find('\'') {
         let size: u32 = if q == 0 { 32 } else { t[..q].trim().parse().ok()? };
-        if size == 0 || size > crate::types::MAX_BIT_WIDTH {
+        if size == 0 || size > sv_ir::cval::MAX_BIT_WIDTH {
             return None;
         }
         let rest = t[q + 1..].to_ascii_lowercase();

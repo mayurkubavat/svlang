@@ -65,6 +65,7 @@ use sv_syntax::{NodeId, Options, SyntaxKind, Tree};
 // Modules split out into crates of their own, at their old paths.
 pub use sv_bigint as bigint;
 pub use sv_checks::{bind, calls, checks, classes, hier, iclass, order, sva, udp};
+pub use sv_expr::{expr, expr_types};
 pub use sv_fxhash as fx;
 pub use sv_ir::Locator;
 pub use sv_scopes::{names, scopes};
@@ -73,8 +74,6 @@ mod body;
 mod consteval;
 mod elab;
 pub mod elab_ir;
-pub mod expr;
-pub mod expr_types;
 pub mod library;
 pub mod model;
 pub mod oracle;
