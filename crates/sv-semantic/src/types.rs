@@ -5,9 +5,7 @@
 use super::*;
 
 pub(crate) use super::bigint::Int;
-pub(crate) use sv_ir::cval::{
-    binary, literal, range_len_u32, string_value, unary, MAX_ARRAY_ELEMS, MAX_BIT_WIDTH, MAX_SVA_CYCLES,
-};
+pub(crate) use sv_ir::cval::{binary, literal, range_len_u32, string_value, unary, MAX_ARRAY_ELEMS, MAX_BIT_WIDTH};
 pub use sv_ir::cval::{BitState, CVal};
 
 /// How deep constant evaluation may nest (expressions, calls), so a

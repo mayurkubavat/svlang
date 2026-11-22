@@ -1,0 +1,17 @@
+[package]
+name = "sv-sva"
+description = "IEEE 1800-2023 SVA sequence and property binding into typed temporal IR (svlang)"
+readme = "../../README.md"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[dependencies]
+sv-expr.workspace = true
+sv-fxhash.workspace = true
+sv-ir.workspace = true
+sv-syntax.workspace = true

@@ -17,8 +17,8 @@ use sv_syntax::{Child, NodeId, SyntaxKind, Tree};
 use crate::elab_ir::{ElabItemKind, ElaboratedDesign, InstanceId, RtlType};
 use crate::expr::{BinaryOp, ExprArena, ExprBinder, ExprDiag, ExprId, ExprKind, LocalBinding, LocalId};
 use crate::fx::FxMap;
-use crate::model::Loc;
-use crate::types::CVal;
+use sv_ir::cval::{CVal, MAX_SVA_CYCLES};
+use sv_ir::Loc;
 
 /// Clocking edge sensitivity for an SVA clock event.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -2149,11 +2149,8 @@ impl<'a> SvaBinder<'a> {
             self.err(loc, "SVA cycle count must be an elaboration-time constant");
             return None;
         };
-        let Some(count) = crate::expr::cval_nonneg_u32(&cv, crate::types::MAX_SVA_CYCLES) else {
-            self.err(
-                loc,
-                format!("SVA cycle count must be a non-negative integer within 0..={}", crate::types::MAX_SVA_CYCLES),
-            );
+        let Some(count) = crate::expr::cval_nonneg_u32(&cv, MAX_SVA_CYCLES) else {
+            self.err(loc, format!("SVA cycle count must be a non-negative integer within 0..={}", MAX_SVA_CYCLES));
             return None;
         };
         Some(count)

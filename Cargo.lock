@@ -237,12 +237,23 @@ dependencies = [
  "sv-ir",
  "sv-scopes",
  "sv-source",
+ "sv-sva",
  "sv-syntax",
 ]
 
 [[package]]
 name = "sv-source"
 version = "0.4.0"
+
+[[package]]
+name = "sv-sva"
+version = "0.4.0"
+dependencies = [
+ "sv-expr",
+ "sv-fxhash",
+ "sv-ir",
+ "sv-syntax",
+]
 
 [[package]]
 name = "sv-syntax"

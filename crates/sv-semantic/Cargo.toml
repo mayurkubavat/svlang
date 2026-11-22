@@ -17,5 +17,6 @@ sv-checks.workspace = true
 sv-scopes.workspace = true
 sv-ir.workspace = true
 sv-expr.workspace = true
+sv-sva.workspace = true
 sv-syntax.workspace = true
 sv-source.workspace = true

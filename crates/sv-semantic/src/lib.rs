@@ -69,6 +69,7 @@ pub use sv_expr::{expr, expr_types};
 pub use sv_fxhash as fx;
 pub use sv_ir::Locator;
 pub use sv_scopes::{names, scopes};
+pub use sv_sva::sva_ir;
 
 mod body;
 mod consteval;
@@ -78,7 +79,6 @@ pub mod library;
 pub mod model;
 pub mod oracle;
 mod packed;
-pub mod sva_ir;
 pub mod typed;
 mod types;
 use SyntaxKind::*;
