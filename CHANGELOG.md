@@ -4,6 +4,45 @@ What changed in each release of the svlang crates (`svlang`, `sv-*`,
 `svlang-model`, `svlang-lint`, `svlang-lsp`, `svlang-cli`), `pysvlang`, and the
 `svlang.svlang` VS Code / Open VSX extension. They share one version number.
 
+## 0.5.0 (2026-11-22)
+
+### Compiler Front-End Fixes (`sv-lexer`, `sv-syntax`, `sv-semantic`)
+
+Found by running `svlang check` and an event-driven simulator's front end over
+the same 1,102 SystemVerilog test files and reading IEEE 1800-2023 for every
+disagreement.
+
+- **Legal code that was rejected, now accepted**: UDP instances with no
+  instance name, including the drive-strength and delay forms (29.8);
+  transition bins with a repetition and no `=>`, such as `(5 [*2])` (19.5.2);
+  a constraint expression that starts with a concatenation,
+  `{a, b} == {c, d};` (18.5); a based literal whose digits follow a newline
+  (5.7.1); `default clocking <name>;` naming an existing block, previously a
+  redefinition error (14.12); implicit generate block names such as
+  `genblk2[0].genblk1[0]` (27.6); and a later standard's keyword used as a
+  plain name under `` `begin_keywords "1364-2005" `` (22.14).
+- **Illegal code that was accepted, now reported**: a module instance with no
+  instance name (23.3.2); `import p::x;` of a name package `p` does not
+  declare (26.3); and an assignment to a `const` variable outside a class
+  (6.20.6).
+
+### Workspace Layout (`sv-*` crates)
+
+- **Seven crates extracted from `sv-semantic`**: `sv-bigint` (arbitrary-width
+  integer), `sv-fxhash` (hasher), `sv-scopes` (scopes and name checks),
+  `sv-ir` (elaborated-design types, constant values, source positions),
+  `sv-checks` (syntax-level legality checks), `sv-expr` (typed expression
+  binder), and `sv-sva` (property and sequence binder). `sv-semantic`
+  re-exports every item at its previous path, so code that uses `svlang` or
+  `sv_semantic` needs no change. `sv-semantic` itself is now the elaboration
+  core (32.6K -> 14.7K lines).
+- **Internal items made reachable across the new crate lines**: 14 helper
+  functions and constants and 4 struct fields are now `pub` with
+  `#[doc(hidden)]`. They are not part of the supported API.
+- **Internal crates declared once** in the root `[workspace.dependencies]`;
+  `tools/release/publish_crates.sh --dry-run` now fails when an internal
+  dependency's version does not match the workspace version.
+
 ## 0.4.0 (2026-11-21)
 
 ### IDE / LSP Highlighting, Code Tracing & Control Center (`svlang-lsp` + `svlang.svlang`)

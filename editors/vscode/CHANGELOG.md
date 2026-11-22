@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.0
+
+- **Bundled `svlang` 0.5.0 language server**: picks up the compiler front-end fixes of the 0.5.0 release (unnamed UDP instances, transition-bin repetitions, constraints that start with a concatenation, based literals split across lines, `default clocking <name>;`, implicit `genblk<n>` names, `` `begin_keywords `` names) and three new diagnostics (unnamed module instance, import of a name the package does not declare, assignment to a `const` variable). No extension settings or commands changed.
+
 ## 0.4.1
 
 - **Custom Monochrome `$(svlang-logo)` Status Bar Icon**: Added a dedicated die-corner `SV` WOFF icon font (`contributes.icons`) matching VS Code's monochrome status bar conventions (`rust-analyzer` / `Copilot` / `Biome` style), paired with `$(error)` / `$(warning)` on findings and `$(circle-slash)` when linting is off.
