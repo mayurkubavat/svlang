@@ -19,6 +19,25 @@ repository = "https://github.com/mayurkubavat/svlang"
 keywords = ["systemverilog", "verilog", "eda", "parser", "hdl"]
 categories = ["compilers", "parser-implementations", "development-tools"]
 
+# Every internal crate, declared once; members write `sv-syntax.workspace = true`.
+# Each entry keeps both `version` (what crates.io resolves; keep it equal to
+# `workspace.package.version`) and `path` (what the workspace builds), so
+# `cargo publish` in tools/release/publish_crates.sh keeps working.
+[workspace.dependencies]
+sv-source = { version = "0.4.0", path = "crates/sv-source" }
+sv-lexer = { version = "0.4.0", path = "crates/sv-lexer" }
+sv-preprocessor = { version = "0.4.0", path = "crates/sv-preprocessor" }
+sv-syntax = { version = "0.4.0", path = "crates/sv-syntax" }
+sv-semantic = { version = "0.4.0", path = "crates/sv-semantic" }
+sv-netlist = { version = "0.4.0", path = "crates/sv-netlist" }
+sv-btor2 = { version = "0.4.0", path = "crates/sv-btor2" }
+sv-aiger = { version = "0.4.0", path = "crates/sv-aiger" }
+sv-yosys = { version = "0.4.0", path = "crates/sv-yosys" }
+svlang = { version = "0.4.0", path = "crates/svlang" }
+svlang-model = { version = "0.4.0", path = "crates/svlang-model" }
+svlang-lint = { version = "0.4.0", path = "crates/svlang-lint" }
+svlang-lsp = { version = "0.4.0", path = "crates/svlang-lsp" }
+
 [profile.release]
 debug = 1
 

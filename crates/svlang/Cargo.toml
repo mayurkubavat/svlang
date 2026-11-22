@@ -11,12 +11,12 @@ categories.workspace = true
 readme = "README.md"
 
 [dependencies]
-sv-source = { version = "0.4.0", path = "../sv-source" }
-sv-lexer = { version = "0.4.0", path = "../sv-lexer" }
-sv-preprocessor = { version = "0.4.0", path = "../sv-preprocessor" }
-sv-syntax = { version = "0.4.0", path = "../sv-syntax" }
-sv-semantic = { version = "0.4.0", path = "../sv-semantic" }
-sv-netlist = { version = "0.4.0", path = "../sv-netlist" }
-sv-btor2 = { version = "0.4.0", path = "../sv-btor2" }
-sv-aiger = { version = "0.4.0", path = "../sv-aiger" }
-sv-yosys = { version = "0.4.0", path = "../sv-yosys" }
+sv-source.workspace = true
+sv-lexer.workspace = true
+sv-preprocessor.workspace = true
+sv-syntax.workspace = true
+sv-semantic.workspace = true
+sv-netlist.workspace = true
+sv-btor2.workspace = true
+sv-aiger.workspace = true
+sv-yosys.workspace = true

@@ -81,10 +81,15 @@ for name in sorted(want):
             missing.append(f"{name} missing {field}")
     if p.get("publish") == []:
         missing.append(f"{name} has publish = false")
+    # Internal dependencies come from [workspace.dependencies] in the root
+    # Cargo.toml; their `version` must follow workspace.package.version.
+    for d in p["dependencies"]:
+        if d.get("path") and d["req"] != "^" + sys.argv[1]:
+            missing.append(f"{name} depends on {d["name"]} {d['req']}, not {sys.argv[1]}")
 if missing:
     sys.exit("FAIL: " + "; ".join(missing))
-print(f"cargo metadata: all {len(want)} publishable crates have description, license, repository, readme, and publish enabled")
-'
+print(f"cargo metadata: all {len(want)} publishable crates have description, license, repository, readme, publish enabled, and internal dependencies at {sys.argv[1]}")
+' "$ver"
     echo "publish_crates.sh: dry-run clean (${#CRATES[@]} crates packaged)"
     exit 0
 fi

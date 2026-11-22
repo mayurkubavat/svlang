@@ -11,5 +11,5 @@ keywords.workspace = true
 categories.workspace = true
 
 [dependencies]
-sv-syntax = { version = "0.4.0", path = "../sv-syntax" }
-sv-semantic = { version = "0.4.0", path = "../sv-semantic" }
+sv-syntax.workspace = true
+sv-semantic.workspace = true
