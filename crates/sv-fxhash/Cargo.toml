@@ -1,0 +1,11 @@
+[package]
+name = "sv-fxhash"
+description = "The fast non-cryptographic Fx hasher and FxMap/FxSet aliases that the svlang crates use for internal maps"
+readme = "../../README.md"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+keywords.workspace = true
+categories.workspace = true

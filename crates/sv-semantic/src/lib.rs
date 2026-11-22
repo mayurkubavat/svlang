@@ -73,7 +73,7 @@ mod elab;
 pub mod elab_ir;
 pub mod expr;
 pub mod expr_types;
-pub mod fx;
+pub use sv_fxhash as fx;
 pub mod hier;
 pub mod iclass;
 pub mod library;
