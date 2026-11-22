@@ -844,13 +844,16 @@ pub(crate) fn is_decl_start(p: &Parser) -> bool {
         // A cast: `void'(f())`, `int'(x)`.
         return false;
     }
-    if BUILTIN_TYPES.contains(&t) || NET_TYPES.contains(&t) || matches!(t, "signed" | "unsigned") {
+    // 22.14: under `begin_keywords a later standard's keyword (`logic` in
+    // 1364-2005) is a plain name, and starts no declaration by itself.
+    let reserved = !ident_at(p, i);
+    if reserved && (BUILTIN_TYPES.contains(&t) || NET_TYPES.contains(&t) || matches!(t, "signed" | "unsigned")) {
         return true;
     }
-    if t == "virtual" || t == "interface" {
+    if reserved && (t == "virtual" || t == "interface") {
         return true;
     }
-    if t == "type" && p.text_at(i + 1) == "(" {
+    if reserved && t == "type" && p.text_at(i + 1) == "(" {
         return true;
     }
     let Some(mut j) = type_name_end(p, i) else { return false };

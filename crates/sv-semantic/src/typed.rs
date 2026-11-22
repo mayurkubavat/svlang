@@ -854,6 +854,24 @@ impl<'a> Ctx<'a> {
                     }
                 }
             }
+            BinaryExpr => {
+                // IEEE 1800 6.20.6: a `const` variable is set by its
+                // declaration only. `<=` is left alone here: it is also a
+                // comparison. A class's constants are set in `new` (8.19).
+                let own = own_toks(t, n);
+                let Some(op) = own.first() else { return };
+                if own.len() != 1 || *op == "<=" || !crate::checks::is_assign_op(op) {
+                    return;
+                }
+                let Some(lhs) = t.children(n).next() else { return };
+                if t.kind(lhs) != NameExpr {
+                    return;
+                }
+                let Some(sym) = self.sym_of_name(ix, t, lhs, parent) else { return };
+                if self.is_const_var(sym) {
+                    err(lhs, format!("cannot assign to const variable '{}'", self.scopes.symbols[sym].name));
+                }
+            }
             CallExpr => {
                 let kids: Vec<NodeId> = t.children(n).collect();
                 let (Some(&callee), Some(list)) = (kids.first(), t.child(n, ArgList)) else { return };
@@ -944,6 +962,23 @@ impl<'a> Ctx<'a> {
     }
 
     /// `rand`, `randc` or neither (empty) on a variable's declaration.
+    /// A variable declared `const` outside a class.
+    fn is_const_var(&self, sym: usize) -> bool {
+        let y = &self.scopes.symbols[sym];
+        if y.kind != SymKind::Variable {
+            return false;
+        }
+        let (t, parent) = (&self.trees[y.tree], &self.parents[y.tree]);
+        let mut cur = Some(y.node);
+        while let Some(a) = cur {
+            if t.kind(a) == DataDecl {
+                return own_toks(t, a).contains(&"const") && up(parent, a).is_none_or(|p| t.kind(p) != ClassDecl);
+            }
+            cur = up(parent, a);
+        }
+        false
+    }
+
     fn rand_kind(&self, sym: usize) -> Option<&'static str> {
         let y = &self.scopes.symbols[sym];
         if y.kind != SymKind::Variable {

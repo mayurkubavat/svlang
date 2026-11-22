@@ -876,6 +876,28 @@ endclass
         ),
         // 5.7.1: white space, a newline included, between base and digits.
         ("based_literal_newline.sv", "module top;\n  logic [3:0] w;\n  initial w = {2'b11, 2'd\n    1};\nendmodule\n"),
+        // 27.6: unnamed generate blocks are `genblk<n>`, nested ones too.
+        (
+            "implicit_genblk_names.sv",
+            r#"
+module top;
+  logic ok;
+  if (1) begin : named_first end
+  for (genvar k = 0; k < 2; k++) begin
+    for (genvar j = 0; j < 2; j++) begin logic [3:0] datum = k*2+j; end
+  end
+  for (genvar k = 0; k < 2; k++) begin logic [3:0] datum = k+8; end
+  assign ok = genblk2[0].genblk1[0].datum == 0 && genblk3[1].datum == 9;
+endmodule
+"#,
+        ),
+        // 22.14: `logic` is a plain name under the 1364-2005 keyword set.
+        (
+            "begin_keywords_logic_name.sv",
+            "`begin_keywords \"1364-2005\"\nmodule top; reg logic; initial logic = 1; endmodule\n`end_keywords\n",
+        ),
+        // 8.19: a class constant is set in its constructor.
+        ("class_const_in_new.sv", "class c; const int k; function new(); k = 5; endfunction endclass\n"),
         // 14.12: `default clocking cb;` designates an existing block.
         (
             "default_clocking_designation.sv",
@@ -910,6 +932,13 @@ fn differential_run_fixes_keep_their_errors() {
     );
     let msgs: Vec<_> = bad_import.diagnostics().iter().map(|d| d.message.clone()).collect();
     assert_eq!(msgs, ["no member named 'missing_t' in package 'p'"]);
+    // 6.20.6: a const variable is set by its declaration only.
+    let const_write = Compilation::from_source(
+        "const_write.sv",
+        "module top; const int x = 1; int y; initial begin y = 3; x = 2; x += 1; end endmodule\n",
+    );
+    let msgs: Vec<_> = const_write.diagnostics().iter().map(|d| d.message.clone()).collect();
+    assert_eq!(msgs, ["cannot assign to const variable 'x'", "cannot assign to const variable 'x'"]);
     // 23.3.2: a module instance needs a name.
     let unnamed = Compilation::from_source(
         "unnamed_module_instance.sv",

@@ -562,7 +562,7 @@ impl Binder<'_> {
                 if let Some(base) = kids.next() {
                     if t.kind(base) == NameExpr {
                         if let Some(name) = single_ident(t, base) {
-                            if !self.everywhere.contains(name) {
+                            if !self.everywhere.contains(name) && !implicit_genblk(name) {
                                 if let Some(v) = self.visible(scope, 0) {
                                     if !v.contains(self, name) {
                                         out.push(undeclared(ix, base, name));
@@ -602,7 +602,7 @@ impl Binder<'_> {
             NameExpr | DataType => {
                 if let Some(name) = single_ident(t, n) {
                     if let Some(v) = self.visible(scope, 0) {
-                        if !v.contains(self, name) {
+                        if !v.contains(self, name) && !implicit_genblk(name) {
                             out.push(undeclared(ix, n, name));
                         }
                     }
@@ -632,7 +632,10 @@ impl Binder<'_> {
         let t = &self.trees[ix];
         if matches!(t.kind(n), NameExpr | DataType) {
             if let Some(name) = single_ident(t, n) {
-                if !v.iter().any(|l| l.contains(self, name)) && !self.everywhere.contains(name) {
+                if !v.iter().any(|l| l.contains(self, name))
+                    && !self.everywhere.contains(name)
+                    && !implicit_genblk(name)
+                {
                     out.push(undeclared(ix, n, name));
                 }
                 return;
@@ -665,6 +668,12 @@ fn single_ident(t: &Tree, n: NodeId) -> Option<&str> {
     }
     let tok = &t.tokens[a as usize];
     matches!(tok.kind, Kind::Identifier | Kind::EscapedIdentifier).then_some(norm(&tok.text))
+}
+
+/// IEEE 1800 27.6: an unnamed generate block is `genblk<n>`, a name no
+/// declaration spells. Which `n` exist is settled by elaboration.
+fn implicit_genblk(name: &str) -> bool {
+    name.strip_prefix("genblk").is_some_and(|r| !r.is_empty() && r.bytes().all(|c| c.is_ascii_digit()))
 }
 
 fn undeclared(tree: usize, node: NodeId, name: &str) -> Diag {
