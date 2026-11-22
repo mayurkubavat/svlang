@@ -4,6 +4,27 @@ What changed in each release of the svlang crates (`svlang`, `sv-*`,
 `svlang-model`, `svlang-lint`, `svlang-lsp`, `svlang-cli`), `pysvlang`, and the
 `svlang.svlang` VS Code / Open VSX extension. They share one version number.
 
+## Unreleased
+
+### Elaboration Fixes (`sv-semantic`, `sv-expr`, `sv-ir`)
+
+Found by converting 2,184 modules of open-source RTL with `svcc` and comparing
+the result against a simulator. Each one changed the elaborated design, and so
+the netlist, without a diagnostic.
+
+- **Generate condition with a reduction operator** (27.5, 11.4.9):
+  `if (|P) ... else ...` elaborated neither branch, because the elaboration-time
+  evaluator had no `&`, `|`, `^` (and negated) prefix operators. It now takes
+  the branch the value selects.
+- **Fill literal as the default of a sized parameter** (5.7.1, 6.20.2):
+  `parameter logic [W-1:0] P = '1` had the value 1 in the elaborated design
+  (the printed hierarchy was already right). `'0`, `'1`, `'x` and `'z` now set
+  every bit of the context they are sized by, also inside `?:` and operators.
+- **Select on a packed struct member with its own range** (7.2.1, 11.5.1): for
+  `logic [23:16] m`, `s.m[22:16]` was indexed against `[7:0]` and lowered as
+  out of range (x). `PackedField` gains `bounds`, the member's declared range,
+  and selects use it. This adds a public field to `sv_ir::PackedField`.
+
 ## 0.5.0 (2026-11-22)
 
 ### Compiler Front-End Fixes (`sv-lexer`, `sv-syntax`, `sv-semantic`)

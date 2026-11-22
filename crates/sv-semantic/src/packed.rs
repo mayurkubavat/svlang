@@ -473,6 +473,14 @@ impl Builder<'_> {
                     None => CVal::merge(&sub(*kids.get(1)?)?, &sub(*kids.get(2)?)?),
                 }
             }
+            // An unbased unsized literal sets every bit of the context it is sized by
+            // (IEEE 1800-2023 5.7.1).
+            (Literal, Some(fill @ ("'0" | "'1" | "'x" | "'X" | "'z" | "'Z"))) if own.len() == 1 => match fill {
+                "'0" => CVal::new(cw, cs, 0),
+                "'1" => CVal::new(cw, cs, -1),
+                "'x" | "'X" => CVal::all_x(cw, cs),
+                _ => CVal::all_z(cw, cs),
+            },
             // A leaf: extended by its own sign only when the context is signed.
             _ => CVal { s: v.s && cs, ..v }.norm().cast(cw, cs),
         };

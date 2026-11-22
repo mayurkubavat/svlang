@@ -84,6 +84,11 @@ pub struct PackedField {
     pub width: u32,
     /// Elaborated type of this member.
     pub ty: RtlType,
+    /// Declared `[left:right]` range of a member that is a one-dimensional packed vector
+    /// (`logic [23:16] m`), which bit and part selects on the member index against
+    /// (IEEE 1800-2023 11.5.1). `None` for scalars and for members whose type has no single
+    /// packed dimension of its own.
+    pub bounds: Option<(i128, i128)>,
 }
 
 /// Elaborated SystemVerilog data type for RTL binding, typing, and netlist lowering.

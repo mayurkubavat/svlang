@@ -523,7 +523,9 @@ impl<'t> Builder<'t> {
             PrefixExpr => {
                 let op = self.first_own_tok(e)?;
                 let a = self.eval(*kids.first()?, scope, env, depth + 1)?;
-                Some(unary(op, a)?)
+                // Includes the reduction operators (IEEE 1800-2023 11.4.9), which are
+                // legal in a constant expression such as a generate condition.
+                CVal::eval_unary(op, a)
             }
             BinaryExpr => {
                 let op = self.first_own_tok(e)?;

@@ -960,3 +960,116 @@ fn differential_run_fixes_keep_their_errors() {
         twice.diagnostics()
     );
 }
+
+/// Lowers `src` and returns the netlist, panicking on any diagnostic.
+fn lowered(name: &str, src: &str) -> svlang::Netlist {
+    let comp = Compilation::from_source(name, src);
+    assert!(comp.diagnostics().is_empty(), "diags: {:?}", comp.diagnostics());
+    match comp.lower_netlist(&LowerConfig::default()) {
+        LowerOutcome::Lowered(nl) => nl,
+        other => panic!("expected Lowered, got {other:?}"),
+    }
+}
+
+/// The constant an output is driven with, if it is one.
+fn output_const(nl: &svlang::Netlist, port: &str) -> Option<i128> {
+    let out = nl.outputs.iter().find(|o| o.name == port)?;
+    match &nl.value(out.value).kind {
+        svlang::netlist::ValueKind::Const(cv) => Some(cv.cast(cv.w, false).i()),
+        _ => None,
+    }
+}
+
+#[test]
+fn generate_condition_with_a_reduction_operator_takes_a_branch() {
+    // IEEE 1800-2023 27.5: the condition is a constant expression (11.2.1), and the
+    // reduction operators (11.4.9) are legal in one. Exactly one branch is instantiated.
+    let src = r#"
+module top #(parameter WITH_CSR = 1, parameter NONE = 0) (output wire [5:0] y, output wire [5:0] z,
+                                                          output wire a, output wire x);
+  if (|WITH_CSR) begin : gen_csr assign y = 6'b100010; end
+  else           begin : gen_no  assign y = 6'd0; end
+  if (|NONE)     begin : gen_some assign z = 6'd1; end
+  else           begin : gen_none assign z = 6'd7; end
+  if (&WITH_CSR) begin : gen_all  assign a = 1'b1; end
+  else           begin : gen_part assign a = 1'b0; end
+  if (^WITH_CSR) begin : gen_odd  assign x = 1'b1; end
+  else           begin : gen_even assign x = 1'b0; end
+endmodule
+"#;
+    let comp = Compilation::from_source("gen_reduction.sv", src);
+    let (diags, elab) = comp.check();
+    assert!(diags.is_empty(), "diags: {diags:?}");
+    let hier = elab.hierarchy.join("\n");
+    for taken in ["gen_csr", "gen_none", "gen_part", "gen_odd"] {
+        assert!(hier.contains(&format!("generate {taken}")), "{taken} not taken:\n{hier}");
+    }
+    for skipped in ["gen_no ", "gen_some", "gen_all", "gen_even"] {
+        assert!(!hier.contains(&format!("generate {skipped}")), "{skipped} taken:\n{hier}");
+    }
+    let nl = lowered("gen_reduction.sv", src);
+    assert_eq!(output_const(&nl, "y"), Some(0b100010));
+    assert_eq!(output_const(&nl, "z"), Some(7));
+    // WITH_CSR is a 32-bit 1: not all ones, odd parity.
+    assert_eq!(output_const(&nl, "a"), Some(0));
+    assert_eq!(output_const(&nl, "x"), Some(1));
+}
+
+#[test]
+fn fill_literal_default_sets_every_bit_of_a_sized_parameter() {
+    // IEEE 1800-2023 5.7.1: an unbased unsized literal sets all bits of the value it is sized
+    // to; 6.20.2: a parameter with a data type takes its value converted to that type.
+    let src = r#"
+module top #(
+  parameter int W = 8,
+  parameter logic [W-1:0]  P1 = '1,
+  parameter logic [W-1:0]  P0 = '0,
+  parameter logic [11:0]   PC = W > 4 ? '1 : '0,
+  localparam logic [W-1:0] L1 = '1,
+  localparam logic [W-1:0] N  = P1 >> 4
+) (output logic [7:0] a, output logic [7:0] b, output logic [11:0] c,
+   output logic [7:0] d, output logic [7:0] n);
+  assign a = P1;
+  assign b = P0;
+  assign c = PC;
+  assign d = L1;
+  assign n = N;
+endmodule
+"#;
+    let nl = lowered("fill_param.sv", src);
+    assert_eq!(output_const(&nl, "a"), Some(0xff));
+    assert_eq!(output_const(&nl, "b"), Some(0));
+    assert_eq!(output_const(&nl, "c"), Some(0xfff));
+    assert_eq!(output_const(&nl, "d"), Some(0xff));
+    // A value derived from the parameter during elaboration sees all ones too.
+    assert_eq!(output_const(&nl, "n"), Some(0x0f));
+}
+
+#[test]
+fn select_on_a_struct_member_uses_the_member_range() {
+    // IEEE 1800-2023 11.5.1: a select indexes the vector by its declared range. A packed
+    // struct member (7.2.1) declared `logic [23:16]` keeps that range.
+    let src = r#"
+package pk;
+  typedef struct packed { logic [3:0] hi; logic [23:16] dyn; logic [0:7] asc; logic [7:0] lo; } e_t;
+endpackage
+module top (input pk::e_t e, output logic [6:0] y, output logic b, output logic [3:0] a);
+  assign y = e.dyn[22:16];
+  assign b = e.dyn[23];
+  assign a = e.asc[0:3];
+endmodule
+"#;
+    let nl = lowered("member_range.sv", src);
+    let slice_of = |port: &str| {
+        let out = nl.outputs.iter().find(|o| o.name == port).expect("output");
+        match &nl.value(out.value).kind {
+            svlang::netlist::ValueKind::Op { op: svlang::netlist::NetOp::Slice { hi, lo }, .. } => (*hi, *lo),
+            other => panic!("{port}: expected a slice, got {other:?}"),
+        }
+    };
+    // e_t is {hi[27:24], dyn[23:16], asc[15:8], lo[7:0]}.
+    assert_eq!(slice_of("y"), (22, 16));
+    assert_eq!(slice_of("b"), (23, 23));
+    // `asc` is declared [0:7]: index 0 is its most significant bit.
+    assert_eq!(slice_of("a"), (15, 12));
+}

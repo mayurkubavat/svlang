@@ -2425,6 +2425,12 @@ impl<'a> ExprBinder<'a> {
                         return b;
                     }
                 }
+                // A struct or union member is indexed against the range it is declared with.
+                if let ExprKind::Member { base, field, .. } = &be.kind {
+                    if let Some(b) = self.arena.get(*base).ty.packed_field(field).and_then(|f| f.bounds) {
+                        return b;
+                    }
+                }
                 if let ExprKind::Local(lid) = be.kind {
                     for lb in self.locals.values() {
                         if lb.id == lid {
@@ -3367,9 +3373,22 @@ impl<'a> ExprBinder<'a> {
             let signed = own.contains(&"signed") && !own.contains(&"unsigned");
             let members: Vec<NodeId> = t.children(dt).filter(|&c| t.kind(c) == SyntaxKind::DataDecl).collect();
             if is_packed {
-                let mut raw_members: Vec<(String, RtlType, u32)> = Vec::new();
+                let mut raw_members: Vec<RawMember> = Vec::new();
                 for m in members {
                     let mdt = self.tree(tree_idx).child(m, SyntaxKind::DataType);
+                    // The member's own range, when its type is written with one packed dimension.
+                    let mdims: Vec<NodeId> = match mdt {
+                        Some(dt) => self
+                            .tree(tree_idx)
+                            .children(dt)
+                            .filter(|&c| self.tree(tree_idx).kind(c) == SyntaxKind::Dim)
+                            .collect(),
+                        None => Vec::new(),
+                    };
+                    let mbounds = match mdims.as_slice() {
+                        [dim] => self.eval_dim_bounds(tree_idx, *dim),
+                        _ => None,
+                    };
                     let decls: Vec<NodeId> = self
                         .tree(tree_idx)
                         .children(m)
@@ -3385,14 +3404,14 @@ impl<'a> ExprBinder<'a> {
                             self.err(loc, format!("member '{fname}' inside packed struct/union must be packed"));
                             return None;
                         };
-                        raw_members.push((fname, fty, fw));
+                        raw_members.push((fname, fty, fw, mbounds));
                     }
                 }
                 let total = if is_union {
-                    raw_members.iter().map(|(_, _, w)| *w).max().unwrap_or(1).max(1)
+                    raw_members.iter().map(|(_, _, w, _)| *w).max().unwrap_or(1).max(1)
                 } else {
                     let mut sum = 0u32;
-                    for (_, _, w) in &raw_members {
+                    for (_, _, w, _) in &raw_members {
                         let Some(next) = sum.checked_add(*w).filter(|&n| n <= MAX_BIT_WIDTH) else {
                             self.err(loc, "packed struct exceeds maximum bit width");
                             return None;
@@ -3401,18 +3420,18 @@ impl<'a> ExprBinder<'a> {
                     }
                     sum.max(1)
                 };
-                let four_state = raw_members.iter().any(|(_, ft, _)| ft.is_four_state());
+                let four_state = raw_members.iter().any(|(_, ft, _, _)| ft.is_four_state());
                 let mut cursor = total;
                 let fields: Vec<PackedField> = raw_members
                     .into_iter()
-                    .map(|(fname, fty, w)| {
+                    .map(|(fname, fty, w, bounds)| {
                         let lo = if is_union {
                             0
                         } else {
                             cursor = cursor.saturating_sub(w);
                             cursor
                         };
-                        PackedField { name: fname, lo, width: w, ty: fty }
+                        PackedField { name: fname, lo, width: w, ty: fty, bounds }
                     })
                     .collect();
                 let sty = if is_union {
@@ -4854,3 +4873,7 @@ fn find_struct_pattern_entry(
     }
     entries.iter().rev().find(|(k, _, _)| k.as_deref() == Some("default")).map(|(_, _, n)| *n)
 }
+
+/// A packed struct or union member while its layout is computed: name, type, bit width and
+/// the declared range of a one-dimensional packed vector member.
+type RawMember = (String, RtlType, u32, Option<(i128, i128)>);

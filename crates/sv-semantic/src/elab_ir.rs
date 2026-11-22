@@ -160,12 +160,13 @@ impl Builder<'_> {
             let is_packed = own.contains(&"packed") || (is_union && is_soft);
             let signed = own.contains(&"signed");
             if is_packed {
-                let mut raw_members: Vec<(String, RtlType, u32)> = Vec::new();
+                let mut raw_members: Vec<RawMember> = Vec::new();
                 for m in self.children(dt) {
                     if self.kind(m) != SyntaxKind::DataDecl {
                         continue;
                     }
                     let mdt = self.child(m, SyntaxKind::DataType);
+                    let mbounds = self.packed_1d_bounds(mdt, scope, env, depth + 1);
                     for d in self.children(m) {
                         if self.kind(d) == SyntaxKind::Declarator {
                             let Some((fname, _)) = self.name_of(d) else { continue };
@@ -179,7 +180,7 @@ impl Builder<'_> {
                                 ));
                             };
                             if is_union && !is_tagged && !is_soft {
-                                if let Some(&(_, _, first_w)) = raw_members.first() {
+                                if let Some(&(_, _, first_w, _)) = raw_members.first() {
                                     if w != first_w {
                                         return RtlType::NonSynthesizable(format!(
                                             "member '{fname}' of width {w} does not match packed union width {first_w}"
@@ -187,7 +188,7 @@ impl Builder<'_> {
                                     }
                                 }
                             }
-                            raw_members.push((fname, fty, w));
+                            raw_members.push((fname, fty, w, mbounds));
                         }
                     }
                 }
@@ -195,7 +196,7 @@ impl Builder<'_> {
                     raw_members.iter().map(|m| m.2).max().unwrap_or(1)
                 } else {
                     let mut sum = 0u32;
-                    for &(_, _, w) in &raw_members {
+                    for &(_, _, w, _) in &raw_members {
                         let Some(next) = sum.checked_add(w).filter(|&tw| tw <= crate::types::MAX_BIT_WIDTH) else {
                             return RtlType::NonSynthesizable("packed struct exceeds maximum bit width".into());
                         };
@@ -203,18 +204,18 @@ impl Builder<'_> {
                     }
                     sum.max(1)
                 };
-                let four_state = raw_members.iter().any(|(_, t, _)| t.is_four_state());
+                let four_state = raw_members.iter().any(|(_, t, _, _)| t.is_four_state());
                 let mut cursor = total;
                 let fields: Vec<PackedField> = raw_members
                     .into_iter()
-                    .map(|(fname, fty, w)| {
+                    .map(|(fname, fty, w, bounds)| {
                         let lo = if is_union {
                             0
                         } else {
                             cursor = cursor.saturating_sub(w);
                             cursor
                         };
-                        PackedField { name: fname, lo, width: w, ty: fty }
+                        PackedField { name: fname, lo, width: w, ty: fty, bounds }
                     })
                     .collect();
                 let sty = if is_union {
@@ -457,3 +458,7 @@ impl Builder<'_> {
         None
     }
 }
+
+/// A packed struct or union member while its layout is computed: name, type, bit width and
+/// the declared range of a one-dimensional packed vector member.
+type RawMember = (String, RtlType, u32, Option<(i128, i128)>);
