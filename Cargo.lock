@@ -181,6 +181,15 @@ name = "sv-fxhash"
 version = "0.4.0"
 
 [[package]]
+name = "sv-ir"
+version = "0.4.0"
+dependencies = [
+ "sv-bigint",
+ "sv-fxhash",
+ "sv-syntax",
+]
+
+[[package]]
 name = "sv-lexer"
 version = "0.4.0"
 
@@ -214,6 +223,7 @@ dependencies = [
  "sv-bigint",
  "sv-checks",
  "sv-fxhash",
+ "sv-ir",
  "sv-scopes",
  "sv-source",
  "sv-syntax",

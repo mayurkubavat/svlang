@@ -1,0 +1,16 @@
+[package]
+name = "sv-ir"
+description = "Elaborated-design and constant-value data types shared by the svlang semantic passes"
+readme = "../../README.md"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[dependencies]
+sv-bigint.workspace = true
+sv-fxhash.workspace = true
+sv-syntax.workspace = true

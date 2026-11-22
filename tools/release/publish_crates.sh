@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
-# Publish the 18 publishable svlang crates to crates.io in strict topological
+# Publish the 19 publishable svlang crates to crates.io in strict topological
 # dependency order:
 #
 #   tools/release/publish_crates.sh --dry-run    # verify metadata + package tarballs locally
-#   tools/release/publish_crates.sh --execute    # publish all 18 crates to crates.io
+#   tools/release/publish_crates.sh --execute    # publish all 19 crates to crates.io
 #
 # Tier order (each tier depends only on earlier tiers):
 #   1. sv-source, sv-lexer, sv-bigint, sv-fxhash
 #   2. sv-preprocessor
 #   3. sv-syntax
-#   4. sv-scopes
+#   4. sv-scopes, sv-ir
 #   5. sv-checks
 #   6. sv-semantic
 #   7. sv-netlist
@@ -48,6 +48,7 @@ CRATES=(
     sv-preprocessor
     sv-syntax
     sv-scopes
+    sv-ir
     sv-checks
     sv-semantic
     sv-netlist
@@ -81,8 +82,8 @@ if [ "$mode" = "--dry-run" ]; then
 import json, subprocess, sys
 meta = json.loads(subprocess.check_output(["cargo", "metadata", "--no-deps", "--format-version", "1"]))
 want = {
-    "sv-source", "sv-lexer", "sv-bigint", "sv-fxhash", "sv-preprocessor", "sv-syntax", "sv-scopes", "sv-checks",
-    "sv-semantic",
+    "sv-source", "sv-lexer", "sv-bigint", "sv-fxhash", "sv-preprocessor", "sv-syntax", "sv-scopes", "sv-ir",
+    "sv-checks", "sv-semantic",
     "sv-netlist", "sv-btor2", "sv-yosys", "sv-aiger", "svlang",
     "svlang-model", "svlang-lint", "svlang-lsp", "svlang-cli",
 }

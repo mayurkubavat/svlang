@@ -51,20 +51,7 @@ pub enum TypeShape {
     UnpackedStruct,
 }
 
-/// A source position. Lines and columns start at 1; a default `Loc` (file 0,
-/// line 0) means "unknown".
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct Loc {
-    /// Index into [`Design::files`]; 0 is "no file".
-    pub file: u32,
-    /// 1-based line.
-    pub line: u32,
-    /// 1-based byte column.
-    pub column: u32,
-    /// For code from a macro: the file and line of the outermost expansion
-    /// (with column 0).
-    pub expansion: Option<(u32, u32)>,
-}
+pub use sv_ir::Loc;
 
 /// A class property (data member).
 #[derive(Clone, Debug)]
