@@ -819,3 +819,94 @@ endmodule
         assert!(msgs.iter().any(|m| m.contains(needle)), "missing {needle:?} in {msgs:?}");
     }
 }
+
+/// Legal forms the front-end differential run against a simulator showed
+/// svlang rejecting.
+#[test]
+fn differential_run_legal_forms_are_accepted() {
+    for (name, src) in [
+        // 29.8: `udp_instance ::= [ name_of_instance ] ( ... )`.
+        (
+            "unnamed_udp_instance.sv",
+            r#"
+primitive my_mux (output z, input a, b, s);
+  table 0 ? 0 : 0; 1 ? 0 : 1; ? 0 1 : 0; ? 1 1 : 1; endtable
+endprimitive
+module top;
+  wire z1, z2, z3;
+  reg a, b, s;
+  my_mux u (z1, a, b, s);
+  my_mux (z2, a, b, s);
+  my_mux #0 (z3, a, b, s);
+endmodule
+"#,
+        ),
+        // 19.5.2: a transition bin with a repetition and no `=>`.
+        (
+            "transition_bin_repetition.sv",
+            r#"
+module top;
+  bit clk;
+  bit [3:0] a;
+  covergroup cg @(posedge clk);
+    cp : coverpoint a {
+      bins t3 = (5 [*2]);
+      bins t5 = (8 [-> 2] => 9);
+      bins t6 = (10 [= 2]);
+      bins t7 = (3 [*2:3] => 7);
+      bins d = default sequence;
+    }
+  endgroup
+endmodule
+"#,
+        ),
+        // 18.5: a constraint expression that starts with a concatenation.
+        (
+            "constraint_concat_first.sv",
+            r#"
+class c;
+  rand bit [7:0] q0, q1, q2, q3;
+  constraint cp { {q1, q0} == {q3, q2}; if (q0 > 1) { q1 < 4; } }
+endclass
+"#,
+        ),
+        // 5.7.1: white space, a newline included, between base and digits.
+        ("based_literal_newline.sv", "module top;\n  logic [3:0] w;\n  initial w = {2'b11, 2'd\n    1};\nendmodule\n"),
+        // 14.12: `default clocking cb;` designates an existing block.
+        (
+            "default_clocking_designation.sv",
+            r#"
+module top;
+  bit clk;
+  clocking cb @(posedge clk);
+  endclocking
+  default clocking cb;
+endmodule
+"#,
+        ),
+    ] {
+        let comp = Compilation::from_source(name, src);
+        assert!(comp.diagnostics().is_empty(), "{name}: {:?}", comp.diagnostics());
+    }
+}
+
+/// The differential fixes keep rejecting what they must.
+#[test]
+fn differential_run_fixes_keep_their_errors() {
+    // 12.7.3: a foreach body is a statement, not a null one.
+    let foreach_null = Compilation::from_source(
+        "foreach_null.sv",
+        "module top; int q[4]; initial begin foreach (q[i]); end endmodule\n",
+    );
+    assert!(!foreach_null.diagnostics().is_empty());
+    // Two clocking blocks of one name are still a redefinition.
+    let twice = Compilation::from_source(
+        "clocking_twice.sv",
+        "module top; bit clk; clocking cb @(posedge clk); endclocking clocking cb @(posedge clk); endclocking endmodule\n",
+    );
+    assert!(
+        twice.diagnostics().iter().any(|d| d.message.contains("redefinition of 'cb'")),
+        "{:?}",
+        twice.diagnostics()
+    );
+}

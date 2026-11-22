@@ -412,6 +412,10 @@ fn item_body(p: &mut Parser, ctx: Ctx) -> Option<SyntaxKind> {
                 instantiation(p);
                 return Some(Instantiation);
             }
+            if matches!(ctx, Ctx::Module | Ctx::Generate) && is_unnamed_instantiation(p) {
+                instantiation(p);
+                return Some(Instantiation);
+            }
             if is_decl_start(p) {
                 data_decl(p);
                 return Some(DataDecl);
@@ -896,6 +900,25 @@ fn is_instantiation(p: &Parser) -> bool {
     p.text_at(j) == "("
 }
 
+/// IEEE 1800 29.8: `udp_instance ::= [ name_of_instance ] ( ... )`, a UDP
+/// instance with no name: `my_udp (z, a, b);` or `my_udp #1 (z, a, b);`.
+/// Nothing else among module items starts with a name and a `(`.
+fn is_unnamed_instantiation(p: &Parser) -> bool {
+    let i = p.pos();
+    if !ident_at(p, i) {
+        return false;
+    }
+    let mut j = i + 1;
+    if p.text_at(j) == "#" {
+        if p.text_at(j + 1) == "(" {
+            j = skip_group_at(p, j + 1);
+        } else {
+            j += 2;
+        }
+    }
+    p.text_at(j) == "("
+}
+
 /// A data type, or an implicit one (`signed [3:0]`, `[7:0]`).
 pub(crate) fn data_type(p: &mut Parser) {
     let m = p.start();
@@ -1182,7 +1205,10 @@ fn instantiation(p: &mut Parser) {
     t.complete(p, DataType);
     loop {
         let i = p.start();
-        name_token(p);
+        // 29.8: a UDP instance may have no name.
+        if !p.at("(") {
+            name_token(p);
+        }
         while p.at("[") {
             dim(p);
         }

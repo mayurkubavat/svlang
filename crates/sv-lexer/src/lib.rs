@@ -310,9 +310,10 @@ impl<'a> Lexer<'a> {
             k += 1;
         }
         if matches!(self.peek(k), b'b' | b'B' | b'o' | b'O' | b'd' | b'D' | b'h' | b'H') {
-            // Digits may follow after whitespace: 8'h FF.
+            // Digits may follow after white space, a newline included
+            // (IEEE 1800 5.7.1): 8'h FF.
             let mut j = k + 1;
-            while matches!(self.peek(j), b' ' | b'\t') {
+            while matches!(self.peek(j), b' ' | b'\t' | b'\r' | b'\n') {
                 j += 1;
             }
             // A macro may give the digits: 32'h`ADDR.

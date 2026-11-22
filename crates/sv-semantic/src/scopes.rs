@@ -425,7 +425,10 @@ impl Walker<'_, '_> {
             }
             ClockingDecl => {
                 let name = name_of(t, n);
-                if !name.is_empty() {
+                // IEEE 1800 14.12: `default clocking cb;` names a block
+                // declared elsewhere in the scope; it declares nothing.
+                let designation = !toks(t, n).contains(&"endclocking");
+                if !name.is_empty() && !designation {
                     self.add(scope, SymKind::Clocking, name, n);
                 }
             }

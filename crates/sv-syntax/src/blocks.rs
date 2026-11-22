@@ -386,7 +386,7 @@ fn constraint_set(p: &mut Parser) {
 fn constraint_item(p: &mut Parser) {
     let m = p.start();
     match p.cur() {
-        "{" => {
+        "{" if !concat_starts_expr(p) => {
             constraint_block(p);
         }
         "soft" => {
@@ -425,6 +425,65 @@ fn constraint_item(p: &mut Parser) {
         }
     }
     m.complete(p, ConstraintItem);
+}
+
+/// At `{`: true when the braces are a concatenation that starts an
+/// expression, `{a, b} == c;`, and not a nested constraint set. A constraint
+/// set is followed by the next item or a closing brace; a concatenation by
+/// an operator, a select or the `;`.
+fn concat_starts_expr(p: &Parser) -> bool {
+    let mut i = p.pos() + 1;
+    let mut depth = 0i32;
+    loop {
+        match p.text_at(i) {
+            "" => return false,
+            "(" | "[" | "{" | "'{" => depth += 1,
+            ")" | "]" => depth -= 1,
+            "}" => {
+                if depth == 0 {
+                    break;
+                }
+                depth -= 1;
+            }
+            // A constraint set holds whole items, each ended by `;`.
+            ";" if depth == 0 => return false,
+            _ => {}
+        }
+        i += 1;
+    }
+    matches!(
+        p.text_at(i + 1),
+        ";" | "=="
+            | "!="
+            | "==="
+            | "!=="
+            | "<"
+            | "<="
+            | ">"
+            | ">="
+            | "+"
+            | "-"
+            | "*"
+            | "/"
+            | "%"
+            | "&"
+            | "|"
+            | "^"
+            | "&&"
+            | "||"
+            | "<<"
+            | ">>"
+            | "<<<"
+            | ">>>"
+            | "->"
+            | "<->"
+            | "["
+            | "inside"
+            | "dist"
+            | "?"
+            | "==?"
+            | "!=?"
+    )
 }
 
 fn expr_or_dist(p: &mut Parser) {
@@ -661,13 +720,15 @@ fn with_expr(p: &mut Parser) {
     w.complete(p, WithClause);
 }
 
-/// `( a => b [*2] , c )`: a parenthesized list with `=>` at its level.
+/// `( a => b [*2] , c )`: a parenthesized list with `=>` at its level, or
+/// with a repetition and no `=>`: `( 5 [*2] )` (IEEE 1800 19.5.2).
 fn is_transition(p: &Parser) -> bool {
     let mut i = p.pos() + 1;
     let mut depth = 0i32;
     loop {
         match p.text_at(i) {
             "" | ";" => return false,
+            "[" if depth == 0 && matches!(p.text_at(i + 1), "*" | "->" | "=") => return true,
             "(" | "[" | "{" | "'{" => depth += 1,
             ")" | "]" | "}" => {
                 if depth == 0 {
