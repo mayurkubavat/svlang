@@ -62,7 +62,11 @@ pub use crate::sva_ir::{
 pub use crate::types::{BitState, CVal};
 use sv_syntax::{NodeId, Options, SyntaxKind, Tree};
 
+// Modules split out into crates of their own, at their old paths.
 pub use sv_bigint as bigint;
+pub use sv_fxhash as fx;
+pub use sv_scopes::{names, scopes};
+
 pub mod bind;
 mod body;
 pub mod calls;
@@ -73,16 +77,13 @@ mod elab;
 pub mod elab_ir;
 pub mod expr;
 pub mod expr_types;
-pub use sv_fxhash as fx;
 pub mod hier;
 pub mod iclass;
 pub mod library;
 pub mod model;
-pub mod names;
 pub mod oracle;
 pub mod order;
 mod packed;
-pub mod scopes;
 pub mod sva;
 pub mod sva_ir;
 pub mod typed;

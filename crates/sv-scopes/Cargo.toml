@@ -1,0 +1,15 @@
+[package]
+name = "sv-scopes"
+description = "Scopes and symbols of every SystemVerilog design unit, and the IEEE 1800-2023 name checks on them (svlang)"
+readme = "../../README.md"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[dependencies]
+sv-fxhash.workspace = true
+sv-syntax.workspace = true

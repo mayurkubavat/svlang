@@ -154,7 +154,8 @@ pub fn check(trees: &[Tree], scopes: &Scopes) -> Vec<Diag> {
 }
 
 /// A class's `extends` clause (in its header), if any.
-pub(crate) fn extends(t: &Tree, class: NodeId) -> Option<NodeId> {
+#[doc(hidden)] // shared with the checks in sv-checks; not part of the API
+pub fn extends(t: &Tree, class: NodeId) -> Option<NodeId> {
     let header = t.child(class, Header);
     t.children(class).chain(header.into_iter().flat_map(|h| t.children(h))).find(|&c| {
         t.kind(c) == Extends && t.token_bounds(c).is_some_and(|(f, _)| &*t.tokens[f as usize].text == "extends")
