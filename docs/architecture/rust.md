@@ -41,7 +41,7 @@ compile options / file lists (-f, +incdir+, +define+, -top, ...)
   svlang-model ─► svlang-lint ─► svlang-lsp ─► svlang-cli (single `svlang` binary)
 ```
 
-Everything in the 14 publishable crates (`sv-source` through `svlang-cli`) is
+Everything in the 15 publishable crates (`sv-source` through `svlang-cli`) is
 pure IEEE 1800-2023 Rust with zero C++ dependencies. Optional dev-only Slang
 compiler dumpers (`tools/oracles/`, `cmake --preset oracles`) are strictly
 external CLI oracles for differential compiler testing; see
@@ -55,6 +55,7 @@ external CLI oracles for differential compiler testing; see
 | `sv-lexer` | lib | Lossless lexer: every byte is in exactly one token, so tokens give the file back. Token set follows slang's so token streams compare one to one. |
 | `sv-preprocessor` | lib | IEEE 1800-2023 clause 22 preprocessor. Output is the parser's token stream with no trivia or directives; each token records its file offset, the place its text was written, and whether a macro made it. |
 | `sv-syntax` | lib | Event-based recovering parser. A `Tree` is a token array plus a node arena (`SyntaxKind` per node); trivia rides on tokens, so `Tree::file_text` rebuilds each file byte for byte. |
+| `sv-bigint` | lib | Arbitrary-width two's complement integer (`Int`) for constant values wider than 128 bits; no dependencies. `sv-semantic` re-exports it as `sv_semantic::bigint`. |
 | `sv-semantic` | lib | Pure IEEE 1800-2023 semantic analysis: scopes and name resolution, constant evaluation (arbitrary width, four-state), elaborated design objects (`ElaboratedDesign`), IEEE 11.6/11.8 bound typed expressions (`ExprBinder`), bound SVA property/sequence trees (`SvaBinder`), type strings, the OOP class model, and compiler checks. |
 | `sv-netlist` | lib | Format-neutral word-level RTL netlist IR (`Netlist`): procedural execution (`always_ff`, async reset metadata, `always_comb`, `always_latch`, `assign`, port stitching, SCC combinational loop detection), bit-level driver resolution, static loop unrolling, subroutine inlining, memory ports, and `blast_memories`. |
 | `sv-btor2` / `sv-aiger` / `sv-yosys` | lib | Back-end writers emitting Btor2, bit-blasted AIGER, and Yosys word-level JSON from `sv-netlist`. |
@@ -66,6 +67,8 @@ external CLI oracles for differential compiler testing; see
 
 Dependencies point strictly upward: `sv-lexer` ← `sv-preprocessor` ← `sv-syntax` ←
 `sv-semantic` ← `sv-netlist` ← `svlang` ← `svlang-model` ← `svlang-lint` ← `svlang-lsp` ← `svlang-cli`.
+`sv-semantic` also builds on crates split out of it, which depend on nothing
+above them and which it re-exports at their old paths: `sv-bigint`.
 
 ## The front end in more detail
 
@@ -82,7 +85,8 @@ with macros shared across files, as simulators compile a file list.
 
 **sv-semantic's builder.** A private `Builder` walks every tree once to
 collect declarations into scopes (`scopes`), then resolves names on demand
-with constant evaluation (`consteval`, `packed`, `bigint`). From it come:
+with constant evaluation (`consteval`, `packed`, and `bigint` from the
+`sv-bigint` crate). From it come:
 
 - `build` / `load`: the class model, including type strings as slang
   prints them (`types`) and method body facts (`body`);

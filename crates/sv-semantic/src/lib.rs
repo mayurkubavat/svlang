@@ -62,7 +62,7 @@ pub use crate::sva_ir::{
 pub use crate::types::{BitState, CVal};
 use sv_syntax::{NodeId, Options, SyntaxKind, Tree};
 
-pub mod bigint;
+pub use sv_bigint as bigint;
 pub mod bind;
 mod body;
 pub mod calls;

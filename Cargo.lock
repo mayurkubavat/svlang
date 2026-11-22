@@ -155,6 +155,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "sv-bigint"
+version = "0.4.0"
+
+[[package]]
 name = "sv-btor2"
 version = "0.4.0"
 dependencies = [
@@ -186,6 +190,7 @@ dependencies = [
 name = "sv-semantic"
 version = "0.4.0"
 dependencies = [
+ "sv-bigint",
  "sv-source",
  "sv-syntax",
 ]

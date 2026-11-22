@@ -11,5 +11,6 @@ keywords.workspace = true
 categories.workspace = true
 
 [dependencies]
+sv-bigint.workspace = true
 sv-syntax.workspace = true
 sv-source.workspace = true

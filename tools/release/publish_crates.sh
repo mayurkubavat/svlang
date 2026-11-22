@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Publish the 14 publishable svlang crates to crates.io in strict topological
+# Publish the 15 publishable svlang crates to crates.io in strict topological
 # dependency order:
 #
 #   tools/release/publish_crates.sh --dry-run    # verify metadata + package tarballs locally
-#   tools/release/publish_crates.sh --execute    # publish all 14 crates to crates.io
+#   tools/release/publish_crates.sh --execute    # publish all 15 crates to crates.io
 #
 # Tier order (each tier depends only on earlier tiers):
-#   1. sv-source, sv-lexer
+#   1. sv-source, sv-lexer, sv-bigint
 #   2. sv-preprocessor
 #   3. sv-syntax
 #   4. sv-semantic
@@ -31,9 +31,17 @@ case "$mode" in
         ;;
 esac
 
-CRATES=(
+# Tier 1: crates with no workspace dependencies. The dry run packages these
+# in full; the others only list their files (their dependencies are not on
+# crates.io yet when a new version is being prepared).
+LEAVES=(
     sv-source
     sv-lexer
+    sv-bigint
+)
+
+CRATES=(
+    "${LEAVES[@]}"
     sv-preprocessor
     sv-syntax
     sv-semantic
@@ -55,11 +63,11 @@ if [ "$mode" = "--dry-run" ]; then
     # Root leaf crates have no unpublished workspace dependencies, so `cargo package --locked`
     # validates full tarball verification including compile check; dependent crates validate
     # manifest metadata and file inclusion with `--list` before upstream tiers are on crates.io.
-    for c in sv-source sv-lexer; do
+    for c in "${LEAVES[@]}"; do
         echo "== packaging + verifying leaf crate $c ($ver)"
         CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-2}" cargo package --locked --allow-dirty -p "$c"
     done
-    for c in "${CRATES[@]:2}"; do
+    for c in "${CRATES[@]:${#LEAVES[@]}}"; do
         echo "== verifying manifest & file list for $c ($ver)"
         files=$(cargo package --list --allow-dirty -p "$c" | wc -l | tr -d ' ')
         echo "   $c: $files packaged files"
@@ -68,7 +76,7 @@ if [ "$mode" = "--dry-run" ]; then
 import json, subprocess, sys
 meta = json.loads(subprocess.check_output(["cargo", "metadata", "--no-deps", "--format-version", "1"]))
 want = {
-    "sv-source", "sv-lexer", "sv-preprocessor", "sv-syntax", "sv-semantic",
+    "sv-source", "sv-lexer", "sv-bigint", "sv-preprocessor", "sv-syntax", "sv-semantic",
     "sv-netlist", "sv-btor2", "sv-yosys", "sv-aiger", "svlang",
     "svlang-model", "svlang-lint", "svlang-lsp", "svlang-cli",
 }

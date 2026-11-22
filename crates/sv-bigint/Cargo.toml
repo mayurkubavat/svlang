@@ -1,0 +1,11 @@
+[package]
+name = "sv-bigint"
+description = "Arbitrary-width two's complement integer for SystemVerilog constant evaluation (svlang)"
+readme = "../../README.md"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+keywords.workspace = true
+categories.workspace = true
