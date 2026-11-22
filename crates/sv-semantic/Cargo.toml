@@ -13,6 +13,7 @@ categories.workspace = true
 [dependencies]
 sv-bigint.workspace = true
 sv-fxhash.workspace = true
+sv-checks.workspace = true
 sv-scopes.workspace = true
 sv-syntax.workspace = true
 sv-source.workspace = true

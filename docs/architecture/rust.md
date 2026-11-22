@@ -41,7 +41,7 @@ compile options / file lists (-f, +incdir+, +define+, -top, ...)
   svlang-model ─► svlang-lint ─► svlang-lsp ─► svlang-cli (single `svlang` binary)
 ```
 
-Everything in the 17 publishable crates (`sv-source` through `svlang-cli`) is
+Everything in the 18 publishable crates (`sv-source` through `svlang-cli`) is
 pure IEEE 1800-2023 Rust with zero C++ dependencies. Optional dev-only Slang
 compiler dumpers (`tools/oracles/`, `cmake --preset oracles`) are strictly
 external CLI oracles for differential compiler testing; see
@@ -58,6 +58,7 @@ external CLI oracles for differential compiler testing; see
 | `sv-bigint` | lib | Arbitrary-width two's complement integer (`Int`) for constant values wider than 128 bits; no dependencies. `sv-semantic` re-exports it as `sv_semantic::bigint`. |
 | `sv-fxhash` | lib | The Fx hasher with `FxMap`/`FxSet` aliases for internal maps keyed by node ids and names; no dependencies. Re-exported as `sv_semantic::fx`, which `sv-netlist` and `svlang-lint` use. |
 | `sv-scopes` | lib | The symbol table of every design unit (`scopes::Scopes`: modules, interfaces, programs, packages, `$unit`, classes, subroutines) and the IEEE 1800 name checks that need only it (`names`, with the `Diag` every syntax-level check reports). Re-exported as `sv_semantic::scopes` and `sv_semantic::names`. |
+| `sv-checks` | lib | The semantic checks that need only syntax trees and `sv-scopes`, one module per family with a `check` function: `checks` (types), `bind`, `classes`, `iclass`, `calls`, `order`, `sva`, `udp`, and `hier` (hierarchical names, given the elaborated hierarchy as text). Re-exported as `sv_semantic::<module>`. |
 | `sv-semantic` | lib | Pure IEEE 1800-2023 semantic analysis: scopes and name resolution, constant evaluation (arbitrary width, four-state), elaborated design objects (`ElaboratedDesign`), IEEE 11.6/11.8 bound typed expressions (`ExprBinder`), bound SVA property/sequence trees (`SvaBinder`), type strings, the OOP class model, and compiler checks. |
 | `sv-netlist` | lib | Format-neutral word-level RTL netlist IR (`Netlist`): procedural execution (`always_ff`, async reset metadata, `always_comb`, `always_latch`, `assign`, port stitching, SCC combinational loop detection), bit-level driver resolution, static loop unrolling, subroutine inlining, memory ports, and `blast_memories`. |
 | `sv-btor2` / `sv-aiger` / `sv-yosys` | lib | Back-end writers emitting Btor2, bit-blasted AIGER, and Yosys word-level JSON from `sv-netlist`. |
@@ -69,8 +70,9 @@ external CLI oracles for differential compiler testing; see
 
 Dependencies point strictly upward: `sv-lexer` ← `sv-preprocessor` ← `sv-syntax` ←
 `sv-semantic` ← `sv-netlist` ← `svlang` ← `svlang-model` ← `svlang-lint` ← `svlang-lsp` ← `svlang-cli`.
-`sv-semantic` also builds on crates split out of it, which depend on nothing
-above them and which it re-exports at their old paths: `sv-bigint`, `sv-fxhash` and `sv-scopes`.
+`sv-semantic` also builds on crates split out of it, which it re-exports at
+their old paths: `sv-bigint` and `sv-fxhash` (no dependencies), `sv-scopes`
+(on `sv-syntax`) and `sv-checks` (on `sv-scopes`).
 
 ## The front end in more detail
 
@@ -93,9 +95,10 @@ and `bigint` from `sv-bigint`). From it come:
 - `build` / `load`: the class model, including type strings as slang
   prints them (`types`) and method body facts (`body`);
 - `elaborate_full`: the instance tree from the top modules (`elab`);
-- `SemaChecks`: one module per family of checks (`names`, `checks`,
-  `bind`, `iclass`, `classes`, `order`, `calls`, `typed`, `sva`, `udp`),
-  run on several threads and merged by `semantic_diags`;
+- `SemaChecks`: one module per family of checks (`names` from
+  `sv-scopes`; `checks`, `bind`, `iclass`, `classes`, `order`, `calls`,
+  `sva`, `udp` from `sv-checks`; `typed`, which needs the builder, in
+  sv-semantic), run on several threads and merged by `semantic_diags`;
 - `oracle::TypeOracle`, `SpecModel`, `spec_counts`: what rules ask beyond
   the model (the declared type of a name, a class seen through each
   specialization, how many specializations slang would elaborate).

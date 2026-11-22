@@ -28,7 +28,7 @@ use crate::names::Diag;
 type Hier = HashMap<String, Option<String>>;
 
 /// The errors of `trees`' hierarchical names, given the elaborated
-/// hierarchy (the lines of [`crate::Elaborated::hierarchy`]).
+/// hierarchy (the lines of `sv_semantic::Elaborated::hierarchy`).
 pub fn check(trees: &[Tree], hierarchy: &[String]) -> Vec<Diag> {
     let mut nodes: Hier = HashMap::default();
     let mut tops: HashSet<&str> = HashSet::default();

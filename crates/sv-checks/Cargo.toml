@@ -1,0 +1,16 @@
+[package]
+name = "sv-checks"
+description = "IEEE 1800-2023 semantic checks found from SystemVerilog syntax trees and their scopes: types, binding, classes, calls, declaration order, SVA, UDPs and hierarchical names (svlang)"
+readme = "../../README.md"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[dependencies]
+sv-fxhash.workspace = true
+sv-scopes.workspace = true
+sv-syntax.workspace = true

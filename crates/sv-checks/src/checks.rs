@@ -68,7 +68,8 @@ fn output_args(name: &str) -> Option<(usize, bool)> {
     })
 }
 
-pub(crate) fn is_assign_op(s: &str) -> bool {
+#[doc(hidden)] // shared with the typed checks in sv-semantic; not part of the API
+pub fn is_assign_op(s: &str) -> bool {
     ASSIGN_OPS.contains(&s)
 }
 

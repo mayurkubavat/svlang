@@ -1,24 +1,25 @@
 #!/usr/bin/env bash
-# Publish the 17 publishable svlang crates to crates.io in strict topological
+# Publish the 18 publishable svlang crates to crates.io in strict topological
 # dependency order:
 #
 #   tools/release/publish_crates.sh --dry-run    # verify metadata + package tarballs locally
-#   tools/release/publish_crates.sh --execute    # publish all 17 crates to crates.io
+#   tools/release/publish_crates.sh --execute    # publish all 18 crates to crates.io
 #
 # Tier order (each tier depends only on earlier tiers):
 #   1. sv-source, sv-lexer, sv-bigint, sv-fxhash
 #   2. sv-preprocessor
 #   3. sv-syntax
 #   4. sv-scopes
-#   5. sv-semantic
-#   6. sv-netlist
-#   7. sv-btor2, sv-yosys
-#   8. sv-aiger
-#   9. svlang
-#  10. svlang-model
-#  11. svlang-lint
-#  12. svlang-lsp
-#  13. svlang-cli
+#   5. sv-checks
+#   6. sv-semantic
+#   7. sv-netlist
+#   8. sv-btor2, sv-yosys
+#   9. sv-aiger
+#  10. svlang
+#  11. svlang-model
+#  12. svlang-lint
+#  13. svlang-lsp
+#  14. svlang-cli
 set -euo pipefail
 
 cd "$(dirname "$0")/../.."
@@ -47,6 +48,7 @@ CRATES=(
     sv-preprocessor
     sv-syntax
     sv-scopes
+    sv-checks
     sv-semantic
     sv-netlist
     sv-btor2
@@ -79,7 +81,8 @@ if [ "$mode" = "--dry-run" ]; then
 import json, subprocess, sys
 meta = json.loads(subprocess.check_output(["cargo", "metadata", "--no-deps", "--format-version", "1"]))
 want = {
-    "sv-source", "sv-lexer", "sv-bigint", "sv-fxhash", "sv-preprocessor", "sv-syntax", "sv-scopes", "sv-semantic",
+    "sv-source", "sv-lexer", "sv-bigint", "sv-fxhash", "sv-preprocessor", "sv-syntax", "sv-scopes", "sv-checks",
+    "sv-semantic",
     "sv-netlist", "sv-btor2", "sv-yosys", "sv-aiger", "svlang",
     "svlang-model", "svlang-lint", "svlang-lsp", "svlang-cli",
 }
