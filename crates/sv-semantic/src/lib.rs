@@ -494,7 +494,7 @@ pub fn symbol_info(trees: &[Tree], s: &scopes::Scopes) -> (Vec<Option<String>>, 
         let mut m = HashMap::default();
         for (name, is_type, default) in &c.params {
             if let (true, Some(d)) = (is_type, default) {
-                m.insert(name.clone(), Bound { node: *d, scope: c.parent, env: empty.clone() });
+                m.insert(name.clone(), Bound { node: *d, scope: c.parent, env: empty.clone(), vals: None });
             }
         }
         envs.insert(c.scope, Rc::new(m));
@@ -894,6 +894,10 @@ struct Bound {
     node: NodeRef,
     scope: usize,
     env: Env,
+    /// Parameter values of the instance the type argument was written in. A type argument
+    /// such as `.T(out_t)` names a typedef of the parent, whose widths depend on the
+    /// parent's parameters, not the child's (IEEE 1800-2023 6.20.3, 23.10).
+    vals: Option<elab::Vals>,
 }
 
 /// What a type name stands for.
@@ -1802,7 +1806,7 @@ impl<'t> Builder<'t> {
             }
             if let Some(d) = d {
                 let prev = std::rc::Rc::new(full.clone());
-                full.insert(name.clone(), Bound { node: *d, scope: self.classes[c].scope, env: prev });
+                full.insert(name.clone(), Bound { node: *d, scope: self.classes[c].scope, env: prev, vals: None });
             }
         }
         std::rc::Rc::new(full)
@@ -2091,7 +2095,7 @@ impl<'t> Builder<'t> {
                 if let Some(d) = default {
                     // A default sees the parameters before it.
                     let prev = std::rc::Rc::new(full.clone());
-                    full.insert(name.clone(), Bound { node: *d, scope: parent, env: prev });
+                    full.insert(name.clone(), Bound { node: *d, scope: parent, env: prev, vals: None });
                 }
             }
         }
@@ -2247,7 +2251,7 @@ impl<'t> Builder<'t> {
                 continue;
             };
             if params.iter().any(|p| p.0 == name) {
-                map.insert(name, Bound { node: value, scope, env: env.clone() });
+                map.insert(name, Bound { node: value, scope, env: env.clone(), vals: None });
             }
         }
         std::rc::Rc::new(map)

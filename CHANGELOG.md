@@ -4,6 +4,23 @@ What changed in each release of the svlang crates (`svlang`, `sv-*`,
 `svlang-model`, `svlang-lint`, `svlang-lsp`, `svlang-cli`), `pysvlang`, and the
 `svlang.svlang` VS Code / Open VSX extension. They share one version number.
 
+## Unreleased
+
+### Elaboration Fixes (`sv-semantic`)
+
+Found while settling the last differences between `svcc`'s SystemC output and
+Verilator on open-source RTL (fpnew in cvfpu and cv32e40p).
+
+- **Power operator in a sized parameter** (11.6.1, Table 11-21):
+  `localparam logic [51:0] P = 2**51` was evaluated at the 32-bit width of the
+  literal `2` and held 0. The base of `**` is now context-determined, like the
+  left operand of a shift.
+- **Type argument sized with the wrong parameters** (6.20.3, 23.10): for
+  `child #(.T(out_t))` where `out_t` is a typedef of the parent that depends on
+  the parent's parameters, the child's ports were sized with the parent's
+  *default* parameter values. Type arguments now carry the parameter values of
+  the instance they were written in.
+
 ## 0.5.1 (2026-11-22)
 
 ### Elaboration Fixes (`sv-semantic`, `sv-expr`, `sv-ir`)

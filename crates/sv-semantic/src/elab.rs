@@ -1538,9 +1538,15 @@ impl<'b, 't> Elab<'b, 't> {
             } else {
                 (None, scope, env.clone())
             };
+            let bound_vals = env.get(&name).and_then(|bd| bd.vals.clone());
             let rty = match &actual_dt {
                 Some((dt_node, dt_scope, dt_env)) => {
-                    b.rtl_data_type(*dt_node, *dt_scope, dt_env, Some(name.clone()), 0)
+                    let saved = bound_vals.map(|v| b.inst.replace(v));
+                    let r = b.rtl_data_type(*dt_node, *dt_scope, dt_env, Some(name.clone()), 0);
+                    if let Some(sv) = saved {
+                        *b.inst.borrow_mut() = sv;
+                    }
+                    r
                 }
                 None => {
                     if self.checked.insert(d) {
@@ -2654,7 +2660,7 @@ impl<'b, 't> Elab<'b, 't> {
                         }
                         continue;
                     }
-                    types.insert(name, Bound { node: e, scope, env: self.env() });
+                    types.insert(name, Bound { node: e, scope, env: self.env(), vals: Some(shared.clone()) });
                     continue;
                 }
                 let val = self.eval(e, scope, vals);

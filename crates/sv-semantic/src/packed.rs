@@ -454,7 +454,9 @@ impl Builder<'_> {
             (BinaryExpr, Some(op @ ("+" | "-" | "*" | "/" | "%" | "&" | "|" | "^" | "~^" | "^~"))) => {
                 types::binary_op(op, sub(*kids.first()?)?, sub(*kids.get(1)?)?)?
             }
-            (BinaryExpr, Some(op @ ("<<" | ">>" | "<<<" | ">>>"))) => {
+            // IEEE 1800-2023 11.6.1, Table 11-21: the base of `**` is context-determined and
+            // the exponent self-determined, as for the shifts.
+            (BinaryExpr, Some(op @ ("<<" | ">>" | "<<<" | ">>>" | "**"))) => {
                 let n = self.eval(*kids.get(1)?, scope, env, depth + 1)?;
                 types::binary_op(op, sub(*kids.first()?)?, n)?
             }

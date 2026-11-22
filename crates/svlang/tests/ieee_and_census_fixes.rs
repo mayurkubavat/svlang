@@ -1073,3 +1073,62 @@ endmodule
     // `asc` is declared [0:7]: index 0 is its most significant bit.
     assert_eq!(slice_of("a"), (15, 12));
 }
+
+#[test]
+fn power_in_a_sized_parameter_is_evaluated_at_the_parameter_width() {
+    // IEEE 1800-2023 11.6.1 and Table 11-21: the base of `**` is context-determined, so in
+    // `logic [51:0] P = 2**51` the 32-bit literal 2 is widened to 52 bits before the power is
+    // taken. The exponent is self-determined.
+    let src = r#"
+module top #(
+  parameter int unsigned MAN_BITS = 52,
+  localparam logic [MAN_BITS-1:0] QNAN = 2**(MAN_BITS-1),
+  localparam logic [51:0] ONES = 2**51 - 1,
+  localparam logic [7:0]  WRAP = 2**10,
+  localparam logic [63:0] BIG  = 3**30
+) (output logic [51:0] q, output logic [51:0] o, output logic [7:0] w, output logic [63:0] b);
+  assign q = QNAN;
+  assign o = ONES;
+  assign w = WRAP;
+  assign b = BIG;
+endmodule
+"#;
+    let nl = lowered("power_param.sv", src);
+    assert_eq!(output_const(&nl, "q"), Some(1 << 51));
+    assert_eq!(output_const(&nl, "o"), Some((1 << 51) - 1));
+    // 2**10 does not fit 8 bits: the result is truncated, not widened.
+    assert_eq!(output_const(&nl, "w"), Some(0));
+    assert_eq!(output_const(&nl, "b"), Some(205_891_132_094_649));
+}
+
+#[test]
+fn type_argument_is_sized_with_the_parameters_of_the_instance_that_wrote_it() {
+    // IEEE 1800-2023 6.20.3 and 23.10: `.T(out_t)` names the parent's typedef, which depends
+    // on the parent's parameter W. Its width is that of the parent's specialization (W = 20),
+    // not the parent's default (W = 8), and not affected by a child parameter of the same name.
+    let src = r#"
+module leaf #(parameter type T = logic [3:0], parameter int W = 3) (input T d, output T q, output logic [7:0] wt);
+  assign q = d;
+  assign wt = $bits(T) + W;
+endmodule
+module mid #(parameter type T = logic [3:0], parameter int W = 5) (input T d, output T q, output logic [7:0] wt);
+  leaf #(.T(T), .W(W + 1)) u (.d(d), .q(q), .wt(wt));
+endmodule
+module par #(parameter int W = 8) (input logic [W+1:0] d, output logic [W+1:0] q, output logic [7:0] wt);
+  typedef struct packed { logic [W-1:0] r; logic [1:0] s; } out_t;
+  out_t di, qo;
+  assign di = d;
+  mid #(.T(out_t), .W(2)) u (.d(di), .q(qo), .wt(wt));
+  assign q = qo;
+endmodule
+module top (input logic [21:0] d, output logic [21:0] q, output logic [7:0] wt);
+  par #(.W(20)) u (.d(d), .q(q), .wt(wt));
+endmodule
+"#;
+    let nl = lowered("type_arg_scope.sv", src);
+    let q = nl.outputs.iter().find(|o| o.name == "q").expect("q");
+    // The whole input reaches the output: no truncation to the default 10 bits.
+    assert!(matches!(nl.value(q.value).kind, svlang::netlist::ValueKind::Input(_)), "q: {:?}", nl.value(q.value).kind);
+    // $bits(T) = 22 in leaf, plus leaf's own W = 3.
+    assert_eq!(output_const(&nl, "wt"), Some(25));
+}

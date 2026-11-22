@@ -318,7 +318,12 @@ impl Builder<'_> {
         let head: Vec<&str> = toks.iter().take_while(|t| **t != "[").copied().collect();
         if let [tname] = head.as_slice() {
             if let Some(bd) = env.get(*tname) {
+                // Evaluate the argument with the parameter values of the instance it came from.
+                let saved = bd.vals.clone().map(|v| self.inst.replace(v));
                 let base = self.rtl_data_type(bd.node, bd.scope, &bd.env, Some((*tname).to_string()), depth + 1);
+                if let Some(sv) = saved {
+                    *self.inst.borrow_mut() = sv;
+                }
                 return self.wrap_packed_dims(base, &pdims, scope, env);
             }
             let mut cur = Some(scope);
@@ -444,7 +449,12 @@ impl Builder<'_> {
         let head: Vec<&str> = toks.iter().take_while(|t| **t != "[").copied().collect();
         if let [tname] = head.as_slice() {
             if let Some(bd) = env.get(*tname) {
-                return self.packed_1d_bounds(Some(bd.node), bd.scope, &bd.env, depth + 1);
+                let saved = bd.vals.clone().map(|v| self.inst.replace(v));
+                let r = self.packed_1d_bounds(Some(bd.node), bd.scope, &bd.env, depth + 1);
+                if let Some(sv) = saved {
+                    *self.inst.borrow_mut() = sv;
+                }
+                return r;
             }
             if let Some(td) = self.block_typedef(tname, dt) {
                 return self.packed_1d_bounds(self.child(td, SyntaxKind::DataType), scope, env, depth + 1);
