@@ -1,17 +1,32 @@
-//! SV-ASC-001 (AssociativeArrayMutatingRead): Detects direct read lookups on
-//! associative arrays in expressions without checking exists().
+//! SV-ASC-001 (AssociativeArrayMutatingRead): Flags unguarded associative-array
+//! read lookups in relational comparisons without an `.exists(...)` check
+//! (IEEE 1800-2023 §7.8.6).
 
 use crate::support::procedural::start;
-use crate::support::slang_ast::kids;
+use crate::support::slang_ast::{ancestors, decl_name, kids};
 use crate::syntax::Cst;
 use crate::{Severity, Sink};
 use std::collections::HashSet;
 use svlang::syntax::NodeId;
 use svlang::syntax::SyntaxKind::*;
 
-/// Names declared anywhere in the compile with an unpacked dimension that
-/// reads like an associative index (`[int]`, `[*]`; also `[4]`, as the
-/// C++ rule's text test has it).
+fn is_assoc_index_type(idx: &str, user_types: &HashSet<String>) -> bool {
+    if idx == "*" {
+        return true;
+    }
+    let head = idx.split([' ', '\t', '[']).next().unwrap_or("");
+    if matches!(
+        head,
+        "string" | "int" | "integer" | "byte" | "shortint" | "longint" | "bit" | "logic" | "reg" | "time" | "chandle"
+    ) {
+        return true;
+    }
+    let clean = idx.rsplit("::").next().unwrap_or(idx).trim();
+    user_types.contains(clean)
+}
+
+/// Names declared with a true associative unpacked dimension (`[*]`, `[string]`,
+/// `[int]`, `[my_key_t]`) — excluding fixed-size unpacked arrays `[4]` or `[DEPTH]`.
 fn assoc_names(c: &Cst) -> std::rc::Rc<HashSet<String>> {
     thread_local! {
         static NAMES: crate::shared::CompileCache<HashSet<String>> = const { std::cell::RefCell::new(None) };
@@ -19,6 +34,18 @@ fn assoc_names(c: &Cst) -> std::rc::Rc<HashSet<String>> {
     let key = c.compile_key();
     if let Some(v) = NAMES.with(|k| k.borrow().as_ref().filter(|e| e.0 == key).map(|e| e.1.clone())) {
         return v;
+    }
+    let mut user_types = HashSet::new();
+    for (ti, t) in c.all.iter().enumerate() {
+        let tc = Cst::new(t, ti, svlang::semantic::Locator::default());
+        for k in [TypedefDecl, ClassDecl] {
+            for n in tc.nodes(k) {
+                let nm = decl_name(&tc, n);
+                if !nm.is_empty() {
+                    user_types.insert(nm);
+                }
+            }
+        }
     }
     let mut out = HashSet::new();
     for t in c.all {
@@ -30,12 +57,16 @@ fn assoc_names(c: &Cst) -> std::rc::Rc<HashSet<String>> {
             let assoc = t.children(d).filter(|&k| t.kind(k) == Dim).any(|k| {
                 let text = t.bare_text(k);
                 let text = text.trim();
-                text.len() >= 3
+                if !(text.len() >= 3
                     && text.starts_with('[')
                     && text.ends_with(']')
                     && !text.contains(':')
-                    && !text.contains('$')
-                    && !text[1..text.len() - 1].trim().is_empty()
+                    && !text.contains('$'))
+                {
+                    return false;
+                }
+                let inner = text[1..text.len() - 1].trim();
+                !inner.is_empty() && is_assoc_index_type(inner, &user_types)
             });
             if assoc {
                 if let Some(nm) = t.child(d, Name) {
@@ -52,6 +83,19 @@ fn assoc_names(c: &Cst) -> std::rc::Rc<HashSet<String>> {
     v
 }
 
+fn guarded_by_exists(c: &Cst, node: NodeId, name: &str) -> bool {
+    let needle = format!("{name}.exists");
+    for a in ancestors(c, node) {
+        if matches!(c.kind(a), BinaryExpr | CondExpr | IfStmt) && c.tree.bare_text(a).contains(&needle) {
+            return true;
+        }
+        if matches!(c.kind(a), FunctionDecl | TaskDecl | ProceduralBlock) {
+            break;
+        }
+    }
+    false
+}
+
 pub(crate) fn assoc_mutating_read(c: &Cst, out: &mut Sink) {
     let names = assoc_names(c);
     if names.is_empty() {
@@ -66,7 +110,6 @@ pub(crate) fn assoc_mutating_read(c: &Cst, out: &mut Sink) {
             continue;
         }
         for side in kids(c, e).into_iter().take(2) {
-            // slang's `name[i]...`: an identifier with selectors.
             if c.kind(side) != SelectExpr {
                 continue;
             }
@@ -81,18 +124,18 @@ pub(crate) fn assoc_mutating_read(c: &Cst, out: &mut Sink) {
                 continue;
             }
             let name = c.tree.bare_text(base);
-            if !names.contains(&name) {
+            if !names.contains(&name) || guarded_by_exists(c, e, &name) {
                 continue;
             }
             let Some(loc) = start(c, side) else { continue };
             out.add(
                 "SV-ASC-001",
                 "AssociativeArrayMutatingRead",
-                Severity::Warning,
+                Severity::Info,
                 format!(
-                    "Direct read indexing on associative array '{name}' in relational comparison. In SystemVerilog (IEEE 1800 § 7.8.1), \
-                     reading a non-existent key silently inserts the key and populates it with a default value, mutating array state and \
-                     leaking memory. Guard the lookup with '{name}.exists(...)' before indexing."
+                    "Unguarded read lookup on associative array '{name}' in relational comparison. \
+                     Per IEEE 1800 § 7.8.6, reading a nonexistent index returns the element type's default value and may issue a runtime warning, \
+                     conflating missing keys with entries explicitly storing the default value. Guard with '{name}.exists(...)' when key presence matters."
                 ),
                 loc,
             );

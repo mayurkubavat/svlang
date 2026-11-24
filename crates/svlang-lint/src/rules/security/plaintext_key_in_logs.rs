@@ -41,26 +41,33 @@ fn plaintext_key(c: &Cst, a: &Ast, s: &mut Sink) {
     }
 }
 
-/// Checks whether `expr` names a cryptographic key, seed, token, or secret
-/// (excluding string literals and plain `.key` config/dictionary member lookups
-/// unless qualified with a security prefix like `aes_key`, `secret_key`, etc.).
+/// Checks whether `expr` names a cryptographic key, secret, password, or auth token
+/// (excluding string literals, plain simulation `seed`, lexer `token`s, and generic
+/// dictionary/config `key` identifiers such as `key_applied[fi.key]`).
 fn has_sensitive_asset_name(expr: &str) -> bool {
     let trimmed = expr.trim_matches(['(', ')', ' ', '\t', '\r', '\n']);
     if trimmed.starts_with('"') {
         return false;
     }
-    let low = trimmed.to_lowercase();
-    if ["secret", "seed", "token", "priv_"].iter().any(|w| low.contains(w)) {
-        return true;
-    }
-    if !low.contains("key") {
+    // Extract the root identifier (before `[` or `(`) of the final member/scoped segment.
+    let before_idx = trimmed.split(['[', '(']).next().unwrap_or(trimmed);
+    let leaf = before_idx.rsplit(['.', ':']).next().unwrap_or(before_idx).trim().to_ascii_lowercase();
+    if leaf.is_empty() {
         return false;
     }
-    // `obj.key` on a struct/config entry is a dictionary/config key unless the
-    // identifier itself is a qualified key (`aes_key`, `root_key`, `key_0`, ...).
-    let last_seg = low.rsplit(['.', ':']).next().unwrap_or(&low);
-    let last_ident = last_seg.split(['[', '(']).next().unwrap_or(last_seg).trim();
-    !((low.contains('.') || low.contains("::")) && last_ident == "key")
+    if ["secret", "passwd", "password", "passphrase", "priv_"].iter().any(|w| leaf.contains(w)) {
+        return true;
+    }
+    const CRYPTO_QUALIFIERS: &[&str] = &[
+        "aes", "des", "rsa", "ecc", "ecdsa", "sha", "hmac", "kdf", "otp", "fuses", "fuse", "root", "master", "private",
+        "priv", "enc", "dec", "cipher", "crypto", "auth", "api", "bearer", "session", "access", "tls", "ssl",
+    ];
+    let words: Vec<&str> = leaf.split('_').filter(|s| !s.is_empty()).collect();
+    let has_qual = words.iter().any(|w| CRYPTO_QUALIFIERS.contains(w));
+    if words.iter().any(|&w| matches!(w, "key" | "keys" | "token" | "tokens" | "seed")) {
+        return has_qual;
+    }
+    false
 }
 
 pub(crate) fn ast_plaintext_key(d: &Design, csts: &[Cst], s: &mut Sink) {

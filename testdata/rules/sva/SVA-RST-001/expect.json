@@ -6,10 +6,6 @@
     },
     {
       "rule": "SVA-RST-001",
-      "line": 12
-    },
-    {
-      "rule": "SVA-RST-001",
       "line": 15
     }
   ]

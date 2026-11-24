@@ -258,57 +258,79 @@ fn emit_status(out: &Out, status: &LintStatus) {
 
 /// Checks the project and publishes each open file's diagnostics.
 fn check(project: &mut Project, state: &Mutex<State>, out: &Out, manual: bool) {
-    let (open, trig_str, preset_str, require_cfg, has_explicit_cfg) = {
+    let (open, cur_trig, trig_str, preset_str, require_cfg, syntax_diags, has_explicit_cfg) = {
         let st = state.lock().unwrap_or_else(|e| e.into_inner());
         let trig = st.trigger.unwrap_or(LintTrigger::OnType);
         let pstr = project.editor.preset.clone().unwrap_or_else(|| "default".into());
         (
             st.open.clone(),
+            trig,
             trig.as_str().to_string(),
             pstr,
             project.editor.require_config,
+            project.editor.syntax_diagnostics,
             project.editor.config_path.as_ref().is_some_and(|p| p.is_file()),
         )
+    };
+    let idle_state = |trig: LintTrigger, syn: bool| -> String {
+        if trig != LintTrigger::Off {
+            "ready".into()
+        } else if syn {
+            "syntax".into()
+        } else {
+            "off".into()
+        }
     };
     if open.is_empty() {
         let mut st = state.lock().unwrap_or_else(|e| e.into_inner());
         let trig = st.trigger.unwrap_or(LintTrigger::OnType);
-        st.status.state = if trig == LintTrigger::Off { "off".into() } else { "ready".into() };
+        st.status.state = idle_state(trig, project.editor.syntax_diagnostics);
         st.status.errors = 0;
         st.status.warnings = 0;
         emit_status(out, &st.status);
         return;
     }
 
-    // Check `requireConfig` before running rules unless invoked manually (`Lint Now`).
-    if require_cfg && !manual {
+    // When automatic linting is `Off` (Mode 1) and not invoked via `Lint Now`:
+    // if `syntax_diagnostics` is enabled, run fast compiler-only (`SV-CMP-001`) checks; otherwise do nothing.
+    let mut compiler_only = !manual && cur_trig == LintTrigger::Off;
+    if compiler_only && !syntax_diags {
+        return;
+    }
+
+    // Check `requireConfig` before running lint rules unless invoked manually (`Lint Now`).
+    if !compiler_only && require_cfg && !manual {
         let has_any_cfg = match project.workspace() {
             Ok(ws) => ws.has_repo_config() || has_explicit_cfg,
             Err(_) => false,
         };
         if !has_any_cfg {
-            let mut st = state.lock().unwrap_or_else(|e| e.into_inner());
-            st.published.clear();
-            let uris: Vec<String> = st.open.values().cloned().collect();
-            st.status = LintStatus {
-                state: "standalone".into(),
-                has_config: false,
-                config_path: None,
-                preset: preset_str,
-                trigger: trig_str,
-                errors: 0,
-                warnings: 0,
-            };
-            emit_status(out, &st.status);
-            drop(st);
-            for u in uris {
-                publish(out, &u, &[]);
+            if syntax_diags {
+                compiler_only = true;
+            } else {
+                let mut st = state.lock().unwrap_or_else(|e| e.into_inner());
+                st.published.clear();
+                let uris: Vec<String> = st.open.values().cloned().collect();
+                st.status = LintStatus {
+                    state: "standalone".into(),
+                    has_config: false,
+                    config_path: None,
+                    preset: preset_str,
+                    trigger: trig_str,
+                    errors: 0,
+                    warnings: 0,
+                };
+                emit_status(out, &st.status);
+                drop(st);
+                for u in uris {
+                    publish(out, &u, &[]);
+                }
+                return;
             }
-            return;
         }
     }
 
-    {
+    if !compiler_only {
         let mut st = state.lock().unwrap_or_else(|e| e.into_inner());
         st.status.state = "linting".into();
         st.status.trigger = trig_str.clone();
@@ -320,8 +342,14 @@ fn check(project: &mut Project, state: &Mutex<State>, out: &Out, manual: bool) {
     let (has_cfg, cfg_path, checked) = match project.workspace() {
         Ok(ws) => {
             let cfg_p = ws.config_file().map(|p| p.to_string_lossy().into_owned());
-            let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| ws.check(&paths)))
-                .unwrap_or_else(|_| Err("the linter stopped on an internal error".to_string()));
+            let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                if compiler_only {
+                    ws.check_compiler_only(&paths)
+                } else {
+                    ws.check(&paths)
+                }
+            }))
+            .unwrap_or_else(|_| Err("the linter stopped on an internal error".to_string()));
             (cfg_p.is_some(), cfg_p, res)
         }
         Err(e) => (false, None, Err(e.clone())),
@@ -372,11 +400,12 @@ fn check(project: &mut Project, state: &Mutex<State>, out: &Out, manual: bool) {
             svlang_lint::Severity::Info => 3,
             _ => 2,
         };
+        let diag_source = if f.rule == "SV-CMP-001" { "svlang" } else { "svlang-lint" };
         let mut fields = vec![
             ("range", range_json(range)),
             ("severity", severity.into()),
             ("code", f.rule.into()),
-            ("source", "svlang-lint".into()),
+            ("source", diag_source.into()),
             ("message", format!("{} ({})", f.message, f.name).into()),
         ];
         if !related.is_empty() {
@@ -424,8 +453,21 @@ fn check(project: &mut Project, state: &Mutex<State>, out: &Out, manual: bool) {
         state.published.insert(path.clone(), list);
     }
     let cur_trig = state.trigger.unwrap_or(LintTrigger::OnType);
+    let fin_state = if manual {
+        "ready"
+    } else if compiler_only {
+        if cur_trig == LintTrigger::Off {
+            "syntax"
+        } else {
+            "standalone"
+        }
+    } else if cur_trig != LintTrigger::Off {
+        "ready"
+    } else {
+        "off"
+    };
     state.status = LintStatus {
-        state: if cur_trig == LintTrigger::Off { "off".into() } else { "ready".into() },
+        state: fin_state.into(),
         has_config: has_cfg,
         config_path: cfg_path,
         preset: preset_str,
@@ -463,7 +505,11 @@ impl Linter {
             editor: editor.clone(),
             status: LintStatus {
                 state: if initial_trigger == LintTrigger::Off {
-                    "off".into()
+                    if editor.syntax_diagnostics {
+                        "syntax".into()
+                    } else {
+                        "off".into()
+                    }
                 } else if editor.require_config && !has_cfg_initial {
                     "standalone".into()
                 } else {
@@ -508,7 +554,8 @@ impl Linter {
                         let mut st = thread_state.lock().unwrap_or_else(|e| e.into_inner());
                         let trig = st.trigger.unwrap_or(LintTrigger::OnType);
                         let ed = st.editor.clone();
-                        let uris: Vec<String> = if trig == LintTrigger::Off {
+                        let fully_off = trig == LintTrigger::Off && !ed.syntax_diagnostics;
+                        let uris: Vec<String> = if fully_off {
                             st.published.clear();
                             st.open.values().cloned().collect()
                         } else {
@@ -516,18 +563,21 @@ impl Linter {
                         };
                         st.status.trigger = trig.as_str().into();
                         st.status.preset = ed.preset.clone().unwrap_or_else(|| "default".into());
-                        if trig == LintTrigger::Off {
+                        if fully_off {
                             st.status.state = "off".into();
                             st.status.errors = 0;
                             st.status.warnings = 0;
+                        } else if trig == LintTrigger::Off {
+                            st.status.state = "syntax".into();
                         }
                         (trig, ed, uris)
                     };
+                    let syntax_active = new_editor.syntax_diagnostics;
                     if project.editor != new_editor {
                         project.editor = new_editor;
                         project.loaded = None;
                     }
-                    if new_trig == LintTrigger::Off {
+                    if new_trig == LintTrigger::Off && !syntax_active {
                         for u in uris_to_clear {
                             publish(&thread_out, &u, &[]);
                         }
@@ -546,13 +596,14 @@ impl Linter {
         Linter { wake, state, out }
     }
 
-    pub fn trigger(&self) -> LintTrigger {
-        self.state.lock().unwrap_or_else(|e| e.into_inner()).trigger.unwrap_or(LintTrigger::OnType)
+    fn auto_active(&self) -> bool {
+        let st = self.state.lock().unwrap_or_else(|e| e.into_inner());
+        st.trigger.unwrap_or(LintTrigger::OnType) != LintTrigger::Off || st.editor.syntax_diagnostics
     }
 
-    /// Asks for a debounced check (once typing pauses), if `trigger != Off`.
+    /// Asks for a debounced check (once typing pauses), if automatic diagnostics are active.
     pub fn request(&self) {
-        if self.trigger() != LintTrigger::Off {
+        if self.auto_active() {
             let _ = self.wake.send(WakeMsg::Debounced);
         }
     }
@@ -587,12 +638,12 @@ impl Linter {
     /// The editor opened `path`.
     pub fn opened(&self, path: &Path, uri: &str, text: &str) {
         svlang::syntax::overlay::set(path, text);
-        let trig = {
+        let wake = {
             let mut st = self.state.lock().unwrap_or_else(|e| e.into_inner());
             st.open.insert(path.to_path_buf(), uri.to_string());
-            st.trigger.unwrap_or(LintTrigger::OnType)
+            st.trigger.unwrap_or(LintTrigger::OnType) != LintTrigger::Off || st.editor.syntax_diagnostics
         };
-        if trig != LintTrigger::Off {
+        if wake {
             let _ = self.wake.send(WakeMsg::Debounced);
         }
     }
@@ -600,19 +651,20 @@ impl Linter {
     /// The editor changed `path`'s text in memory.
     pub fn changed(&self, path: &Path, uri: &str, text: &str) {
         svlang::syntax::overlay::set(path, text);
-        let trig = {
+        let wake = {
             let mut st = self.state.lock().unwrap_or_else(|e| e.into_inner());
             st.open.insert(path.to_path_buf(), uri.to_string());
-            st.trigger.unwrap_or(LintTrigger::OnType)
+            let trig = st.trigger.unwrap_or(LintTrigger::OnType);
+            trig == LintTrigger::OnType || (trig == LintTrigger::Off && st.editor.syntax_diagnostics)
         };
-        if trig == LintTrigger::OnType {
+        if wake {
             let _ = self.wake.send(WakeMsg::Debounced);
         }
     }
 
     /// The editor saved `path`.
     pub fn saved(&self) {
-        if self.trigger() != LintTrigger::Off {
+        if self.auto_active() {
             let _ = self.wake.send(WakeMsg::AutoImmediate);
         }
     }
@@ -621,14 +673,14 @@ impl Linter {
     /// diagnostics go away.
     pub fn closed(&self, path: &Path, uri: &str) {
         svlang::syntax::overlay::clear(path);
-        let trig = {
+        let wake = {
             let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
             state.open.remove(path);
             state.published.remove(path);
-            state.trigger.unwrap_or(LintTrigger::OnType)
+            state.trigger.unwrap_or(LintTrigger::OnType) != LintTrigger::Off || state.editor.syntax_diagnostics
         };
         publish(&self.out, uri, &[]);
-        if trig != LintTrigger::Off {
+        if wake {
             let _ = self.wake.send(WakeMsg::Debounced);
         }
     }

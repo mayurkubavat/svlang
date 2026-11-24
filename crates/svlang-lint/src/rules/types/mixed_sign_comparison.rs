@@ -2,8 +2,9 @@
 //! causes implicit unsigned coercion of the signed operand.
 
 use crate::expr_types::{visit_types, ETy};
+use crate::support::class_items::declarators;
 use crate::support::config_db_calls::{in_generate_header, strip};
-use crate::support::slang_ast::kids;
+use crate::support::slang_ast::{ancestors, kids};
 use crate::syntax::Cst;
 use crate::{Severity, Sink};
 use svlang::syntax::NodeId;
@@ -34,10 +35,62 @@ fn non_negative_literal(c: &Cst, e: NodeId, t: &ETy) -> bool {
     (bits.len() as u32) < w || !bits.starts_with('1')
 }
 
+/// True when `e` is a signed expression whose result is guaranteed `>= 0` by IEEE 1800
+/// (`$bits`, `$clog2`, `$countones`, `$size`, `.size()`, `.num()`, `.len()`, or a local
+/// `parameter`/`localparam` initialized to a non-negative literal).
+fn guaranteed_non_negative(c: &Cst, e: NodeId, t: &ETy) -> bool {
+    if non_negative_literal(c, e, t) {
+        return true;
+    }
+    match c.kind(e) {
+        CallExpr => {
+            if let Some(&callee) = kids(c, e).first() {
+                let raw = c.tree.bare_text(callee);
+                if matches!(
+                    raw.as_str(),
+                    "$bits" | "$clog2" | "$countones" | "$size" | "$dimensions" | "$unpacked_dimensions"
+                ) {
+                    return true;
+                }
+                if c.kind(callee) == MemberExpr && matches!(c.last_text(callee), "size" | "num" | "len") {
+                    return true;
+                }
+            }
+            false
+        }
+        MemberExpr => matches!(c.last_text(e), "size" | "num" | "len"),
+        NameExpr => {
+            let ident = c.tree.bare_text(e);
+            if ident.is_empty() {
+                return false;
+            }
+            for scope in ancestors(c, e) {
+                if !matches!(c.kind(scope), ModuleDecl | InterfaceDecl | ClassDecl | PackageDecl) {
+                    continue;
+                }
+                for pd in c.tree.children(scope).filter(|&k| c.kind(k) == ParamDecl) {
+                    for (dec, name, _) in declarators(c, pd) {
+                        if name == ident {
+                            if let Some(init) = kids(c, dec).into_iter().find(|&k| !matches!(c.kind(k), Name | Dim)) {
+                                let init = strip(c, init);
+                                if non_negative_literal(c, init, t) || guaranteed_non_negative(c, init, t) {
+                                    return true;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            false
+        }
+        _ => false,
+    }
+}
+
 const RELATIONAL: &[&str] = &["<", "<=", ">", ">=", "==", "!=", "===", "!=="];
 
 /// A comparison of a signed and an unsigned operand, unless the signed one
-/// is a non-negative literal: once per AST visit.
+/// is guaranteed non-negative: once per AST visit.
 pub(crate) fn mixed_sign_comparison(c: &Cst, out: &mut Sink) {
     for e in c.nodes(BinaryExpr) {
         let op = c.keyword(e).map_or("", |k| c.text_of(k));
@@ -55,22 +108,22 @@ pub(crate) fn mixed_sign_comparison(c: &Cst, out: &mut Sink) {
         for (k, ts) in visit_types(c, e, &[l, r]) {
             let (Some((lt, _)), Some((rt, _))) = (&ts[0], &ts[1]) else { continue };
             let (Some((_, ls, _)), Some((_, rs, _))) = (lt.integral, rt.integral) else { continue };
-            if ls == rs {
+            if ls == rs || lt.text.contains("<error>") || rt.text.contains("<error>") {
                 continue;
             }
-            let flag = (ls && !non_negative_literal(c, l, lt)) || (rs && !non_negative_literal(c, r, rt));
+            let flag = (ls && !guaranteed_non_negative(c, l, lt)) || (rs && !guaranteed_non_negative(c, r, rt));
             if !flag {
                 continue;
             }
-            let side = if ls { "LHS" } else { "RHS" };
+            let (signed_ty, unsigned_ty, side) =
+                if ls { (&lt.text, &rt.text, "LHS") } else { (&rt.text, &lt.text, "RHS") };
             for _ in 0..k {
                 out.add(
                     "SV-TYP-001",
                     "MixedSignComparison",
                     Severity::Warning,
                     format!(
-                        "Comparison between signed type '{}' and unsigned type '{}'. In SystemVerilog (IEEE 1800 Sec 11.8.2), if either operand is unsigned, the entire comparison is coerced to unsigned, causing negative numbers on the {side} to evaluate as large positive numbers.",
-                        lt.text, rt.text
+                        "Comparison between signed type '{signed_ty}' and unsigned type '{unsigned_ty}'. In SystemVerilog (IEEE 1800 Sec 11.8.2), if either operand is unsigned, the entire comparison is coerced to unsigned, causing negative numbers on the {side} to evaluate as large positive numbers."
                     ),
                     c.loc(t),
                 );

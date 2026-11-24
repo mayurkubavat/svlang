@@ -45,6 +45,21 @@ pub(crate) fn unit_pollution(c: &Cst, s: &mut Sink) {
         };
         for name in names {
             let Some(t) = last_tok(c, name) else { continue };
+            // A `.svh` / `.vh` header opened standalone (as a compilation input rather than
+            // `include`d by a `.sv` unit) is normally included inside a `package` or `module`;
+            // if a `.sv` file includes a `.svh` at `$unit` scope, `f` is not in `mains`, so
+            // genuine `$unit` leaks are still reported.
+            let f = c.tree.tokens[t as usize].origin.file;
+            if c.tree.mains.contains(&f)
+                && c.tree
+                    .files
+                    .get(f as usize)
+                    .and_then(|p| p.extension())
+                    .and_then(|e| e.to_str())
+                    .is_some_and(|ext| matches!(ext, "svh" | "vh"))
+            {
+                continue;
+            }
             s.add(
                 "SV-MOD-001",
                 "GlobalUnitPollution",

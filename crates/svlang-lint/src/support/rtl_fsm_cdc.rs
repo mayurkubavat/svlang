@@ -560,6 +560,17 @@ fn analyze_module_fsms(
         return;
     }
 
+    // Collect sequential registers actually driven by `<=` inside edge-triggered clocked blocks in `m`.
+    // Combinational enum wires/inputs (such as an instruction decoder's `opcode`) are NOT FSM state registers.
+    let mut clocked_state_regs: HashSet<String> = HashSet::new();
+    for pb in c.tree.children(m).filter(|&k| c.kind(k) == ProceduralBlock) {
+        if let Some((_, _, body)) = proc_sens_edges(c, pb) {
+            for target in nba_targets_in(c, body) {
+                clocked_state_regs.insert(target);
+            }
+        }
+    }
+
     // Find `case (state_var)` blocks in `m`:
     for cs in subtree(c, m) {
         if c.kind(cs) != CaseStmt {
@@ -567,6 +578,9 @@ fn analyze_module_fsms(
         }
         let Some(sel) = case_selector(c, cs) else { continue };
         let sel_name = c.tree.bare_text(sel);
+        if !clocked_state_regs.contains(&sel_name) {
+            continue;
+        }
         let Some((members, decl_loc, init_state)) = enum_vars.get(&sel_name) else { continue };
         let member_set: HashSet<&str> = members.iter().map(String::as_str).collect();
 
@@ -634,7 +648,7 @@ fn analyze_module_fsms(
                 }
             }
         }
-        if !all_constant {
+        if !all_constant || !adj.values().any(|s| !s.is_empty()) {
             continue;
         }
         // Also collect direct synchronous transitions outside `cs` (excluding reset branches and default self-hold `state_d = state_q`).

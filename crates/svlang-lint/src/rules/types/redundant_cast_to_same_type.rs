@@ -21,13 +21,20 @@ pub(crate) fn redundant_cast(c: &Cst, out: &mut Sink) {
     let ix = c.index();
     // The type `a` has in each copy where `a` and `b` match: per
     // specialization in a generic class, else every AST visit.
+    let valid_ty = |s: &str| !s.is_empty() && !s.contains("<error>") && s != "unknown";
     let matches = |e: NodeId, a: NodeId, b: NodeId| -> Vec<String> {
         if let (Some(x), Some(y)) = (specs.get(&(ix, a)), specs.get(&(ix, b))) {
             return x
                 .iter()
                 .zip(y)
                 .filter_map(|p| match p {
-                    (Some((at, ac)), Some((bt, bc))) if at.text == bt.text || ac == bc => Some(at.text.clone()),
+                    (Some((at, ac)), Some((bt, bc)))
+                        if valid_ty(&at.text)
+                            && valid_ty(&bt.text)
+                            && (at.text == bt.text || (!ac.is_empty() && ac == bc)) =>
+                    {
+                        Some(at.text.clone())
+                    }
                     _ => None,
                 })
                 .collect();
@@ -36,7 +43,7 @@ pub(crate) fn redundant_cast(c: &Cst, out: &mut Sink) {
         let mut v = Vec::new();
         for (k, ts) in crate::expr_types::visit_types(c, e, &[a, b]) {
             let (Some((at, ac)), Some((bt, bc))) = (&ts[0], &ts[1]) else { continue };
-            if at.text == bt.text || (ac.is_some() && ac == bc) {
+            if valid_ty(&at.text) && valid_ty(&bt.text) && (at.text == bt.text || (ac.is_some() && ac == bc)) {
                 v.extend(std::iter::repeat_n(at.text.clone(), k));
             }
         }

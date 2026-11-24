@@ -12,7 +12,7 @@ pub(crate) fn non_virtual_interface(c: &Cst, s: &mut Sink) {
     for cls in class_decls(c) {
         let cname = decl_name(c, cls).map(|x| x.0).unwrap_or_default();
         for d in data_items(c, cls) {
-            let dt = c.tree.child(d, DataType).unwrap();
+            let Some(dt) = c.tree.child(d, DataType) else { continue };
             let virt = qualifiers(c, d).contains(&"virtual") || op(c, dt) == "virtual";
             if virt {
                 continue;

@@ -3,10 +3,8 @@
 
 `include "uvm_mock.svh"
 
-// --- TEST CASE 60: SV-BAN-001 (Legacy Reg and Wire in Testbench) ---
+// --- TEST CASE 60: SV-BAN-001 (Legacy Reg in SystemVerilog) ---
 module legacy_reg_wire_tester;
-    // VIOLATION SV-BAN-001: Legacy 'reg' in SystemVerilog testbench!
+    // VIOLATION SV-BAN-001: Legacy 'reg' in SystemVerilog!
     reg [7:0] old_reg;
-    // VIOLATION SV-BAN-001: Legacy 'wire' in SystemVerilog testbench!
-    wire [7:0] old_wire;
 endmodule

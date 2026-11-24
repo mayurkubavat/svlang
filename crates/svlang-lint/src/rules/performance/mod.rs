@@ -24,7 +24,7 @@ mod unshielded_verbosity_format_eval;
 /// Every rule of this category.
 pub(crate) fn rules() -> Vec<Rule> {
     vec![
-        Rule { id: "SV-ASC-001", name: "AssociativeArrayMutatingRead", category: "Performance", severity: Severity::Warning, profiles: PERFORMANCE, guidelines: &[], experimental: false, native: false, about: "Detects direct read lookups on associative arrays in expressions without checking exists(). In SystemVerilog (IEEE 1800 § 7.8.1), reading a missing key silently allocates and inserts it with a default value.", check: Check::Syntax(associative_array_mutating_read::assoc_mutating_read),
+        Rule { id: "SV-ASC-001", name: "AssociativeArrayMutatingRead", category: "Performance", severity: Severity::Info, profiles: ADVISORY, guidelines: &[], experimental: false, native: false, about: "Flags unguarded associative-array read lookups in relational comparisons without an exists() check (IEEE 1800 § 7.8.6).", check: Check::Syntax(associative_array_mutating_read::assoc_mutating_read),
         },
         Rule { id: "SV-LOC-001", name: "ArrayLocatorEmptyQueueDeref", category: "Performance", severity: Severity::Error, profiles: PERFORMANCE, guidelines: &[], experimental: false, native: false, about: "Disallows immediate element dereferencing on array locator methods (e.g., q.find()[0]). Locator methods return an unpacked queue that may be empty, causing out-of-bounds runtime errors (IEEE 1800 § 7.12.1).", check: Check::Syntax(array_locator_empty_queue_deref::locator_deref),
         },
@@ -40,7 +40,7 @@ pub(crate) fn rules() -> Vec<Rule> {
         },
         Rule { id: "SV-PRF-005", name: "UnshieldedVerbosityFormatEval", category: "Performance", severity: Severity::Warning, profiles: PERFORMANCE, guidelines: &[], experimental: false, native: false, about: "Calling $sformatf inside uvm_info/warning without checking uvm_report_enabled formats strings even when messages are discarded by verbosity.", check: Check::Mixed(unshielded_verbosity_format_eval::ast_unshielded_format),
         },
-        Rule { id: "SV-PRF-006", name: "StringKeyAssociativeArray", category: "Performance", severity: Severity::Warning, profiles: PERFORMANCE, guidelines: &[], experimental: false, native: false, about: "Detects associative arrays indexed by 'string'. String keys incur hash calculation and dynamic string comparisons on every lookup and insert, degrading simulation throughput.", check: Check::Syntax(string_key_associative_array::string_key_assoc),
+        Rule { id: "SV-PRF-006", name: "StringKeyAssociativeArray", category: "Performance", severity: Severity::Warning, profiles: ADVISORY, guidelines: &[], experimental: false, native: false, about: "Detects associative arrays indexed by 'string'. String keys incur hash calculation and dynamic string comparisons on every lookup and insert, degrading simulation throughput in hot paths.", check: Check::Syntax(string_key_associative_array::string_key_assoc),
         },
         Rule { id: "SV-PRF-007", name: "QueueConcatAppend", category: "Performance", severity: Severity::Warning, profiles: PERFORMANCE, guidelines: &[], experimental: false, native: false, about: "Disallow queue concatenation ('q = {q, x}' or 'q = {x, q}'). Concatenation reallocates memory on every append ($O(N^2)$ in loops); use push_back() or push_front() for amortized $O(1)$ performance.", check: Check::Syntax(queue_concat_append::queue_concat_append),
         },

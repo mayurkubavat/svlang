@@ -13,7 +13,7 @@ import {
 // ---- Server & Status Types ----
 
 interface ServerStatus {
-    state: 'indexing' | 'linting' | 'ready' | 'standalone' | 'off' | 'error';
+    state: 'indexing' | 'linting' | 'ready' | 'syntax' | 'standalone' | 'off' | 'error';
     hasConfig?: boolean;
     configPath?: string;
     preset?: string;
@@ -75,7 +75,7 @@ let activeExePath: string | undefined;
 let statusBar: vscode.StatusBarItem | undefined;
 let inactiveDecoration: vscode.TextEditorDecorationType | undefined;
 let currentOpacity = -1;
-let latestStatus: ServerStatus = { state: 'ready', trigger: 'onType', preset: 'default' };
+let latestStatus: ServerStatus = { state: 'syntax', trigger: 'off', preset: 'default' };
 const watchers: vscode.Disposable[] = [];
 const warned = new Set<string>();
 
@@ -202,7 +202,7 @@ function registerCommands(context: vscode.ExtensionContext) {
                 [
                     { label: '$(zap) On Type', value: 'onType', description: cur === 'onType' ? 'Current — lint after typing pauses (250 ms)' : 'Lint after typing pauses (250 ms)' },
                     { label: '$(save) On Save', value: 'onSave', description: cur === 'onSave' ? 'Current — lint on file open and save' : 'Lint only when files are opened or saved' },
-                    { label: '$(circle-slash) Off (Manual)', value: 'off', description: cur === 'off' ? 'Current — manual lint only' : 'Turn off automatic lint; run Lint Now anytime' }
+                    { label: '$(svlang-logo) Off (Browsing + Syntax/Semantics)', value: 'off', description: cur === 'off' ? 'Current — code browsing + IEEE 1800 syntax/semantics; Lint Now anytime' : 'Code browsing + IEEE 1800 syntax/semantics; run Lint Now anytime' }
                 ],
                 { placeHolder: 'Select when svlang runs automatic lint checks' }
             );
@@ -461,17 +461,19 @@ function effectiveTrigger(): 'onType' | 'onSave' | 'off' {
     if (!enabled) {
         return 'off';
     }
-    const raw = vscode.workspace.getConfiguration('svlang').get<string>('lint.trigger', 'onType');
-    if (raw === 'onSave' || raw === 'off') {
+    const raw = vscode.workspace.getConfiguration('svlang').get<string>('lint.trigger', 'off');
+    if (raw === 'onType' || raw === 'onSave') {
         return raw;
     }
-    return 'onType';
+    return 'off';
 }
 
 function collectLintOptions() {
     const cfg = vscode.workspace.getConfiguration('svlang');
+    const enabled = getSetting<boolean>('enable', 'enable', true);
     return {
         trigger: effectiveTrigger(),
+        syntaxDiagnostics: enabled && cfg.get<boolean>('diagnostics.syntaxAndSemantics', true),
         preset: getSetting<string>('preset', 'preset', '').trim(),
         configPath: cfg.get<string>('lint.configPath', '').trim(),
         configPreference: cfg.get<string>('lint.configPreference', 'filesystemFirst'),
@@ -564,7 +566,10 @@ function updateStatusBar() {
     const st = latestStatus.state;
     const errs = latestStatus.errors ?? 0;
     const warns = latestStatus.warnings ?? 0;
-    const preset = latestStatus.preset && latestStatus.preset !== 'default' ? ` · ${latestStatus.preset}` : '';
+    const preset =
+        st !== 'syntax' && latestStatus.preset && latestStatus.preset !== 'default'
+            ? ` · ${latestStatus.preset}`
+            : '';
 
     if (st === 'indexing' || st === 'linting') {
         statusBar.text = `$(sync~spin) svlang`;
@@ -576,7 +581,7 @@ function updateStatusBar() {
         statusBar.text = `$(circle-slash) svlang · off`;
         statusBar.backgroundColor = undefined;
     } else if (st === 'standalone') {
-        statusBar.text = `$(svlang-logo) svlang · standalone`;
+        statusBar.text = errs > 0 ? `$(error) svlang · ${errs}` : `$(svlang-logo) svlang · standalone`;
         statusBar.backgroundColor = undefined;
     } else if (errs > 0) {
         statusBar.text = `$(error) svlang · ${errs}${preset}`;
@@ -593,7 +598,11 @@ function updateStatusBar() {
     const tip = new vscode.MarkdownString(undefined, true);
     tip.isTrusted = true;
     tip.appendMarkdown(`**svlang** — IEEE 1800-2023 Language Server & Linter\n\n`);
-    tip.appendMarkdown(`- **State**: \`${st}\` (trigger: \`${effectiveTrigger()}\`, preset: \`${latestStatus.preset || 'default'}\`)\n`);
+    if (st === 'syntax') {
+        tip.appendMarkdown(`- **Mode**: Browsing + Syntax/Semantics (\`auto-lint: off\`)\n`);
+    } else {
+        tip.appendMarkdown(`- **State**: \`${st}\` (trigger: \`${effectiveTrigger()}\`, preset: \`${latestStatus.preset || 'default'}\`)\n`);
+    }
     tip.appendMarkdown(`- **Config**: ${latestStatus.hasConfig ? `\`${latestStatus.configPath ?? '.svlang-lint/config.py'}\`` : '_Standalone (no repo config)_'}\n`);
     if (defs.length) {
         tip.appendMarkdown(`- **Defines**: \`${defs.join(', ')}\`\n`);

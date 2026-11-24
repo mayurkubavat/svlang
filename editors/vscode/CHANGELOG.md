@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.2
+
+- **Mode 1 Default (Code Browsing + Live Syntax/Semantics, On-Demand Lint)**: Changed `svlang.lint.trigger` default to `"off"` and added `svlang.diagnostics.syntaxAndSemantics` (default `true`). Code navigation, semantic highlighting, `` `ifdef `` dimming, RTL/signal tracing, and IEEE 1800-2023 syntax/semantic checks work out of the box while the 474 static lint rules stay quiet until `Lint Now` or `onSave`/`onType` is enabled.
+- **IEEE 1800, RTL & UVM Rule Precision Overhaul**: Fixed 19 lint rules (including `SV-BAN-001` leaving `wire` nets intact, `SV-TIM-002` unitless `#delay` detection, `SV-FSM-002/003` clocked FSM identification, `SV-ASC-001` associative array checks, `SV-DEP-003`, `SV-TYP-001/008`, `SV-PRF-010`, `SV-COR-005/020`, `SVA-RST-001`, and standalone `.svh` handling) and moved house-style/advisory rules out of default presets.
+- **Bundled `svlang` 0.5.2 Elaboration Fixes**: Includes context-determined `**` base sizing in parameters (`localparam logic [51:0] P = 2**51`) and instance-scoped type-parameter sizing (`child #(.T(out_t))`).
+
 ## 0.5.1
 
 - **Bundled `svlang` 0.5.1 language server**: picks up three elaboration fixes (generate conditions with a reduction operator, `'1` as a sized parameter default, selects on packed struct members with their own range). No extension settings or commands changed.

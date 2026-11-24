@@ -1,14 +1,17 @@
-//! SV-ENC-001 (MutableObjectGetterLeak): Disallows getter functions (get_*())
-//! from returning direct references to mutable internal class object members.
+//! SV-ENC-001 (MutableObjectGetterLeak): Flags getter functions (`get_*()`)
+//! returning direct handles to mutable internal `uvm_object` / data-class
+//! properties (excluding primitives, enums, structs, queues/arrays, and
+//! non-cloneable `uvm_component` / TLM / RAL handles).
 
 use crate::support::class_items::{class_decls, declarators, own};
 use crate::support::data_items::{data_items, methods, routine_name};
 use crate::syntax::Cst;
 use crate::{Severity, Sink};
 use std::collections::HashSet;
+use svlang::syntax::NodeId;
 use svlang::syntax::SyntaxKind::*;
 
-const PRIMITIVE: &[&str] = &[
+const VALUE_KEYWORDS: &[&str] = &[
     "int",
     "integer",
     "bit",
@@ -25,18 +28,79 @@ const PRIMITIVE: &[&str] = &[
     "void",
     "chandle",
     "event",
+    "enum",
+    "struct",
+    "union",
+    "virtual",
+    "type",
 ];
+
+fn is_cloneable_object_type(c: &Cst, dt: NodeId) -> bool {
+    let Some(first) = c.first_tok(dt).map(|t| c.text_of(t)) else {
+        return false;
+    };
+    if VALUE_KEYWORDS.contains(&first) {
+        return false;
+    }
+    let raw = c.tree.bare_text(dt);
+    let base = raw.split('#').next().unwrap_or(&raw).rsplit("::").next().unwrap_or(&raw).trim();
+    if base.is_empty() || VALUE_KEYWORDS.contains(&base) {
+        return false;
+    }
+    let low = base.to_ascii_lowercase();
+    // Value/enum/struct typedef conventions (`addr_t`, `op_e`, `pkt_s`) are copied by value.
+    if ["_t", "_e", "_enum", "_s", "_u", "_struct", "_union"].iter().any(|sfx| low.ends_with(sfx)) {
+        return false;
+    }
+    // UVM components, TLM ports, phases, and RAL blocks/registers are structural singletons/hierarchy
+    // nodes (`uvm_component::clone()` is illegal in IEEE 1800.2 §5.3.4).
+    if [
+        "component",
+        "driver",
+        "monitor",
+        "sequencer",
+        "agent",
+        "env",
+        "scoreboard",
+        "subscriber",
+        "_port",
+        "_export",
+        "_imp",
+        "_fifo",
+        "uvm_phase",
+        "uvm_domain",
+        "uvm_reg",
+        "uvm_mem",
+        "uvm_vreg",
+        "uvm_pool",
+        "uvm_queue",
+    ]
+    .iter()
+    .any(|k| low.contains(k))
+    {
+        return false;
+    }
+    true
+}
 
 pub(crate) fn getter_leak(c: &Cst, s: &mut Sink) {
     for cls in class_decls(c) {
         let mut objects: HashSet<String> = HashSet::new();
         for d in data_items(c, cls) {
-            let ty = c.trimmed(c.tree.child(d, DataType).unwrap());
-            if !PRIMITIVE.contains(&ty.as_str()) {
-                for (_, n, _) in declarators(c, d) {
-                    objects.insert(n);
-                }
+            let Some(dt) = c.tree.child(d, DataType) else { continue };
+            if !is_cloneable_object_type(c, dt) {
+                continue;
             }
+            for (dec, n, _) in declarators(c, d) {
+                // Unpacked arrays / queues (`T m_bins[$]`) are copied by value on return in SV.
+                if c.tree.child(dec, Dim).is_some() {
+                    continue;
+                }
+                objects.insert(n);
+            }
+        }
+        if objects.is_empty() {
+            continue;
         }
         for f in methods(c, cls) {
             let name = routine_name(c, f);
@@ -61,11 +125,11 @@ pub(crate) fn getter_leak(c: &Cst, s: &mut Sink) {
                 s.add(
                     "SV-ENC-001",
                     "MutableObjectGetterLeak",
-                    Severity::Warning,
+                    Severity::Info,
                     format!(
-                        "Getter method '{name}()' returns direct reference to mutable member object '{var}'. \
-                         Returning handles to internal mutable class objects breaks OOP encapsulation and allows callers to mutate internal state without ownership control. \
-                         Return a cloned copy of the object (e.g. 'return {var}.clone();') or ensure the object is immutable."
+                        "Getter method '{name}()' returns a direct handle to internal object '{var}'. \
+                         Callers mutating the returned handle will modify this class's internal state; \
+                         return a cloned copy (e.g. 'return {var}.clone();') when defensive isolation is required."
                     ),
                     c.loc(kw),
                 );

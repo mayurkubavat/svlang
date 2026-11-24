@@ -29,6 +29,8 @@ pub struct EditorOptions {
     pub config_preference: String,
     /// Only run automatic lint when a repo config file exists (`svlang.lint.requireConfig`).
     pub require_config: bool,
+    /// Keep IEEE 1800 syntax & semantic compiler checks (`SV-CMP-001`) active when automatic linting is `off`.
+    pub syntax_diagnostics: bool,
     /// Default/override rule preset (`svlang.lint.preset`).
     pub preset: Option<String>,
     /// Explicit rule IDs/names to enable (`svlang.lint.select`).
@@ -232,12 +234,23 @@ impl Workspace {
     /// no sources). Headers nothing compiled are left out: alone they do
     /// not parse.
     pub fn check(&self, open: &[PathBuf]) -> Result<Checked, String> {
+        self.check_inner(open, false)
+    }
+
+    /// Runs only IEEE 1800-2023 syntax and semantic compiler checks (`SV-CMP-001`)
+    /// without invoking static lint rules (used in Mode 1 when automatic linting is off).
+    pub fn check_compiler_only(&self, open: &[PathBuf]) -> Result<Checked, String> {
+        self.check_inner(open, true)
+    }
+
+    fn check_inner(&self, open: &[PathBuf], compiler_only: bool) -> Result<Checked, String> {
         let mut combined_args: Vec<String> = self.config.as_ref().map_or_else(Vec::new, |c| c.compile_args.clone());
         combined_args.extend(self.extra_args.iter().cloned());
         let args: &[String] = &combined_args;
         let cwd = std::env::current_dir().unwrap_or_default();
         let list =
             svlang::source::FileList::read_args(args, &cwd, svlang::source::Dialect::Any, &svlang::source::ProcessEnv);
+        let standalone_mode = !self.has_repo_config && list.sources.is_empty();
         // Include folders and defines, for files parsed on their own.
         let mut shared: Vec<String> =
             list.include_dirs.iter().map(|d| format!("+incdir+{}", d.value.display())).collect();
@@ -265,7 +278,16 @@ impl Workspace {
         }
         let design = svlang_model::design_of(&trees, 0.0);
         self.session.reset_waivers();
-        let (files, mut findings) = self.session.lint_all(&design, &trees, |id| self.keep.contains(id));
+        let (files, mut findings) = self.session.lint_all(&design, &trees, |id| {
+            if compiler_only {
+                id == "SV-CMP-001" && !self.ignored.contains("SV-CMP-001")
+            } else {
+                self.keep.contains(id)
+            }
+        });
+        if standalone_mode {
+            filter_standalone_compiler_noise(&trees, &files, &mut findings);
+        }
         if !self.ignored.is_empty() {
             findings.retain(|f| !self.ignored.contains(f.rule) && !self.ignored.contains(f.name));
         }
@@ -285,4 +307,110 @@ impl Workspace {
         crate::expansions::name_macros(&mut findings, &files);
         Ok(Checked { files, findings, waived })
     }
+}
+
+/// Suppresses missing-external-context `SV-CMP-001` noise when standalone files are
+/// opened in the editor without a `.svlang-lint/config.py` or `.f` filelist, while
+/// preserving all genuine syntax errors and self-contained IEEE 1800 semantic errors.
+fn filter_standalone_compiler_noise(trees: &[svlang::syntax::Tree], files: &[String], findings: &mut Vec<Finding>) {
+    use svlang::syntax::SyntaxKind::*;
+
+    let mut declared_pkgs: HashSet<String> = HashSet::new();
+    let mut declared_classes: HashSet<String> = HashSet::new();
+    for t in trees {
+        for n in t.preorder() {
+            match t.kind(n) {
+                PackageDecl => {
+                    if let Some(nm) = t.child(n, Name) {
+                        declared_pkgs.insert(t.bare_text(nm));
+                    }
+                }
+                ClassDecl => {
+                    let hdr = t.child(n, Header);
+                    if let Some(nm) = t.child(n, Name).or_else(|| hdr.and_then(|h| t.child(h, Name))) {
+                        declared_classes.insert(t.bare_text(nm));
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    // Per standalone file: track lines with unknown macros and whether unresolved external imports/includes/bases exist.
+    let mut external_deps_files: HashSet<PathBuf> = HashSet::new();
+    let mut macro_err_lines: HashSet<(PathBuf, u32)> = HashSet::new();
+
+    for t in trees {
+        let Some(main_file) = t.files.first().map(|p| canonical(p)) else { continue };
+        let mut has_ext = false;
+        for d in &t.pp_diagnostics {
+            if d.message.starts_with("cannot find include file ") || d.message.starts_with("unknown macro") {
+                has_ext = true;
+                if d.message.starts_with("unknown macro") {
+                    if let Some(src) = t.sources.get(d.origin.file as usize) {
+                        let off = (d.origin.offset as usize).min(src.len());
+                        let line = src[..off].bytes().filter(|&b| b == b'\n').count() as u32 + 1;
+                        macro_err_lines.insert((main_file.clone(), line));
+                        macro_err_lines.insert((main_file.clone(), line + 1));
+                    }
+                }
+            }
+        }
+        for n in t.preorder() {
+            match t.kind(n) {
+                ImportDecl => {
+                    let txt = t.bare_text(n);
+                    let body = txt.strip_prefix("import").unwrap_or(&txt).trim().trim_end_matches(';');
+                    for item in body.split(',') {
+                        let pkg = item.split("::").next().unwrap_or("").trim();
+                        if !pkg.is_empty() && !declared_pkgs.contains(pkg) {
+                            has_ext = true;
+                        }
+                    }
+                }
+                Extends => {
+                    if let Some(dt) = t.child(n, DataType).or_else(|| t.child(n, Name)) {
+                        let raw = t.bare_text(dt);
+                        let base = raw.split('#').next().unwrap_or(&raw).rsplit("::").next().unwrap_or(&raw).trim();
+                        if !base.is_empty() && !declared_classes.contains(base) {
+                            has_ext = true;
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        if has_ext {
+            external_deps_files.insert(main_file);
+        }
+    }
+
+    findings.retain(|f| {
+        if f.rule != "SV-CMP-001" {
+            return true;
+        }
+        let msg = f.message.as_str();
+        if msg.starts_with("cannot find include file ") || msg.starts_with("unknown macro") {
+            return false;
+        }
+        let (fname, line, _) = f.position_in(files);
+        let cpath = canonical(Path::new(fname));
+        if macro_err_lines.contains(&(cpath.clone(), line)) {
+            return false;
+        }
+        if external_deps_files.contains(&cpath)
+            && (msg.starts_with("unknown package ")
+                || msg.starts_with("unknown class")
+                || msg.starts_with("unknown type ")
+                || msg.starts_with("no member named ")
+                || msg.starts_with("use of undeclared identifier ")
+                || msg.starts_with("undeclared identifier ")
+                || msg.starts_with("extern constraint ")
+                || msg.starts_with("could not resolve hierarchical path name ")
+                || msg.starts_with("unknown base covergroup "))
+        {
+            return false;
+        }
+        true
+    });
 }

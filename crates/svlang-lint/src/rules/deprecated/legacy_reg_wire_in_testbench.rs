@@ -1,5 +1,5 @@
-//! SV-BAN-001 (LegacyRegWireInTestbench): Discourages legacy 'reg' and 'wire'
-//! keywords in SystemVerilog testbenches in favor of 'logic'.
+//! SV-BAN-001 (LegacyRegWireInTestbench): Discourages legacy Verilog-1995 'reg'
+//! variable declarations in favor of IEEE 1800 'logic' (leaving 'wire' nets intact).
 
 use crate::support::names::DIRECTIONS;
 use crate::syntax::Cst;
@@ -9,25 +9,11 @@ use svlang::syntax::SyntaxKind::*;
 
 pub(crate) fn legacy_reg_wire(c: &Cst, s: &mut Sink) {
     for n in c.nodes(DataDecl) {
-        // A direction makes it slang's PortDeclaration, and a struct or
-        // union member is a StructUnionMember.
+        // Skip port declarations and struct/union members.
+        // Note: `wire` is an active IEEE 1800-2023 net type (§6.6/§6.7) required
+        // for multi-driver nets, inout ports, pullups, and bus interfaces — never flag `wire`.
         if c.toks(n).any(|t| DIRECTIONS.contains(&c.text_of(t))) || c.parent(n).is_some_and(|p| c.kind(p) == DataType) {
             continue;
-        }
-        if let Some(kw) = c.keyword(n) {
-            // A net keyword first: slang's NetDeclaration.
-            if c.text_of(kw) == "wire" && c.kids(n).first() == Some(&Child::Token(kw)) {
-                s.add(
-                    "SV-BAN-001",
-                    "LegacyRegWireInTestbench",
-                    Severity::Info,
-                    "Keyword 'wire' is discouraged in SystemVerilog verification code. \
-                     In testbenches and interfaces, use 'logic' or 'virtual interface' instead."
-                        .into(),
-                    c.loc(kw),
-                );
-                continue;
-            }
         }
         let Some(ty) = c.tree.child(n, DataType) else { continue };
         if c.kids(n).first() != Some(&Child::Node(ty)) {
@@ -39,8 +25,8 @@ pub(crate) fn legacy_reg_wire(c: &Cst, s: &mut Sink) {
                 "SV-BAN-001",
                 "LegacyRegWireInTestbench",
                 Severity::Info,
-                "Legacy Verilog-95 keyword 'reg' is discouraged in modern SystemVerilog testbenches. \
-                 Use 'logic' for unified 4-state storage across procedural and continuous assignments."
+                "Legacy Verilog-1995 keyword 'reg' is discouraged in modern SystemVerilog (IEEE 1800 § 6.8). \
+                 Prefer 'logic' for 4-state variables."
                     .into(),
                 c.loc(first),
             );

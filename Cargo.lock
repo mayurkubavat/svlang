@@ -147,7 +147,7 @@ checksum = "d902046e6a28a1e4c3cab97258a0ce11e994903f01c2d97a9447a0b3df85f4f6"
 
 [[package]]
 name = "sv-aiger"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "sv-btor2",
  "sv-netlist",
@@ -156,11 +156,11 @@ dependencies = [
 
 [[package]]
 name = "sv-bigint"
-version = "0.5.1"
+version = "0.5.2"
 
 [[package]]
 name = "sv-btor2"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "sv-netlist",
  "sv-semantic",
@@ -169,7 +169,7 @@ dependencies = [
 
 [[package]]
 name = "sv-checks"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "sv-fxhash",
  "sv-scopes",
@@ -178,7 +178,7 @@ dependencies = [
 
 [[package]]
 name = "sv-expr"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "sv-bigint",
  "sv-fxhash",
@@ -188,11 +188,11 @@ dependencies = [
 
 [[package]]
 name = "sv-fxhash"
-version = "0.5.1"
+version = "0.5.2"
 
 [[package]]
 name = "sv-ir"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "sv-bigint",
  "sv-fxhash",
@@ -201,11 +201,11 @@ dependencies = [
 
 [[package]]
 name = "sv-lexer"
-version = "0.5.1"
+version = "0.5.2"
 
 [[package]]
 name = "sv-netlist"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "sv-semantic",
  "sv-syntax",
@@ -213,14 +213,14 @@ dependencies = [
 
 [[package]]
 name = "sv-preprocessor"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "sv-lexer",
 ]
 
 [[package]]
 name = "sv-scopes"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "sv-fxhash",
  "sv-syntax",
@@ -228,7 +228,7 @@ dependencies = [
 
 [[package]]
 name = "sv-semantic"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "sv-bigint",
  "sv-checks",
@@ -243,11 +243,11 @@ dependencies = [
 
 [[package]]
 name = "sv-source"
-version = "0.5.1"
+version = "0.5.2"
 
 [[package]]
 name = "sv-sva"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "sv-expr",
  "sv-fxhash",
@@ -257,7 +257,7 @@ dependencies = [
 
 [[package]]
 name = "sv-syntax"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "sv-lexer",
  "sv-preprocessor",
@@ -265,7 +265,7 @@ dependencies = [
 
 [[package]]
 name = "sv-yosys"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "sv-netlist",
  "sv-semantic",
@@ -274,7 +274,7 @@ dependencies = [
 
 [[package]]
 name = "svlang"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "sv-aiger",
  "sv-btor2",
@@ -289,7 +289,7 @@ dependencies = [
 
 [[package]]
 name = "svlang-cli"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "svlang",
  "svlang-lint",
@@ -299,7 +299,7 @@ dependencies = [
 
 [[package]]
 name = "svlang-lint"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "regex",
  "svlang",
@@ -308,7 +308,7 @@ dependencies = [
 
 [[package]]
 name = "svlang-lsp"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "svlang",
  "svlang-lint",
@@ -316,14 +316,14 @@ dependencies = [
 
 [[package]]
 name = "svlang-model"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "svlang",
 ]
 
 [[package]]
 name = "svlang-py"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "pyo3",
  "svlang",
@@ -331,7 +331,7 @@ dependencies = [
 
 [[package]]
 name = "svlang-wasm"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "svlang",
 ]

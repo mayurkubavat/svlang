@@ -32,7 +32,7 @@ pub(crate) fn rules() -> Vec<Rule> {
     vec![
         Rule { id: "SV-DUP-001", name: "DuplicateMethodBody", category: "Maintainability", severity: Severity::Warning, profiles: SMELLS, guidelines: &["MG-7.1"], experimental: false, native: false, about: "Detects identical or copy-pasted subroutine method bodies across different classes. Duplicated code should be refactored into shared base classes or utilities.", check: Check::Mixed(duplicate_method_body::duplicate_body),
         },
-        Rule { id: "SV-ENC-001", name: "MutableObjectGetterLeak", category: "OOP", severity: Severity::Warning, profiles: METHODOLOGY, guidelines: &["MG-2.1"], experimental: false, native: false, about: "Disallows getter functions (get_*()) from returning direct references to mutable internal class object members. Returning mutable handles leaks encapsulation; return a clone or copy instead.", check: Check::Syntax(mutable_object_getter_leak::getter_leak),
+        Rule { id: "SV-ENC-001", name: "MutableObjectGetterLeak", category: "OOP", severity: Severity::Info, profiles: ADVISORY, guidelines: &["MG-2.1"], experimental: false, native: false, about: "Flags getter functions (get_*()) returning direct handles to mutable internal uvm_object or data-class properties.", check: Check::Syntax(mutable_object_getter_leak::getter_leak),
         },
         Rule { id: "SV-LSP-001", name: "LspConstraintContradiction", category: "OOP", severity: Severity::Error, profiles: METHODOLOGY, guidelines: &["MG-5.2"], experimental: false, native: false, about: "Disallows unconditionally disabling inherited constraints via '.constraint_mode(0)' in derived classes. Disabling inherited constraints breaks base class contracts and violates the Liskov Substitution Principle (LSP).", check: Check::Syntax(lsp_constraint_contradiction::lsp_constraint_mode),
         },
@@ -53,7 +53,7 @@ pub(crate) fn rules() -> Vec<Rule> {
         },
         Rule { id: "SV-OOP-008", name: "NonVirtualInterfaceInClass", category: "OOP", severity: Severity::Error, profiles: METHODOLOGY, guidelines: &["MG-2.2"], experimental: false, native: false, about: "Disallows declaring physical interface types inside classes without the 'virtual' keyword (IEEE 1800 § 25.9).", check: Check::Syntax(non_virtual_interface_in_class::non_virtual_interface),
         },
-        Rule { id: "SV-OOP-009", name: "EmptyVirtualMethodWithoutPure", category: "OOP", severity: Severity::Info, profiles: METHODOLOGY, guidelines: &["MG-5.2"], experimental: false, native: false, about: "Flags virtual methods defined with empty bodies instead of being declared 'pure virtual' in abstract base classes.", check: Check::Syntax(empty_virtual_method_without_pure::empty_virtual),
+        Rule { id: "SV-OOP-009", name: "EmptyVirtualMethodWithoutPure", category: "OOP", severity: Severity::Info, profiles: ADVISORY, guidelines: &["MG-5.2"], experimental: false, native: false, about: "Flags virtual methods defined with empty bodies instead of being declared 'pure virtual' in abstract base classes.", check: Check::Syntax(empty_virtual_method_without_pure::empty_virtual),
         },
         Rule { id: "SV-OOP-011", name: "DowncastWithoutDynamicCast", category: "OOP", severity: Severity::Error, profiles: METHODOLOGY, guidelines: &[], experimental: false, native: false, about: "Flags static casting syntax (e.g. DerivedClass'(base_handle)) applied to class objects. SystemVerilog requires dynamic casting via $cast() to verify runtime polymorphism.", check: Check::Mixed(downcast_without_dynamic_cast::downcast),
         },

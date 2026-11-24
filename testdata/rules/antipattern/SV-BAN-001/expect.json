@@ -3,10 +3,6 @@
     {
       "rule": "SV-BAN-001",
       "line": 9
-    },
-    {
-      "rule": "SV-BAN-001",
-      "line": 11
     }
   ]
 }

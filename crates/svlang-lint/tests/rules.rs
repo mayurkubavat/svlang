@@ -145,7 +145,7 @@ fn syntax_rules_batch_two() {
     ] {
         assert!(got.contains(&want), "{want} not in {got:?}");
     }
-    assert_eq!(got.iter().filter(|r| **r == "SV-BAN-001").count(), 2, "{got:?}");
+    assert_eq!(got.iter().filter(|r| **r == "SV-BAN-001").count(), 1, "{got:?}");
 }
 
 #[test]

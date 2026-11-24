@@ -2,7 +2,7 @@
   "name": "svlang",
   "displayName": "svlang — SystemVerilog & UVM",
   "description": "IEEE 1800-2023 SystemVerilog and UVM language server, semantic highlighting, RTL/signal tracing, and static linter (474 rules, quick fixes).",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "publisher": "svlang",
   "license": "Apache-2.0",
   "engines": {
@@ -52,11 +52,17 @@
             "type": "boolean",
             "default": true,
             "scope": "resource",
-            "markdownDescription": "Master switch for `svlang` lint diagnostics. When `false`, navigation, semantic highlighting, and RTL tracing remain active while lint diagnostics stay off."
+            "markdownDescription": "Master switch for `svlang` diagnostics. When `false`, navigation, semantic highlighting, and RTL tracing remain active while both compiler and lint diagnostics stay off."
+          },
+          "svlang.diagnostics.syntaxAndSemantics": {
+            "type": "boolean",
+            "default": true,
+            "scope": "resource",
+            "markdownDescription": "Report live IEEE 1800-2023 syntax and semantic compiler diagnostics (`SV-CMP-001`) even when automatic lint rules (`svlang.lint.trigger`) are `off`."
           },
           "svlang.lint.trigger": {
             "type": "string",
-            "default": "onType",
+            "default": "off",
             "scope": "resource",
             "enum": [
               "onType",
@@ -66,9 +72,9 @@
             "enumDescriptions": [
               "Lint automatically after typing pauses (250 ms debounce) and on save.",
               "Lint automatically only when files are opened or saved.",
-              "Disable automatic linting; run checks on demand via the Status Bar or `svlang: Lint Current File / Project Now`."
+              "Default (Mode 1): code browsing and IEEE 1800-2023 syntax/semantic checks stay active; static lint rules run on demand via the Status Bar or `svlang: Lint Current File / Project Now`."
             ],
-            "markdownDescription": "Controls when automatic lint checks run."
+            "markdownDescription": "Controls when automatic static lint rules run (code browsing and `svlang.diagnostics.syntaxAndSemantics` stay active when `off`)."
           },
           "svlang.lint.requireConfig": {
             "type": "boolean",

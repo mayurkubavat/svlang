@@ -578,3 +578,63 @@ fn lint_trigger_require_config_ignore_and_fix_all() {
     let _ = c.request("shutdown", "null");
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn mode1_syntax_diagnostics_keep_compiler_checks_with_lint_off() {
+    let dir = std::env::temp_dir().join(format!("svlang-lsp-mode1-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+
+    // Clean IEEE 1800-2023 SV file that intentionally violates static lint rules
+    // (legacy `reg` SV-BAN-001 + trailing space SV-STY-102 + blocking in clocked always SV-COR-001):
+    // in Mode 1 (`lintTrigger: "off"`, `syntaxDiagnostics: true`), 0 diagnostics should appear!
+    let clean_sv = "module mode1_demo(input logic clk, output logic q);\n  reg r;   \n  always_ff @(posedge clk) q = 1'b0;\nendmodule\n";
+    let file = dir.join("mode1_demo.sv");
+    std::fs::write(&file, clean_sv).unwrap();
+
+    let mut c = Client::start_with_opts(&dir, r#"{"lintTrigger":"off","syntaxDiagnostics":true,"preset":"all"}"#);
+    let open = format!(
+        r#"{{"textDocument":{{"uri":"file://{}","languageId":"systemverilog","version":1,"text":{}}}}}"#,
+        file.display(),
+        json_str(clean_sv)
+    );
+    c.notify("textDocument/didOpen", &open);
+    let d_clean = c.diagnostics(&file);
+    assert!(d_clean.contains(r#""diagnostics":[]"#), "Mode 1 must not emit lint rules on open: {d_clean}");
+    let st1 = c.request("svlang/status", "{}");
+    assert!(st1.contains(r#""state":"syntax""#), "{st1}");
+
+    // Introduce an IEEE 1800 semantic error (undeclared identifier `missing_sig` in a self-contained module):
+    // Mode 1 immediately reports `SV-CMP-001` with `source: "svlang"` while still suppressing lint rules!
+    let broken_sv =
+        "module mode1_demo(input logic clk, output logic q);\n  reg r;   \n  assign q = missing_sig;\nendmodule\n";
+    let change = format!(
+        r#"{{"textDocument":{{"uri":"file://{}","version":2}},"contentChanges":[{{"text":{}}}]}}"#,
+        file.display(),
+        json_str(broken_sv)
+    );
+    c.notify("textDocument/didChange", &change);
+    let d_broken = c.diagnostics(&file);
+    assert!(d_broken.contains(r#""code":"SV-CMP-001""#), "Mode 1 must report compiler diagnostics: {d_broken}");
+    assert!(d_broken.contains(r#""source":"svlang""#), "{d_broken}");
+    assert!(!d_broken.contains(r#""code":"SV-BAN-001""#), "{d_broken}");
+    assert!(!d_broken.contains(r#""code":"SV-STY-102""#), "{d_broken}");
+
+    // Fix the compiler error -> diagnostics clear back to [] while `svlang/lintNow` still runs all lint rules on demand!
+    let fix_change = format!(
+        r#"{{"textDocument":{{"uri":"file://{}","version":3}},"contentChanges":[{{"text":{}}}]}}"#,
+        file.display(),
+        json_str(clean_sv)
+    );
+    c.notify("textDocument/didChange", &fix_change);
+    let d_fixed = c.diagnostics(&file);
+    assert!(d_fixed.contains(r#""diagnostics":[]"#), "{d_fixed}");
+
+    let _ = c.request("svlang/lintNow", "{}");
+    let d_manual = c.diagnostics(&file);
+    assert!(d_manual.contains(r#""code":"SV-BAN-001""#), "Manual Lint Now must still run lint rules: {d_manual}");
+    assert!(d_manual.contains(r#""source":"svlang-lint""#), "{d_manual}");
+
+    let _ = c.request("shutdown", "null");
+    let _ = std::fs::remove_dir_all(&dir);
+}

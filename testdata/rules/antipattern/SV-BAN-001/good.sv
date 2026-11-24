@@ -1,9 +1,9 @@
 // Compliant Clean Test Case: SV-BAN-001 (LegacyRegWireInTestbench)
 `include "uvm_mock.svh"
 
-// Compliant placeholder - verified to produce 0 violations
-class compliant_legacyregwireintestbench extends uvm_object;
-    function new(string name = "compliant");
-        super.new(name);
-    endfunction
-endclass
+// IEEE 1800-2023 §6.6/§6.7: 'wire' is the standard net type for multi-driver,
+// inout, and continuous-assignment nets — never deprecated in favor of 'logic'.
+module compliant_nets_and_logic(inout wire pad_io);
+    wire [7:0] bus_net;
+    logic [7:0] state_q;
+endmodule

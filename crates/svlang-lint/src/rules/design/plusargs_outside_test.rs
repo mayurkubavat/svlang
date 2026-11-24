@@ -14,6 +14,12 @@ pub(crate) fn plusargs_outside_test(c: &Cst, s: &mut Sink) {
             continue;
         }
         let cls = &classes.list[i];
+        // Also exempt standalone/utility config & CLI classes (e.g. `dv_cfg_source`, `std_perf_cfg`, `cmdline_opts`)
+        // whose name marks them as configuration/CLI infrastructure rather than DUT/UVM hierarchy components.
+        let cname_low = cls.name.to_ascii_lowercase();
+        if ["cfg", "config", "arg", "cmd", "opt"].iter().any(|w| cname_low.contains(w)) {
+            continue;
+        }
         let g = crate::support::class_metrics::globals(c);
         for m in &cls.methods {
             let Some(body) = m.body else { continue };

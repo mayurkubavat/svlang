@@ -4,7 +4,24 @@ What changed in each release of the svlang crates (`svlang`, `sv-*`,
 `svlang-model`, `svlang-lint`, `svlang-lsp`, `svlang-cli`), `pysvlang`, and the
 `svlang.svlang` VS Code / Open VSX extension. They share one version number.
 
-## Unreleased
+## 0.5.2 (2026-11-23)
+
+### Editor & Language Server (`svlang-lsp`, `svlang.svlang`)
+
+- **Mode 1 Out-of-the-Box Default**: `svlang.lint.trigger` now defaults to `"off"` with new `svlang.diagnostics.syntaxAndSemantics: true`. Code browsing, semantic highlighting, `` `ifdef `` dimming, RTL/signal tracing, and live IEEE 1800-2023 syntax & semantic compiler checks (`SV-CMP-001`, `"source": "svlang"`) run automatically, while static lint rules run on demand via `svlang: Lint Current File / Project Now` or when `lint.trigger` is set to `"onSave"` / `"onType"`.
+- **Standalone Compiler Cascade Filtering**: Unconfigured editor buffers suppress missing-include and unresolved external `import` symbol cascades while keeping syntax errors and local semantic diagnostics.
+
+### Lint Rule Precision & Presets (`svlang-lint`)
+
+- **IEEE 1800-2023, AscentLint/RTL, & UVM Fixes (19 Rules)**:
+  - `SV-BAN-001`: Flags only legacy `reg` declarations; never flags active IEEE 1800 `wire` nets.
+  - `SV-DEP-003`: Exempts `#delay` clock generators (`always #5ns clk = ~clk;`) and multi-wait behavioral processes.
+  - `SV-TIM-002`: Flags only unitless nonzero `#delay` controls; never flags `always_ff @(posedge clk)`, `assert #0`, `#1step`, or explicit time literals (`#10ns`).
+  - `SV-ASC-001`: Uses IEEE 1800-2023 §7.8.6 default-return semantics, excludes fixed-size unpacked arrays, and recognizes `.exists(...)` guards.
+  - `SV-FSM-002` / `SV-FSM-003`: Requires a clocked `<=` state register with at least one transition edge so combinational enum decoders are never misclassified as deadlocked FSMs.
+  - `SV-TYP-001` & `SV-TYP-008`: Fixed swapped signed/unsigned message arguments, skipped `<error>` types, and exempted `$bits`, `$clog2`, `$countones`, `$size`, `.size()`/`.num()`/`.len()`, and non-negative `localparam`s.
+  - Refined `SV-PRF-010`, `SV-COR-005`, `SV-COR-020`, `SV-CON-011`, `UVM-CFG-006`, `SV-STR-001`, `SVA-RST-001`, `SV-ENC-001`, `SV-OOP-008`, `SV-OOP-012`, `SEC-LOG-001`, and `SV-MOD-001` (standalone `.svh`/`.vh` headers).
+- **Preset Reclassification**: Moved house-style/naming rules (`SV-STY-009`, `SV-NAM-001..003`, `SVA-ACT-001`, `SVA-LBL-001`, `SV-TYP-013`, `SV-PKG-001`) to `style` and opinionated checks (`SV-ASC-001`, `SV-PRF-006`, `SVA-CYC-001`, `SVA-RST-001`, `SV-STR-001`, `SV-ENC-001`, `SV-OOP-009`, `SV-RCE-001`) to `advisory`.
 
 ### Elaboration Fixes (`sv-semantic`)
 

@@ -6,12 +6,12 @@ IEEE 1800-2023 SystemVerilog and UVM language server, compiler-backed semantic h
 
 ## Quick Start (60 Seconds)
 
-1. **Open any `.sv`, `.svh`, `.v`, `.vh`, or `.f` file** — syntax & semantic highlighting, inactive `` `ifdef `` dimming, hover docs, completion, go-to-definition (`F12` / `Cmd+Click`), and live diagnostics start automatically with **zero external setup**.
+1. **Open any `.sv`, `.svh`, `.v`, `.vh`, or `.f` file** — compiler-backed semantic highlighting, inactive `` `ifdef `` dimming, hover docs, completion, go-to-definition (`F12` / `Cmd+Click`), and live **IEEE 1800-2023 syntax & semantic diagnostics** start automatically with **zero external setup**, while the 474 opinionated/methodology lint rules stay quiet until you want them.
 2. **Use the `svlang` Status Bar item** (bottom-right) — click `[SV] svlang` anytime to open the **Control Center**:
-   - **Lint Current File / Project Now** (on-demand check even when automatic linting is off)
-   - **Set Lint Trigger** (`On Type` / `On Save` / `Off`)
+   - **Lint Current File / Project Now** (run full static lint rules on demand)
+   - **Set Lint Trigger** (`Off` default / `On Save` / `On Type`)
    - **Switch Lint Preset** (`default`, `formal-ready`, `soundness`, `methodology`, `style`, `all`, …)
-   - **Set Preprocessor Defines** (live-updates `` `ifdef `` dimming and lint elaboration)
+   - **Set Preprocessor Defines** (live-updates `` `ifdef `` dimming and elaboration)
    - **Initialize Project Config** (`svlang lint --init` — auto-discovers `.f` filelists, `$UVM_HOME`, and naming conventions, writing `.svlang-lint/config.py`)
 3. **Trace RTL & UVM code**:
    - **Signal Drivers & Loads**: Right-click any signal, port, variable, or class field → **`svlang: Trace Signal Drivers & Loads`** (opens **Explorer → Signal Trace** separating **Drivers / Writes** from **Loads / Reads**).
@@ -57,11 +57,12 @@ IEEE 1800-2023 SystemVerilog and UVM language server, compiler-backed semantic h
 
 ### Settings Reference (`Settings → Extensions → svlang`)
 
-#### 1. Linting
+#### 1. Linting & Diagnostics
 | Setting | Default | Description |
 | :--- | :--- | :--- |
-| `svlang.enable` | `true` | Master switch for lint diagnostics (navigation & highlighting stay on when `false`) |
-| `svlang.lint.trigger` | `"onType"` | `"onType"` (250 ms debounce), `"onSave"`, or `"off"` (manual `Lint Now` only) |
+| `svlang.enable` | `true` | Master switch for diagnostics (navigation & highlighting stay on when `false`) |
+| `svlang.diagnostics.syntaxAndSemantics` | `true` | Live IEEE 1800-2023 syntax & semantic compiler checks even when `lint.trigger` is `"off"` |
+| `svlang.lint.trigger` | `"off"` | `"off"` (Mode 1: browsing + syntax/semantics; manual `Lint Now`), `"onSave"`, or `"onType"` |
 | `svlang.lint.requireConfig` | `false` | Only auto-lint workspaces with `.svlang-lint/config.py` (or `lint.configPath`) |
 | `svlang.lint.configPath` | `""` | Optional shared/global `config.py` path (`~` and `$VARS` expanded) |
 | `svlang.lint.configPreference` | `"filesystemFirst"` | `"filesystemFirst"` (repo config wins) or `"editorFirst"` (VS Code settings win) |

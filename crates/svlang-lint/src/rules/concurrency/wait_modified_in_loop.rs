@@ -63,6 +63,14 @@ pub(crate) fn wait_in_loop(c: &Cst, s: &mut Sink) {
                 modified.extend(identifier_names(c, lhs));
             } else if let Some(o) = is_incdec(c, x) {
                 modified.extend(identifier_names(c, o));
+            } else if c.kind(x) == Declarator && c.tok(x, "=").is_some() {
+                // Local automatic variable re-initialized each loop iteration (e.g. `int unsigned g = m_gen;`).
+                if let Some(nm) = c.tree.child(x, Name) {
+                    let s = c.tree.bare_text(nm);
+                    if !s.is_empty() {
+                        modified.insert(s);
+                    }
+                }
             }
         }
         for w in waits {

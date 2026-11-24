@@ -830,6 +830,9 @@ fn apply_editor_json(ed: &mut svlang_lint::EditorOptions, j: &Json) {
     if let Some(req) = j.get("requireConfig").as_bool() {
         ed.require_config = req;
     }
+    if let Some(sd) = j.get("syntaxDiagnostics").as_bool() {
+        ed.syntax_diagnostics = sd;
+    }
     if let Some(sel) = str_list(j, "select") {
         ed.select = sel;
     }

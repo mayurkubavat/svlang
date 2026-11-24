@@ -8,21 +8,21 @@
 | :--- | ---: |
 | [UVM](#uvm) | 102 |
 | [OOP](#oop) | 20 |
-| [Architecture](#architecture) | 16 |
+| [Architecture](#architecture) | 14 |
 | [Correctness](#correctness) | 44 |
 | [Concurrency](#concurrency) | 31 |
 | [Randomization](#randomization) | 35 |
 | [Coverage](#coverage) | 20 |
 | [SVA](#sva) | 19 |
-| [Types](#types) | 7 |
+| [Types](#types) | 6 |
 | [DeadCode](#deadcode) | 13 |
 | [Performance](#performance) | 17 |
 | [Portability](#portability) | 6 |
 | [Security](#security) | 2 |
 | [DPI](#dpi) | 2 |
 | [RTL_TB_Bridge](#rtl-tb-bridge) | 1 |
-| [Deprecated](#deprecated) | 16 |
-| [Style](#style) | 53 |
+| [Deprecated](#deprecated) | 15 |
+| [Style](#style) | 57 |
 | [Naming](#naming) | 4 |
 | [Maintainability](#maintainability) | 33 |
 | [Advisory](#advisory) | 33 |
@@ -138,7 +138,7 @@
 
 | ID | Name | Severity | Profiles | Guidelines | Description |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| [`SV-ENC-001`](../../testdata/rules/oop/SV-ENC-001) | MutableObjectGetterLeak | WARNING | methodology | MG-2.1 | Disallows getter functions (get_*()) from returning direct references to mutable internal class object members. Returning mutable handles leaks encapsulation; return a clone or copy instead. |
+| [`SV-ENC-001`](../../testdata/rules/oop/SV-ENC-001) | MutableObjectGetterLeak | INFO | advisory | MG-2.1 | Flags getter functions (get_*()) returning direct handles to mutable internal uvm_object or data-class properties. |
 | [`SV-LSP-001`](../../testdata/rules/oop/SV-LSP-001) | LspConstraintContradiction | ERROR | methodology | MG-5.2 | Disallows unconditionally disabling inherited constraints via '.constraint_mode(0)' in derived classes. Disabling inherited constraints breaks base class contracts and violates the Liskov Substitution Principle (LSP). |
 | [`SV-OCP-001`](../../testdata/rules/oop/SV-OCP-001) | CastTypeInspectionLadder | WARNING | methodology | MG-5.2 | Disallows cascading $cast ladders (3+ branches) inspecting object types. Type inspection ladders violate the Open-Closed Principle (OCP); use virtual polymorphic methods instead. |
 | [`SV-OOP-001`](../../testdata/rules/oop/SV-OOP-001) | NonVirtualMethodOverride | WARNING | methodology | MG-5.2 | Overriding a non-virtual method in a derived class breaks polymorphism when accessed via a base class handle. |
@@ -148,7 +148,7 @@
 | [`SV-OOP-005`](../../testdata/rules/oop/SV-OOP-005) | VirtualCallInConstructor | WARNING | methodology |  | Never call virtual methods inside constructors. In SystemVerilog, base constructors execute before child members are initialized, resulting in child methods operating on uninitialized data. |
 | [`SV-OOP-006`](../../testdata/rules/oop/SV-OOP-006) | ClassShallowCopyAliasing | ERROR | methodology |  | Using shallow copy (new other_obj) on classes containing nested object handles creates shared references across independent transactions. Use deep copy or clone() instead. |
 | [`SV-OOP-008`](../../testdata/rules/oop/SV-OOP-008) | NonVirtualInterfaceInClass | ERROR | methodology | MG-2.2 | Disallows declaring physical interface types inside classes without the 'virtual' keyword (IEEE 1800 § 25.9). |
-| [`SV-OOP-009`](../../testdata/rules/oop/SV-OOP-009) | EmptyVirtualMethodWithoutPure | INFO | methodology | MG-5.2 | Flags virtual methods defined with empty bodies instead of being declared 'pure virtual' in abstract base classes. |
+| [`SV-OOP-009`](../../testdata/rules/oop/SV-OOP-009) | EmptyVirtualMethodWithoutPure | INFO | advisory | MG-5.2 | Flags virtual methods defined with empty bodies instead of being declared 'pure virtual' in abstract base classes. |
 | [`SV-OOP-011`](../../testdata/rules/oop/SV-OOP-011) | DowncastWithoutDynamicCast | ERROR | methodology |  | Flags static casting syntax (e.g. DerivedClass'(base_handle)) applied to class objects. SystemVerilog requires dynamic casting via $cast() to verify runtime polymorphism. |
 | [`SV-OOP-012`](../../testdata/rules/oop/SV-OOP-012) | ChainedAssignmentAliasing | WARNING | methodology |  | Disallows chained assignment expressions (e.g. a = b = c;). Chained assignments create dangerous reference aliasing across class handles. |
 | [`SV-OOP-013`](../../testdata/rules/oop/SV-OOP-013) | AbstractClassInstantiation | ERROR | methodology |  | Disallows direct instantiation of abstract (virtual) classes via 'new()'. Only concrete derived classes can be instantiated. |
@@ -166,11 +166,9 @@
 | [`SV-DSN-001`](../../testdata/rules/design/SV-DSN-001) | TypeSwitchByName | WARNING | methodology | MG-5.2 | Flags branching on get_type_name() compared with string literals instead of virtual dispatch (Sonar 'instanceof chains', open/closed principle). |
 | [`SV-DSN-008`](../../testdata/rules/design/SV-DSN-008) | MutablePackageState | WARNING | methodology | MG-2.3 | Flags non-const variables declared in packages. They are shared by every env instance and test in a run (clang-tidy cppcoreguidelines-avoid-non-const-global-variables). |
 | [`SV-OOP-007`](../../testdata/rules/oop/SV-OOP-007) | StaticMemberInUvmComponent | ERROR | methodology | MG-2.3 | Non-const static variable declared in a uvm_component subclass is shared across all instances simulation-wide. In multi-channel or multi-agent environments, instances will overwrite each other's state. |
-| [`SV-PKG-001`](../../testdata/rules/methodology/SV-PKG-001) | FileClassNameMismatch | WARNING | methodology | MG-1.2 | Flags `include'd class files that define more than one top-level class, or whose one class is not named after the file (my_drv.svh holding my_driver). With one class per file, named after it, a class can be found from its name and reused on its own (MG-1.2). |
 | [`SV-PKG-002`](../../testdata/rules/methodology/SV-PKG-002) | WildcardImportOutsidePackage | WARNING | methodology | MG-1.3 | Flags 'import pkg::*' at file ($unit) scope, and inside files that are `include'd into a package. Both leak names into code that never asked for them and hide where a dependency comes from (information hiding, MG-1.3). |
 | [`SV-PKG-003`](../../testdata/rules/methodology/SV-PKG-003) | UnusedPackageImport | WARNING | methodology | MG-1.3 | Flags package imports that supply no name used in their scope. An unused import is a false dependency: the package is compiled first, changes to it look relevant, and names it exports can collide with local ones (common reuse principle, MG-1.3). |
 | [`SV-PKG-004`](../../testdata/rules/methodology/SV-PKG-004) | PackageLayerInversion | WARNING | methodology | MG-1.1 | Flags a package that imports a package from a higher testbench layer, such as an agent package importing an env or test package. The lower package can then not be compiled or reused without the higher one (acyclic and stable dependencies, MG-1.1). UVM-ARC-001 checks the same order between classes. |
-| [`SV-STY-009`](../../testdata/rules/oop/SV-STY-009) | ExternMethodThreshold | WARNING | methodology | MG-9.1 | Enforces 'extern' declaration for class methods exceeding N lines of code (default: 5 lines). Keeps class declarations concise and readable as clean interface definitions. |
 | [`UVM-ARC-001`](../../testdata/rules/design/UVM-ARC-001) | LayerDependency | WARNING | methodology | MG-1.1 | Flags classes that depend on a higher testbench layer (item < sequence < agent < env < test), such as a sequence that references a scoreboard or an agent that references the env (ArchUnit layer rules). |
 | [`UVM-ARC-002`](../../testdata/rules/design/UVM-ARC-002) | HierarchyReachThrough | WARNING | methodology | MG-2.1 | Flags expressions that reach through three or more component handles (env.agt.drv.vif), outside connect_phase wiring (PMD LawOfDemeter, Fowler 'message chains'). |
 | [`UVM-ARC-003`](../../testdata/rules/design/UVM-ARC-003) | FileIncludedInMultiplePackages | ERROR | methodology | MG-1.3 | Flags a file whose class definitions are `include'd into more than one package. Each package gets its own, incompatible type with the same name (C++ one-definition rule). |
@@ -225,7 +223,7 @@
 | [`SV-RTL-003`](../../testdata/rules/correctness/SV-RTL-003) | CombinationalClockOrResetGate | WARNING | soundness |  | Flags always_ff blocks clocked by a locally driven combinational expression rather than a primary clock or integrated clock-gating cell. |
 | [`SV-RTL-004`](../../testdata/rules/correctness/SV-RTL-004) | PortWidthMismatch | WARNING | soundness |  | Flags module and interface instance port connections whose elaborated packed bit-width differs from the formal port's bit-width. |
 | [`SV-RTL-005`](../../testdata/rules/correctness/SV-RTL-005) | InferredLatchInComb | WARNING | soundness |  | Flags signals or bit-slices driven inside always_comb that are not assigned on every symbolic execution path, inferring unintended level-sensitive latches. |
-| [`SV-STR-001`](../../testdata/rules/safety/SV-STR-001) | StreamingConcatenationSizeMismatch | WARNING | soundness |  | Disallows streaming concatenation operators ({>> { ... }} / {<< { ... }}) without explicit slice size. Unbounded slice streaming leads to silent truncation and byte alignment bugs per IEEE 1800 § 11.4.14. |
+| [`SV-STR-001`](../../testdata/rules/safety/SV-STR-001) | StreamingConcatenationSizeMismatch | INFO | advisory |  | Flags streaming concatenation operators ({<< { ... }} / {>> { ... }}) omitting an explicit slice size (IEEE 1800 § 11.4.14.2). |
 | [`SV-TIM-001`](../../testdata/rules/correctness/SV-TIM-001) | TimescalePrecisionMismatch | ERROR | soundness |  | Flags `timescale directives where the time precision is coarser than the time unit (IEEE 1800 § 3.14.2). |
 | `SV-TIM-002` | MissingTimescaleInModule | WARNING | soundness |  | Flags files and modules containing procedural delays (#) that lack an explicit `timescale or timeunit declaration. |
 
@@ -258,7 +256,7 @@
 | [`SV-FOR-001`](../../testdata/rules/concurrency/SV-FOR-001) | ForkInsideFunction | WARNING | soundness |  | Disallows spawning concurrent threads with 'fork ... join/join_any/join_none' inside functions. Functions must remain synchronous and instantaneous per IEEE 1800 § 13.4.4. |
 | [`SV-INT-001`](../../testdata/rules/rtl_tb_bridge/SV-INT-001) | BlockingAssignmentToInterface | ERROR | soundness |  | Disallows blocking assignments ('=') when driving virtual interface or clocking block signals. Clocking blocks and synchronous interface signals must be driven with non-blocking drives ('<=') per IEEE 1800 § 14.16. |
 | [`SV-IPC-001`](../../testdata/rules/concurrency/SV-IPC-001) | TryPutIgnoredReturn | WARNING | soundness | MG-8.1 | Non-blocking IPC routines (try_put, try_get, try_peek) return a boolean status. Ignoring the return value silently drops transactions when queues are full or empty. |
-| [`SV-RCE-001`](../../testdata/rules/concurrency/SV-RCE-001) | ZeroDelayEventTrigger | WARNING | soundness |  | Flags blocking event triggers ('-> event') which cause zero-delay simulation race conditions. Recommends non-blocking event triggers ('->> event') or persistent event evaluation ('wait(event.triggered)'). |
+| [`SV-RCE-001`](../../testdata/rules/concurrency/SV-RCE-001) | ZeroDelayEventTrigger | WARNING | advisory |  | Flags blocking event triggers ('-> event') where non-blocking triggers ('->> event') or 'wait(event.triggered)' avoid zero-delay active-region races. |
 | `SV-RCE-002` | ClockedBlockingRace | WARNING | soundness |  | A variable written with `=` in one edge-triggered always block and read by another on the same edge: a race (IEEE 1800 4.7). |
 | [`SV-RSC-001`](../../testdata/rules/concurrency/SV-RSC-001) | LockNotReleased | ERROR | soundness |  | Flags semaphore get()/try_get() and sequencer lock()/grab() that some path leaves without the matching put()/unlock()/ungrab(), such as an early return (Sonar S2222). |
 | [`SV-THR-001`](../../testdata/rules/concurrency/SV-THR-001) | ForkLoopVariableShared | ERROR | soundness |  | Spawning background threads with fork..join_none inside loops without copying the loop variable to an automatic local variable causes all threads to see the final loop index. |
@@ -345,13 +343,13 @@
 | [`SV-SVA-004`](../../testdata/rules/sva/SV-SVA-004) | NonConsecutiveRepetitionZeroBound | ERROR | soundness |  | Non-consecutive repetition operators ([= ...] and [-> ...]) must specify a minimum bound >= 1. |
 | [`SV-SVA-005`](../../testdata/rules/sva/SV-SVA-005) | MultiClockConcurrentAssertionDomain | ERROR | soundness |  | Disallows concurrent assertions mixing multiple asynchronous clock domains without formal CDC qualification. |
 | [`SV-SVA-007`](../../testdata/rules/sva/SV-SVA-007) | ImplicationInCoverProperty | WARNING | soundness |  | Flags cover property statements that use implication ('\|->' or '\|=>'), which succeed vacuously whenever the antecedent is false instead of covering sequence completion. |
-| [`SVA-ACT-001`](../../testdata/rules/sva/SVA-ACT-001) | AssertWithoutElse | WARNING | soundness | MG-8.1 | Immediate and concurrent assertions must include an 'else' action block (e.g. 'else `uvm_error(...)'). Assertions without action blocks produce unhelpful one-line messages and cannot integrate with UVM reporting. |
+| [`SVA-ACT-001`](../../testdata/rules/sva/SVA-ACT-001) | AssertWithoutElse | WARNING | style | MG-8.1 | Immediate and concurrent assertions must include an 'else' action block (e.g. 'else `uvm_error(...)'). Assertions without action blocks produce unhelpful one-line messages and cannot integrate with UVM reporting. |
 | [`SVA-ACT-002`](../../testdata/rules/sva/SVA-ACT-002) | TimeInAssertionAction | ERROR | soundness |  | Action blocks of immediate and concurrent assertions must not consume simulation time (# delays, @ event controls, or wait statements) per IEEE 1800 § 16. |
 | [`SVA-ACT-003`](../../testdata/rules/sva/SVA-ACT-003) | SideEffectInAssertionAction | WARNING | soundness |  | Flags assignments, increments and other writes inside the pass or fail action of an immediate or concurrent assertion. Reporting calls are fine; state changes vanish when assertions are disabled. |
 | [`SVA-CTX-001`](../../testdata/rules/sva/SVA-CTX-001) | ConcurrentAssertInFunction | ERROR | soundness |  | Disallow concurrent assertions ('assert/assume/cover property') inside functions. Functions execute in zero simulation time and lack clocking contexts required by SVA semantics. |
-| [`SVA-CYC-001`](../../testdata/rules/sva/SVA-CYC-001) | SvaUnboundedDelay | WARNING | soundness |  | Disallow unbounded cycle delays (##[1:$]) in SVA sequences. Unbounded delays cause simulator memory thread leaks and formal verification state-space explosions. |
-| [`SVA-LBL-001`](../../testdata/rules/sva/SVA-LBL-001) | UnlabeledAssertion | WARNING | soundness |  | Immediate and concurrent assertions must declare an explicit label prefix (e.g. 'check_lbl: assert ...'). Lacking labels makes regression failure triage, ticket routing, and assertion control commands difficult. |
-| [`SVA-RST-001`](../../testdata/rules/sva/SVA-RST-001) | DisableIffReset | WARNING | soundness |  | Concurrent assertions and property declarations must include a 'disable iff (!rst_n)' clause to gate checking during power-on reset and warm resets, avoiding false-failure storms. |
+| [`SVA-CYC-001`](../../testdata/rules/sva/SVA-CYC-001) | SvaUnboundedDelay | WARNING | advisory |  | Flags unbounded cycle delays (##[1:$]) in SVA sequences where bounded delays improve simulation memory use and formal convergence. |
+| [`SVA-LBL-001`](../../testdata/rules/sva/SVA-LBL-001) | UnlabeledAssertion | WARNING | style |  | Immediate and concurrent assertions must declare an explicit label prefix (e.g. 'check_lbl: assert ...'). Lacking labels makes regression failure triage, ticket routing, and assertion control commands difficult. |
+| [`SVA-RST-001`](../../testdata/rules/sva/SVA-RST-001) | DisableIffReset | WARNING | advisory |  | Concurrent assertions and property declarations should include a 'disable iff (...)' reset guard (unless covered by default disable iff or the paired property/assertion). |
 | [`SVA-VAC-001`](../../testdata/rules/sva/SVA-VAC-001) | SvaVacuousAntecedent | ERROR | soundness |  | Detects constant-false antecedents in assertion implications (0 \|-> ...). False antecedents cause vacuous passes, giving a false 100% pass metric while never verifying DUT behavior. |
 
 ## Types
@@ -364,7 +362,6 @@
 | [`SV-TYP-010`](../../testdata/rules/types/SV-TYP-010) | TaskWithNonVoidReturnType | ERROR | soundness |  | Disallows declaring tasks with explicit non-void return types. |
 | [`SV-TYP-011`](../../testdata/rules/types/SV-TYP-011) | OutOfDomainEnumCast | WARNING | soundness |  | Flags static casts of constant integer literals into an enum type when the literal does not match any declared enumerator value. |
 | [`SV-TYP-012`](../../testdata/rules/types/SV-TYP-012) | UnsignedLoopDowncountHazard | ERROR | soundness |  | Flags for-loops whose unsigned loop control variable is tested with '>= 0' while decrementing, causing infinite wrap-around execution. |
-| [`SV-TYP-013`](../../testdata/rules/types/SV-TYP-013) | StructPatternFieldOrderMismatch | WARNING | soundness |  | Flags named struct assignment patterns whose explicit field keys appear out of declared struct member order or omit fields without a default: key. |
 
 ## DeadCode
 
@@ -388,7 +385,7 @@
 
 | ID | Name | Severity | Profiles | Guidelines | Description |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| [`SV-ASC-001`](../../testdata/rules/correctness/SV-ASC-001) | AssociativeArrayMutatingRead | WARNING | performance |  | Detects direct read lookups on associative arrays in expressions without checking exists(). In SystemVerilog (IEEE 1800 § 7.8.1), reading a missing key silently allocates and inserts it with a default value. |
+| [`SV-ASC-001`](../../testdata/rules/correctness/SV-ASC-001) | AssociativeArrayMutatingRead | INFO | advisory |  | Flags unguarded associative-array read lookups in relational comparisons without an exists() check (IEEE 1800 § 7.8.6). |
 | [`SV-LOC-001`](../../testdata/rules/correctness/SV-LOC-001) | ArrayLocatorEmptyQueueDeref | ERROR | performance |  | Disallows immediate element dereferencing on array locator methods (e.g., q.find()[0]). Locator methods return an unpacked queue that may be empty, causing out-of-bounds runtime errors (IEEE 1800 § 7.12.1). |
 | [`SV-OOP-010`](../../testdata/rules/performance/SV-OOP-010) | ClassInstantiationInLoop | WARNING | performance |  | Disallows direct class instantiation via new() inside simulation loops to prevent heap contention and memory allocation overhead. |
 | [`SV-PRF-001`](../../testdata/rules/performance/SV-PRF-001) | PassArrayByValue | WARNING | performance |  | Passing dynamic arrays, queues, associative arrays, unpacked arrays, or unpacked structs by value (input) causes expensive memory duplication on every call. Use 'const ref' or 'ref' instead. |
@@ -396,7 +393,7 @@
 | [`SV-PRF-003`](../../testdata/rules/performance/SV-PRF-003) | DynArrayIncrementalResizeInLoop | WARNING | performance |  | Growing dynamic arrays incrementally inside loops with new[arr.size()+1](arr) causes O(N^2) memory reallocation bottlenecks. Pre-allocate with new[N] or use SystemVerilog queues instead. |
 | [`SV-PRF-004`](../../testdata/rules/performance/SV-PRF-004) | ProceduralZeroDelay | WARNING | performance |  | Procedural delay #0 reschedules execution into the Inactive region. Repeated #0 rescheduling causes delta-cycle thrashing and degrades simulation throughput. |
 | [`SV-PRF-005`](../../testdata/rules/performance/SV-PRF-005) | UnshieldedVerbosityFormatEval | WARNING | performance |  | Calling $sformatf inside uvm_info/warning without checking uvm_report_enabled formats strings even when messages are discarded by verbosity. |
-| [`SV-PRF-006`](../../testdata/rules/performance/SV-PRF-006) | StringKeyAssociativeArray | WARNING | performance |  | Detects associative arrays indexed by 'string'. String keys incur hash calculation and dynamic string comparisons on every lookup and insert, degrading simulation throughput. |
+| [`SV-PRF-006`](../../testdata/rules/performance/SV-PRF-006) | StringKeyAssociativeArray | WARNING | advisory |  | Detects associative arrays indexed by 'string'. String keys incur hash calculation and dynamic string comparisons on every lookup and insert, degrading simulation throughput in hot paths. |
 | [`SV-PRF-007`](../../testdata/rules/performance/SV-PRF-007) | QueueConcatAppend | WARNING | performance |  | Disallow queue concatenation ('q = {q, x}' or 'q = {x, q}'). Concatenation reallocates memory on every append ($O(N^2)$ in loops); use push_back() or push_front() for amortized $O(1)$ performance. |
 | [`SV-PRF-008`](../../testdata/rules/performance/SV-PRF-008) | QueueSlicePopFirst | WARNING | performance |  | Disallow queue slicing ('q = q[1:$]') to drop head elements. Queue slicing duplicates all remaining elements into new memory; use pop_front() for in-place $O(1)$ head-pointer advance. |
 | [`SV-PRF-009`](../../testdata/rules/performance/SV-PRF-009) | NbaOnClassProperty | WARNING | performance |  | Disallow non-blocking assignments ('<=') on class properties. For heap-allocated class instances, NBAs force the simulator kernel to create dynamic event descriptors in the NBA region of the event wheel. Use blocking assignment ('='). |
@@ -421,7 +418,7 @@
 
 | ID | Name | Severity | Profiles | Guidelines | Description |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| [`SEC-LOG-001`](../../testdata/rules/security/SEC-LOG-001) | PlaintextKeyInLogs | WARNING | soundness, security |  | Detects plaintext logging of sensitive cryptographic assets (keys, seeds, secrets) via $sformatf/$display. Logging secrets compromises hardware security and violates ISO/SAE 21434 regression standards. |
+| [`SEC-LOG-001`](../../testdata/rules/security/SEC-LOG-001) | PlaintextKeyInLogs | WARNING | security |  | Detects plaintext logging of sensitive cryptographic assets (keys, secrets, passwords) via $sformatf/$display. Logging secrets compromises hardware security and violates ISO/SAE 21434 regression standards. |
 | [`SV-SYS-001`](../../testdata/rules/security/SV-SYS-001) | UncheckedFopen | WARNING | soundness, security | MG-8.1 | Flags unchecked $fopen return descriptors and discarded $fopen calls. File operations must check whether the descriptor is valid before performing file I/O. |
 
 ## DPI
@@ -441,10 +438,9 @@
 
 | ID | Name | Severity | Profiles | Guidelines | Description |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| [`SV-BAN-001`](../../testdata/rules/antipattern/SV-BAN-001) | LegacyRegWireInTestbench | INFO | methodology | MG-6.3 | Discourages legacy 'reg' and 'wire' keywords in SystemVerilog testbenches in favor of 'logic'. |
 | [`SV-DEP-001`](../../testdata/rules/deprecated/SV-DEP-001) | ProgramBlockDeprecation | ERROR | methodology | MG-6.3 | Disallow the obsolete SystemVerilog 'program' block. Modern verification architectures mandate 'module' with clocking blocks to prevent premature simulation termination. |
 | [`SV-DEP-002`](../../testdata/rules/deprecated/SV-DEP-002) | DefparamDeprecation | ERROR | methodology | MG-6.3 | Disallow 'defparam' statements. Parameter overrides must be specified directly on instance headers. |
-| [`SV-DEP-003`](../../testdata/rules/deprecated/SV-DEP-003) | LegacyAlwaysBlock | WARNING | methodology | MG-6.3 | Disallow untyped 'always' blocks. Enforces IEEE 1800 intent-specific blocks: always_comb, always_ff, or always_latch. |
+| [`SV-DEP-003`](../../testdata/rules/deprecated/SV-DEP-003) | LegacyAlwaysBlock | WARNING | methodology | MG-6.3 | Flags RTL sensitivity-list 'always @(...)' blocks that should use IEEE 1800 always_comb, always_ff, or always_latch (exempting testbench #delay clock generators and multi-wait processes). |
 | [`SV-DEP-004`](../../testdata/rules/deprecated/SV-DEP-004) | RandomSystemFunction | WARNING | methodology | MG-6.3 | Disallow legacy Verilog '$random'. Replaced by '$urandom' and '$urandom_range' in IEEE 1800. |
 | [`SV-DEP-005`](../../testdata/rules/deprecated/SV-DEP-005) | ProceduralContinuousAssign | ERROR | methodology | MG-6.3 | Disallow procedural 'assign' and 'deassign' statements. Procedural continuous assignments are non-synthesizable and induce simulation race conditions. |
 | [`SV-DEP-006`](../../testdata/rules/deprecated/SV-DEP-006) | NonAnsiPortList | INFO | methodology | MG-6.3 | Disallow obsolete non-ANSI port list declarations. Enforces modern ANSI-style inline port lists. |
@@ -462,6 +458,7 @@
 
 | ID | Name | Severity | Profiles | Guidelines | Description |
 | :--- | :--- | :--- | :--- | :--- | :--- |
+| [`SV-BAN-001`](../../testdata/rules/antipattern/SV-BAN-001) | LegacyRegWireInTestbench | INFO | methodology, style | MG-6.3 | Discourages legacy Verilog-1995 'reg' variable declarations in favor of IEEE 1800 'logic' (leaving 'wire' nets intact). |
 | [`SV-NAM-005`](../../testdata/rules/style/SV-NAM-005) | UvmClassTypeSuffix | WARNING | style |  | Enforces standard verification naming suffix conventions for classes extending UVM base components (e.g. _seq, _item, _driver, _monitor, _scoreboard, _env). |
 | `SV-NAM-100` | ConfigurableNamingEngine | WARNING | style |  | Parameterizable naming convention engine validating regex, prefix, suffix, and casing conventions across packages, interfaces, UVM classes, covergroups, and constraints. |
 | `SV-NAM-101` | PackageNaming | WARNING | style |  | Packages should end with '_pkg' for clean namespace identification. (reported by `SV-NAM-100`) |
@@ -476,6 +473,7 @@
 | `SV-NAM-110` | TypedefEnumNaming | WARNING | style |  | Enum typedefs should end with '_e' suffix. (reported by `SV-NAM-100`) |
 | `SV-NAM-111` | TypedefNaming | WARNING | style |  | User-defined typedefs should end with '_t' suffix. (reported by `SV-NAM-100`) |
 | `SV-NAM-112` | ConstraintNaming | WARNING | style |  | Class constraint blocks should end with '_c' suffix. (reported by `SV-NAM-100`) |
+| [`SV-PKG-001`](../../testdata/rules/methodology/SV-PKG-001) | FileClassNameMismatch | WARNING | style | MG-1.2 | Flags `include'd class files that define more than one top-level class, or whose one class is not named after the file (my_drv.svh holding my_driver). With one class per file, named after it, a class can be found from its name and reused on its own (MG-1.2). |
 | [`SV-STY-001`](../../testdata/rules/style/SV-STY-001) | ClassMemberPrefix | INFO | style |  | Enforces that member properties of uvm_component classes begin with 'm_' prefix to distinguish local member state from arguments and parameters. |
 | [`SV-STY-002`](../../testdata/rules/style/SV-STY-002) | MacroTrailingSemicolon | WARNING | style |  | Flags unnecessary semicolons following `uvm_* macro invocations that create empty statements in declarative or procedural scopes. |
 | [`SV-STY-003`](../../testdata/rules/style/SV-STY-003) | TodoCommentTracker | INFO | style |  | Tracks unresolved TODO, FIXME, ICEBOX, HACK, and XXX comment markers across the codebase. Ensures temporary developer placeholders are addressed before tape-out or milestone delivery. |
@@ -484,6 +482,7 @@
 | [`SV-STY-006`](../../testdata/rules/style/SV-STY-006) | MismatchedEndLabel | WARNING | style |  | Flags mismatched end labels on functions, tasks, and classes (e.g., function void foo(); ... endfunction : bar). Prevents scope delimiter confusion and copy-paste errors. |
 | [`SV-STY-007`](../../testdata/rules/documentation/SV-STY-007) | MethodBannerStyle | INFO | style |  | Standardizes method separator pre-banners. Enforces 70–80 character uniform dashed separator lines and flags ragged or arbitrary-width comment separators. |
 | [`SV-STY-008`](../../testdata/rules/documentation/SV-STY-008) | SectionHeaderBanner | INFO | style |  | Standardizes major section divider banners to uniform 70–80 character widths. Prevents ragged ASCII banners across verification packages and testbench files. |
+| [`SV-STY-009`](../../testdata/rules/oop/SV-STY-009) | ExternMethodThreshold | WARNING | style | MG-9.1 | Enforces 'extern' declaration for class methods exceeding N lines of code (default: 5 lines). Keeps class declarations concise and readable as clean interface definitions. |
 | [`SV-STY-010`](../../testdata/rules/safety/SV-STY-010) | ExplicitLiteralWidth | WARNING | style |  | Disallow unsized integer and numeric literals without explicit bit-width declarations. Prevents silent 32-bit zero-extension and sign extension bugs. |
 | [`SV-STY-011`](../../testdata/rules/style/SV-STY-011) | OneStatementPerLine | WARNING | style |  | Prohibit multiple procedural statements on the same line separated by semicolons. Enforces clean formatting and deterministic single-stepping in simulation debuggers. |
 | [`SV-STY-012`](../../testdata/rules/style/SV-STY-012) | SpaceKeywordParen | INFO | style |  | Requires a single space between control keywords (if, for, foreach, while, case) and opening parenthesis. Enforces common SystemVerilog code formatting guidelines. |
@@ -503,6 +502,7 @@
 | `SV-STY-104` | MatchingEndLabel | WARNING | style |  | Blocks, routines and classes carry an end label that matches their name (style.mandatory_matching_end_label). (reported by `SV-STY-100`) |
 | `SV-STY-105` | FileMatchesClassName | WARNING | style |  | A file's base name matches the top-level class it defines. (reported by `SV-STY-100`) |
 | `SV-STY-106` | FileHeader | WARNING | style |  | Files start with a header matching style.file_header_pattern (style.require_file_header). (reported by `SV-STY-100`) |
+| [`SV-TYP-013`](../../testdata/rules/types/SV-TYP-013) | StructPatternFieldOrderMismatch | WARNING | style |  | Flags named struct assignment patterns whose explicit field keys appear out of declared struct member order or omit fields without a default: key. |
 | `UVM-NAM-101` | UvmDriverNaming | WARNING | style |  | UVM driver components must end with '_driver' or '_drv'. (reported by `SV-NAM-100`) |
 | `UVM-NAM-102` | UvmMonitorNaming | WARNING | style |  | UVM monitor components must end with '_monitor' or '_mon'. (reported by `SV-NAM-100`) |
 | `UVM-NAM-103` | UvmSequencerNaming | WARNING | style |  | UVM sequencers must end with '_sequencer' or '_sqr'. (reported by `SV-NAM-100`) |
@@ -520,9 +520,9 @@
 
 | ID | Name | Severity | Profiles | Guidelines | Description |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| [`SV-NAM-001`](../../testdata/rules/naming/SV-NAM-001) | UvmComponentNamingConvention | WARNING | soundness |  | Enforces standard naming conventions for UVM components: classes derived from uvm_driver must end with '_driver', uvm_monitor with '_monitor', uvm_agent with '_agent', uvm_env with '_env', and uvm_test with '_test'. |
-| [`SV-NAM-002`](../../testdata/rules/naming/SV-NAM-002) | PackageNamingConvention | WARNING | soundness |  | Enforces that package identifiers end with '_pkg' (e.g., 'axi_pkg') to standardize namespaces. |
-| [`SV-NAM-003`](../../testdata/rules/naming/SV-NAM-003) | InterfaceNamingConvention | WARNING | soundness |  | Enforces that interface identifiers end with '_if' (e.g., 'axi_if') to standardize interface definitions. |
+| [`SV-NAM-001`](../../testdata/rules/naming/SV-NAM-001) | UvmComponentNamingConvention | WARNING | style |  | Enforces standard naming conventions for UVM components: classes derived from uvm_driver must end with '_driver', uvm_monitor with '_monitor', uvm_agent with '_agent', uvm_env with '_env', and uvm_test with '_test'. |
+| [`SV-NAM-002`](../../testdata/rules/naming/SV-NAM-002) | PackageNamingConvention | WARNING | style |  | Enforces that package identifiers end with '_pkg' (e.g., 'axi_pkg') to standardize namespaces. |
+| [`SV-NAM-003`](../../testdata/rules/naming/SV-NAM-003) | InterfaceNamingConvention | WARNING | style |  | Enforces that interface identifiers end with '_if' (e.g., 'axi_if') to standardize interface definitions. |
 | [`SV-STY-026`](../../testdata/rules/style/SV-STY-026) | MacroNamingConvention | INFO | style |  | Enforces UPPER_SNAKE_CASE naming on user-defined preprocessor macros (option: allow_prefix), exempting standard UVM and compiler macros. |
 
 ## Maintainability

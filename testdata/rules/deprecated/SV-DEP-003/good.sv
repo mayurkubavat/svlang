@@ -1,9 +1,12 @@
 // Compliant Clean Test Case: SV-DEP-003 (LegacyAlwaysBlock)
 `include "uvm_mock.svh"
 
-// Compliant placeholder - verified to produce 0 violations
-class compliant_legacyalwaysblock extends uvm_object;
-    function new(string name = "compliant");
-        super.new(name);
-    endfunction
-endclass
+module compliant_legacyalwaysblock(output logic q_o);
+    logic clk = 1'b0;
+    // IEEE 1800 testbench clock generator: cannot be expressed with always_ff / always_comb
+    always #5ns clk = ~clk;
+
+    always_ff @(posedge clk) begin
+        q_o <= ~q_o;
+    end
+endmodule
