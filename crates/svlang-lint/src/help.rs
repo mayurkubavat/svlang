@@ -16,7 +16,7 @@ pub fn program() -> String {
     }
 }
 
-/// `svlang lint 0.5.2`.
+/// `svlang lint 0.6.0`.
 pub fn version() -> String {
     format!("{} {}", program(), env!("CARGO_PKG_VERSION"))
 }
@@ -64,10 +64,11 @@ Rules:
                            rule the project config configures
   --guideline IDS          Run only rules enforcing these guidelines (e.g. MG-4)
   --conformance            Report pass/fail per methodology guideline
-  --rule ID                Run only this rule (repeatable)
+  --rule ID                Run only matching rule(s) or prefix (e.g. RTL-*,
+                           SVL-CON-*, repeatable or comma-separated)
   --experimental           Also run experimental rules
   --python-rules PATH      Also run rules written with the Python SDK
-  --history                Let the git history rules (SV-EVO-*) read the log
+  --history                Let git history rules (SVL-MNT-027/028) read the log
   --list-rules             List every rule with its category, severity and
                            description, and exit (--json [FILE]: the catalog)
   --list-guidelines        List the methodology guidelines and the rules that
@@ -107,7 +108,7 @@ Fixes:
 Waiver hygiene:
   --waiver-report          List waivers and baseline entries that match
                            nothing, expired waivers and counts per rule
-  --report-unused-waivers  Report those as UVM-WV-001 warnings
+  --report-unused-waivers  Report those as SVL-WVR-002 warnings
   --strict-waivers         Exit 4 when any are found
 
 Cache:

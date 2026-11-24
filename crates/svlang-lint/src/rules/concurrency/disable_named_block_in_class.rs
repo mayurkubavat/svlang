@@ -1,4 +1,4 @@
-//! SV-CON-014 (DisableNamedBlockInClass): Flags `disable <block>` and
+//! SVL-CON-010 (DisableNamedBlockInClass): Flags `disable <block>` and
 //! `disable <task>` inside class methods.
 
 use crate::support::procedural::{own_methods, start};
@@ -61,7 +61,7 @@ pub(crate) fn disable_in_class(c: &Cst, s: &mut Sink) {
                 }
                 let Some(loc) = start(c, x) else { continue };
                 s.add(
-                    "SV-CON-014",
+                    "SVL-CON-010",
                     "DisableNamedBlockInClass",
                     Severity::Warning,
                     format!(

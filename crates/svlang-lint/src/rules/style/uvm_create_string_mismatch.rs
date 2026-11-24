@@ -1,4 +1,4 @@
-//! UVM-STY-001 (UvmCreateStringMismatch): String argument passed to
+//! UVM-NAM-004 (UvmCreateStringMismatch): String argument passed to
 //! type_id::create() must match the receiving variable name.
 
 use crate::syntax::Cst;
@@ -40,7 +40,7 @@ pub(crate) fn create_string_mismatch(c: &Cst, s: &mut Sink) {
         }
         let Some(first) = c.first_tok(expr) else { continue };
         s.add(
-            "UVM-STY-001",
+            "UVM-NAM-004",
             "UvmCreateStringMismatch",
             Severity::Warning,
             format!(

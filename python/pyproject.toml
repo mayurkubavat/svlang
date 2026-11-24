@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "svlang-lint"
-version = "0.5.2"
+version = "0.6.0"
 description = "Python Plugin SDK for svlang-lint Static Linter"
 readme = "README.md"
 authors = [{ name = "Mayur Kubavat", email = "mkubavat01@gmail.com" }]

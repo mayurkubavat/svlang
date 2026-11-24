@@ -1,4 +1,4 @@
-//! SV-TYP-011 (OutOfDomainEnumCast): Flags static casts `enum_t'(CONST)` where
+//! SVL-TYP-005 (OutOfDomainEnumCast): Flags static casts `enum_t'(CONST)` where
 //! `CONST` is a compile-time constant integer literal that does not match any
 //! declared enumerator value of `enum_t`, producing an out-of-domain enum value
 //! that breaks `case` exhaustiveness and waveform decoding.
@@ -100,7 +100,7 @@ pub(crate) fn out_of_domain_enum_cast(c: &Cst, out: &mut Sink) {
         let Some((ename, members)) = resolve_enum_values(c, target) else { continue };
         if !members.iter().any(|(_, mv)| *mv == val) {
             out.add(
-                "SV-TYP-011",
+                "SVL-TYP-005",
                 "OutOfDomainEnumCast",
                 Severity::Warning,
                 format!(

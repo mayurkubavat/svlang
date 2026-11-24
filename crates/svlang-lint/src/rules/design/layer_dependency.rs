@@ -1,4 +1,4 @@
-//! UVM-ARC-001 (LayerDependency): Flags classes that depend on a higher
+//! UVM-CMP-001 (LayerDependency): Flags classes that depend on a higher
 //! testbench layer (item < sequence < agent < env < test), such as a sequence
 //! that references a scoreboard or an agent that references the env (ArchUnit
 //! layer rules).
@@ -38,7 +38,7 @@ pub(crate) fn layer_dependency(c: &Cst, s: &mut Sink) {
                 continue;
             }
             s.add(
-                "UVM-ARC-001",
+                "UVM-CMP-001",
                 "LayerDependency",
                 Severity::Warning,
                 format!(

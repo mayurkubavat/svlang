@@ -1,4 +1,4 @@
-//! SV-COR-005 (NonShortCircuitLogical): Disallows using bitwise AND ('&') or
+//! SVL-COR-002 (NonShortCircuitLogical): Disallows using bitwise AND ('&') or
 //! bitwise OR ('|') instead of logical short-circuiting operators ('&&', '||')
 //! inside conditional statements when the RHS can fault or have side effects.
 
@@ -88,7 +88,7 @@ pub(crate) fn non_short_circuit(c: &Cst, s: &mut Sink) {
                     let rep = if op == "&" { "&&" } else { "||" };
                     if let Some(t) = c.toks(e).next() {
                         s.add(
-                            "SV-COR-005",
+                            "SVL-COR-002",
                             "NonShortCircuitLogical",
                             Severity::Warning,
                             format!(

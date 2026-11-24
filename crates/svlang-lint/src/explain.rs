@@ -99,18 +99,18 @@ mod tests {
 
     #[test]
     fn explains_by_id_and_name() {
-        let by_id = explain("SV-DUP-002", false).unwrap();
-        assert!(by_id.starts_with("SV-DUP-002  CloneFragments  [Maintainability, WARNING]"));
+        let by_id = explain("SVL-MNT-022", false).unwrap();
+        assert!(by_id.starts_with("SVL-MNT-022  CloneFragments  [Maintainability, WARNING]"));
         assert!(by_id.contains("MG-7.1 (Should)"));
         assert!(by_id.contains("min_tokens = 50    # default"));
-        assert!(by_id.contains("Flagged (testdata/rules/methodology/SV-DUP-002/bad.sv):"));
+        assert!(by_id.contains("Flagged (testdata/rules/methodology/SVL-MNT-022/bad.sv):"));
         assert_eq!(explain("CloneFragments", false).unwrap(), by_id);
     }
 
     #[test]
     fn a_sub_rule_names_its_reporter() {
         let s = explain("UVM-NAM-101", false).unwrap();
-        assert!(s.contains("Reported by SV-NAM-100 (ConfigurableNamingEngine)."));
+        assert!(s.contains("Reported by SVL-NAM-100 (ConfigurableNamingEngine)."));
     }
 
     #[test]

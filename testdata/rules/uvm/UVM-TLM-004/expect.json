@@ -2,7 +2,7 @@
   "bad.sv": [
     {
       "rule": "UVM-TLM-004",
-      "line": 14
+      "line": 22
     }
   ]
 }

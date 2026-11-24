@@ -1,4 +1,4 @@
-//! SEC-LOG-001 (PlaintextKeyInLogs): Detects plaintext logging of sensitive
+//! SVL-SEC-001 (PlaintextKeyInLogs): Detects plaintext logging of sensitive
 //! cryptographic assets (keys, seeds, secrets) via $sformatf/$display.
 
 use crate::support::ast::{call_site, source_text, string_value, subtree, unparen, Ast};
@@ -26,7 +26,7 @@ fn plaintext_key(c: &Cst, a: &Ast, s: &mut Sink) {
             // The text keeps the parentheses; the location is inside them.
             let Some(at) = c.first_tok(unparen(c, arg)) else { continue };
             s.add(
-                "SEC-LOG-001",
+                "SVL-SEC-001",
                 "PlaintextKeyInLogs",
                 Severity::Warning,
                 format!(

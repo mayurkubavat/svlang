@@ -1,4 +1,4 @@
-//! SV-COV-018 (CrossBinCountTooLarge): Counts the bins of each covergroup
+//! SVL-COV-018 (CrossBinCountTooLarge): Counts the bins of each covergroup
 //! cross, as a simulator would build them (explicit bins, `bins x[N]`,
 //! `bins x[] = {...}` one per value, or automatic bins: 2^width up to
 //! option.auto_bin_max, 64 by default), and flags crosses with more than
@@ -131,7 +131,7 @@ pub(crate) fn cross_bin_count(c: &Cst, s: &mut Sink) {
             .map(|t| c.text_of(t).to_string())
             .unwrap_or_else(|| "cross".into());
         s.add(
-            "SV-COV-018",
+            "SVL-COV-018",
             "CrossBinCountTooLarge",
             Severity::Warning,
             format!(

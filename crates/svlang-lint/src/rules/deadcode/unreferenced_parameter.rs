@@ -1,4 +1,4 @@
-//! SV-DED-012 (UnreferencedParameter): Flags parameter and localparam
+//! SVL-DED-012 (UnreferencedParameter): Flags parameter and localparam
 //! declarations that are never referenced within their scope or testbench.
 
 use crate::support::slang_ast::kids;
@@ -8,7 +8,7 @@ use std::collections::{HashMap, HashSet};
 use svlang::syntax::NodeId;
 use svlang::syntax::SyntaxKind::*;
 
-/// One finding of SV-DED-012: tree, name token, name, scope.
+/// One finding of SVL-DED-012: tree, name token, name, scope.
 type ParamFinding = (usize, u32, String, String);
 
 /// The scope slang names a parameter's parent: the module, class, package,
@@ -279,7 +279,7 @@ pub(crate) fn unreferenced_parameter(c: &Cst, out: &mut Sink) {
     for (t, tok, name, scope) in unreferenced_params(c).iter().filter(|f| f.0 == ix) {
         let _ = t;
         out.add(
-            "SV-DED-012",
+            "SVL-DED-012",
             "UnreferencedParameter",
             Severity::Warning,
             format!(

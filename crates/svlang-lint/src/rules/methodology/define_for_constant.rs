@@ -1,4 +1,4 @@
-//! SV-CNS-001 (DefineForConstant): Flags `define macros whose body is only a
+//! SVL-MNT-002 (DefineForConstant): Flags `define macros whose body is only a
 //! number or a string, used as constants.
 
 use crate::support::defines_packages::{define_src, is_overridable_default, origin_loc, user_defines};
@@ -41,7 +41,7 @@ pub(crate) fn define_for_constant(_: &Design, csts: &[Cst], out: &mut Sink) {
         }
         let body: String = d.body.iter().map(|(_, t)| t.as_str()).collect();
         out.add(
-            "SV-CNS-001",
+            "SVL-MNT-002",
             "DefineForConstant",
             Severity::Warning,
             format!(

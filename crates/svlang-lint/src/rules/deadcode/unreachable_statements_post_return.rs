@@ -1,4 +1,4 @@
-//! SV-DED-002 (UnreachableStatementsPostReturn): Detects unreachable statements
+//! SVL-DED-002 (UnreachableStatementsPostReturn): Detects unreachable statements
 //! appearing after an unconditional control-flow termination (return, break,
 //! continue).
 
@@ -17,7 +17,7 @@ pub(crate) fn unreachable_after_exit(c: &Cst, s: &mut Sink) {
                     report(
                         s,
                         units.times(c, b),
-                        "SV-DED-002",
+                        "SVL-DED-002",
                         "UnreachableStatementsPostReturn",
                         Severity::Warning,
                         format!(

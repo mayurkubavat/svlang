@@ -1,4 +1,4 @@
-//! SV-SVA-003 (MixedClockEdgesInProperty): Flags SVA properties or assertions
+//! SVA-PRP-003 (MixedClockEdgesInProperty): Flags SVA properties or assertions
 //! that mix both 'posedge' and 'negedge' clocking events.
 
 use crate::support::slang_ast::*;
@@ -29,7 +29,7 @@ pub(crate) fn mixed_edges(c: &Cst, s: &mut Sink) {
     let report = |s: &mut Sink, what: String, at: Option<u32>, fallback: Option<u32>| {
         let Some(t) = at.or(fallback) else { return };
         s.add(
-            "SV-SVA-003",
+            "SVA-PRP-003",
             "MixedClockEdgesInProperty",
             Severity::Warning,
             format!(

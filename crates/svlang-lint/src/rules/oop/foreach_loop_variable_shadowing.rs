@@ -1,4 +1,4 @@
-//! SV-SHD-002 (ForeachLoopVariableShadowing): Flags loop index variables in
+//! SVL-OOP-020 (ForeachLoopVariableShadowing): Flags loop index variables in
 //! 'foreach (arr[i])' loops that shadow an existing class property or routine
 //! local variable.
 
@@ -81,7 +81,7 @@ fn shadow_walk(c: &Cst, n: NodeId, props: &mut HashSet<String>, locals: &mut Has
                 } else {
                     continue;
                 };
-                s.add("SV-SHD-002", "ForeachLoopVariableShadowing", Severity::Warning, msg, c.loc(at));
+                s.add("SVL-OOP-020", "ForeachLoopVariableShadowing", Severity::Warning, msg, c.loc(at));
             }
         }
         _ => {}

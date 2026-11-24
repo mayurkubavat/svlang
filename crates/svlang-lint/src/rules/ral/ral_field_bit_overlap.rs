@@ -1,4 +1,4 @@
-//! RAL-FLD-001 (RalFieldBitOverlap): Detects overlapping `[lsb_pos : lsb_pos + size - 1]`
+//! UVM-RAL-006 (RalFieldBitOverlap): Detects overlapping `[lsb_pos : lsb_pos + size - 1]`
 //! bit slices across `uvm_reg_field::configure(parent, size, lsb_pos, ...)` calls
 //! inside the same `uvm_reg` class.
 
@@ -75,7 +75,7 @@ pub(crate) fn ral_field_bit_overlap(c: &Cst, out: &mut Sink) {
                 {
                     if let Some(tok) = c.first_tok(call) {
                         out.add(
-                            "RAL-FLD-001",
+                            "UVM-RAL-006",
                             "RalFieldBitOverlap",
                             Severity::Warning,
                             format!(

@@ -1,4 +1,4 @@
-//! SV-RND-044 (UniquePigeonholeOverflow): `unique { arr }` on a fixed-size
+//! SVL-RND-034 (UniquePigeonholeOverflow): `unique { arr }` on a fixed-size
 //! unpacked array whose element count exceeds the element type's cardinality.
 
 use crate::support::constraint_ir;
@@ -8,7 +8,7 @@ use crate::{Severity, Sink};
 pub(crate) fn unique_pigeonhole_overflow(c: &Cst, out: &mut Sink) {
     for hit in &constraint_ir::facts(c).pigeonhole_unique {
         out.add(
-            "SV-RND-044",
+            "SVL-RND-034",
             "UniquePigeonholeOverflow",
             Severity::Error,
             format!(

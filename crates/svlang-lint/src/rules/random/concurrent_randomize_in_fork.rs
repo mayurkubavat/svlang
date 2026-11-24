@@ -1,4 +1,4 @@
-//! SV-RND-016 (ConcurrentRandomizeInFork): Disallows concurrent calls to
+//! SVL-RND-015 (ConcurrentRandomizeInFork): Disallows concurrent calls to
 //! .randomize() on the same object handle across parallel fork threads without
 //! synchronization.
 
@@ -50,7 +50,7 @@ pub(crate) fn concurrent_randomize(c: &Cst, s: &mut Sink) {
             for (t, at) in targets {
                 if !seen.insert(t.clone()) && reported.insert(t.clone()) {
                     s.add(
-                        "SV-RND-016",
+                        "SVL-RND-015",
                         "ConcurrentRandomizeInFork",
                         Severity::Warning,
                         format!(

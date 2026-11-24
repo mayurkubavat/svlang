@@ -1,4 +1,4 @@
-//! SVA-CYC-001 (SvaUnboundedDelay): Disallow unbounded cycle delays (##[1:$])
+//! SVA-PRP-012 (SvaUnboundedDelay): Disallow unbounded cycle delays (##[1:$])
 //! in SVA sequences.
 
 use crate::support::spans::span;
@@ -32,7 +32,7 @@ pub(crate) fn unbounded_delay(c: &Cst, s: &mut Sink) {
             continue;
         }
         s.add(
-            "SVA-CYC-001",
+            "SVA-PRP-012",
             "SvaUnboundedDelay",
             Severity::Warning,
             format!(

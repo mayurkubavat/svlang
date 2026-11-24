@@ -1,4 +1,4 @@
-//! UVM-PAT-002 (HandRolledSingleton): Flags a class that keeps a static
+//! UVM-CMP-011 (HandRolledSingleton): Flags a class that keeps a static
 //! variable of its own type, the usual hand-rolled singleton.
 
 use crate::support::class_roles::{class_methods, user_classes, Ctx, Index};
@@ -9,7 +9,7 @@ use svlang_model::{Class, Design};
 
 fn singleton_finding(cls: &Class, var: &str, loc: svlang_model::Loc, out: &mut Sink) {
     out.add(
-        "UVM-PAT-002",
+        "UVM-CMP-011",
         "HandRolledSingleton",
         Severity::Warning,
         format!(

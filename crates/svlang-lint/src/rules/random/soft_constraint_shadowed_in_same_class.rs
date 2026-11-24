@@ -1,4 +1,4 @@
-//! SV-RND-046 (SoftConstraintShadowedInSameClass): Flags a `soft` constraint on
+//! SVL-RND-036 (SoftConstraintShadowedInSameClass): Flags a `soft` constraint on
 //! a single `rand` variable inside a class when the very same class also
 //! declares an unconditional hard constraint referencing only that same
 //! variable, rendering the `soft` default dead within its own class.
@@ -110,7 +110,7 @@ pub(crate) fn soft_constraint_shadowed_in_same_class(c: &Cst, out: &mut Sink) {
                 if let Some(t0) = c.first_tok(item).filter(|&t| !is_library_tok(c, t)) {
                     if reported.insert((t0, v.clone())) {
                         out.add(
-                            "SV-RND-046",
+                            "SVL-RND-036",
                             "SoftConstraintShadowedInSameClass",
                             Severity::Warning,
                             format!(

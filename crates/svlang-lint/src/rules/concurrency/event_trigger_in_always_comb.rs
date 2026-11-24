@@ -1,4 +1,4 @@
-//! SV-CON-006 (EventTriggerInAlwaysComb): Disallows event triggers ('->' or
+//! RTL-SYN-007 (EventTriggerInAlwaysComb): Disallows event triggers ('->' or
 //! '->>') inside always_comb blocks (IEEE 1800 § 9.2.2.2).
 
 use crate::support::procedural::{add_n, start};
@@ -24,7 +24,7 @@ pub(crate) fn trigger_in_comb(c: &Cst, s: &mut Sink) {
                     add_n(
                         s,
                         n,
-                        "SV-CON-006",
+                        "RTL-SYN-007",
                         "EventTriggerInAlwaysComb",
                         Severity::Error,
                         "Event trigger inside 'always_comb' block causes simulation delta-cycle oscillation and simulator lockup. Per IEEE 1800 § 9.2.2.2, combinational blocks must be purely functional and sensitive only to signal reads; triggering events produces infinite scheduling loops.".into(),

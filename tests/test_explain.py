@@ -23,17 +23,17 @@ def main():
     binary = str(Path(ap.parse_args().binary).resolve())
     run = lambda *a: subprocess.run([*lint_cmd(binary), *a], capture_output=True, text=True)
 
-    r = run("--explain", "SV-DUP-002")
+    r = run("--explain", "SVL-MNT-022")
     out = r.stdout
-    bad = (REPO / "testdata/rules/methodology/SV-DUP-002/bad.sv").read_text().splitlines()[1]
+    bad = (REPO / "testdata/rules/methodology/SVL-MNT-022/bad.sv").read_text().splitlines()[1]
     check(r.returncode == 0 and "CloneFragments" in out, "rule found by ID", out)
     check("MG-7.1" in out, "guideline listed", out)
     check("min_tokens = 50" in out, "option and its default listed", out)
-    check("testdata/rules/methodology/SV-DUP-002/bad.sv" in out and bad.strip() in out, "tested bad example shown", out)
+    check("testdata/rules/methodology/SVL-MNT-022/bad.sv" in out and bad.strip() in out, "tested bad example shown", out)
     check("good.sv" in out, "good example shown", out)
 
     r = run("--explain", "CloneFragments")
-    check(r.returncode == 0 and "SV-DUP-002" in r.stdout, "rule found by name", r.stdout)
+    check(r.returncode == 0 and "SVL-MNT-022" in r.stdout, "rule found by name", r.stdout)
 
     r = run("--explain", "UVM-NAM-101")
     check(r.returncode == 0 and "Reported by" in r.stdout, "finding ID of a convention rule explained", r.stdout)

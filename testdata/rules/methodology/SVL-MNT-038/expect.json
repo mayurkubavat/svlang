@@ -1,0 +1,13 @@
+{
+  "bad.sv": [
+    {
+      "rule": "SVL-MNT-038",
+      "line": 12
+    },
+    {
+      "rule": "SVL-MNT-038",
+      "file": "bus_item_hdr.svh",
+      "line": 2
+    }
+  ]
+}

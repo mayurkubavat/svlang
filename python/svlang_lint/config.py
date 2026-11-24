@@ -26,7 +26,7 @@ just the parts they need:
         ]
 
     class LegacyMacros(Waiver):        # reusable, subclassable waiver
-        rules = ["SV-STY-002"]
+        rules = ["SVL-STY-001"]
         paths = ["**/legacy/**"]
         reason = "Vendor macros we cannot edit"
         expires = "2027-06-30"
@@ -74,7 +74,7 @@ def _path_list(owner: str, attr: str, value: Any) -> List[str]:
 class RuleConfig:
     """Settings for one rule.
 
-    The rule is identified by ``rule`` (an ID such as ``"SV-STY-016"`` or a
+    The rule is identified by ``rule`` (an ID such as ``"SVL-STY-013"`` or a
     name such as ``"MaxLineLength"``); when ``rule`` is not set, the class name
     is used. Any other public class attribute becomes a rule option that the
     rule reads at run time (for example ``max_columns`` on MaxLineLength).
@@ -138,7 +138,7 @@ class Waiver:
     or as a class, which can be shared and subclassed:
 
         class LegacyMacros(Waiver):
-            rules = ["SV-STY-002", "SV-STY-011"]
+            rules = ["SVL-STY-001", "SVL-STY-009"]
             paths = ["**/legacy/**"]
             reason = "Vendor macros we cannot edit"
             owner = "dv-infra"

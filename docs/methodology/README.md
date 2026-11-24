@@ -11,7 +11,7 @@ The guide has four levels, each pointing to the one below:
 | Principle | Why | Law of Demeter, single responsibility, connascence |
 | Chapter | Where it applies | `MG-4` Reusable verification components |
 | Guideline | What to do | `MG-4.1` Every agent works in both active and passive mode |
-| Rule | How it is checked | `UVM-RUS-001` AgentIgnoresIsActive |
+| Rule | How it is checked | `UVM-CMP-025` AgentIgnoresIsActive |
 
 Guideline levels use the wording of standards documents:
 

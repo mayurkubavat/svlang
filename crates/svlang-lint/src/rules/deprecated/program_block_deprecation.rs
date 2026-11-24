@@ -1,4 +1,4 @@
-//! SV-DEP-001 (ProgramBlockDeprecation): Disallow the obsolete SystemVerilog
+//! SVL-DEP-001 (ProgramBlockDeprecation): Disallow the obsolete SystemVerilog
 //! 'program' block.
 
 use crate::syntax::Cst;
@@ -16,7 +16,7 @@ pub(crate) fn program_block(c: &Cst, s: &mut Sink) {
             continue;
         }
         s.add(
-            "SV-DEP-001",
+            "SVL-DEP-001",
             "ProgramBlockDeprecation",
             Severity::Error,
             format!(

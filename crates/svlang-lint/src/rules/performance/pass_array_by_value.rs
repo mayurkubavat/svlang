@@ -1,4 +1,4 @@
-//! SV-PRF-001 (PassArrayByValue): Passing dynamic arrays, queues, associative
+//! SVL-PRF-001 (PassArrayByValue): Passing dynamic arrays, queues, associative
 //! arrays, unpacked arrays, or unpacked structs by value (input) causes
 //! expensive memory duplication on every call.
 
@@ -30,7 +30,7 @@ pub(crate) fn pass_array_by_value(d: &Design, csts: &[Cst], out: &mut Sink) {
                     })
                     .flatten();
                 out.add(
-                    "SV-PRF-001",
+                    "SVL-PRF-001",
                     "PassArrayByValue",
                     Severity::Warning,
                     format!(

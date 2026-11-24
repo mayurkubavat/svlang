@@ -25,7 +25,7 @@ Write:
 agt_cfg.drive_enable = 0;
 ```
 
-Enforced by: `SV-DSN-004`, `SV-ENC-001`, `UVM-ARC-002`, `UVM-CPL-002`, `UVM-CPL-003`, `UVM-PHS-010`, `UVM-SEQ-003`, `UVM-SEQ-011`
+Enforced by: `SVL-MNT-011`, `SVL-OOP-017`, `UVM-CMP-002`, `UVM-CMP-006`, `UVM-CMP-007`, `UVM-PHS-010`, `UVM-SEQ-003`, `UVM-SEQ-011`
 
 ## MG-2.2 (Shall)
 
@@ -45,7 +45,7 @@ Write:
 @(posedge vif.irq);   // vif from uvm_config_db
 ```
 
-Enforced by: `SV-OOP-008`, `UVM-CPL-004`, `UVM-PHS-013`
+Enforced by: `SVL-OOP-007`, `UVM-CMP-008`, `UVM-PHS-013`
 
 ## MG-2.3 (Should)
 
@@ -75,7 +75,7 @@ endfunction
 // run-time changes come through a TLM port, an event or a method on cfg
 ```
 
-Enforced by: `SV-DSN-008`, `SV-OOP-007`, `UVM-ARC-004`, `UVM-CFG-003`, `UVM-CFG-005`, `UVM-CFG-006`, `UVM-CFG-007`, `UVM-CFG-009`
+Enforced by: `SVL-MNT-015`, `UVM-CFG-003`, `UVM-CFG-005`, `UVM-CFG-006`, `UVM-CFG-007`, `UVM-CFG-009`, `UVM-CMP-004`, `UVM-CMP-028`
 
 ## MG-2.4 (Should)
 
@@ -83,7 +83,7 @@ Enforced by: `SV-DSN-008`, `SV-OOP-007`, `UVM-ARC-004`, `UVM-CFG-003`, `UVM-CFG-
 
 When two pieces of code must agree on a name, type or argument order, the agreement should be checked by the compiler or a rule, not by convention.
 
-A config_db field name typed as a literal in several files (UVM-CFG-008) and a routine that picks its behaviour from a string argument (SV-CPL-001) both depend on matching spellings that nothing checks.
+A config_db field name typed as a literal in several files (UVM-CFG-008) and a routine that picks its behaviour from a string argument (SVL-MNT-008) both depend on matching spellings that nothing checks.
 
 Instead of:
 
@@ -100,4 +100,4 @@ localparam string BUS_CFG_KEY = "bus_cfg";   // in bus_pkg, used on both sides
 seq.do_op(OP_WRITE);                          // enum argument
 ```
 
-Enforced by: `SV-BUG-007`, `SV-CPL-001`, `SV-RDB-001`, `UVM-CFG-001`, `UVM-CFG-008`, `UVM-CFG-010`, `UVM-CFG-011`, `UVM-DAG-001`
+Enforced by: `SVL-COR-014`, `SVL-MNT-008`, `SVL-MNT-042`, `UVM-CFG-001`, `UVM-CFG-008`, `UVM-CFG-010`, `UVM-CFG-011`, `UVM-CFG-012`

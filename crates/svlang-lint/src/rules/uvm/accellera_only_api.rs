@@ -1,4 +1,4 @@
-//! UVM-API-001 (AccelleraOnlyApi): Flags calls to, and classes extending, parts
+//! UVM-PRT-001 (AccelleraOnlyApi): Flags calls to, and classes extending, parts
 //! of the Accellera UVM library that IEEE 1800.2 does not define (tagged
 //! @uvm-accellera in the library source), such as uvm_component::print_config
 //! or uvm_port_base::debug_connected_to.
@@ -14,7 +14,7 @@ pub(crate) fn accellera_only_api(_: &Design, csts: &[Cst], out: &mut Sink) {
     let Some(pack) = api_pack(csts) else { return };
     let report = |out: &mut Sink, what: String, where_: &str, loc: Loc| {
         out.add(
-            "UVM-API-001",
+            "UVM-PRT-001",
             "AccelleraOnlyApi",
             Severity::Info,
             format!(

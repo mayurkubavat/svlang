@@ -1,10 +1,10 @@
-//! SV-LANG-005 (NonBlockingInFunction): Prohibits non-blocking assignments
+//! SVL-COR-022 (NonBlockingInFunction): Prohibits non-blocking assignments
 //! ('<=') inside functions.
 //!
 //! IEEE 1800 13.4.4 allows them: a function only may not block. What goes
 //! wrong is the caller's view: the update lands after the caller moves on,
 //! so code right after the call reads the old value. A drive of a clocking
-//! block or virtual interface signal is the exception, and the form SV-INT-001
+//! block or virtual interface signal is the exception, and the form SVL-CON-024
 //! asks for (a driver's `reset_signals()` function): not reported. The C++
 //! rule is the same.
 
@@ -31,7 +31,7 @@ pub(crate) fn nonblocking_in_function(c: &Cst, s: &mut Sink) {
                 continue;
             }
             s.add(
-                "SV-LANG-005",
+                "SVL-COR-022",
                 "NonBlockingInFunction",
                 Severity::Error,
                 format!(

@@ -28,7 +28,7 @@ task bus_driver::run_phase(uvm_phase phase);
 endtask
 ```
 
-Enforced by: `SV-DSN-002`, `SV-DSN-003`, `SV-DSN-011`, `SV-MET-006`, `UVM-ALS-001`, `UVM-OBS-001`, `UVM-ROL-001`, `UVM-ROL-002`, `UVM-ROL-005`, `UVM-SEQ-001`, `UVM-TLM-005`, `UVM-VIF-DIR`
+Enforced by: `SVL-MNT-009`, `SVL-MNT-010`, `SVL-MNT-018`, `SVL-MNT-034`, `UVM-CMP-018`, `UVM-CMP-019`, `UVM-CMP-022`, `UVM-CMP-029`, `UVM-SEQ-001`, `UVM-TLM-004`, `UVM-TLM-007`, `UVM-TLM-008`
 
 ## MG-3.2 (Should)
 
@@ -53,7 +53,7 @@ class soc_env extends uvm_env;
 endclass
 ```
 
-Enforced by: `UVM-ROL-003`
+Enforced by: `UVM-CMP-020`
 
 ## MG-3.3 (Should)
 
@@ -61,4 +61,4 @@ Enforced by: `UVM-ROL-003`
 
 When each test builds its own drivers and agents, tests drift apart. An env builds the structure once; tests change it through config objects and factory overrides.
 
-Enforced by: `UVM-ROL-004`
+Enforced by: `UVM-CMP-021`

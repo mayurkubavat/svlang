@@ -26,8 +26,8 @@ fn dead_store_once_per_location() {
                module leaf; int z; initial begin\n z = 1;\n z = 2;\n end endmodule\n\
                module top; leaf u1(); leaf u2(); endmodule\n";
     let got = findings(src);
-    assert_eq!(count(&got, 4, "SV-DED-004"), 1, "{got:?}");
-    assert_eq!(count(&got, 10, "SV-DED-004"), 1, "{got:?}");
+    assert_eq!(count(&got, 4, "SVL-DED-004"), 1, "{got:?}");
+    assert_eq!(count(&got, 10, "SVL-DED-004"), 1, "{got:?}");
 }
 
 #[test]
@@ -36,8 +36,8 @@ fn dead_store_skips_bodies_slang_cannot_bind() {
     let src = "module top;\n typedef enum {A, B} e_t;\n e_t v; int y;\n initial begin\n  v = A;\n  v += 1;\n  y = 1;\n  y += 2;\n end\n\
                initial begin\n  y = 1;\n  y += 2;\n end\nendmodule\n";
     let got = findings(src);
-    assert_eq!(count(&got, 7, "SV-DED-004"), 0, "{got:?}");
-    assert_eq!(count(&got, 11, "SV-DED-004"), 1, "{got:?}");
+    assert_eq!(count(&got, 7, "SVL-DED-004"), 0, "{got:?}");
+    assert_eq!(count(&got, 11, "SVL-DED-004"), 1, "{got:?}");
 }
 
 #[test]
@@ -46,8 +46,8 @@ fn override_only_calls_super_needs_a_known_base() {
                class d1 extends base;\n function void f(int a); super.f(a); endfunction\nendclass\n\
                class d2 extends unknown_base;\n function void f(int a); super.f(a); endfunction\nendclass\n";
     let got = findings(src);
-    assert_eq!(count(&got, 3, "SV-DSN-006"), 1, "{got:?}");
-    assert_eq!(count(&got, 6, "SV-DSN-006"), 0, "{got:?}");
+    assert_eq!(count(&got, 3, "SVL-MNT-013"), 1, "{got:?}");
+    assert_eq!(count(&got, 6, "SVL-MNT-013"), 0, "{got:?}");
 }
 
 #[test]
@@ -61,7 +61,7 @@ fn metrics_rules_fire_on_complex_routines() {
          function void g(int a1, int a2, int a3, int a4, int a5, int a6, int a7, int a8); endfunction\nendclass\n"
     );
     let got = findings(&src);
-    for rule in ["SV-MET-001", "SV-MET-002", "SV-MET-003", "SV-SML-004"] {
+    for rule in ["SVL-MNT-029", "SVL-MNT-030", "SVL-MNT-031", "SVL-MNT-055"] {
         assert!(got.iter().any(|f| f.2 == rule), "{rule} {got:?}");
     }
 }

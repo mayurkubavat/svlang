@@ -1,4 +1,4 @@
-//! SV-DED-008 (UnusedGenerateBlock): Flags conditional statements or generate
+//! SVL-DED-008 (UnusedGenerateBlock): Flags conditional statements or generate
 //! blocks with constant false conditions ('0') and no 'else' clause.
 
 use crate::support::statements::{if_parts, start};
@@ -20,7 +20,7 @@ pub(crate) fn false_condition(c: &Cst, s: &mut Sink) {
         let text = c.trimmed(cond);
         if matches!(text.as_str(), "0" | "1'b0" | "32'd0" | "false") {
             s.add(
-                "SV-DED-008",
+                "SVL-DED-008",
                 "UnusedGenerateBlock",
                 Severity::Info,
                 format!(

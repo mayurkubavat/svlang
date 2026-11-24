@@ -1,4 +1,4 @@
-//! SV-RSC-001 (LockNotReleased): Flags semaphore get()/try_get() and sequencer
+//! SVL-CON-027 (LockNotReleased): Flags semaphore get()/try_get() and sequencer
 //! lock()/grab() that some path leaves without the matching
 //! put()/unlock()/ungrab(), such as an early return (Sonar S2222).
 
@@ -181,7 +181,7 @@ pub(crate) fn lock_not_released(c: &Cst, s: &mut Sink) {
             add_n(
                 s,
                 n,
-                "SV-RSC-001",
+                "SVL-CON-027",
                 "LockNotReleased",
                 Severity::Error,
                 format!("'{key}' is acquired at line {acq} but {how}. The next requester then waits forever. Release it before every exit."),

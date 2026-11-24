@@ -1,4 +1,4 @@
-//! SV-CNS-008 (FunctionOutputArguments): Flags void class functions that hand
+//! SVL-MNT-007 (FunctionOutputArguments): Flags void class functions that hand
 //! their results back through output arguments.
 
 use crate::support::class_roles::{class_methods, user_classes};
@@ -19,7 +19,7 @@ pub(crate) fn function_output_arguments(d: &Design, out: &mut Sink) {
             }
             let list = outs.iter().map(|n| format!("'{n}'")).collect::<Vec<_>>().join(", ");
             out.add(
-                "SV-CNS-008",
+                "SVL-MNT-007",
                 "FunctionOutputArguments",
                 Severity::Info,
                 format!(

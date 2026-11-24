@@ -1,4 +1,4 @@
-//! SV-COV-013 (IgnoreBinsOverlapsIllegalBins): Flags coverage models where the
+//! SVL-COV-013 (IgnoreBinsOverlapsIllegalBins): Flags coverage models where the
 //! same value or range is specified in both 'ignore_bins' and 'illegal_bins'
 //! within a coverpoint.
 
@@ -41,7 +41,7 @@ pub(crate) fn ignore_illegal_overlap(c: &Cst, s: &mut Sink) {
         for (val, (ill, loc)) in illegal {
             if let Some((ign, _)) = ignore.get(&val) {
                 s.add(
-                    "SV-COV-013",
+                    "SVL-COV-013",
                     "IgnoreBinsOverlapsIllegalBins",
                     Severity::Error,
                     format!(

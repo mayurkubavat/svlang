@@ -1,4 +1,4 @@
-//! SV-STY-023 (UnusedIncludeDirective): Uses the Preprocessor Event Table
+//! SVL-STY-017 (UnusedIncludeDirective): Uses the Preprocessor Event Table
 //! ([`svlang::syntax::Tree::includes`], [`svlang::syntax::Tree::macro_defs`],
 //! [`svlang::syntax::Tree::macro_uses`]) to flag `` `include `` directives in
 //! top-level files (outside `package` aggregation bodies) whose included header
@@ -86,7 +86,7 @@ pub(crate) fn unused_include_directive(c: &Cst, out: &mut Sink) {
         }
 
         out.add(
-            "SV-STY-023",
+            "SVL-STY-017",
             "UnusedIncludeDirective",
             Severity::Info,
             format!(

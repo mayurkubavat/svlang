@@ -34,13 +34,13 @@ fn style_rules() {
     );
     let got = counts(&src);
     let n = |id: &str| got.get(id).copied().unwrap_or(0);
-    assert_eq!(n("SV-STY-004"), 2, "{got:?}");
-    assert_eq!(n("SV-STY-011"), 1, "{got:?}");
-    assert_eq!(n("SV-STY-012"), 1, "{got:?}");
-    assert_eq!(n("SV-STY-015"), 1, "{got:?}");
+    assert_eq!(n("SVL-NAM-003"), 2, "{got:?}");
+    assert_eq!(n("SVL-STY-009"), 1, "{got:?}");
+    assert_eq!(n("SVL-STY-010"), 1, "{got:?}");
+    assert_eq!(n("SVL-STY-012"), 1, "{got:?}");
     // The two long mock lines and the comment.
-    assert_eq!(n("SV-STY-016"), 3, "{got:?}");
-    assert_eq!(n("SV-STY-006"), 1, "{got:?}");
+    assert_eq!(n("SVL-STY-013"), 3, "{got:?}");
+    assert_eq!(n("SVL-STY-004"), 1, "{got:?}");
 }
 
 #[test]
@@ -49,7 +49,7 @@ fn deprecated_rules() {
                module top; child u1(); child u2(); endmodule\n";
     let got = counts(src);
     // Once, however many instances of `child` elaborate it.
-    assert_eq!(got.get("SV-DEP-004"), Some(&1), "{got:?}");
+    assert_eq!(got.get("SVL-DEP-004"), Some(&1), "{got:?}");
 }
 
 #[test]
@@ -67,8 +67,8 @@ fn readability_rules() {
     );
     let got = counts(&src);
     let n = |id: &str| got.get(id).copied().unwrap_or(0);
-    assert_eq!(n("SV-RDB-010"), 2, "{got:?}");
-    assert_eq!(n("SV-RDB-007"), 1, "{got:?}");
-    assert_eq!(n("SV-RDB-008"), 1, "{got:?}");
-    assert_eq!(n("SV-RDB-004"), 1, "{got:?}");
+    assert_eq!(n("SVL-MNT-051"), 2, "{got:?}");
+    assert_eq!(n("SVL-MNT-048"), 1, "{got:?}");
+    assert_eq!(n("SVL-MNT-049"), 1, "{got:?}");
+    assert_eq!(n("SVL-MNT-045"), 1, "{got:?}");
 }

@@ -1,4 +1,4 @@
-//! SV-CNS-004 (StringAsEnum): Flags a string variable compared against three or
+//! SVL-MNT-005 (StringAsEnum): Flags a string variable compared against three or
 //! more literals in one case statement or if/else-if chain.
 
 use crate::support::class_roles::{is_library, Index};
@@ -46,12 +46,12 @@ pub(crate) fn string_as_enum(d: &Design, csts: &[Cst], out: &mut Sink) {
     let ix = Index::new(csts);
     for r in user_routines(d, &ix) {
         let lib = from_library(d, &ix, &r);
-        for x in dispatches(d, &ix, &r, false, crate::options::get("SV-CNS-004", "min_values", 3) as _) {
+        for x in dispatches(d, &ix, &r, false, crate::options::get("SVL-MNT-005", "min_values", 3) as _) {
             if lib.contains(&x.sym.sym) || all_uvm_access_policies(&x.lits) {
                 continue;
             }
             out.add(
-                "SV-CNS-004",
+                "SVL-MNT-005",
                 "StringAsEnum",
                 Severity::Warning,
                 format!(

@@ -1,4 +1,4 @@
-//! SV-DSN-008 (MutablePackageState): Flags non-const variables declared in
+//! SVL-MNT-015 (MutablePackageState): Flags non-const variables declared in
 //! packages.
 
 use crate::support::class_index::decl_names;
@@ -30,7 +30,7 @@ pub(crate) fn mutable_package_state(c: &Cst, s: &mut Sink) {
             }
             for (var, tok) in decl_names(c, item) {
                 s.add(
-                    "SV-DSN-008",
+                    "SVL-MNT-015",
                     "MutablePackageState",
                     Severity::Warning,
                     format!(

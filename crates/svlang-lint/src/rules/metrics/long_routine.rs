@@ -1,4 +1,4 @@
-//! SV-MET-002 (LongRoutine): Flags routines with more statements than the
+//! SVL-MNT-030 (LongRoutine): Flags routines with more statements than the
 //! threshold (default 100; clang-tidy readability-function-size, Checkstyle
 //! MethodLength).
 
@@ -9,7 +9,7 @@ use crate::syntax::Cst;
 use crate::{Severity, Sink};
 
 pub(crate) fn long_routine(c: &Cst, s: &mut Sink) {
-    let limit = crate::options::get("SV-MET-002", "max_statements", 100) as _;
+    let limit = crate::options::get("SVL-MNT-030", "max_statements", 100) as _;
     each_routine(c, |_, r| {
         let n = r.body.map(|b| count_statements(c, b)).unwrap_or(0);
         if n <= limit {
@@ -18,7 +18,7 @@ pub(crate) fn long_routine(c: &Cst, s: &mut Sink) {
         report(
             s,
             r.times,
-            "SV-MET-002",
+            "SVL-MNT-030",
             "LongRoutine",
             Severity::Warning,
             format!(

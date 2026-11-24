@@ -58,22 +58,22 @@ def main():
         res = run("first.json", "--summary", str(d / "s.md"))
         first = json.loads((d / "first.json").read_text())
         demo = first["corpora"].get("demo", {})
-        check(res.returncode == 0 and demo.get("rules", {}).get("SV-COR-001") == 1, "counts findings per rule",
+        check(res.returncode == 0 and demo.get("rules", {}).get("SVL-COR-001") == 1, "counts findings per rule",
               res.stdout + res.stderr)
         check("unset" not in first["corpora"] and "skipping unset" in res.stdout, "corpus with unset variable skipped")
         check(demo.get("kloc", 0) > 0 and "per kLOC" in (d / "s.md").read_text(), "summary with per-kLOC rates")
 
-        # Pretend the previous run had far fewer SV-COR-001 findings, and one rule that now reports none.
+        # Pretend the previous run had far fewer SVL-COR-001 findings, and one rule that now reports none.
         prev = json.loads((d / "first.json").read_text())
-        prev["corpora"]["demo"]["rules"] = {**demo["rules"], "SV-COR-001": 0, "SV-FAKE-001": 9}
-        prev["corpora"]["demo"]["rules"]["SV-COR-001"] = 0
+        prev["corpora"]["demo"]["rules"] = {**demo["rules"], "SVL-COR-001": 0, "SVL-FAK-999": 9}
+        prev["corpora"]["demo"]["rules"]["SVL-COR-001"] = 0
         (d / "prev.json").write_text(json.dumps(prev))
         (d / "src/tb.sv").write_text(CODE.replace('    if (a == a) $display("x");\n',
                                                   '    if (a == a) $display("x");\n' * 6))
         res = run("second.json", "--previous", str(d / "prev.json"), "--fail-on-jump")
         flags = {f[0]: f[3] for f in json.loads((d / "second.json").read_text())["flags"]["demo"]}
-        check(flags.get("SV-COR-001") == "jumped", "jump flagged", flags)
-        check(flags.get("SV-FAKE-001") == "dropped to zero", "drop to zero flagged", flags)
+        check(flags.get("SVL-COR-001") == "jumped", "jump flagged", flags)
+        check(flags.get("SVL-FAK-999") == "dropped to zero", "drop to zero flagged", flags)
         check(res.returncode == 1, "--fail-on-jump exits 1")
 
     if failures:

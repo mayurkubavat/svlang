@@ -1,4 +1,4 @@
-//! SV-RND-011 (RedundantConstraint): Detects duplicate or redundant constraint
+//! SVL-RND-010 (RedundantConstraint): Detects duplicate or redundant constraint
 //! expressions within the same class scope.
 
 use crate::support::class_items::{class_decls, decl_name, expression_constraint, subtree, trim};
@@ -55,7 +55,7 @@ pub(crate) fn redundant_constraint(c: &Cst, s: &mut Sink) {
             if !seen.insert(key) {
                 let Some(at) = c.first_tok(item) else { continue };
                 s.add(
-                    "SV-RND-011",
+                    "SVL-RND-010",
                     "RedundantConstraint",
                     Severity::Warning,
                     format!(

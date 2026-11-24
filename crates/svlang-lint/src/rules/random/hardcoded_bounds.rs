@@ -1,4 +1,4 @@
-//! SV-RND-040 (HardcodedBounds): Flags non-`soft` literal constant bounds on
+//! SVL-RND-030 (HardcodedBounds): Flags non-`soft` literal constant bounds on
 //! `rand` properties in base classes (`virtual` classes or classes extended by
 //! another class in the design), which prevent derived classes from widening
 //! or overriding stimulus ranges without disabling the constraint block.
@@ -144,7 +144,7 @@ fn report(c: &Cst, n: NodeId, cname: &str, bname: &str, field: &str, out: &mut S
     let expr_txt = c.trimmed(n);
     let where_blk = if bname.is_empty() { String::new() } else { format!(" in constraint '{bname}'") };
     out.add(
-        "SV-RND-040",
+        "SVL-RND-030",
         "HardcodedBounds",
         Severity::Warning,
         format!(

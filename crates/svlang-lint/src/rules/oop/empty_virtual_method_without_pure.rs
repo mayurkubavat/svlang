@@ -1,4 +1,4 @@
-//! SV-OOP-009 (EmptyVirtualMethodWithoutPure): Flags virtual methods defined
+//! SVL-OOP-008 (EmptyVirtualMethodWithoutPure): Flags virtual methods defined
 //! with empty bodies instead of being declared 'pure virtual' in abstract base
 //! classes.
 
@@ -29,7 +29,7 @@ pub(crate) fn empty_virtual(c: &Cst, s: &mut Sink) {
             }
             let Some(kw) = c.toks(f).find(|&t| matches!(c.text_of(t), "function" | "task")) else { continue };
             s.add(
-                "SV-OOP-009",
+                "SVL-OOP-008",
                 "EmptyVirtualMethodWithoutPure",
                 Severity::Info,
                 format!(

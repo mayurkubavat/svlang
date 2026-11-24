@@ -1,4 +1,4 @@
-//! UVM-BAN-003 (DirectDoMethodCall): Flags direct calls to do_copy, do_compare,
+//! UVM-SEQ-021 (DirectDoMethodCall): Flags direct calls to do_copy, do_compare,
 //! do_print, do_pack, do_unpack and do_record.
 
 use crate::support::uvm_kinds::is_object;
@@ -32,7 +32,7 @@ pub(crate) fn direct_do_method_call(d: &Design, out: &mut Sink) {
                     continue;
                 }
                 out.add(
-                    "UVM-BAN-003",
+                    "UVM-SEQ-021",
                     "DirectDoMethodCall",
                     Severity::Warning,
                     format!(

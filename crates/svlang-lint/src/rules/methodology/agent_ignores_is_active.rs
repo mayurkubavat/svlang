@@ -1,4 +1,4 @@
-//! UVM-RUS-001 (AgentIgnoresIsActive): Flags agents that create their driver or
+//! UVM-CMP-025 (AgentIgnoresIsActive): Flags agents that create their driver or
 //! sequencer without checking is_active or get_is_active().
 
 use crate::support::class_roles::{role, role_name, user_classes, Index, Role};
@@ -19,7 +19,7 @@ pub(crate) fn agent_ignores_is_active(d: &Design, csts: &[Cst], out: &mut Sink) 
                 continue;
             }
             out.add(
-                "UVM-RUS-001",
+                "UVM-CMP-025",
                 "AgentIgnoresIsActive",
                 Severity::Warning,
                 format!(

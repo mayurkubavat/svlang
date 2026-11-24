@@ -1,4 +1,4 @@
-//! SVA-CTX-001 (ConcurrentAssertInFunction): Disallow concurrent assertions
+//! SVA-PRP-011 (ConcurrentAssertInFunction): Disallow concurrent assertions
 //! ('assert/assume/cover property') inside functions.
 
 use crate::support::procedural::start;
@@ -13,7 +13,7 @@ pub(crate) fn concurrent_in_function(c: &Cst, s: &mut Sink) {
         let name: String = decl_name(c, r).chars().filter(|ch| !ch.is_whitespace()).collect();
         let Some(loc) = start(c, a) else { continue };
         s.add(
-            "SVA-CTX-001",
+            "SVA-PRP-011",
             "ConcurrentAssertInFunction",
             Severity::Error,
             format!(

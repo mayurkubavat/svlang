@@ -1,4 +1,4 @@
-//! SV-NAM-005 (UvmClassTypeSuffix): Enforces standard verification naming
+//! UVM-NAM-002 (UvmClassTypeSuffix): Enforces standard verification naming
 //! suffix conventions for classes extending UVM base components (e.g. _seq,
 //! _item, _driver, _monitor, _scoreboard, _env).
 
@@ -40,7 +40,7 @@ pub(crate) fn uvm_class_suffix(c: &Cst, s: &mut Sink) {
         }
         let Some(nm) = c.tree.child(n, Name).and_then(|x| c.first_tok(x)) else { continue };
         s.add(
-            "SV-NAM-005",
+            "UVM-NAM-002",
             "UvmClassTypeSuffix",
             Severity::Warning,
             format!(

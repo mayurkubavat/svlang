@@ -1,4 +1,4 @@
-//! UVM-TLM-004 (TlmTopologyChecker): Performs cross-component elaboration
+//! UVM-TLM-003 (TlmTopologyChecker): Performs cross-component elaboration
 //! topology checks to verify that mandatory TLM ports (such as driver
 //! seq_item_pull_port and monitor analysis_port) are bound in connect_phase
 //! across the verification environment hierarchy.
@@ -59,7 +59,7 @@ pub(crate) fn tlm_topology(d: &Design, csts: &[Cst], s: &mut Sink) {
         }
         let kind = if p.pull { "Driver pull-port" } else { "Analysis port" };
         s.add(
-            "UVM-TLM-004",
+            "UVM-TLM-003",
             "TlmTopologyChecker",
             Severity::Warning,
             format!(

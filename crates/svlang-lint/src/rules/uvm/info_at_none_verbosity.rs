@@ -1,4 +1,4 @@
-//! UVM-REP-009 (InfoAtNoneVerbosity): Flags `uvm_info messages at UVM_NONE
+//! UVM-CMP-017 (InfoAtNoneVerbosity): Flags `uvm_info messages at UVM_NONE
 //! verbosity, which cannot be filtered with +UVM_VERBOSITY.
 
 use crate::support::literals::ast_times;
@@ -31,7 +31,7 @@ pub(crate) fn info_at_none(c: &Cst, s: &mut Sink) {
         let loc = c.loc_at(c.tree.tokens[first as usize].origin);
         for _ in 0..ast_times(c, call) {
             s.add(
-                "UVM-REP-009",
+                "UVM-CMP-017",
                 "InfoAtNoneVerbosity",
                 Severity::Info,
                 "Informational message at UVM_NONE: it prints at every verbosity, +UVM_VERBOSITY cannot silence it, and it floods regression logs. Use UVM_LOW for messages that should normally show, and keep UVM_NONE for the few lines every run must print (a test's final verdict)."

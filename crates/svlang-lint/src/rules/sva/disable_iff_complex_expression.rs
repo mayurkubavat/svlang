@@ -1,4 +1,4 @@
-//! SV-SVA-002 (DisableIffComplexExpression): Flags 'disable iff (...)' clauses
+//! SVA-PRP-002 (DisableIffComplexExpression): Flags 'disable iff (...)' clauses
 //! containing complex boolean expressions or multi-variable logic instead of
 //! simple reset conditions.
 
@@ -72,7 +72,7 @@ pub(crate) fn disable_iff_complex(c: &Cst, s: &mut Sink) {
         let Some(kw) = c.tok(d, "disable") else { continue };
         let text = slang_text(c, e);
         s.add(
-            "SV-SVA-002",
+            "SVA-PRP-002",
             "DisableIffComplexExpression",
             Severity::Warning,
             format!(

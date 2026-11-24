@@ -1,4 +1,4 @@
-//! UVM-SCB-001 (ScoreboardSilentDrop): Detects silent returns in scoreboard
+//! UVM-TLM-010 (ScoreboardSilentDrop): Detects silent returns in scoreboard
 //! write methods when expected queues are empty without logging an error.
 
 use crate::support::uvm_classes::{if_parts, is_scoreboard, Ix};
@@ -39,7 +39,7 @@ pub(crate) fn scoreboard_silent_drop(d: &Design, csts: &[Cst], s: &mut Sink) {
                 }
                 let Some(t) = c.first_tok(n) else { continue };
                 s.add(
-                    "UVM-SCB-001",
+                    "UVM-TLM-010",
                     "ScoreboardSilentDrop",
                     Severity::Error,
                     format!(

@@ -1,4 +1,4 @@
-//! SV-DSN-006 (OverrideOnlyCallsSuper): Flags overrides whose whole body is the
+//! SVL-MNT-013 (OverrideOnlyCallsSuper): Flags overrides whose whole body is the
 //! super call with the same arguments, such as a connect_phase that only calls
 //! super.connect_phase(phase) (Pylint useless-parent-delegation, Sonar S1185).
 
@@ -72,7 +72,7 @@ pub(crate) fn override_only_calls_super(c: &Cst, s: &mut Sink) {
                 continue;
             }
             s.add(
-                "SV-DSN-006",
+                "SVL-MNT-013",
                 "OverrideOnlyCallsSuper",
                 Severity::Info,
                 format!(

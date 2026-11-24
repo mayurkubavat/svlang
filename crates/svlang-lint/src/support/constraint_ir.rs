@@ -1,5 +1,5 @@
-//! Semantic constraint-block analyzer across class hierarchies (`SV-RND-041`,
-//! `SV-RND-042`, `SV-RND-043`, `SV-RND-044`).
+//! Semantic constraint-block analyzer across class hierarchies (`SVL-RND-031`,
+//! `SVL-RND-032`, `SVL-RND-033`, `SVL-RND-034`).
 
 use std::collections::{HashMap, HashSet};
 
@@ -68,7 +68,7 @@ fn analyze_cst(c: &Cst) -> ConstraintFacts {
     facts
 }
 
-// ---- SV-RND-041: Multi-variable strict relational contradiction ----
+// ---- SVL-RND-031: Multi-variable strict relational contradiction ----
 
 fn check_relational_cycles(c: &Cst, cls: NodeId, cls_name: &str, out: &mut Vec<RelationalCycle>) {
     for cd in c.tree.children(cls).filter(|&d| c.kind(d) == ConstraintDecl) {
@@ -203,7 +203,7 @@ fn collect_conjunct_edges(c: &Cst, e: NodeId, edges: &mut Vec<(String, String, u
     }
 }
 
-// ---- SV-RND-042: foreach over rand dynamic array/queue with unconstrained .size() ----
+// ---- SVL-RND-032: foreach over rand dynamic array/queue with unconstrained .size() ----
 
 fn check_unconstrained_foreach(
     c: &Cst,
@@ -308,7 +308,7 @@ fn check_unconstrained_foreach(
     }
 }
 
-// ---- SV-RND-043: `disable soft x;` when no `soft` constraint mentions `x` ----
+// ---- SVL-RND-033: `disable soft x;` when no `soft` constraint mentions `x` ----
 
 fn check_dangling_disable_soft(c: &Cst, cls: NodeId, cls_name: &str, out: &mut Vec<DanglingDisableSoft>) {
     let chain = class_chain(c, cls);
@@ -381,7 +381,7 @@ fn check_dangling_disable_soft(c: &Cst, cls: NodeId, cls_name: &str, out: &mut V
     }
 }
 
-// ---- SV-RND-044: `unique { arr }` where fixed array length > 2^W ----
+// ---- SVL-RND-034: `unique { arr }` where fixed array length > 2^W ----
 
 fn check_pigeonhole_unique(
     c: &Cst,

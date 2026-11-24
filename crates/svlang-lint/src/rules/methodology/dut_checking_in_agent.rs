@@ -1,4 +1,4 @@
-//! UVM-ROL-003 (DutCheckingInAgent): Flags agents that hold a scoreboard,
+//! UVM-CMP-020 (DutCheckingInAgent): Flags agents that hold a scoreboard,
 //! predictor or reference model.
 
 use crate::support::class_roles::{is_library, property_class, role, user_classes, Role};
@@ -27,7 +27,7 @@ pub(crate) fn dut_checking_in_agent(d: &Design, out: &mut Sink) {
                 continue;
             }
             out.add(
-                "UVM-ROL-003",
+                "UVM-CMP-020",
                 "DutCheckingInAgent",
                 Severity::Warning,
                 format!(

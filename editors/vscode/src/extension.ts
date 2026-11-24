@@ -91,7 +91,7 @@ const documentSelector = [
 
 const PRESETS: Array<{ label: string; value: string; description: string }> = [
     { label: 'Default (Config / Bug-Finding)', value: '', description: 'Use .svlang-lint/config.py preset (or soundness + methodology + performance + security)' },
-    { label: 'formal-ready', value: 'formal-ready', description: 'Pre-FPV formal-readiness pack (SV-FPV-001..005) and SVA checks' },
+    { label: 'formal-ready', value: 'formal-ready', description: 'Pre-FPV formal-readiness pack (SVA-FPV-001..005) and SVA checks' },
     { label: 'soundness', value: 'soundness', description: 'Correctness, concurrency, SVA, and type-safety bugs' },
     { label: 'methodology', value: 'methodology', description: 'UVM factory, phasing, objections, config_db, and TLM checks' },
     { label: 'performance', value: 'performance', description: 'Simulation and elaboration performance checks' },
@@ -678,7 +678,7 @@ class IgnoreRuleCodeActionProvider implements vscode.CodeActionProvider {
                 continue;
             }
             const code = typeof diag.code === 'object' ? String(diag.code.value) : String(diag.code ?? '');
-            if (!code || code === 'SV-CMP-001' || seen.has(code)) {
+            if (!code || code === 'CMP-ERR-001' || code === 'CMP-ERR-002' || code === 'SVL-WVR-002' || seen.has(code)) {
                 continue;
             }
             seen.add(code);
@@ -714,7 +714,7 @@ class IgnoreRuleCodeActionProvider implements vscode.CodeActionProvider {
 }
 
 async function addIgnoredRule(ruleId: string | undefined, target: vscode.ConfigurationTarget) {
-    const id = ruleId ?? (await vscode.window.showInputBox({ prompt: 'Rule ID to ignore (e.g. SV-STY-104)' }))?.trim();
+    const id = ruleId ?? (await vscode.window.showInputBox({ prompt: 'Rule ID to ignore (e.g. SVL-STY-104)' }))?.trim();
     if (!id) {
         return;
     }

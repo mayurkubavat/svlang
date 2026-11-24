@@ -1,4 +1,4 @@
-//! SV-SVA-007 (ImplicationInCoverProperty): `cover property` whose top-level
+//! SVA-PRP-007 (ImplicationInCoverProperty): `cover property` whose top-level
 //! property uses implication (`|->`, `|=>`) instead of sequence concatenation (`##`).
 
 use svlang::syntax::SyntaxKind::*;
@@ -37,7 +37,7 @@ pub(crate) fn implication_in_cover_property(c: &Cst, out: &mut Sink) {
             let op_tok = c.tok(seq, "|->").or_else(|| c.tok(seq, "|=>")).or_else(|| c.first_tok(ca));
             if let Some(t) = op_tok {
                 out.add(
-                    "SV-SVA-007",
+                    "SVA-PRP-007",
                     "ImplicationInCoverProperty",
                     Severity::Warning,
                     "Cover property uses implication ('|->' or '|=>'), which matches vacuously on every cycle where the antecedent is false (IEEE 1800 § 16.14.3). Use sequence concatenation ('##0' or '##1') in cover properties so only genuine stimulus hits are counted.".into(),
@@ -53,7 +53,7 @@ pub(crate) fn implication_in_cover_property(c: &Cst, out: &mut Sink) {
                 if impl_props.contains(&id) {
                     if let Some(t) = c.first_tok(ne) {
                         out.add(
-                            "SV-SVA-007",
+                            "SVA-PRP-007",
                             "ImplicationInCoverProperty",
                             Severity::Warning,
                             format!(

@@ -1,4 +1,4 @@
-//! SV-RND-017 (RandcStateExhaustion): Flags 'randc' cyclic variables declared
+//! SVL-RND-016 (RandcStateExhaustion): Flags 'randc' cyclic variables declared
 //! with bit-width <= 2 bits (1 or 2 bits).
 
 use crate::support::constraints::randc_vars;
@@ -13,7 +13,7 @@ pub(crate) fn randc_narrow(c: &Cst, s: &mut Sink) {
         let states = 1u64 << w;
         let plural = if w > 1 { "s" } else { "" };
         s.add(
-            "SV-RND-017",
+            "SVL-RND-016",
             "RandcStateExhaustion",
             Severity::Warning,
             format!(

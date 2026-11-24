@@ -1,4 +1,4 @@
-//! SV-ERR-001 (FailureNotReported): Flags randomize(), $cast(),
+//! SVL-COR-019 (FailureNotReported): Flags randomize(), $cast(),
 //! uvm_config_db::get(), try_* and compare() status checks whose failure branch
 //! is empty or only reports below error severity (Sonar S108/S1166).
 
@@ -144,7 +144,7 @@ pub(crate) fn failure_not_reported(c: &Cst, out: &mut Sink) {
         };
         for _ in 0..times {
             out.add(
-                "SV-ERR-001",
+                "SVL-COR-019",
                 "FailureNotReported",
                 Severity::Error,
                 format!(

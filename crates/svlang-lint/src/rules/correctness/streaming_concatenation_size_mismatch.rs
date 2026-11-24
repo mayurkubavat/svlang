@@ -1,4 +1,4 @@
-//! SV-STR-001 (StreamingConcatenationSizeMismatch): Flags streaming
+//! SVL-COR-025 (StreamingConcatenationSizeMismatch): Flags streaming
 //! concatenation operators ({<< { ... }} / {>> { ... }}) omitting an explicit
 //! slice size (advisory, IEEE 1800-2023 §11.4.14.2).
 
@@ -36,6 +36,6 @@ pub(crate) fn stream_slice(c: &Cst, s: &mut Sink) {
              While slice_size does not reorder bits on '>>' (IEEE 1800 § 11.4.14.2), specifying an explicit element unit (e.g. '{>> byte { ... }}') clarifies stream chunking."
                 .to_string()
         };
-        s.add("SV-STR-001", "StreamingConcatenationSizeMismatch", Severity::Info, msg, c.loc(op));
+        s.add("SVL-COR-025", "StreamingConcatenationSizeMismatch", Severity::Info, msg, c.loc(op));
     }
 }

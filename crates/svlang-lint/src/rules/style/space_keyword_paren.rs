@@ -1,4 +1,4 @@
-//! SV-STY-012 (SpaceKeywordParen): Requires a single space between control
+//! SVL-STY-010 (SpaceKeywordParen): Requires a single space between control
 //! keywords (if, for, foreach, while, case) and opening parenthesis.
 
 use crate::support::source_layout::Buffers;
@@ -19,7 +19,7 @@ pub(crate) fn space_keyword_paren(c: &Cst, s: &mut Sink) {
         if ko + k.text.len() as u32 == oo {
             let kw_text = c.text_of(kw);
             s.add(
-                "SV-STY-012",
+                "SVL-STY-010",
                 "SpaceKeywordParen",
                 Severity::Info,
                 format!(

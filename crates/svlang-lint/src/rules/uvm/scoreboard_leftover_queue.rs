@@ -1,4 +1,4 @@
-//! UVM-SCB-002 (ScoreboardLeftoverQueue): Scoreboard expected transaction
+//! UVM-TLM-011 (ScoreboardLeftoverQueue): Scoreboard expected transaction
 //! queues must be checked for drain completeness in check_phase or
 //! report_phase.
 
@@ -85,7 +85,7 @@ pub(crate) fn scoreboard_leftover_queue(d: &Design, csts: &[Cst], s: &mut Sink) 
                 continue;
             }
             s.add(
-                "UVM-SCB-002",
+                "UVM-TLM-011",
                 "ScoreboardLeftoverQueue",
                 Severity::Error,
                 format!(

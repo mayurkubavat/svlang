@@ -1,4 +1,4 @@
-//! SVA-ACT-002 (TimeInAssertionAction): Action blocks of immediate and
+//! SVA-PRP-009 (TimeInAssertionAction): Action blocks of immediate and
 //! concurrent assertions must not consume simulation time (# delays, @ event
 //! controls, or wait statements) per IEEE 1800 § 16.
 
@@ -33,7 +33,7 @@ pub(crate) fn time_in_action(c: &Cst, s: &mut Sink) {
                 add_n(
                     s,
                     n,
-                    "SVA-ACT-002",
+                    "SVA-PRP-009",
                     "TimeInAssertionAction",
                     Severity::Error,
                     format!(

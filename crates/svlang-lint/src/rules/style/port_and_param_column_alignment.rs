@@ -1,4 +1,4 @@
-//! SV-STY-025 (PortAndParamColumnAlignment): Uses [`crate::shared::tree_layout`]
+//! SVL-STY-019 (PortAndParamColumnAlignment): Uses [`crate::shared::tree_layout`]
 //! to check multi-line ANSI module/interface port and parameter lists that
 //! already use tabular column alignment (`>= 2/3` of items aligned at the same
 //! identifier column with multi-space padding), flagging items whose declared
@@ -107,7 +107,7 @@ fn check_list(c: &Cst, layout: &crate::support::layout::TreeLayout, list: NodeId
         }
         let ident = c.text_of(r.name_tok);
         let finding = out.add(
-            "SV-STY-025",
+            "SVL-STY-019",
             "PortAndParamColumnAlignment",
             Severity::Info,
             format!(

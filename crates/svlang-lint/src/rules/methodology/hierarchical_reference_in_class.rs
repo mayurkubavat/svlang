@@ -1,4 +1,4 @@
-//! UVM-CPL-004 (HierarchicalReferenceInClass): Flags class code that names a
+//! UVM-CMP-008 (HierarchicalReferenceInClass): Flags class code that names a
 //! module hierarchy (tb_top.dut.sig, $root.tb.x).
 
 use crate::support::class_roles::{Ctx, Index};
@@ -50,7 +50,7 @@ pub(crate) fn hierarchical_reference_in_class(d: &Design, csts: &[Cst], out: &mu
                 continue;
             }
             out.add(
-                "UVM-CPL-004",
+                "UVM-CMP-008",
                 "HierarchicalReferenceInClass",
                 Severity::Warning,
                 format!(

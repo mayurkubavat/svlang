@@ -1,4 +1,4 @@
-//! SV-OOP-004 (VariableShadowing): Detects variable shadowing where a derived
+//! SVL-OOP-004 (VariableShadowing): Detects variable shadowing where a derived
 //! class property shadows a base class property, or a method argument / local
 //! variable shadows a class member property.
 //!
@@ -47,7 +47,7 @@ pub(crate) fn variable_shadowing(d: &Design, out: &mut Sink) {
                     continue;
                 };
                 let f = out.add(
-                    "SV-OOP-004",
+                    "SVL-OOP-004",
                     "VariableShadowing",
                     Severity::Warning,
                     format!(
@@ -70,7 +70,7 @@ pub(crate) fn variable_shadowing(d: &Design, out: &mut Sink) {
                         continue;
                     };
                     let f = out.add(
-                        "SV-OOP-004",
+                        "SVL-OOP-004",
                         "VariableShadowing",
                         Severity::Warning,
                         format!(
@@ -90,7 +90,7 @@ pub(crate) fn variable_shadowing(d: &Design, out: &mut Sink) {
                     continue;
                 };
                 out.add(
-                    "SV-OOP-004",
+                    "SVL-OOP-004",
                     "VariableShadowing",
                     Severity::Warning,
                     format!(

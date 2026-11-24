@@ -1,4 +1,4 @@
-//! SV-TYP-013 (StructPatternFieldOrderMismatch): Flags named `struct`
+//! SVL-TYP-007 (StructPatternFieldOrderMismatch): Flags named `struct`
 //! assignment patterns (`'{b: 1, a: 2}`) whose explicit field keys appear out
 //! of the target `typedef struct` declaration order, or omit declared fields
 //! without a `default:` fallback, catching copy-paste field transpositions and
@@ -159,7 +159,7 @@ pub(crate) fn struct_pattern_field_order_mismatch(c: &Cst, out: &mut Sink) {
             if let Some((pp, pk)) = prev_pos {
                 if cur_pos < pp {
                     out.add(
-                        "SV-TYP-013",
+                        "SVL-TYP-007",
                         "StructPatternFieldOrderMismatch",
                         Severity::Warning,
                         format!(
@@ -181,7 +181,7 @@ pub(crate) fn struct_pattern_field_order_mismatch(c: &Cst, out: &mut Sink) {
                 decl_fields.iter().map(String::as_str).filter(|f| !provided.contains(*f)).collect();
             if !missing.is_empty() {
                 out.add(
-                    "SV-TYP-013",
+                    "SVL-TYP-007",
                     "StructPatternFieldOrderMismatch",
                     Severity::Warning,
                     format!(

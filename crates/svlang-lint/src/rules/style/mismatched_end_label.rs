@@ -1,4 +1,4 @@
-//! SV-STY-006 (MismatchedEndLabel): Flags mismatched end labels on functions,
+//! SVL-STY-004 (MismatchedEndLabel): Flags mismatched end labels on functions,
 //! tasks, and classes (e.g., function void foo(); ... endfunction : bar).
 
 use crate::support::source_layout::{classes, end_and_label, routine_name, routines};
@@ -17,7 +17,7 @@ pub(crate) fn mismatched_end_label(c: &Cst, s: &mut Sink) {
         // out-of-block method, which is not a legal end label.
         let fix = c.token_fix(label, label, name.rsplit("::").next().unwrap_or(&name), "Fix mismatched end label");
         s.add(
-            "SV-STY-006",
+            "SVL-STY-004",
             "MismatchedEndLabel",
             Severity::Warning,
             format!(
@@ -36,7 +36,7 @@ pub(crate) fn mismatched_end_label(c: &Cst, s: &mut Sink) {
         }
         let fix = c.token_fix(label, label, name.as_str(), "Fix mismatched end label");
         s.add(
-            "SV-STY-006",
+            "SVL-STY-004",
             "MismatchedEndLabel",
             Severity::Warning,
             format!(

@@ -1,4 +1,4 @@
-//! SV-CNS-002 (MacroAsRoutine): Flags multi-statement code macros that use
+//! SVL-MNT-003 (MacroAsRoutine): Flags multi-statement code macros that use
 //! nothing only a macro can do: no token pasting, stringification, nested
 //! macros, `__FILE__, type arguments, declarations or return/break.
 
@@ -81,7 +81,7 @@ pub(crate) fn macro_as_routine(_: &Design, csts: &[Cst], out: &mut Sink) {
         }
         let kind = if formals.is_empty() { "function or task" } else { "function or task with arguments" };
         out.add(
-            "SV-CNS-002",
+            "SVL-MNT-003",
             "MacroAsRoutine",
             Severity::Info,
             format!(

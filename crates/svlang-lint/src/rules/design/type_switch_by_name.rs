@@ -1,4 +1,4 @@
-//! SV-DSN-001 (TypeSwitchByName): Flags branching on get_type_name() compared
+//! SVL-OOP-021 (TypeSwitchByName): Flags branching on get_type_name() compared
 //! with string literals instead of virtual dispatch (Sonar 'instanceof chains',
 //! open/closed principle).
 
@@ -46,6 +46,14 @@ pub(crate) fn type_switch_by_name(c: &Cst, s: &mut Sink) {
         if classes.in_library(c, n) {
             continue;
         }
-        report(s, units.unit_times(c, n), "SV-DSN-001", "TypeSwitchByName", Severity::Warning, msg.into(), start(c, n));
+        report(
+            s,
+            units.unit_times(c, n),
+            "SVL-OOP-021",
+            "TypeSwitchByName",
+            Severity::Warning,
+            msg.into(),
+            start(c, n),
+        );
     }
 }

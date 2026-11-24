@@ -1,4 +1,4 @@
-//! SV-RND-022 (ConstraintCallingNonPureFunction): Functions called in
+//! SVL-RND-021 (ConstraintCallingNonPureFunction): Functions called in
 //! constraints must be pure and must not have side effects or void return
 //! types.
 
@@ -25,7 +25,7 @@ fn non_pure_walk(c: &Cst, n: NodeId, inside: &mut bool, s: &mut Sink) {
             if !matches!(f, "inside" | "dist" | "size") && non_pure {
                 if let Some(at) = c.first_tok(left) {
                     s.add(
-                        "SV-RND-022",
+                        "SVL-RND-021",
                         "ConstraintCallingNonPureFunction",
                         Severity::Error,
                         format!(

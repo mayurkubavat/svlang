@@ -3,53 +3,58 @@
 [![crates.io](https://img.shields.io/crates/v/svlang.svg)](https://crates.io/crates/svlang)
 [![docs.rs](https://img.shields.io/docsrs/svlang)](https://docs.rs/svlang)
 [![PyPI](https://img.shields.io/pypi/v/pysvlang.svg)](https://pypi.org/project/pysvlang/)
+[![VS Code Marketplace](https://img.shields.io/visual-studio-marketplace/v/svlang.svlang?label=VS%20Code%20Marketplace)](https://marketplace.visualstudio.com/items?itemName=svlang.svlang)
+[![Open VSX](https://img.shields.io/open-vsx/v/svlang/svlang?label=Open%20VSX)](https://open-vsx.org/extension/svlang/svlang)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
-A SystemVerilog (IEEE 1800-2023) compiler front end written in pure Rust,
-usable from Rust and from Python. It reads simulator filelists, preprocesses,
-parses to a lossless syntax tree, elaborates the design hierarchy, runs the
-compiler checks, and lowers synthesizable RTL and SVA to a word-level
-netlist. There is no C++ toolchain to build and no dependency on any other
-crate.
+Pure-Rust **IEEE 1800-2023 SystemVerilog** and **IEEE 1800.2 UVM** compiler SDK, word-level RTL/SVA netlist lowerer, 475-rule static linter, and Language Server (`svlang`). Self-contained with zero C++ build or runtime dependencies.
 
-It is the library to reach for when you are building a linter, a language
-server, a formatter, a documentation generator, a formal or equivalence
-checker, or any script that needs to understand SystemVerilog.
+- **IDE Extension ([`svlang.svlang`](editors/vscode/README.md))**: VS Code, Cursor & Antigravity — compiler-backed semantic highlighting, `` `ifdef `` dimming, RTL hierarchy & signal driver/load tracing, live syntax/semantic checks (`CMP-ERR-001`), and on-demand or on-save static linting with one-click quick fixes.
+- **Unified CLI ([`svlang-cli`](crates/svlang-cli/README.md))**: one native `svlang` binary for `check`, `lint`, `lsp`, `filelist`, `map`, `hier`, `cst`, `netlist`, `btor2`, `aiger`, and `yosys`.
+- **Compiler & Netlist SDK ([`svlang`](crates/svlang/README.md) / [`pysvlang`](crates/svlang-py/README.md))**: simulator filelists, preprocessing, lossless CSTs, elaboration, IEEE 1800 §11.6/§11.8 expression typing, SVA automata, and word-level RTL netlists from Rust or Python.
+
+---
+
+## Install
 
 ```sh
-cargo add svlang        # Rust
-pip install pysvlang    # Python 3.9+, wheels for Linux, macOS and Windows
+# Unified CLI (`svlang check`, `svlang lint`, `svlang lsp`, `svlang btor2`, ...)
+cargo install svlang-cli
+
+# Rust & Python compiler SDKs
+cargo add svlang
+pip install pysvlang
 ```
 
-## What is in it
+Prebuilt `svlang-<target>.tar.gz` archives and self-contained `svlang-<target>.vsix` bundles (`linux-x64`, `linux-arm64`, `darwin-arm64`, `darwin-x64`, `win32-x64`) are attached to every [GitHub Release](https://github.com/mayurkubavat/svlang/releases), and the editor extension is published on [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=svlang.svlang) and [Open VSX](https://open-vsx.org/extension/svlang/svlang).
 
-| Stage | Crate | What it does |
-|---|---|---|
-| Filelists | [`sv-source`](crates/sv-source/) | VCS and Xcelium `-f`/`-F` lists, `$VAR` expansion, `+incdir+`, `+define+`, `-G`, `-y`/`-v` |
-| Lexer | [`sv-lexer`](crates/sv-lexer/) | lossless tokenizer: every source byte is kept |
-| Preprocessor | [`sv-preprocessor`](crates/sv-preprocessor/) | Clause 22 macros, `` `include ``, `` `ifdef ``, with the origin of every token |
-| Syntax | [`sv-syntax`](crates/sv-syntax/) | error-recovering lossless concrete syntax tree |
-| Wide integers | [`sv-bigint`](crates/sv-bigint/) | arbitrary-width two's complement integers for constant values wider than 128 bits |
-| Hashing | [`sv-fxhash`](crates/sv-fxhash/) | the fast Fx hasher behind the internal maps of every stage from here on |
-| Scopes | [`sv-scopes`](crates/sv-scopes/) | the symbol table of every design unit and the name checks on it |
-| Checks | [`sv-checks`](crates/sv-checks/) | the compiler checks that need only syntax trees and scopes: types, binding, classes, calls, declaration order, SVA, UDPs |
-| Design IR | [`sv-ir`](crates/sv-ir/) | the elaborated design, four-state constant values and source positions the semantic passes share |
-| Expressions | [`sv-expr`](crates/sv-expr/) | expressions bound against the elaborated design, typed and sized by IEEE 1800 11.6 and 11.8 |
-| Assertions | [`sv-sva`](crates/sv-sva/) | SVA sequences and properties bound into typed temporal trees over those expressions |
-| Semantics | [`sv-semantic`](crates/sv-semantic/) | scopes, 4-state constant evaluation, elaboration, bound expressions and SVA, compiler checks, class model |
-| Netlist | [`sv-netlist`](crates/sv-netlist/) | word-level RTL netlist: procedural blocks, driver analysis, loop unrolling, SVA lowering, memories, cut points and black boxes |
-| Btor2 | [`sv-btor2`](crates/sv-btor2/) | the netlist as a Btor2 transition system for model checkers (rIC3, Pono, AVR, BtorMC) |
-| AIGER | [`sv-aiger`](crates/sv-aiger/) | the netlist bit-blasted to an and-inverter graph in AIGER, for bit-level model checkers and ABC |
-| Yosys | [`sv-yosys`](crates/sv-yosys/) | the netlist as a Yosys JSON netlist of word-level cells, for synthesis, equivalence and SymbiYosys |
-| All of it | [`svlang`](crates/svlang/) | one crate that re-exports the stages behind `Driver` and `Compilation` |
-| Command line | [`svlang-cli`](crates/svlang-cli/) | the unified `svlang` binary: `check`, `lint`, `lsp`, `filelist`, `map`, `hier`, `cst`, `netlist`, `btor2`, `aiger`, `yosys` |
-| Model & Lint | [`svlang-model`](crates/svlang-model/), [`svlang-lint`](crates/svlang-lint/), [`svlang-lsp`](crates/svlang-lsp/) | owned SV/UVM/RAL model, 446-rule static linter & auto-fix engine, and LSP server |
-| Browser | [`svlang-wasm`](crates/svlang-wasm/) | svlang as a WebAssembly module, with a playground page |
-| Python | [`pysvlang`](crates/svlang-py/) | the same pipeline from Python |
+---
 
-## Quick start
+## Quick Start
 
-Rust:
+### 1. Command Line (`svlang`)
+
+```sh
+# Compiler syntax, elaboration, and IEEE 1800 semantic checks
+svlang check -f sim/top.f -top top
+
+# Static lint (default: soundness, methodology, performance, security)
+svlang lint -f sim/tb.f
+
+# Target specific 3-3-3 domains/groups, formal readiness, or auto-fix
+svlang lint -f sim/rtl.f --rule 'RTL-*,SVA-*'
+svlang lint -f sim/rtl.f --preset formal-ready
+svlang lint -f sim/tb.f  --fix --sarif results.sarif --html report.html
+
+# Inspect any rule's documentation, options, and bad/good examples
+svlang lint --explain RTL-FSM-002
+
+# Elaborate hierarchy or lower RTL + SVA to Btor2 / AIGER / Yosys JSON
+svlang hier  -f sim/top.f -top top
+svlang btor2 -f sim/top.f -top top -o top.btor2
+```
+
+### 2. Rust SDK (`svlang`)
 
 ```rust
 use svlang::{Compilation, LowerConfig, SyntaxKind};
@@ -67,7 +72,7 @@ let netlist = comp.lower_netlist(&LowerConfig::default()).unwrap_netlist();
 println!("{} registers", netlist.states.len());
 ```
 
-Python:
+### 3. Python SDK (`pysvlang`)
 
 ```python
 import pysvlang
@@ -83,166 +88,68 @@ netlist = comp.lower_netlist()
 print(len(netlist.states), "registers")
 ```
 
-More: the [svlang crate README](crates/svlang/README.md) and its
-[examples](crates/svlang/examples/) (a custom linter, hierarchy elaboration,
-netlist lowering with an external SVA property), the
-[pysvlang README](crates/svlang-py/README.md), and the API reference on
-[docs.rs](https://docs.rs/svlang).
+See [`crates/svlang/README.md`](crates/svlang/README.md), [`crates/svlang/examples/`](crates/svlang/examples/), [`crates/svlang-py/README.md`](crates/svlang-py/README.md), and [docs.rs/svlang](https://docs.rs/svlang) for full API details.
 
-From the shell, with no code at all ([`svlang-cli`](crates/svlang-cli/)):
+---
 
-```sh
-svlang check -f sim/top.f -top top                  # errors and warnings
-svlang hier  -f sim/top.f -top top                  # the elaborated hierarchy
-svlang btor2 -f sim/top.f -top top -o top.btor2     # for a model checker
-```
+## Lint Rule Taxonomy (`DOM-GRP-NNN`)
 
-## Status
+`svlang lint` organizes **475 rules and sub-rules** across **5 top-level EDA domains**, **34 3-letter groups**, and **18 categories** using a strict **`DOM-GRP-NNN`** (`3-3-3`) signature scheme:
 
-Version 0.1: the API works and is tested, and it may still change before
-1.0. [docs/architecture/rust.md](docs/architecture/rust.md) describes the
-crates and the gates that compare the front end, construct by construct, with
-[Slang](https://github.com/MikePopoloski/slang) as a reference. Slang is
-never needed to build or use svlang.
+| Domain | Selector | Groups (`DOM-GRP`) | Rules | Focus |
+| :--- | :--- | :--- | ---: | :--- |
+| **Compiler** | `CMP-*` | `CMP-ERR` | 2 | Preprocessor, parser, elaboration, and IEEE 1800 type diagnostics |
+| **RTL Design** | `RTL-*` | `RTL-SYN`, `RTL-FSM`, `RTL-CDC`, `RTL-DAT` | 17 | Synthesizable RTL, resets, latches, FSM deadlocks/reachability, CDC, X-optimism & width hazards |
+| **SystemVerilog** | `SVL-*` | `SVL-COR`, `SVL-TYP`, `SVL-OOP`, `SVL-CON`, `SVL-RND`, `SVL-COV`, `SVL-PRF`, `SVL-DED`, `SVL-MNT`, `SVL-WVR`, `SVL-PRT`, `SVL-DPI`, `SVL-SEC`, `SVL-DEP`, `SVL-STY`, `SVL-NAM` | 296 | Language correctness, OOP, concurrency/races, solver constraints, coverage, performance, dead code, smells, DPI-C, security, style & naming |
+| **Assertions & Formal** | `SVA-*` | `SVA-PRP`, `SVA-FPV` | 21 | Concurrent/immediate SVA clocks, resets, action blocks, vacuity, and pre-FPV formal readiness (`--preset formal-ready`) |
+| **IEEE 1800.2 UVM** | `UVM-*` | `UVM-FAC`, `UVM-PHS`, `UVM-OBJ`, `UVM-CFG`, `UVM-SEQ`, `UVM-TLM`, `UVM-CMP`, `UVM-RAL`, `UVM-DEP`, `UVM-PRT`, `UVM-NAM` | 139 | Factory, phasing, inter-procedural objection CFG, `uvm_config_db`, sequences, TLM/scoreboards, component roles, RAL register maps & UVM naming |
 
-On [sv-tests](https://github.com/chipsalliance/sv-tests), the public
-SystemVerilog conformance suite, svlang passes all 1,024 tests it can judge;
-[docs/reference/sv-tests.md](docs/reference/sv-tests.md) has the numbers by
-clause.
-[docs/reference/census.md](docs/reference/census.md) measures the other end:
-how much open-source RTL lowers to a netlist, and what stops the rest.
+- **Noise-free defaults**: Running `svlang lint` with no flags runs bug-finding and methodology profiles (`soundness`, `methodology`, `performance`, `security`). Opinionated formatting (`style`), maintainability metrics (`smells`), and `advisory` rules stay opt-in via `--preset style|smells|advisory|all` or `.svlang-lint/config.py`.
+- **Prefix wildcards everywhere**: Select, fix, ignore, or waive whole domains or groups (`--rule 'RTL-*'`, `--fix-rule 'SVL-STY-*'`, `svlang.lint.ignore: ["SVL-NAM-*", "UVM-NAM-*"]`, or `// svlang-lint:off SVL-STY-*`).
+- **Full references**: [Generated Rule Catalog](docs/rules/README.md) · [UVM Methodology Guide (`MG-1`..`MG-9`)](docs/methodology/README.md) · [Linter User Guide](docs/guide/svlang-lint.md) · [Project Configuration](docs/guide/project_config.md).
 
-## Tools built on svlang
+---
 
-All native tools ship inside the single unified **`svlang`** binary (`cargo install svlang-cli`):
+## Workspace Architecture
 
-- **`svlang lint`** ([`svlang-lint`](crates/svlang-lint/)): static analysis and auto-fix for SystemVerilog, UVM, RTL/FSM/CDC, and formal readiness (`--preset formal-ready`).
-- **`svlang lsp`** ([`svlang-lsp`](crates/svlang-lsp/)): language server powering the [`svlang.svlang`](editors/vscode/) VS Code / Open VSX extension.
-- **`svlang check`**, **`svlang filelist`**, **`svlang map`**, **`svlang hier`**, **`svlang netlist`**, **`svlang btor2`**, **`svlang aiger`**, **`svlang yosys`**: compile checking, filelist normalization, UVM testbench mapping, and RTL/SVA lowering.
+| Stage | Crate | Responsibility |
+| :--- | :--- | :--- |
+| Filelists | [`sv-source`](crates/sv-source/) | VCS/Xcelium `-f`/`-F` lists, `$VAR` expansion, `+incdir+`, `+define+`, `-G`, `-y`/`-v` |
+| Lexer | [`sv-lexer`](crates/sv-lexer/) | Lossless tokenizer preserving every source byte and trivia span |
+| Preprocessor | [`sv-preprocessor`](crates/sv-preprocessor/) | Clause 22 macros, `` `include ``, `` `ifdef ``, and token expansion provenance |
+| Syntax | [`sv-syntax`](crates/sv-syntax/) | Error-recovering lossless concrete syntax tree (CST) |
+| Primitives | [`sv-bigint`](crates/sv-bigint/), [`sv-fxhash`](crates/sv-fxhash/), [`sv-scopes`](crates/sv-scopes/), [`sv-ir`](crates/sv-ir/) | Arbitrary-width 2's-complement integers, fast hashing, symbol scopes, and shared elaborated IR |
+| Semantic & SVA | [`sv-checks`](crates/sv-checks/), [`sv-expr`](crates/sv-expr/), [`sv-sva`](crates/sv-sva/), [`sv-semantic`](crates/sv-semantic/) | Clause-by-clause semantic checks, 4-state constant eval, elaboration, IEEE 1800 §11.6/§11.8 expression typing, and bound SVA trees |
+| RTL Lowering | [`sv-netlist`](crates/sv-netlist/), [`sv-btor2`](crates/sv-btor2/), [`sv-aiger`](crates/sv-aiger/), [`sv-yosys`](crates/sv-yosys/) | Word-level RTL & SVA NFA/DFA lowering, memory blasting, Btor2, AIGER, and Yosys JSON backends |
+| Umbrella & Bindings | [`svlang`](crates/svlang/), [`pysvlang`](crates/svlang-py/), [`svlang-wasm`](crates/svlang-wasm/) | Unified Rust `Driver`/`Compilation` API, Python wheels, and WebAssembly playground |
+| Model, Lint, LSP & CLI | [`svlang-model`](crates/svlang-model/), [`svlang-lint`](crates/svlang-lint/), [`svlang-lsp`](crates/svlang-lsp/), [`svlang-cli`](crates/svlang-cli/) | Owned SV/UVM/RAL model, parallel 475-rule linter & autofix engine, LSP server, and unified `svlang` CLI |
 
-# svlang lint
+### Conformance & Verification Gates
 
-Static analysis for SystemVerilog (IEEE 1800) and UVM (IEEE 1800.2)
-verification code: UVM methodology, OOP design, concurrency and delta-cycle
-races, SVA and coverage health, constrained random, formal readiness (`SV-FPV-*`),
-RTL/FSM/CDC/dataflow, code smells, duplication and style. Findings come as text,
-JSON, SARIF 2.1.0 or a self-contained HTML report, with baselines, scoped
-waivers, safe autofixes, a language server (`svlang lsp`) and a VS Code / Open
-VSX extension (`svlang.svlang`).
-
-Every rule has a `bad.sv` / `good.sv` pair under [`testdata/rules/`](testdata/rules/)
-tested by `cargo test` and end-to-end suites under [`tests/`](tests/). The rule
-catalog is in [docs/rules/README.md](docs/rules/README.md).
-
-## Install
-
-**A release build.** Tagged
-[releases](https://github.com/mayurkubavat/svlang/releases) attach
-`svlang-<platform>.tar.gz` for Linux x64/arm64 (glibc 2.28 or later),
-macOS arm64/x64, and Windows x64: the single `svlang` binary and the Python SDK.
-Unpack it and put its `bin/` on your `PATH`. The VS Code / Open VSX extension
-(`svlang.svlang`) is published to both registries and attached per platform as
-`svlang-<target>.vsix`.
-
-**From source.** The unified `svlang` binary needs only a Rust toolchain (1.82+):
-
-```sh
-cargo install svlang-cli
-# or from a checkout:
-git clone https://github.com/mayurkubavat/svlang.git
-cd svlang
-cargo build --release -p svlang-cli   # -> target/release/svlang
-```
-
-## Quick start
-
-```sh
-# Lint a testbench with the methodology profile
-svlang lint tb/*.sv -I tb --preset methodology
-
-# JSON or SARIF reports for CI
-svlang lint -f tb.f --json findings.json --sarif findings.sarif
-
-# Pre-FPV formal-readiness checks and safe auto-fixes
-svlang lint -f rtl.f --preset formal-ready
-
-# Every rule: style, smells, advisory and experimental ones too
-svlang lint -f tb.f --preset all --experimental
-```
-
-`svlang` takes simulator-style compile options (`-f`, `+incdir+`, `+define+`,
-`-top`), reads `.svlang-lint/` project config, and honors waivers and baselines.
-Optional dev-only Slang compiler dumpers live under `tools/oracles/`
-(`cmake --preset oracles`) for differential IEEE 1800 conformance gates; see
-[third_party/slang](third_party/slang/README.md).
-
-## Rules
-
-409 rules in 20 categories. The largest groups:
-
-| Area | What it catches |
-|---|---|
-| UVM (94) | factory and `config_db` misuse, phasing and objections, sequences, RAL maps and adapters, deprecated API |
-| Style, naming, maintainability (80) | layout, naming conventions, long routines, deep nesting, god classes, magic numbers, duplication |
-| Correctness, concurrency (60) | width mismatches, delta-cycle races, fork/join and clocking pitfalls, unchecked failures |
-| Randomization, coverage, SVA (56) | unchecked `randomize()`, constraint conflicts, coverage that cannot close, vacuous assertions |
-| OOP, architecture (33) | missing `virtual`, unsafe casts, layer violations, coupling and reach-through |
-
-By default the rules that find bugs and methodology problems run
-(soundness, methodology, performance, security); style, maintainability
-and advisory rules are opt-in with `--preset style`, `smells`, `advisory`
-or `all`, or by configuring them in the project config. Profiles
-(`--preset`) pick a set for a purpose, such as `methodology`. The
-generated [rule catalog](docs/rules/README.md) lists every rule with its
-severity, profiles and `bad.sv`/`good.sv` examples, and the
-[UVM Methodology Guide](docs/methodology/README.md) explains the reasoning
-behind the design rules.
-
-The full svlang-lint guide (profiles, fixes, reports, Python rules, baselines,
-waivers, CI) is [docs/guide/svlang-lint.md](docs/guide/svlang-lint.md). The Rust
-tools are described in [docs/architecture/rust.md](docs/architecture/rust.md).
-
-## Repository layout
-
-```
-crates/            Rust workspace members (Cargo.toml is at the root)
-crates/svlang-py/  pysvlang: Python bindings for the svlang front end (PyO3 + maturin)
-python/            Python SDK: rules, waivers and project config in Python (+ examples/, tests/)
-editors/vscode/    VS Code / Open VSX extension (`svlang.svlang`)
-tests/             end-to-end Python CLI, catalog, and --fix invariant suites
-testdata/          rule and compiler fixtures: rules/, common/, conformance/, map/, model/, netlist/
-tools/oracles/     optional dev-only Slang compiler dumpers (`cmake --preset oracles`)
-tools/gates/       conformance, netlist, and differential compiler gates
-tools/codegen/     rule catalog and guideline generators
-tools/quality/     precision, error budget, config sweep, census
-third_party/slang/ Slang pin for optional dev-only oracles
-docs/              guides, architecture, rule catalog, methodology guide
-.svlang-lint/      this repository's own lint config
-```
-
-[docs/README.md](docs/README.md) is the index of all documentation, and
-[docs/architecture/overview.md](docs/architecture/overview.md) explains how
-the pieces fit together.
-
-## Use it in CI
-
-The repository is a GitHub composite action ([action.yml](action.yml)) and a
-pre-commit hook ([.pre-commit-hooks.yaml](.pre-commit-hooks.yaml)); see
-[CI, pre-commit and editor](docs/guide/svlang-lint.md#ci-pre-commit-and-editor).
-
-## Tests
+- **[sv-tests](docs/reference/sv-tests.md)**: Passes all 1,024 applicable tests in the public SystemVerilog conformance suite.
+- **[RTL Netlist Census](docs/reference/census.md)** & `netlist_gate.py`: End-to-end word-level lowering and SVA automaton verification.
+- **Differential Oracles ([`third_party/slang`](third_party/slang/README.md))**: Optional dev-only Slang dumpers (`cmake --preset oracles`) cross-check preprocessing, CSTs, symbol binding, specialization counts, and expression widths/signedness; Slang is never needed to build or run `svlang`.
 
 ```sh
 cargo test                                         # all pure-Rust workspace tests
-tools/gates/rust_gate.sh                           # guidelines, cargo fmt --check, Clippy -D warnings
-python3 tools/gates/netlist_gate.py                # RTL netlist lowering gate
+./tools/gates/rust_gate.sh                         # guidelines, cargo fmt --check, Clippy -D warnings
+python3 tools/gates/netlist_gate.py                # RTL & SVA netlist lowering gate
 python3 tests/test_fix_invariants.py               # --fix mutation & idempotency invariants
 python3 python/tests/test_python_rules.py          # Python rule SDK tests
 ```
 
+---
+
+## Documentation & CI Integration
+
+- **Documentation Index**: [docs/README.md](docs/README.md) ([Architecture](docs/architecture/rust.md), [Linter Guide](docs/guide/svlang-lint.md), [Project Config](docs/guide/project_config.md), [Python Rule SDK](docs/guide/python_rule_sdk.md), [VS Code Extension](editors/vscode/README.md)).
+- **GitHub Action & pre-commit**: Use [`action.yml`](action.yml) for PR changed-line gating + SARIF upload and [`.pre-commit-hooks.yaml`](.pre-commit-hooks.yaml) for local commit hooks; see [CI, pre-commit and editor](docs/guide/svlang-lint.md#ci-pre-commit-and-editor).
+
+---
+
 ## Citing
 
-If you use this project, please cite the technical report:
+If you use this project in research or industrial publications, please cite:
 
 > M. Kubavat, "InFormal: An Open-Source Formal Property Verifier for SystemVerilog with Checked Verdicts," technical report, Zenodo, Nov. 2026. doi: [10.5281/zenodo.24261270](https://doi.org/10.5281/zenodo.24261270)
 
@@ -258,12 +165,6 @@ If you use this project, please cite the technical report:
 }
 ```
 
-GitHub's "Cite this repository" button reads the same data from `CITATION.cff`.
+## Contributing & License
 
-## Contributing
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for how to add a rule and its tests.
-
-## License
-
-Apache License 2.0, see [LICENSE](LICENSE) and [NOTICE](NOTICE). Third-party components are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+See [CONTRIBUTING.md](CONTRIBUTING.md) for rule authoring, prefix allocation, and verification gates. Licensed under Apache License 2.0 ([LICENSE](LICENSE), [NOTICE](NOTICE), [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)).

@@ -1,4 +1,4 @@
-//! Cached semantic & netlist facts for the Formal-Readiness rule pack (`SV-FPV-001..005`).
+//! Cached semantic & netlist facts for the Formal-Readiness rule pack (`SVA-FPV-001..005`).
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;

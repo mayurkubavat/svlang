@@ -1,4 +1,4 @@
-//! SV-RND-024 (RandomizeInsideAssert): Flags randomize() used as the condition
+//! SVL-RND-023 (RandomizeInsideAssert): Flags randomize() used as the condition
 //! of an immediate assert or assume.
 
 use crate::support::class_items::{call_name, kids, op, strip_casts, user_code};
@@ -28,7 +28,7 @@ pub(crate) fn randomize_in_assert(c: &Cst, s: &mut Sink) {
             }
             let Some(at) = c.first_tok(st) else { continue };
             s.add(
-                "SV-RND-024",
+                "SVL-RND-023",
                 "RandomizeInsideAssert",
                 Severity::Warning,
                 "randomize() is called inside an assertion. When assertions are turned off \

@@ -1,4 +1,4 @@
-//! SV-RTL-001 (MixedResetPolarity): Same reset signal used with both `posedge`
+//! RTL-SYN-001 (MixedResetPolarity): Same reset signal used with both `posedge`
 //! and `negedge` sensitivity in the same module.
 
 use crate::support::rtl_fsm_cdc;
@@ -8,7 +8,7 @@ use crate::{Severity, Sink};
 pub(crate) fn mixed_reset_polarity(c: &Cst, out: &mut Sink) {
     for hit in &rtl_fsm_cdc::facts(c).mixed_reset_polarity {
         out.add(
-            "SV-RTL-001",
+            "RTL-SYN-001",
             "MixedResetPolarity",
             Severity::Warning,
             format!(

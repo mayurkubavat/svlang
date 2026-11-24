@@ -1,4 +1,4 @@
-//! SV-DSN-010 (QueryChangesState): Flags functions named get_*, is_* or has_*
+//! SVL-MNT-017 (QueryChangesState): Flags functions named get_*, is_* or has_*
 //! that write class properties (command-query separation). get_next_* is
 //! allowed.
 
@@ -35,7 +35,7 @@ pub(crate) fn query_changes_state(c: &Cst, s: &mut Sink) {
             }
             if let Some(sym) = changed {
                 s.add(
-                    "SV-DSN-010",
+                    "SVL-MNT-017",
                     "QueryChangesState",
                     Severity::Info,
                     format!(

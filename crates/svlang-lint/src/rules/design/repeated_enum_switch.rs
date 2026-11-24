@@ -1,4 +1,4 @@
-//! SV-DSN-009 (RepeatedEnumSwitch): Flags an enum that is switched on with case
+//! SVL-MNT-016 (RepeatedEnumSwitch): Flags an enum that is switched on with case
 //! in three or more classes, a sign that behavior per kind belongs in a
 //! polymorphic item or policy class (Fowler 'repeated switches').
 
@@ -56,7 +56,7 @@ pub(crate) fn repeated_enum_switch(c: &Cst, s: &mut Sink) {
             v.push((i, st));
         }
     }
-    let min = crate::options::get("SV-DSN-009", "min_classes", 3) as _;
+    let min = crate::options::get("SVL-MNT-016", "min_classes", 3) as _;
     for ty in order {
         let v = &sites[&ty];
         if v.len() < min {
@@ -65,7 +65,7 @@ pub(crate) fn repeated_enum_switch(c: &Cst, s: &mut Sink) {
         let names = v.iter().map(|(i, _)| classes.list[*i].name.as_str()).collect::<Vec<_>>().join(", ");
         for (i, st) in v {
             s.add(
-                "SV-DSN-009",
+                "SVL-MNT-016",
                 "RepeatedEnumSwitch",
                 Severity::Info,
                 format!(

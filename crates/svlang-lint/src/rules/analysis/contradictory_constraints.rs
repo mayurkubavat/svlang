@@ -1,4 +1,4 @@
-//! SV-RND-030 (ContradictoryConstraints): Flags rand variables whose hard
+//! SVL-RND-027 (ContradictoryConstraints): Flags rand variables whose hard
 //! constraints leave no legal value, such as `len > 10` on a `bit [3:0]`, or
 //! `x < 5` and `x inside {[8:9]}`: every randomize() of the class fails.
 //! Bounds in one constraint block always count; bounds in different blocks
@@ -47,7 +47,7 @@ fn check(c: &Cst, cc: &ClassConstraints, var: &str, scope: Option<&str>, out: &m
         if s.is_empty() {
             let bounds: Vec<String> = used.iter().map(|a| format!("'{}' ({})", a.text, a.block)).collect();
             out.add(
-                "SV-RND-030",
+                "SVL-RND-027",
                 "ContradictoryConstraints",
                 Severity::Error,
                 format!(

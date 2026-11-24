@@ -25,9 +25,9 @@ failures = []
 SOURCE = """module user_tb;
   int a, b;
   initial begin
-    if (a == a) $display("one");   // svlang-lint:waive SV-COR-008 -- reviewed
+    if (a == a) $display("one");   // svlang-lint:waive SVL-COR-004 -- reviewed
     if (b == b) $display("two");
-    $display("clean");             // svlang-lint:waive SV-COR-008 -- stale comment
+    $display("clean");             // svlang-lint:waive SVL-COR-004 -- stale comment
   end
 endmodule : user_tb
 """
@@ -37,10 +37,10 @@ from svlang_lint.config import ProjectConfig, Waiver
 
 class Project(ProjectConfig):
     waivers = [
-        Waiver("SV-COR-008", path="user_tb.sv", line=5, reason="known", owner="alice"),
-        Waiver("SV-COR-001", path="user_tb.sv", reason="same finding as SV-COR-008", owner="bob"),
-        Waiver("SV-COR-009", path="user_tb.sv", reason="nothing here", owner="carol"),
-        Waiver("SV-COR-008", path="user_tb.sv", reason="old", expires="2001-01-01"),
+        Waiver("SVL-COR-004", path="user_tb.sv", line=5, reason="known", owner="alice"),
+        Waiver("SVL-COR-001", path="user_tb.sv", reason="same finding as SVL-COR-004", owner="bob"),
+        Waiver("RTL-DAT-002", path="user_tb.sv", reason="nothing here", owner="carol"),
+        Waiver("SVL-COR-004", path="user_tb.sv", reason="old", expires="2001-01-01"),
     ]
 """
 
@@ -74,8 +74,8 @@ def main():
         rc, out = run(binary, root, "--waiver-report")
         check(rc == 0, "report alone does not change the exit status", out)
         check("Waivers: 3 written, 1 matched nothing, 1 expired" in out, "counts written/unused/expired", out)
-        check(re.search(r"unused:\s+Waiver\(SV-COR-009\)", out) is not None, "unused config waiver named", out)
-        check("expired: Waiver(SV-COR-008) expired 2001-01-01" in out, "expired waiver named", out)
+        check(re.search(r"unused:\s+Waiver\(RTL-DAT-002\)", out) is not None, "unused config waiver named", out)
+        check("expired: Waiver(SVL-COR-004) expired 2001-01-01" in out, "expired waiver named", out)
         check("Waiver comments: 2 in source, 1 waive nothing" in out, "comment counts", out)
         check("user_tb.sv:6:" in out and "user_tb.sv:4:" not in out.split("Waiver comments")[1].split("Baseline")[0],
               "only the stale comment is listed", out)
@@ -92,10 +92,10 @@ def main():
               "stale baseline entries counted", out)
 
         print("Clean")
-        (root / "user_tb.sv").write_text(SOURCE.replace("             // svlang-lint:waive SV-COR-008 -- stale comment", ""))
+        (root / "user_tb.sv").write_text(SOURCE.replace("             // svlang-lint:waive SVL-COR-004 -- stale comment", ""))
         (root / ".svlang-lint" / "config.py").write_text(CONFIG.replace(
-            '        Waiver("SV-COR-009", path="user_tb.sv", reason="nothing here", owner="carol"),\n', "").replace(
-            '        Waiver("SV-COR-008", path="user_tb.sv", reason="old", expires="2001-01-01"),\n', ""))
+            '        Waiver("RTL-DAT-002", path="user_tb.sv", reason="nothing here", owner="carol"),\n', "").replace(
+            '        Waiver("SVL-COR-004", path="user_tb.sv", reason="old", expires="2001-01-01"),\n', ""))
         rc, out = run(binary, root, "--strict-waivers")
         check(rc == 0, f"--strict-waivers passes once cleaned up (got {rc})", out)
 
@@ -104,68 +104,68 @@ def main():
         scoped.mkdir()
         (scoped / "user_tb.sv").write_text(
             "module user_tb;\n  int a, b;\n  initial begin\n"
-            "    if (a == a) $display(\"one\"); // svlang-lint:waive SV-COR-008 \"expression 'a'\"\n"
-            "    // svlang-lint: waive SV-COR-008 \"expression 'b'\"\n"
+            "    if (a == a) $display(\"one\"); // svlang-lint:waive SVL-COR-004 \"expression 'a'\"\n"
+            "    // svlang-lint: waive SVL-COR-004 \"expression 'b'\"\n"
             "    if (b == b) $display(\"two\");\n"
             "  end\nendmodule\n")
         (scoped / "config.py").write_text(
             "from svlang_lint.config import ProjectConfig, Waiver\n"
             "class Project(ProjectConfig):\n"
-            "    waivers = [Waiver('SV-COR-008', reason='only a', message=\"expression 'a'\")]\n")
+            "    waivers = [Waiver('SVL-COR-004', reason='only a', message=\"expression 'a'\")]\n")
         # The inline comments already waive both lines; drop them so the config regex is what decides.
         (scoped / "user_tb.sv").write_text(
             "module user_tb;\n  int a, b;\n  initial begin\n"
             "    if (a == a) $display(\"one\");\n"
             "    if (b == b) $display(\"two\");\n"
             "  end\nendmodule\n")
-        rc, out = run(binary, scoped, "--config", "config.py", "--rule", "SV-COR-008", "--json", "out.json")
+        rc, out = run(binary, scoped, "--config", "config.py", "--rule", "SVL-COR-004", "--json", "out.json")
         import json
         found = json.loads((scoped / "out.json").read_text())["violations"]
-        lines = sorted(v["line"] for v in found if v["ruleId"] == "SV-COR-008")
+        lines = sorted(v["line"] for v in found if v["ruleId"] == "SVL-COR-004")
         check(lines == [5], f"message regex waives only the 'a' finding, got {lines}", out)
 
         (scoped / "user_tb.sv").write_text(
             "module user_tb;\n  int a, b;\n  initial begin\n"
-            "    if (a == a) $display(\"one\"); // svlang-lint:waive SV-COR-008 \"expression 'a'\"\n"
-            "    // svlang-lint: waive SV-COR-008 \"no-such-text\"\n"
+            "    if (a == a) $display(\"one\"); // svlang-lint:waive SVL-COR-004 \"expression 'a'\"\n"
+            "    // svlang-lint: waive SVL-COR-004 \"no-such-text\"\n"
             "    if (b == b) $display(\"two\");\n"
             "  end\nendmodule\n")
-        rc, out = run(binary, scoped, "--no-config", "--rule", "SV-COR-008", "--json", "out.json")
+        rc, out = run(binary, scoped, "--no-config", "--rule", "SVL-COR-004", "--json", "out.json")
         found = json.loads((scoped / "out.json").read_text())["violations"]
-        lines = sorted(v["line"] for v in found if v["ruleId"] == "SV-COR-008")
+        lines = sorted(v["line"] for v in found if v["ruleId"] == "SVL-COR-004")
         check(lines == [6], f"inline message regex waives only a matching diagnostic, got {lines}", out)
 
         (scoped / "user_tb.sv").write_text(
             "module user_tb;\n  int a, b;\n  initial begin\n"
             "    if (a == a) $display(\"one\");\n"
-            "    // svlang-lint: waive SV-COR-008 \"expression 'b'\"\n"
+            "    // svlang-lint: waive SVL-COR-004 \"expression 'b'\"\n"
             "    if (b == b) $display(\"two\");\n"
             "  end\nendmodule\n")
-        rc, out = run(binary, scoped, "--no-config", "--rule", "SV-COR-008", "--json", "out.json")
+        rc, out = run(binary, scoped, "--no-config", "--rule", "SVL-COR-004", "--json", "out.json")
         found = json.loads((scoped / "out.json").read_text())["violations"]
-        lines = sorted(v["line"] for v in found if v["ruleId"] == "SV-COR-008")
+        lines = sorted(v["line"] for v in found if v["ruleId"] == "SVL-COR-004")
         check(lines == [4], f"'svlang-lint: waive' with a message regex waives the next line, got {lines}", out)
 
         (scoped / "config.py").write_text(
             "from svlang_lint.config import ProjectConfig, Waiver\n"
             "class Project(ProjectConfig):\n"
-            "    waivers = [Waiver('SV-COR-009', reason='nothing casex', message='casex')]\n")
-        rc, out = run(binary, scoped, "--config", "config.py", "--report-unused-waivers", "--rule", "SV-COR-008")
-        check("UVM-WV-001" in out and "matched no diagnostic" in out,
+            "    waivers = [Waiver('RTL-DAT-002', reason='nothing casex', message='casex')]\n")
+        rc, out = run(binary, scoped, "--config", "config.py", "--report-unused-waivers", "--rule", "SVL-COR-004")
+        check("SVL-WVR-002" in out and "matched no diagnostic" in out,
               "--report-unused-waivers warns about a waiver that matched nothing", out)
-        rc, quiet = run(binary, scoped, "--config", "config.py", "--rule", "SV-COR-008")
-        check("UVM-WV-001" not in quiet, "unused waivers stay quiet without the flag", quiet)
+        rc, quiet = run(binary, scoped, "--config", "config.py", "--rule", "SVL-COR-004")
+        check("SVL-WVR-002" not in quiet, "unused waivers stay quiet without the flag", quiet)
 
         (scoped / "config.py").write_text(
             "from svlang_lint.config import ProjectConfig, Waiver\n"
             "class Project(ProjectConfig):\n"
-            "    waivers = [Waiver('SV-COR-008', reason='bad', message='(')]\n")
+            "    waivers = [Waiver('SVL-COR-004', reason='bad', message='(')]\n")
         rc, out = run(binary, scoped, "--config", "config.py")
-        check(rc == 2 and "config.py" in out and "Waiver(SV-COR-008)" in out and "invalid message regex" in out,
+        check(rc == 2 and "config.py" in out and "Waiver(SVL-COR-004)" in out and "invalid message regex" in out,
               "invalid message regex names the config file and the waiver", out)
 
         (scoped / "waivers.json").write_text(
-            '{"waivers":[{"rule":"SV-COR-008","reason":"bad","message":"("}]}')
+            '{"waivers":[{"rule":"SVL-COR-004","reason":"bad","message":"("}]}')
         rc, out = run(binary, scoped, "--no-config", "--waivers", "waivers.json")
         check(rc == 2 and "waivers.json" in out and "invalid message regex" in out,
               "invalid message regex in a waiver file names that file", out)
@@ -179,26 +179,26 @@ def main():
         (scoped / "config.py").write_text(
             "from svlang_lint.config import ProjectConfig, Waiver, Severity\n"
             "class Project(ProjectConfig):\n"
-            "    waivers = [Waiver('SV-COR-008', reason='tracked', message=\"expression 'b'\", severity=Severity.Info)]\n")
-        rc, out = run(binary, scoped, "--config", "config.py", "--rule", "SV-COR-008", "--json", "out.json")
-        found = [v for v in json.loads((scoped / "out.json").read_text())["violations"] if v["ruleId"] == "SV-COR-008"]
+            "    waivers = [Waiver('SVL-COR-004', reason='tracked', message=\"expression 'b'\", severity=Severity.Info)]\n")
+        rc, out = run(binary, scoped, "--config", "config.py", "--rule", "SVL-COR-004", "--json", "out.json")
+        found = [v for v in json.loads((scoped / "out.json").read_text())["violations"] if v["ruleId"] == "SVL-COR-004"]
         sev = {v["line"]: v["severity"] for v in found}
         check(sev == {4: "ERROR", 5: "INFO"}, f"severity waiver keeps the finding at INFO, got {sev}", out)
         check(any("[re-graded by" in v["message"] for v in found), "re-graded finding says so")
         check("re-graded by waivers" in out, "run summary counts re-graded findings", out)
 
         (scoped / "waivers.json").write_text(
-            '{"waivers":[{"rule":"SV-COR-008","reason":"r","severity":"warning"}]}')
-        rc, out = run(binary, scoped, "--no-config", "--waivers", "waivers.json", "--rule", "SV-COR-008",
+            '{"waivers":[{"rule":"SVL-COR-004","reason":"r","severity":"warning"}]}')
+        rc, out = run(binary, scoped, "--no-config", "--waivers", "waivers.json", "--rule", "SVL-COR-004",
                       "--json", "out.json")
-        found = [v for v in json.loads((scoped / "out.json").read_text())["violations"] if v["ruleId"] == "SV-COR-008"]
+        found = [v for v in json.loads((scoped / "out.json").read_text())["violations"] if v["ruleId"] == "SVL-COR-004"]
         check(len(found) == 2 and all(v["severity"] == "WARNING" for v in found),
               "waiver file severity re-grades", out)
 
         (scoped / "config.py").write_text(
             "from svlang_lint.config import ProjectConfig, Waiver\n"
             "class Project(ProjectConfig):\n"
-            "    waivers = [Waiver('SV-COR-008', reason='x', severity='fatal')]\n")
+            "    waivers = [Waiver('SVL-COR-004', reason='x', severity='fatal')]\n")
         rc, out = run(binary, scoped, "--config", "config.py")
         check(rc == 2 and "unknown severity" in out, "an unknown waiver severity is a config error", out)
 

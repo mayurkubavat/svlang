@@ -1,4 +1,4 @@
-//! SV-COR-020 (ProceduralAssignmentAsSubExpression): Disallows embedded
+//! SVL-COR-006 (ProceduralAssignmentAsSubExpression): Disallows embedded
 //! assignment expressions used as sub-expressions within conditionals or
 //! arithmetic operations.
 
@@ -63,7 +63,7 @@ pub(crate) fn assignment_sub_expr(c: &Cst, s: &mut Sink) {
         let last = text.rsplit('\n').next().unwrap_or("");
         let expr = last.trim_matches([' ', '\t', '\r']);
         s.add(
-            "SV-COR-020",
+            "SVL-COR-006",
             "ProceduralAssignmentAsSubExpression",
             Severity::Warning,
             format!(

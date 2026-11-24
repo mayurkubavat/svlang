@@ -1,0 +1,12 @@
+{
+  "bad.sv": [
+    {
+      "rule": "SVA-FPV-005",
+      "line": 10
+    },
+    {
+      "rule": "SVA-FPV-005",
+      "line": 12
+    }
+  ]
+}

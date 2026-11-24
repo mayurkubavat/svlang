@@ -1,0 +1,5 @@
+{
+  "bad.sv": [
+    {"rule": "SVL-TYP-007", "line": 7}
+  ]
+}

@@ -11,37 +11,37 @@ compiles every probe with one tool and records the result in
 `data/vendor/<tool>.json` with the tool's version and the date:
 
 ```
-tools/quality/vendor_table.py measure verilator      # or iverilog, vcs, xcelium, questa, svlang-lint, svlang
+tools/quality/vendor_table.py measure verilator      # or iverilog, vcs, xcelium, questa, slang, svlang
 tools/quality/vendor_table.py table                  # this table, from data/vendor/
-svlang-lint $(tools/quality/vendor_table.py slang-flags data/vendor/vcs.json) -f files.f
+svlang lint $(tools/quality/vendor_table.py slang-flags data/vendor/vcs.json) -f files.f
 ```
 
-`slang-flags` prints the slang options for the relaxations a measured tool
-accepts, so svlang-lint accepts the same code that tool does.
+`slang-flags` prints the compatibility flags for the relaxations a measured tool
+accepts, so `svlang` accepts the same code that tool does.
 
 ## Results
 
 "no" can also mean the tool fails on something else in the probe (Verilator
 5.020 has no covergroups); the JSON keeps each rejection's message.
 
-| Probe | slang option | dv-build | iverilog | svlang-lint | verilator |
+| Probe | slang option | iverilog | svlang-lint | svlang | verilator |
 |---|---|---|---|---|---|
-| `array-concat-pattern` | `--allow-array-concat-assign-pattern` | yes | no | no | yes |
-| `bare-value-param` | `--allow-bare-value-param-assigment` | yes | no | no | yes |
+| `array-concat-pattern` | `--allow-array-concat-assign-pattern` | no | no | yes | yes |
+| `bare-value-param` | `--allow-bare-value-param-assigment` | no | no | yes | yes |
 | `cross-auto-bin-max` | `--allow-cross-auto-bin-max` | no | no | no | no |
-| `declarations-after-statements` | `none` | yes | no | no | no |
-| `genblk-reference` | `--allow-genblk-reference` | no | yes | no | yes |
-| `hierarchical-const` | `--allow-hierarchical-const` | yes | no | no | no |
+| `declarations-after-statements` | `none` | no | no | yes | no |
+| `genblk-reference` | `--allow-genblk-reference` | yes | no | yes | yes |
+| `hierarchical-const` | `--allow-hierarchical-const` | no | no | yes | no |
 | `merging-ansi-ports` | `--allow-merging-ansi-ports` | no | no | no | no |
-| `relax-enum` | `--relax-enum-conversions` | yes | no | no | no |
-| `relax-string` | `--relax-string-conversions` | yes | no | no | no |
-| `self-determined-stream` | `--allow-self-determined-stream-concat` | yes | no | no | yes |
+| `relax-enum` | `--relax-enum-conversions` | no | no | yes | no |
+| `relax-string` | `--relax-string-conversions` | no | no | yes | no |
+| `self-determined-stream` | `--allow-self-determined-stream-concat` | no | no | yes | yes |
 | `toplevel-iface-ports` | `--allow-toplevel-iface-ports` | no | no | no | yes |
-| `use-before-declare` | `--allow-use-before-declare` | no | yes | no | yes |
+| `use-before-declare` | `--allow-use-before-declare` | yes | no | no | yes |
 
-- dv-build: dv-build at 6c930fa (measured 2026-11-08)
 - iverilog: Icarus Verilog version 12.0 (stable) () (measured 2026-11-08)
-- svlang-lint: svlang-lint at 6c930fa (measured 2026-11-08)
+- svlang-lint: Slang strict reference at 6c930fa (measured 2026-11-08)
+- svlang: svlang at v0.5.2 (measured 2026-11-23)
 - verilator: Verilator 5.020 2024-01-01 rev (Debian 5.020-1) (measured 2026-11-08)
 
 ## Not measured yet
@@ -52,10 +52,10 @@ machine that has them: `measure vcs` runs `vcs -full64 -sverilog`,
 `qrun -sv -optimize`, each with `probe` as the top. Commit the JSON it
 writes; the table above picks it up.
 
-## What the native builder still lets through
+## Relaxations accepted by `svlang check`
 
-dv-build accepts seven probes that IEEE 1800 rejects (hierarchical names in
-constants, implicit enum and string conversions, declarations after
-statements, bare `#W` parameter values, self-determined streaming and
-assignment patterns in array concatenations). Each is a semantic check
-sv-semantic does not make yet.
+`svlang check` currently accepts eight simulator-compatibility probes by default
+(hierarchical names in constants, implicit enum and string conversions,
+declarations after statements, bare `#W` parameter values, implicit `genblk<n>`
+references, self-determined streaming, and assignment patterns in array
+concatenations).

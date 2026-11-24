@@ -1,4 +1,4 @@
-//! SV-MET-004 (DeepNesting): Flags routines whose control structures nest
+//! SVL-MNT-032 (DeepNesting): Flags routines whose control structures nest
 //! deeper than the threshold (default 5; Checkstyle NestedIfDepth, clang-tidy
 //! readability-function-size NestingThreshold).
 
@@ -8,7 +8,7 @@ use crate::syntax::Cst;
 use crate::{Severity, Sink};
 
 pub(crate) fn deep_nesting(c: &Cst, s: &mut Sink) {
-    let limit = crate::options::get("SV-MET-004", "max_depth", 5) as _;
+    let limit = crate::options::get("SVL-MNT-032", "max_depth", 5) as _;
     each_routine(c, |_, r| {
         let m = routine_metrics(c, r.body);
         if m.max_nesting <= limit {
@@ -18,7 +18,7 @@ pub(crate) fn deep_nesting(c: &Cst, s: &mut Sink) {
         report(
             s,
             r.times,
-            "SV-MET-004",
+            "SVL-MNT-032",
             "DeepNesting",
             Severity::Warning,
             format!(

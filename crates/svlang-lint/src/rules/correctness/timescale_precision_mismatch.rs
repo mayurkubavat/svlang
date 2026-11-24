@@ -1,4 +1,4 @@
-//! SV-TIM-001 (TimescalePrecisionMismatch): Flags `timescale directives where
+//! SVL-COR-026 (TimescalePrecisionMismatch): Flags `timescale directives where
 //! the time precision is coarser than the time unit (IEEE 1800 § 3.14.2).
 
 use crate::support::data_items::main_files;
@@ -49,7 +49,7 @@ pub(crate) fn timescale_precision(c: &Cst, s: &mut Sink) {
                         let cu = unit.trim_matches([' ', '\t']);
                         let cp = prec.trim_end_matches([' ', '\t', '\r', '\n', ';']).trim_start_matches([' ', '\t']);
                         s.add(
-                            "SV-TIM-001",
+                            "SVL-COR-026",
                             "TimescalePrecisionMismatch",
                             Severity::Error,
                             format!(

@@ -1,4 +1,4 @@
-//! SV-STY-021 (MultipleDeclarationsPerLine): Uses [`crate::shared::tree_layout`]
+//! SVL-STY-015 (MultipleDeclarationsPerLine): Uses [`crate::shared::tree_layout`]
 //! to flag multiple variable/property declarations placed on the same source
 //! line inside multi-line blocks, classes, or modules, offering a safe `--fix`
 //! newline split for back-to-back declarations (`int a; int b;`).
@@ -11,7 +11,7 @@ use svlang::syntax::SyntaxKind::*;
 
 pub(crate) fn multiple_declarations_per_line(c: &Cst, out: &mut Sink) {
     let layout = crate::shared::tree_layout(c);
-    let allow_comma = crate::options::get("SV-STY-021", "allow_comma_list", 0) != 0;
+    let allow_comma = crate::options::get("SVL-STY-015", "allow_comma_list", 0) != 0;
 
     for container in c.tree.preorder() {
         if !matches!(c.kind(container), ClassDecl | ModuleDecl | InterfaceDecl | SeqBlock | Body) {
@@ -62,7 +62,7 @@ pub(crate) fn multiple_declarations_per_line(c: &Cst, out: &mut Sink) {
                         }
                     });
                     out.add(
-                        "SV-STY-021",
+                        "SVL-STY-015",
                         "MultipleDeclarationsPerLine",
                         Severity::Info,
                         "Multiple variable or property declarations on the same line. Place each declaration on its own line for readable diffs and wave inspection."
@@ -82,7 +82,7 @@ pub(crate) fn multiple_declarations_per_line(c: &Cst, out: &mut Sink) {
                 if decls.len() > 1 {
                     if let Some(second_tok) = c.first_tok(decls[1]) {
                         out.add(
-                            "SV-STY-021",
+                            "SVL-STY-015",
                             "MultipleDeclarationsPerLine",
                             Severity::Info,
                             format!(

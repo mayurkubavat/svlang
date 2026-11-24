@@ -1,4 +1,4 @@
-//! SV-CNC-004 (SharedWriteFromForks): Flags class properties written in two or
+//! SVL-CON-018 (SharedWriteFromForks): Flags class properties written in two or
 //! more branches of one fork, or in a join_none thread and in its parent,
 //! without a semaphore (SpotBugs IS2_INCONSISTENT_SYNC).
 
@@ -55,7 +55,7 @@ pub(crate) fn shared_write(c: &Cst, s: &mut Sink) {
                 add_n(
                     s,
                     n,
-                    "SV-CNC-004",
+                    "SVL-CON-018",
                     "SharedWriteFromForks",
                     Severity::Warning,
                     format!(

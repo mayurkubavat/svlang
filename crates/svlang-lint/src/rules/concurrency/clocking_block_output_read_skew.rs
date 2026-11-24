@@ -1,4 +1,4 @@
-//! SV-CB-001 (ClockingBlockOutputReadSkew): Disallows reading output signals of
+//! SVL-CON-015 (ClockingBlockOutputReadSkew): Disallows reading output signals of
 //! a clocking block. The target of a drive is not a read. The C++ rule is the
 //! same.
 
@@ -70,7 +70,7 @@ pub(crate) fn clocking_output_read(c: &Cst, out: &mut Sink) {
         }
         let Some(loc) = start(c, e) else { return };
         out.add(
-            "SV-CB-001",
+            "SVL-CON-015",
             "ClockingBlockOutputReadSkew",
             Severity::Warning,
             format!(

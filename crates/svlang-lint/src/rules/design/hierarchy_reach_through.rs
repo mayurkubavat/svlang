@@ -1,4 +1,4 @@
-//! UVM-ARC-002 (HierarchyReachThrough): Flags expressions that reach through
+//! UVM-CMP-002 (HierarchyReachThrough): Flags expressions that reach through
 //! three or more component handles (env.agt.drv.vif), outside connect_phase
 //! wiring (PMD LawOfDemeter, Fowler 'message chains').
 
@@ -70,7 +70,7 @@ pub(crate) fn hierarchy_reach_through(c: &Cst, s: &mut Sink) {
                     continue;
                 }
                 s.add(
-                    "UVM-ARC-002",
+                    "UVM-CMP-002",
                     "HierarchyReachThrough",
                     Severity::Warning,
                     format!(

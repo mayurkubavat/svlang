@@ -1,4 +1,4 @@
-//! UVM-REP-008 (FatalInCheckerPath): Flags `uvm_fatal on a data mismatch in
+//! UVM-CMP-016 (FatalInCheckerPath): Flags `uvm_fatal on a data mismatch in
 //! scoreboards and subscribers.
 
 use crate::support::check_failures::{failure_branches, strongest_report, Level};
@@ -20,7 +20,7 @@ pub(crate) fn fatal_in_checker_path(d: &Design, csts: &[Cst], out: &mut Sink) {
                 continue;
             }
             out.add(
-                "UVM-REP-008",
+                "UVM-CMP-016",
                 "FatalInCheckerPath",
                 Severity::Warning,
                 format!(

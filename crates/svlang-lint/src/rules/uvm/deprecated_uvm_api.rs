@@ -1,4 +1,4 @@
-//! UVM-API-003 (DeprecatedUvmApi): Flags calls to UVM methods, and classes
+//! UVM-DEP-009 (DeprecatedUvmApi): Flags calls to UVM methods, and classes
 //! extending UVM classes, that the UVM version being compiled keeps only as
 //! deprecated API: in UVM 1.1d/1.2 what UVM_NO_DEPRECATED removes (for
 //! example uvm_component::set_config_int, uvm_root::stop_request,
@@ -25,7 +25,7 @@ pub(crate) fn deprecated_uvm_api(_: &Design, csts: &[Cst], out: &mut Sink) {
     };
     let report = |out: &mut Sink, what: String, where_: &str, loc: Loc| {
         out.add(
-            "UVM-API-003",
+            "UVM-DEP-009",
             "DeprecatedUvmApi",
             Severity::Warning,
             format!(

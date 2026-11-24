@@ -1,4 +1,4 @@
-//! SV-RND-006 (RandcMemoryExplosion): Disallow wide vector declarations with
+//! SVL-RND-006 (RandcMemoryExplosion): Disallow wide vector declarations with
 //! 'randc' (> 16 bits).
 
 use crate::support::constraints::randc_vars;
@@ -11,7 +11,7 @@ pub(crate) fn randc_wide(c: &Cst, s: &mut Sink) {
             continue;
         }
         s.add(
-            "SV-RND-006",
+            "SVL-RND-006",
             "RandcMemoryExplosion",
             Severity::Error,
             format!(

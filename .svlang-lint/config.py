@@ -34,7 +34,7 @@ class Project(ProjectConfig):
         max_columns = 120
 
     # class NoCasex(RuleConfig):
-    #     rule = "SV-COR-009"
+    #     rule = "RTL-DAT-002"
     #     severity = Severity.Error
     #     exclude_paths = ["legacy/**"]
 
@@ -48,7 +48,7 @@ class Project(ProjectConfig):
 
     # Reusable waivers can also be classes (and listed in `waivers`):
     # class LegacyMacros(Waiver):
-    #     rules = ["SV-STY-002"]
+    #     rules = ["SVL-STY-001"]
     #     paths = ["**/legacy/**"]
     #     reason = "Vendor macros we cannot edit"
     #     owner = "dv-infra"

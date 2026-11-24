@@ -1,4 +1,4 @@
-//! SV-RCE-002 (ClockedBlockingRace): Flags a variable written with a blocking
+//! RTL-SYN-006 (ClockedBlockingRace): Flags a variable written with a blocking
 //! assignment in one edge-triggered always block and read in another block
 //! triggered by the same edge of the same clock. Both run in the same time
 //! step in an order IEEE 1800 leaves open (4.7), so the reader gets the old
@@ -96,7 +96,7 @@ pub(crate) fn clocked_blocking_race(c: &Cst, s: &mut Sink) {
                 }
                 let rline = c.keyword(*rblk).map(|t| c.loc(t).line).unwrap_or(0);
                 s.add(
-                    "SV-RCE-002",
+                    "RTL-SYN-006",
                     "ClockedBlockingRace",
                     Severity::Warning,
                     format!(

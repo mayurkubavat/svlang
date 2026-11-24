@@ -1,4 +1,4 @@
-//! UVM-TLM-005 (AnalysisTransactionMutation): Detects in-place modification of
+//! UVM-TLM-004 (AnalysisTransactionMutation): Detects in-place modification of
 //! transactions received via analysis write() methods.
 
 use crate::support::uvm_classes::assign_parts;
@@ -35,7 +35,7 @@ pub(crate) fn analysis_mutation(_d: &Design, csts: &[Cst], s: &mut Sink) {
                 }
                 let Some(t) = c.first_tok(lhs) else { continue };
                 s.add(
-                    "UVM-TLM-005",
+                    "UVM-TLM-004",
                     "AnalysisTransactionMutation",
                     Severity::Warning,
                     format!(

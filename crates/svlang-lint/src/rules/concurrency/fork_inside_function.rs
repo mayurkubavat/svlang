@@ -1,4 +1,4 @@
-//! SV-FOR-001 (ForkInsideFunction): Disallows spawning concurrent threads with
+//! SVL-CON-023 (ForkInsideFunction): Disallows spawning concurrent threads with
 //! 'fork ... join/join_any/join_none' inside functions.
 
 use crate::support::procedural::{join_kind, routine_name};
@@ -18,7 +18,7 @@ pub(crate) fn fork_in_function(c: &Cst, s: &mut Sink) {
             let Some(kw) = c.tok(b, "fork") else { continue };
             let join = join_kind(c, b);
             s.add(
-                "SV-FOR-001",
+                "SVL-CON-023",
                 "ForkInsideFunction",
                 Severity::Warning,
                 format!(

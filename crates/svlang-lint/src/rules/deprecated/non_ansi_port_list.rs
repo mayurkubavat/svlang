@@ -1,4 +1,4 @@
-//! SV-DEP-006 (NonAnsiPortList): Disallow obsolete non-ANSI port list
+//! SVL-DEP-006 (NonAnsiPortList): Disallow obsolete non-ANSI port list
 //! declarations.
 
 use crate::support::names::DIRECTIONS;
@@ -21,7 +21,7 @@ pub(crate) fn non_ansi_ports(c: &Cst, s: &mut Sink) {
         }
         let Some(open) = c.tok(list, "(") else { continue };
         s.add(
-            "SV-DEP-006",
+            "SVL-DEP-006",
             "NonAnsiPortList",
             Severity::Info,
             "Non-ANSI port list declaration is obsolete in IEEE 1800 § 13.3. \
@@ -49,7 +49,7 @@ pub(crate) fn non_ansi_ports(c: &Cst, s: &mut Sink) {
         let Some(first) = c.first_tok(item) else { continue };
         let name = c.tree.child(n, Name).map(|x| c.text(x)).unwrap_or_default();
         s.add(
-            "SV-DEP-006",
+            "SVL-DEP-006",
             "NonAnsiPortList",
             Severity::Info,
             format!(

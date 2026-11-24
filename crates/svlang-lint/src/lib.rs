@@ -24,7 +24,7 @@
 //! # Where the rules are
 //!
 //! One file per rule, under `rules/<family>/`, named after the rule
-//! (`rules/uvm/blocking_in_observer.rs` is UVM-OBS-002, BlockingInObserver).
+//! (`rules/uvm/blocking_in_observer.rs` is UVM-TLM-009, BlockingInObserver).
 //! Each file opens with the rule's id, name and what it flags, and holds the
 //! helpers only that rule uses. `rules/<family>/mod.rs` registers the family's
 //! rules and `rules/mod.rs` collects every family.
@@ -110,7 +110,7 @@ pub fn set_inline_waived(n: usize) {
     });
 }
 
-/// A UVM-WV-001 error for a waiver comment whose pattern does not compile:
+/// A SVL-WVR-002 error for a waiver comment whose pattern does not compile:
 /// reported whatever the config, waivers and `--changed-since` keep, as
 /// svlang-lint adds these after them.
 pub fn is_bad_waiver_pattern(f: &Finding) -> bool {
@@ -141,32 +141,49 @@ pub const DEFAULT_PROFILES: u32 = 1 | (1 << 1) | (1 << 2) | (1 << 4);
 /// pre-FPV static checks for assumption soundness, X-propagation control hazards,
 /// reset disable qualification, arithmetic/memory state-space blow-up, FSMs, and CDC.
 pub const FORMAL_READY_RULES: &[&str] = &[
-    "SV-FPV-001",
-    "SV-FPV-002",
-    "SV-FPV-003",
-    "SV-FPV-004",
-    "SV-FPV-005",
-    "SV-SVA-001",
-    "SV-SVA-002",
-    "SV-SVA-003",
-    "SV-SVA-004",
-    "SV-SVA-005",
-    "SV-SVA-007",
-    "SVA-CTX-001",
-    "SVA-VAC-001",
-    "SV-CDC-001",
-    "SV-FSM-002",
-    "SV-FSM-003",
-    "SV-RTL-001",
-    "SV-RTL-002",
-    "SV-RTL-003",
-    "SV-RTL-004",
-    "SV-RTL-005",
+    "SVA-FPV-001",
+    "SVA-FPV-002",
+    "SVA-FPV-003",
+    "SVA-FPV-004",
+    "SVA-FPV-005",
+    "SVA-PRP-001",
+    "SVA-PRP-002",
+    "SVA-PRP-003",
+    "SVA-PRP-004",
+    "SVA-PRP-005",
+    "SVA-PRP-007",
+    "SVA-PRP-011",
+    "SVA-PRP-015",
+    "RTL-CDC-001",
+    "RTL-FSM-002",
+    "RTL-FSM-003",
+    "RTL-SYN-001",
+    "RTL-SYN-002",
+    "RTL-SYN-003",
+    "RTL-SYN-004",
+    "RTL-SYN-005",
 ];
 
 /// Returns `true` when `id` belongs to the `formal-ready` pre-FPV rule pack.
 pub fn is_formal_ready_rule(id: &str) -> bool {
     FORMAL_READY_RULES.contains(&id)
+}
+
+/// Returns `true` when `selector` matches rule `id` or `name`.
+/// Supports exact rule IDs (`"RTL-FSM-002"`), rule names (`"FsmUnreachableState"`),
+/// `"*"`, and domain/group prefix wildcards (`"RTL-*"`, `"SVL-CON-*"`, `"UVM-RAL-*"`).
+pub fn rule_selector_matches(selector: &str, id: &str, name: &str) -> bool {
+    let sel = selector.trim();
+    if sel.is_empty() {
+        return false;
+    }
+    if sel == "*" || sel == id || (!name.is_empty() && sel == name) {
+        return true;
+    }
+    if let Some(prefix) = sel.strip_suffix('*') {
+        return id.starts_with(prefix) || (!name.is_empty() && name.starts_with(prefix));
+    }
+    false
 }
 
 pub fn rule_selection(preset: Option<&str>, experimental: bool) -> Result<impl Fn(&str) -> bool, String> {
@@ -248,7 +265,7 @@ impl Severity {
 /// One finding of one rule.
 #[derive(Clone, Debug)]
 pub struct Finding {
-    /// Rule id (`"SV-OOP-003"`).
+    /// Rule id (`"SVL-OOP-003"`).
     pub rule: &'static str,
     /// Rule name (`"MissingSuperNew"`).
     pub name: &'static str,
@@ -345,7 +362,7 @@ pub mod profile {
 /// check. Declared once, in its category's `rules/<category>/mod.rs`; the
 /// catalog (`--list-rules`, docs/rules/) is generated from these.
 pub struct Rule {
-    /// Rule id (`"SV-OOP-003"`).
+    /// Rule id (`"SVL-OOP-003"`).
     pub id: &'static str,
     /// Rule name (`"MissingSuperNew"`).
     pub name: &'static str,
@@ -370,7 +387,7 @@ pub struct Rule {
 /// A finding id a rule reports besides its own: the naming and style
 /// engines report each convention under its own id.
 pub struct Sub {
-    /// Finding id (`"SV-STY-101"`).
+    /// Finding id (`"SVL-STY-101"`).
     pub id: &'static str,
     /// Catalog name (`"NoTabs"`).
     pub name: &'static str,
@@ -410,9 +427,10 @@ pub(crate) fn tops() -> Vec<String> {
 /// Ids a rule reports under besides its own (a rule engine's sub-rules).
 pub fn sub_rules(id: &str) -> &'static [Sub] {
     match id {
-        "SV-STY-100" => crate::support::style_config::STYLE_SUBS,
-        "SV-NAM-100" => crate::support::style_config::NAMING_SUBS,
-        "SV-CMP-001" => crate::support::style_config::COMPILER_SUBS,
+        "SVL-STY-100" => crate::support::style_config::STYLE_SUBS,
+        "SVL-NAM-100" => crate::support::style_config::NAMING_SUBS,
+        "CMP-ERR-001" => crate::support::style_config::COMPILER_SUBS,
+        "SVL-WVR-001" => crate::support::style_config::WAIVER_SUBS,
         _ => &[],
     }
 }
@@ -623,19 +641,19 @@ pub(crate) enum Task {
 /// Rules that take longest on large designs, started first so that they
 /// do not finish last.
 pub(crate) const SLOW: &[&str] = &[
-    "SV-STY-010",
-    "SV-BUG-001",
-    "SV-CMP-001",
-    "SV-LANG-003",
-    "SV-CNC-003",
-    "SV-DED-004",
-    "SV-DED-001",
-    "SV-DED-012",
-    "SV-PKG-003",
-    "SV-PRF-007",
-    "SV-API-001",
-    "SV-LANG-002",
-    "SV-RDB-006",
+    "SVL-STY-008",
+    "SVL-COR-008",
+    "CMP-ERR-001",
+    "RTL-DAT-005",
+    "SVL-CON-017",
+    "SVL-DED-004",
+    "SVL-DED-001",
+    "SVL-DED-012",
+    "SVL-MNT-039",
+    "SVL-PRF-007",
+    "SVL-MNT-001",
+    "RTL-DAT-004",
+    "SVL-MNT-047",
 ];
 
 /// The rules on `jobs` threads, each taking the next rule; the caches in

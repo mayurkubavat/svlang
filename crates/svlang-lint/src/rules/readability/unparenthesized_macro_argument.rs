@@ -1,4 +1,4 @@
-//! SV-MAC-002 (UnparenthesizedMacroArgument): Flags expression macros that use
+//! SVL-COR-023 (UnparenthesizedMacroArgument): Flags expression macros that use
 //! an argument next to an operator without parentheses, or whose body is not
 //! wrapped in parentheses. `define DOUBLE(x) x*2 turns DOUBLE(a+1) into a+1*2;
 //! write `define DOUBLE(x) ((x)*2).
@@ -200,7 +200,7 @@ pub(crate) fn unparenthesized_macro(c: &Cst, s: &mut Sink) {
         }
         let loc: Loc = c.loc_at(Origin { file: d.file, offset: d.name_at });
         s.add(
-            "SV-MAC-002",
+            "SVL-COR-023",
             "UnparenthesizedMacroArgument",
             Severity::Warning,
             format!(

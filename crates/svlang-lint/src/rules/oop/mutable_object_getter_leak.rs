@@ -1,4 +1,4 @@
-//! SV-ENC-001 (MutableObjectGetterLeak): Flags getter functions (`get_*()`)
+//! SVL-OOP-017 (MutableObjectGetterLeak): Flags getter functions (`get_*()`)
 //! returning direct handles to mutable internal `uvm_object` / data-class
 //! properties (excluding primitives, enums, structs, queues/arrays, and
 //! non-cloneable `uvm_component` / TLM / RAL handles).
@@ -123,7 +123,7 @@ pub(crate) fn getter_leak(c: &Cst, s: &mut Sink) {
                 }
                 let Some(kw) = c.tok(r, "return") else { continue };
                 s.add(
-                    "SV-ENC-001",
+                    "SVL-OOP-017",
                     "MutableObjectGetterLeak",
                     Severity::Info,
                     format!(

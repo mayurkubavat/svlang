@@ -1,4 +1,4 @@
-//! SV-ERR-003 (ProcessTerminationInClass): Flags $finish, $stop and $exit
+//! SVL-COR-021 (ProcessTerminationInClass): Flags $finish, $stop and $exit
 //! called from class methods.
 
 use crate::support::ast::{call_site, subtree, user_class_methods, CallSite};
@@ -21,7 +21,7 @@ pub(crate) fn termination_in_class(c: &Cst, s: &mut Sink) {
                 }
                 let Some(at) = c.first_tok(call.node) else { continue };
                 s.add(
-                    "SV-ERR-003",
+                    "SVL-COR-021",
                     "ProcessTerminationInClass",
                     Severity::Warning,
                     format!(

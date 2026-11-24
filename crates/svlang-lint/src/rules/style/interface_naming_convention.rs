@@ -1,4 +1,4 @@
-//! SV-NAM-003 (InterfaceNamingConvention): Enforces that interface identifiers
+//! SVL-NAM-002 (InterfaceNamingConvention): Enforces that interface identifiers
 //! end with '_if' (e.g., 'axi_if') to standardize interface definitions.
 
 use crate::support::names::name_tok;
@@ -12,7 +12,7 @@ pub(crate) fn interface_naming(c: &Cst, s: &mut Sink) {
         let name = c.text_of(t);
         if !name.is_empty() && !name.ends_with("_if") {
             s.add(
-                "SV-NAM-003",
+                "SVL-NAM-002",
                 "InterfaceNamingConvention",
                 Severity::Warning,
                 format!(

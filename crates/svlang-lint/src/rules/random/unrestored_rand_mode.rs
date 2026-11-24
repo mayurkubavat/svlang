@@ -1,4 +1,4 @@
-//! SV-RND-013 (UnrestoredRandMode): Flags '.rand_mode(0)' or
+//! SVL-RND-012 (UnrestoredRandMode): Flags '.rand_mode(0)' or
 //! '.constraint_mode(0)' calls that are never restored with '1' in the routine.
 
 use crate::syntax::Cst;
@@ -30,7 +30,7 @@ pub(crate) fn unrestored_rand_mode(c: &Cst, s: &mut Sink) {
         }
         let Some(at) = disabled.filter(|_| !restored) else { continue };
         s.add(
-            "SV-RND-013",
+            "SVL-RND-012",
             "UnrestoredRandMode",
             Severity::Warning,
             format!(

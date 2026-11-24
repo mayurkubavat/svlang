@@ -42,7 +42,11 @@ import argparse, os, random, re, subprocess, sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(os.path.dirname(HERE))
 ORACLE = os.environ.get('SVLANG_LINT_REGEXCHECK', os.path.join(REPO, 'build', 'svlang_regexcheck'))
-NATIVE = os.environ.get('DV_REGEXCHECK', os.path.join(REPO, 'target', 'release', 'examples', 'regexcheck'))
+NATIVE = (
+    os.environ.get('SVLANG_REGEXCHECK')
+    or os.environ.get('DV_REGEXCHECK')
+    or os.path.join(REPO, 'target', 'release', 'examples', 'regexcheck')
+)
 VECTORS = os.path.join(REPO, 'testdata', 'regex', 'vectors.tsv')
 
 
@@ -87,10 +91,13 @@ def harvested():
     return sorted(p for p in found if p and len(p) < 200)
 
 
-# The naming engine's default patterns (cpp/src/style/NamingEngine.cpp).
+# The naming engine's default patterns (crates/svlang-lint/src/rules/style/configurable_naming_engine.rs).
 def naming_defaults():
-    src = open(os.path.join(REPO, 'cpp', 'src', 'style', 'NamingEngine.cpp'), encoding='utf-8').read()
-    return sorted(set(m.group(1) for m in re.finditer(r'R"\((\^[^)]*(?:\)[^"]*)?)\)"', src)))
+    src_path = os.path.join(
+        REPO, 'crates', 'svlang-lint', 'src', 'rules', 'style', 'configurable_naming_engine.rs'
+    )
+    src = open(src_path, encoding='utf-8').read()
+    return sorted(set(re.findall(r'pat\("((?:[^"\\]|\\.)*)"\)', src)))
 
 
 ALPHA = 'ab_9A.'

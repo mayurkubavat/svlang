@@ -1,4 +1,4 @@
-//! SV-RND-005 (NonRandFieldConstrained): Detects class member fields that are
+//! SVL-RND-005 (NonRandFieldConstrained): Detects class member fields that are
 //! constrained in a constraint block but not declared 'rand' or 'randc'.
 
 use crate::support::class_items::{class_items, decl_name, declarators, model_classes, qualifiers};
@@ -39,7 +39,7 @@ pub(crate) fn non_rand_field_constrained(c: &Cst, s: &mut Sink) {
                     .any(|suffix| text.contains(&format!("{p}{suffix}")));
                 if hit {
                     s.add(
-                        "SV-RND-005",
+                        "SVL-RND-005",
                         "NonRandFieldConstrained",
                         Severity::Error,
                         format!(

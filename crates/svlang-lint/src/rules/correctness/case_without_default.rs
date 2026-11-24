@@ -1,4 +1,4 @@
-//! SV-COR-006 (CaseWithoutDefault): Flags 'case', 'casex', and 'casez'
+//! RTL-DAT-001 (CaseWithoutDefault): Flags 'case', 'casex', and 'casez'
 //! statements that lack an explicit 'default:' fallback branch.
 
 use crate::syntax::{case_statements, Cst};
@@ -8,7 +8,7 @@ pub(crate) fn case_without_default(c: &Cst, s: &mut Sink) {
     for (n, kw) in case_statements(c) {
         if c.tok(n, "default").is_none() {
             s.add(
-                "SV-COR-006",
+                "RTL-DAT-001",
                 "CaseWithoutDefault",
                 Severity::Warning,
                 format!(

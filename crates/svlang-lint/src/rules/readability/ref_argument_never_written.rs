@@ -1,4 +1,4 @@
-//! SV-API-001 (RefArgumentNeverWritten): Flags ref arguments that the routine
+//! SVL-MNT-001 (RefArgumentNeverWritten): Flags ref arguments that the routine
 //! only reads; declare them const ref so callers know they are not modified
 //! (clang-tidy readability-non-const-parameter).
 
@@ -106,7 +106,7 @@ pub(crate) fn ref_argument_never_written(c: &Cst, s: &mut Sink) {
                 .and_then(|rt| c.token_fix(rt, rt, "const ref", "Declare read-only ref argument as 'const ref'"));
             for _ in 0..r.times {
                 s.add(
-                    "SV-API-001",
+                    "SVL-MNT-001",
                     "RefArgumentNeverWritten",
                     Severity::Info,
                     format!(

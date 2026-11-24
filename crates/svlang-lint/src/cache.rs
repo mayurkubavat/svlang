@@ -375,7 +375,7 @@ mod tests {
         let c = Cache::new(&d.join("cache"), &args, &[]);
         assert!(c.load().is_none());
         let f = Finding {
-            rule: "SV-COR-008",
+            rule: "SVL-COR-004",
             name: "x",
             severity: Severity::Warning,
             message: "m \"q\"".into(),

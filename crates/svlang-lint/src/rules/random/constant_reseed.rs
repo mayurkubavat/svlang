@@ -1,4 +1,4 @@
-//! SV-TST-001 (ConstantReseed): Flags srandom() or set_randstate() with a
+//! SVL-RND-037 (ConstantReseed): Flags srandom() or set_randstate() with a
 //! constant in components, sequences and other non-test classes; every seed of
 //! the regression then runs the same stimulus.
 
@@ -127,7 +127,7 @@ pub(crate) fn constant_reseed(c: &Cst, s: &mut Sink) {
                 }
                 let Some(at) = c.first_tok(call) else { continue };
                 s.add(
-                    "SV-TST-001",
+                    "SVL-RND-037",
                     "ConstantReseed",
                     Severity::Info,
                     format!(

@@ -25,7 +25,7 @@
 //! caret under the flagged token; a
 //! terminal gets them without asking, and `--no-frames` turns them off.
 //! `--list` prints every rule (`id name model|syntax`); `-top` names the
-//! modules elaboration starts from; `--history` lets SV-EVO-001/002 read git
+//! modules elaboration starts from; `--history` lets SVL-MNT-027/002 read git
 //! history. Modules the sources instantiate but do not define are looked up
 //! in `-v` library files and `-y` directories (`+libext+` extensions), as
 //! VCS does; `--skip-libraries` reports nothing in those files. For the
@@ -116,7 +116,7 @@ pub fn run_with(raw_args: &[String], serve_lsp: Option<fn() -> !>) {
             continue;
         }
         if let Some(v) = a.strip_prefix("--rule=") {
-            only.push(v.to_string());
+            only.extend(v.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()));
             continue;
         }
         if let Some(v) = a.strip_prefix("--fix-rule=") {
@@ -165,7 +165,9 @@ pub fn run_with(raw_args: &[String], serve_lsp: Option<fn() -> !>) {
             "--specs" => specs = true,
             // Each expression's type, as tools/oracles/exprdump.cpp prints slang's.
             "--exprs" => exprs = true,
-            "--rule" => only.extend(it.next()),
+            "--rule" => only.extend(
+                it.next().unwrap_or_default().split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()),
+            ),
             // Rule selection as svlang-lint's (default: every profile but advisory).
             "--preset" => preset = it.next(),
             "--experimental" => experimental = true,
@@ -201,7 +203,7 @@ pub fn run_with(raw_args: &[String], serve_lsp: Option<fn() -> !>) {
             // The catalog and the guide, as text or with --json.
             "--list-rules" => listing = Some(Listing::Rules),
             "--list-guidelines" => listing = Some(Listing::Guidelines),
-            // Read git history for SV-EVO-001 and SV-EVO-002.
+            // Read git history for SVL-MNT-027 and SVL-MNT-028.
             "--history" => svlang_lint::set_history(true),
             // Report nothing in -v/-y library files.
             "--skip-libraries" => svlang_lint::set_skip_libraries(true),
@@ -387,7 +389,8 @@ pub fn run_with(raw_args: &[String], serve_lsp: Option<fn() -> !>) {
     let fix_named: std::collections::HashSet<&'static str> = svlang_lint::rules()
         .into_iter()
         .filter(|r| {
-            let named = |id: &str, name: &str| fix_rules.iter().any(|f| f == id || f == name);
+            let named =
+                |id: &str, name: &str| fix_rules.iter().any(|f| svlang_lint::rule_selector_matches(f, id, name));
             named(r.id, r.name)
                 || svlang_lint::sub_rules(r.id).iter().any(|s| named(s.id, s.name) || named(s.id, s.finding_name))
         })
@@ -395,11 +398,17 @@ pub fn run_with(raw_args: &[String], serve_lsp: Option<fn() -> !>) {
         .collect();
     let rule_meta: std::collections::HashMap<&'static str, (&'static str, bool, &'static [&'static str])> =
         svlang_lint::rules().into_iter().map(|r| (r.id, (r.name, r.experimental, r.guidelines))).collect();
-    // A rule named with --rule runs whatever its profile.
+    // A rule named with --rule runs whatever its profile (supporting prefix wildcards such as RTL-* or SVL-CON-*).
     let user_keep = |id: &str| {
         if !only.is_empty() {
             let name = rule_meta.get(id).map(|m| m.0).unwrap_or("");
-            return only.iter().any(|o| o == id || o == name);
+            return only.iter().any(|o| {
+                svlang_lint::rule_selector_matches(o, id, name)
+                    || svlang_lint::sub_rules(id).iter().any(|s| {
+                        svlang_lint::rule_selector_matches(o, s.id, s.name)
+                            || svlang_lint::rule_selector_matches(o, s.id, s.finding_name)
+                    })
+            });
         }
         if !guideline_selectors.is_empty() {
             let Some(&(_, exp, guides)) = rule_meta.get(id) else {
@@ -419,11 +428,11 @@ pub fn run_with(raw_args: &[String], serve_lsp: Option<fn() -> !>) {
     let fixing = FIX.read().is_ok_and(|f| f.on || f.dry_run);
     if let Ok(mut f) = FIX.write() {
         f.only = fix_rules.clone();
-        f.compile_errors_selected = user_keep("SV-CMP-001");
+        f.compile_errors_selected = user_keep("CMP-ERR-001");
     }
     // A fix never touches a file with compile errors: find them whatever the
     // selection (the findings are dropped again when not selected).
-    let keep = |id: &str| user_keep(id) || (fixing && id == "SV-CMP-001");
+    let keep = |id: &str| user_keep(id) || (fixing && id == "CMP-ERR-001");
     let _ = ACTIVE.set(svlang_lint::rules().into_iter().map(|r| r.id).filter(|id| user_keep(id)).collect());
     let _ = EXTRA.set(extra.clone());
     let _ = LIBRARY.set(svlang_lint::library::Library::of_args(&args));
@@ -451,6 +460,20 @@ pub fn run_with(raw_args: &[String], serve_lsp: Option<fn() -> !>) {
         let t = std::time::Instant::now();
         let (design, (mut files, mut found)) =
             svlang_lint::lint_built(|| svlang_model::design_of(&trees, parse_ms), &trees, keep);
+        if !only.is_empty() {
+            let parent_of_sub: std::collections::HashMap<&str, (&str, &str)> = svlang_lint::rules()
+                .into_iter()
+                .flat_map(|r| svlang_lint::sub_rules(r.id).iter().map(move |s| (s.id, (r.id, r.name))))
+                .collect();
+            found.retain(|f| {
+                (fixing && f.rule == "CMP-ERR-001")
+                    || svlang_lint::is_bad_waiver_pattern(f)
+                    || only.iter().any(|o| svlang_lint::rule_selector_matches(o, f.rule, f.name))
+                    || parent_of_sub.get(f.rule).is_some_and(|&(pid, pname)| {
+                        only.iter().any(|o| svlang_lint::rule_selector_matches(o, pid, pname))
+                    })
+            });
+        }
         if let Some(rules) = &extra.python_rules {
             eprintln!("[svlang-lint] Executing custom Python rules from: {rules}");
             let options = CONFIG.get().map_or(&[][..], |c| &c.rule_options[..]);
@@ -814,7 +837,7 @@ fn json_str(s: &str) -> String {
 /// finding with its rule, severity, position, message and notes.
 fn json_report(files: &[String], found: &[svlang_lint::Finding], waived: usize) -> String {
     let mut out = String::from("{\n");
-    let compile = found.iter().filter(|f| f.rule == "SV-CMP-001").count();
+    let compile = found.iter().filter(|f| f.rule == "CMP-ERR-001").count();
     out.push_str(&format!(
         "  \"tool\": \"svlang-lint\",\n  \"version\": {},\n  \"compileErrors\": {compile},\n  \"waived\": {waived},\n  \"violations\": [",
         json_str(env!("CARGO_PKG_VERSION"))
@@ -896,11 +919,11 @@ fn report(
     let (fix_on, fix_dry, fix_unsafe, fix_only, cmp_selected) = fix.unwrap_or((false, false, false, Vec::new(), true));
     let mut broken = std::collections::HashSet::new();
     if fix_on || fix_dry {
-        for f in found.iter().filter(|f| f.rule == "SV-CMP-001") {
+        for f in found.iter().filter(|f| f.rule == "CMP-ERR-001") {
             broken.insert(f.position_in(files).0.to_string());
         }
         if !cmp_selected {
-            found.retain(|f| f.rule != "SV-CMP-001");
+            found.retain(|f| f.rule != "CMP-ERR-001");
         }
     }
     svlang_lint::fix::guard_macro_calls(&mut found);

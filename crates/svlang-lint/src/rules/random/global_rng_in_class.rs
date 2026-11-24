@@ -1,4 +1,4 @@
-//! SV-RND-002 (GlobalRngInClass): Calling $urandom or $random inside class
+//! SVL-RND-002 (GlobalRngInClass): Calling $urandom or $random inside class
 //! components or sequences corrupts global thread random stability.
 
 use crate::{Severity, Sink};
@@ -18,7 +18,7 @@ pub(crate) fn global_rng_in_class(d: &Design, out: &mut Sink) {
                     continue;
                 }
                 out.add(
-                    "SV-RND-002",
+                    "SVL-RND-002",
                     "GlobalRngInClass",
                     Severity::Warning,
                     format!(

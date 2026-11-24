@@ -1,4 +1,4 @@
-//! SV-RND-004 (InlineShadowNoLocal): Detects inline constraint variable
+//! SVL-RND-004 (InlineShadowNoLocal): Detects inline constraint variable
 //! shadowing inside 'randomize() with' missing 'local::'.
 
 use crate::support::class_items::{kids, op, subtree, trim, with_clause};
@@ -29,7 +29,7 @@ pub(crate) fn inline_shadow_no_local(c: &Cst, s: &mut Sink) {
             let prefix = if target.is_empty() { "item" } else { &target };
             let Some(at) = c.first_tok(n) else { continue };
             s.add(
-                "SV-RND-004",
+                "SVL-RND-004",
                 "InlineShadowNoLocal",
                 Severity::Error,
                 format!(

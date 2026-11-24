@@ -1,4 +1,4 @@
-//! SV-CON-010 (DisableForkWithoutScope): Disallows calling 'disable fork;'
+//! SVL-CON-006 (DisableForkWithoutScope): Disallows calling 'disable fork;'
 //! directly at task or routine scope without an enclosing isolating 'fork ...
 //! join' block.
 
@@ -28,7 +28,7 @@ pub(crate) fn disable_fork(c: &Cst, s: &mut Sink) {
         }
         let Some(kw) = c.tok(n, "disable") else { continue };
         s.add(
-            "SV-CON-010",
+            "SVL-CON-006",
             "DisableForkWithoutScope",
             Severity::Error,
             "Unenclosed 'disable fork;' executed directly at routine scope terminates all active child processes of the calling thread. \

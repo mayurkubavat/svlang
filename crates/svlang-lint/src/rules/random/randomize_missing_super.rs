@@ -1,4 +1,4 @@
-//! SV-RND-003 (RandomizeMissingSuper): Overridden pre_randomize() and
+//! SVL-RND-003 (RandomizeMissingSuper): Overridden pre_randomize() and
 //! post_randomize() callback methods must invoke super.pre_randomize() or
 //! super.post_randomize() to prevent bypassing base-class transaction setup and
 //! validation routines.
@@ -26,7 +26,7 @@ pub(crate) fn randomize_missing_super(d: &Design, out: &mut Sink) {
                 continue;
             }
             out.add(
-                "SV-RND-003",
+                "SVL-RND-003",
                 "RandomizeMissingSuper",
                 Severity::Warning,
                 format!(

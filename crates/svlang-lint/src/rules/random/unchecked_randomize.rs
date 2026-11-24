@@ -1,4 +1,4 @@
-//! SV-RND-001 (UncheckedRandomize): The return value of randomize() must be
+//! SVL-RND-001 (UncheckedRandomize): The return value of randomize() must be
 //! checked.
 
 use crate::support::class_items::{call_name, strip_casts};
@@ -15,12 +15,12 @@ pub(crate) fn unchecked_randomize(c: &Cst, s: &mut Sink) {
         }
         let Some(at) = c.first_tok(e) else { continue };
         s.add(
-            "SV-RND-001",
+            "SVL-RND-001",
             "UncheckedRandomize",
             Severity::Error,
             "Return value of 'randomize()' is discarded or cast to void. If constraint solving fails, \
              simulation proceeds silently with corrupt, unconstrained, or stale transaction data. \
-             Check the return value with 'if (!obj.randomize()) `uvm_fatal(...)'. Avoid 'assert(obj.randomize())': turning assertions off skips the call (SV-RND-024)."
+             Check the return value with 'if (!obj.randomize()) `uvm_fatal(...)'. Avoid 'assert(obj.randomize())': turning assertions off skips the call (SVL-RND-023)."
                 .into(),
             c.loc(at),
         );

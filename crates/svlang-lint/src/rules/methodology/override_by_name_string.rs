@@ -1,4 +1,4 @@
-//! UVM-RUS-005 (OverrideByNameString): Flags factory overrides and creates that
+//! UVM-FAC-008 (OverrideByNameString): Flags factory overrides and creates that
 //! name types with string literals (set_type_override_by_name,
 //! set_inst_override, create_object ...).
 
@@ -38,7 +38,7 @@ fn report_override_by_name(c: &Cst, call: NodeId, owner: &str, out: &mut Sink) {
         names.push(format!("\"{v}\""));
     }
     out.add(
-        "UVM-RUS-005",
+        "UVM-FAC-008",
         "OverrideByNameString",
         Severity::Warning,
         format!(

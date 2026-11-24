@@ -1,4 +1,4 @@
-//! UVM-ARC-003 (FileIncludedInMultiplePackages): Flags a file whose class
+//! UVM-CMP-003 (FileIncludedInMultiplePackages): Flags a file whose class
 //! definitions are `include'd into more than one package.
 
 use crate::support::statements::*;
@@ -39,7 +39,7 @@ pub(crate) fn file_in_many_packages(c: &Cst, s: &mut Sink) {
         let pkgs = sites.iter().map(|(n, _, _)| n.as_str()).collect::<Vec<_>>().join(", ");
         for (_, ptok, cls) in &sites[1..] {
             s.add(
-                "UVM-ARC-003",
+                "UVM-CMP-003",
                 "FileIncludedInMultiplePackages",
                 Severity::Error,
                 format!(

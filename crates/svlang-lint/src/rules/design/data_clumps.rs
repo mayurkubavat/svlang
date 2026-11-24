@@ -1,4 +1,4 @@
-//! SV-DUP-006 (DataClumps): Flags the same group of min_args (default 4) or
+//! SVL-MNT-026 (DataClumps): Flags the same group of min_args (default 4) or
 //! more arguments (same names and types) declared by min_routines (default 3)
 //! or more routines.
 
@@ -19,8 +19,8 @@ fn type_text(c: &Cst, ty: Option<NodeId>) -> String {
 pub(crate) fn data_clumps(c: &Cst, s: &mut Sink) {
     let classes = Classes::new(c);
     let (min_args, min_routines) = (
-        crate::options::get("SV-DUP-006", "min_args", 4) as _,
-        crate::options::get("SV-DUP-006", "min_routines", 3) as _,
+        crate::options::get("SVL-MNT-026", "min_args", 4) as _,
+        crate::options::get("SVL-MNT-026", "min_routines", 3) as _,
     );
     let mut groups: BTreeMap<String, Vec<(usize, usize)>> = BTreeMap::new();
     for i in classes.user() {
@@ -58,7 +58,7 @@ pub(crate) fn data_clumps(c: &Cst, s: &mut Sink) {
         let (fi, fm) = sorted[0];
         let first = &classes.list[fi].methods[fm];
         s.add(
-            "SV-DUP-006",
+            "SVL-MNT-026",
             "DataClumps",
             Severity::Info,
             format!(

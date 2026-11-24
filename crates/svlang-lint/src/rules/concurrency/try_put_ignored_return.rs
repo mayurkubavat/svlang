@@ -1,4 +1,4 @@
-//! SV-IPC-001 (TryPutIgnoredReturn): Non-blocking IPC routines (try_put,
+//! SVL-CON-025 (TryPutIgnoredReturn): Non-blocking IPC routines (try_put,
 //! try_get, try_peek) return a boolean status.
 
 use crate::support::procedural::{add_n, start, stmt_call};
@@ -22,7 +22,7 @@ pub(crate) fn try_put_ignored(c: &Cst, s: &mut Sink) {
             add_n(
                 s,
                 times(c, st),
-                "SV-IPC-001",
+                "SVL-CON-025",
                 "TryPutIgnoredReturn",
                 Severity::Warning,
                 format!(

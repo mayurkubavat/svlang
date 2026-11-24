@@ -1,4 +1,4 @@
-//! SV-CNS-006 (ImplicitEnumBaseType): Flags enums in packages, classes and
+//! SVL-TYP-008 (ImplicitEnumBaseType): Flags enums in packages, classes and
 //! interfaces declared without a base type.
 
 use crate::support::defines_packages::{container_of, user_types, Container, Files};
@@ -21,7 +21,7 @@ pub(crate) fn implicit_enum_base_type(_: &Design, csts: &[Cst], out: &mut Sink) 
                 .map(|x| format!(" {{{}, ...}}", c.tree.bare_text(x)))
                 .unwrap_or_default();
             out.add(
-                "SV-CNS-006",
+                "SVL-TYP-008",
                 "ImplicitEnumBaseType",
                 Severity::Info,
                 format!(

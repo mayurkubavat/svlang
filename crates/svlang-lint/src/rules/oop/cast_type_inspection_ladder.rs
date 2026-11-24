@@ -1,4 +1,4 @@
-//! SV-OCP-001 (CastTypeInspectionLadder): Disallows cascading $cast ladders (3+
+//! SVL-OOP-019 (CastTypeInspectionLadder): Disallows cascading $cast ladders (3+
 //! branches) inspecting object types.
 
 use crate::support::calls::kids;
@@ -24,7 +24,7 @@ pub(crate) fn cast_ladder(c: &Cst, s: &mut Sink) {
         }
         let Some(t) = c.tok(n, "if") else { continue };
         s.add(
-            "SV-OCP-001",
+            "SVL-OOP-019",
             "CastTypeInspectionLadder",
             Severity::Warning,
             format!(

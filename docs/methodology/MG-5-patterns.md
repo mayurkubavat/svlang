@@ -26,7 +26,7 @@ class bus_driver extends uvm_driver #(bus_item);
 endclass
 ```
 
-Enforced by: `RAL-ADP-001`, `RAL-WIRE-001`, `UVM-OBS-002`, `UVM-PAT-001`, `UVM-TLM-001`, `UVM-TLM-004`, `UVM-VSEQ-001`
+Enforced by: `UVM-CMP-010`, `UVM-RAL-003`, `UVM-RAL-009`, `UVM-SEQ-019`, `UVM-TLM-001`, `UVM-TLM-003`, `UVM-TLM-009`
 
 ## MG-5.2 (Should)
 
@@ -34,7 +34,7 @@ Enforced by: `RAL-ADP-001`, `RAL-WIRE-001`, `UVM-OBS-002`, `UVM-PAT-001`, `UVM-T
 
 A ladder of $cast or get_type_name() comparisons must be edited for every new type. Virtual methods, factory overrides and callbacks let new behaviour be added without touching the base.
 
-Enforced by: `SV-DSN-001`, `SV-DSN-006`, `SV-DSN-007`, `SV-DSN-009`, `SV-LSP-001`, `SV-OCP-001`, `SV-OOP-001`, `SV-OOP-009`, `SV-OOP-015`, `SV-OOP-016`, `SV-RDB-004`, `UVM-PAT-003`
+Enforced by: `SVL-MNT-013`, `SVL-MNT-014`, `SVL-MNT-016`, `SVL-MNT-045`, `SVL-OOP-001`, `SVL-OOP-008`, `SVL-OOP-013`, `SVL-OOP-014`, `SVL-OOP-018`, `SVL-OOP-019`, `SVL-OOP-021`, `UVM-CMP-012`
 
 ## MG-5.3 (Should)
 
@@ -64,4 +64,4 @@ if (!uvm_config_db#(report_svc)::get(this, "", "report_svc", svc))
   `uvm_fatal("CFG", "report_svc not set")
 ```
 
-Enforced by: `UVM-PAT-002`
+Enforced by: `UVM-CMP-011`

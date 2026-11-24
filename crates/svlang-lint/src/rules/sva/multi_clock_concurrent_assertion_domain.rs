@@ -1,4 +1,4 @@
-//! SV-SVA-005 (MultiClockConcurrentAssertionDomain): Disallows concurrent
+//! SVA-PRP-005 (MultiClockConcurrentAssertionDomain): Disallows concurrent
 //! assertions mixing multiple asynchronous clock domains without formal CDC
 //! qualification.
 
@@ -27,7 +27,7 @@ pub(crate) fn multi_clock(c: &Cst, s: &mut Sink) {
         let list = clocks.iter().map(|x| format!("'{x}'")).collect::<Vec<_>>().join(", ");
         let Some(t) = c.tree.child(p, Name).and_then(|x| c.first_tok(x)) else { continue };
         s.add(
-            "SV-SVA-005",
+            "SVA-PRP-005",
             "MultiClockConcurrentAssertionDomain",
             Severity::Error,
             format!(

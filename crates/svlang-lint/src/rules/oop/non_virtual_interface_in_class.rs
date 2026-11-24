@@ -1,4 +1,4 @@
-//! SV-OOP-008 (NonVirtualInterfaceInClass): Disallows declaring physical
+//! SVL-OOP-007 (NonVirtualInterfaceInClass): Disallows declaring physical
 //! interface types inside classes without the 'virtual' keyword (IEEE 1800 §
 //! 25.9).
 
@@ -41,7 +41,7 @@ pub(crate) fn non_virtual_interface(c: &Cst, s: &mut Sink) {
             });
             for (_, var, at) in declarators(c, d) {
                 s.add(
-                    "SV-OOP-008",
+                    "SVL-OOP-007",
                     "NonVirtualInterfaceInClass",
                     Severity::Error,
                     format!(

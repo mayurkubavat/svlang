@@ -1,4 +1,4 @@
-//! UVM-TLM-007 (UncoveredAnalysisPort): Flags a transaction type that
+//! UVM-TLM-006 (UncoveredAnalysisPort): Flags a transaction type that
 //! analysis ports publish but that no coverage collector receives.
 //!
 //! A collector is a class that has a covergroup (itself, a class it extends,
@@ -153,7 +153,7 @@ pub(crate) fn uncovered_analysis_ports(d: &Design, csts: &[Cst], out: &mut Sink)
         list.sort_by(|a, b| (a.0, &a.1, &a.2).cmp(&(b.0, &b.1, &b.2)));
         let names: Vec<String> = list.iter().map(|(_, k, p, _)| format!("{k}.{p}")).collect();
         out.add(
-            "UVM-TLM-007",
+            "UVM-TLM-006",
             "UncoveredAnalysisPort",
             Severity::Warning,
             format!(

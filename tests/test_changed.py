@@ -42,7 +42,7 @@ def git(cwd, *args):
 def lint(binary, cwd, *args):
     res = subprocess.run([*lint_cmd(binary), "--no-config", *args], cwd=cwd, capture_output=True, text=True)
     out = re.sub(r"\x1b\[[0-9;]*m", "", res.stdout + res.stderr)
-    found = re.findall(r"^(\S+?):(\d+):\d+: \[\w+\] (SV-COR-008)", out, re.M)
+    found = re.findall(r"^(\S+?):(\d+):\d+: \[\w+\] (SVL-COR-004)", out, re.M)
     return res.returncode, [(Path(f).name, int(l)) for f, l, _ in found], out
 
 
@@ -90,10 +90,10 @@ def main():
         (root / "fresh.sv").write_text(fresh)
 
         def lint_delay(*args):
-            res = subprocess.run([*lint_cmd(binary), "--no-config", "--rule", "SV-PRF-004", *args],
+            res = subprocess.run([*lint_cmd(binary), "--no-config", "--rule", "SVL-PRF-004", *args],
                                  cwd=root, capture_output=True, text=True)
             out = re.sub(r"\x1b\[[0-9;]*m", "", res.stdout + res.stderr)
-            found = re.findall(r"^(\S+?):(\d+):\d+: \[\w+\] (SV-PRF-004)", out, re.M)
+            found = re.findall(r"^(\S+?):(\d+):\d+: \[\w+\] (SVL-PRF-004)", out, re.M)
             return res.returncode, [(Path(f).name, int(l)) for f, l, _ in found], out
 
         rc, found, out = lint_delay("gate.sv", "--changed-since", "HEAD", "--strict-new-files")

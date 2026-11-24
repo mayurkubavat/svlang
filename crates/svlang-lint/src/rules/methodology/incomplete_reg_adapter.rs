@@ -1,4 +1,4 @@
-//! RAL-ADP-001 (IncompleteRegAdapter): Flags uvm_reg_adapter subclasses whose
+//! UVM-RAL-003 (IncompleteRegAdapter): Flags uvm_reg_adapter subclasses whose
 //! bus2reg() never sets rw.status or whose reg2bus() never reads rw.kind.
 
 use crate::support::class_roles::{uvm_base_name, Index};
@@ -82,7 +82,7 @@ status into rw.status."
             continue;
         };
         out.add(
-            "RAL-ADP-001",
+            "UVM-RAL-003",
             "IncompleteRegAdapter",
             Severity::Warning,
             format!("Register adapter '{}': {why}", cls.name),

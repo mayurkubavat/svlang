@@ -1,4 +1,4 @@
-//! SV-COV-012 (WideCoverpointWithoutBins): Flags coverpoints that define no
+//! SVL-COV-012 (WideCoverpointWithoutBins): Flags coverpoints that define no
 //! explicit bins and omit option.auto_bin_max.
 
 use crate::support::cross_labels::label;
@@ -40,7 +40,7 @@ pub(crate) fn coverpoint_without_bins(c: &Cst, s: &mut Sink) {
         });
         let Some(t) = (if explicit { c.first_tok(n) } else { body.or_else(|| c.first_tok(n)) }) else { continue };
         s.add(
-            "SV-COV-012",
+            "SVL-COV-012",
             "WideCoverpointWithoutBins",
             Severity::Warning,
             format!(

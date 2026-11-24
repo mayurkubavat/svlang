@@ -40,7 +40,7 @@ const TB: &str =
 #[test]
 fn explain_prints_a_rule() {
     let d = tmp("explain");
-    let o = run(&d, &["--explain", "SV-DUP-002"]);
+    let o = run(&d, &["--explain", "SVL-MNT-022"]);
     assert_eq!(o.status.code(), Some(0));
     let out = text(&o);
     assert!(out.contains("CloneFragments") && out.contains("MG-7.1") && out.contains("min_tokens = 50"), "{out}");
@@ -62,7 +62,7 @@ fn changed_since_keeps_changed_lines_and_untracked_files() {
     let lines = |o: &Output| -> Vec<String> {
         String::from_utf8_lossy(&o.stdout)
             .lines()
-            .filter(|l| l.contains("SV-COR-008"))
+            .filter(|l| l.contains("SVL-COR-004"))
             .map(|l| {
                 let mut p = l.split(':');
                 let f = Path::new(p.next().unwrap()).file_name().unwrap().to_string_lossy().into_owned();
@@ -70,15 +70,15 @@ fn changed_since_keeps_changed_lines_and_untracked_files() {
             })
             .collect()
     };
-    let all = run(&d, &["--no-config", "--rule", "SV-COR-008", "tb.sv", "extra.sv"]);
+    let all = run(&d, &["--no-config", "--rule", "SVL-COR-004", "tb.sv", "extra.sv"]);
     assert_eq!(lines(&all), ["extra.sv:4", "tb.sv:4", "tb.sv:5"]);
-    let o = run(&d, &["--no-config", "--rule", "SV-COR-008", "tb.sv", "extra.sv", "--changed-since", "HEAD"]);
+    let o = run(&d, &["--no-config", "--rule", "SVL-COR-004", "tb.sv", "extra.sv", "--changed-since", "HEAD"]);
     assert_eq!(lines(&o), ["extra.sv:4", "tb.sv:5"]);
     assert!(text(&o).contains("1 elsewhere not shown"), "{}", text(&o));
-    // SV-COR-008 is an ERROR: exit 1 anyway; a new file fails the strict gate
+    // SVL-COR-004 is an ERROR: exit 1 anyway; a new file fails the strict gate
     // only through its finding count, which the message names.
     let o =
-        run(&d, &["--no-config", "--rule", "SV-COR-008", "extra.sv", "--changed-since", "HEAD", "--strict-new-files"]);
+        run(&d, &["--no-config", "--rule", "SVL-COR-004", "extra.sv", "--changed-since", "HEAD", "--strict-new-files"]);
     assert!(text(&o).contains("--strict-new-files: 1 finding(s)"), "{}", text(&o));
     let o = run(&d, &["--no-config", "tb.sv", "--changed-since", "no-such-ref"]);
     assert_eq!(o.status.code(), Some(2));
@@ -92,39 +92,39 @@ fn changed_since_keeps_changed_lines_and_untracked_files() {
 fn waiver_hygiene_reports_and_strict_exit() {
     let d = tmp("hygiene");
     std::fs::create_dir_all(d.join(".svlang-lint")).unwrap();
-    // Line 4 is waived inline; the comment on line 2 names SV-COR-008 and waives nothing.
+    // Line 4 is waived inline; the comment on line 2 names SVL-COR-004 and waives nothing.
     std::fs::write(
         d.join("tb.sv"),
-        "module tb;\n  int a; // svlang-lint:waive SV-COR-008 -- stale\n  initial begin\n    if (a == a) $display(\"x\"); // svlang-lint:waive SV-COR-008 -- known\n  end\nendmodule : tb\n",
+        "module tb;\n  int a; // svlang-lint:waive SVL-COR-004 -- stale\n  initial begin\n    if (a == a) $display(\"x\"); // svlang-lint:waive SVL-COR-004 -- known\n  end\nendmodule : tb\n",
     )
     .unwrap();
     std::fs::write(
         d.join(".svlang-lint/waivers.json"),
-        r#"{"waivers": [{"rule": "SV-COR-001", "path": "tb.sv", "reason": "x", "owner": "dv"},
-                        {"rule": "SV-NOPE-001", "reason": "never matches"}]}"#,
+        r#"{"waivers": [{"rule": "SVL-COR-001", "path": "tb.sv", "reason": "x", "owner": "dv"},
+                        {"rule": "SVL-NOP-999", "reason": "never matches"}]}"#,
     )
     .unwrap();
-    let o = run(&d, &["--rule", "SV-COR-008", "--rule", "SV-COR-001", "tb.sv", "--waiver-report"]);
+    let o = run(&d, &["--rule", "SVL-COR-004", "--rule", "SVL-COR-001", "tb.sv", "--waiver-report"]);
     let out = text(&o);
     assert!(out.contains("=== Waiver hygiene ==="), "{out}");
     assert!(out.contains("Waivers: 2 written, 1 matched nothing, 0 expired, 1 without an owner"), "{out}");
-    assert!(out.contains("unused:  waivers.json #2 (SV-NOPE-001)"), "{out}");
+    assert!(out.contains("unused:  waivers.json #2 (SVL-NOP-999)"), "{out}");
     assert!(out.contains("Waiver comments: 2 in source, 1 waive nothing"), "{out}");
-    assert!(out.contains("tb.sv:2: // svlang-lint:waive SV-COR-008 -- stale"), "{out}");
-    assert!(out.contains("Waived findings by rule: SV-COR-001 1, SV-COR-008 1"), "{out}");
+    assert!(out.contains("tb.sv:2: // svlang-lint:waive SVL-COR-004 -- stale"), "{out}");
+    assert!(out.contains("Waived findings by rule: SVL-COR-001 1, SVL-COR-004 1"), "{out}");
     assert!(out.contains("Waived findings by owner: (inline comment) 1, dv 1"), "{out}");
     assert_eq!(o.status.code(), Some(0), "the report alone does not fail");
-    let o = run(&d, &["--rule", "SV-COR-008", "--rule", "SV-COR-001", "tb.sv", "--report-unused-waivers"]);
+    let o = run(&d, &["--rule", "SVL-COR-004", "--rule", "SVL-COR-001", "tb.sv", "--report-unused-waivers"]);
     let out = text(&o);
     assert!(
-        out.contains("UVM-WV-001 (UnusedWaiver): waiver waivers.json #2 (SV-NOPE-001) matched no diagnostic"),
+        out.contains("SVL-WVR-002 (UnusedWaiver): waiver waivers.json #2 (SVL-NOP-999) matched no diagnostic"),
         "{out}"
     );
     assert!(
-        out.contains("tb.sv:2:1: [WARNING] UVM-WV-001 (UnusedWaiver): waiver comment matched no diagnostic"),
+        out.contains("tb.sv:2:1: [WARNING] SVL-WVR-002 (UnusedWaiver): waiver comment matched no diagnostic"),
         "{out}"
     );
-    let o = run(&d, &["--rule", "SV-COR-008", "--rule", "SV-COR-001", "tb.sv", "--strict-waivers"]);
+    let o = run(&d, &["--rule", "SVL-COR-004", "--rule", "SVL-COR-001", "tb.sv", "--strict-waivers"]);
     assert_eq!(o.status.code(), Some(4), "{}", text(&o));
 }
 
@@ -132,7 +132,7 @@ fn waiver_hygiene_reports_and_strict_exit() {
 fn the_cache_replays_until_a_source_changes() {
     let d = tmp("cache");
     std::fs::write(d.join("tb.sv"), TB).unwrap();
-    let args = ["--no-config", "--rule", "SV-COR-008", "tb.sv", "--json"];
+    let args = ["--no-config", "--rule", "SVL-COR-004", "tb.sv", "--json"];
     let first = run(&d, &[&args[..], &["a.json"]].concat());
     assert!(text(&first).contains("cache: stored 1 compilation unit"), "{}", text(&first));
     assert!(d.join(".svlang_lint_cache/native/manifest.json").is_file());
@@ -147,9 +147,9 @@ fn the_cache_replays_until_a_source_changes() {
     let edited = run(&d, &[&args[..], &["c.json"]].concat());
     let out = text(&edited);
     assert!(out.contains("cache miss: tb.sv changed") && !out.contains("served from cache"), "{out}");
-    assert!(!String::from_utf8_lossy(&edited.stdout).contains("SV-COR-008"));
+    assert!(!String::from_utf8_lossy(&edited.stdout).contains("SVL-COR-004"));
     // Another rule selection: another key (and the one entry is replaced).
-    let other = run(&d, &["--no-config", "--rule", "SV-COR-001", "tb.sv"]);
+    let other = run(&d, &["--no-config", "--rule", "SVL-COR-001", "tb.sv"]);
     assert!(!text(&other).contains("served from cache"));
     // --no-cache neither reads nor writes; --clear-cache starts afresh.
     let fresh = run(&d, &[&args[..], &["d.json", "--no-cache"]].concat());
@@ -262,8 +262,8 @@ fn svlang_lint_handles_all_cli_options_natively() {
     let d = tmp("native-opts");
     std::fs::write(d.join("tb.sv"), TB).unwrap();
     for args in [
-        &["--explain", "SV-DUP-002"][..],
-        &["--explain=SV-DUP-002"],
+        &["--explain", "SVL-MNT-022"][..],
+        &["--explain=SVL-MNT-022"],
         &["--no-config", "--waiver-report", "--report-unused-waivers", "--strict-waivers", "tb.sv"],
         &["--no-config", "--cache-dir", "c", "--clear-cache", "--map", "m.json", "tb.sv"],
         &["--no-config", "--python-rules", "none.py", "--no-cache", "tb.sv"],
@@ -342,7 +342,7 @@ fn every_option_in_help_is_accepted() {
                             "-D" => "A",
                             "-top" => "tb",
                             "--preset" => "all",
-                            "--rule" | "--fix-rule" => "SV-COR-008",
+                            "--rule" | "--fix-rule" => "SVL-COR-004",
                             "--changed-since" => "HEAD",
                             "--python-rules" => "norules",
                             _ => "out.tmp",
@@ -371,7 +371,7 @@ fn a_report_to_standard_output_replaces_the_text() {
     assert_eq!(o.status.code(), Some(1), "{}", text(&o));
     let out = String::from_utf8_lossy(&o.stdout).into_owned();
     assert!(out.trim_start().starts_with('{') && out.trim_end().ends_with('}'), "{out}");
-    assert!(out.contains("\"ruleId\": \"SV-COR-008\""), "{out}");
+    assert!(out.contains("\"ruleId\": \"SVL-COR-004\""), "{out}");
     assert!(!out.contains("[ERROR]"), "{out}");
     assert!(!d.join("-").exists(), "a file named '-' was written");
     let o = run(&d, &["--no-config", "--no-cache", "tb.sv", "--sarif=-"]);
@@ -434,15 +434,15 @@ fn a_finding_in_a_macro_names_the_macro_and_the_place_in_its_body() {
         "`define SET_ALL(v) \\\n  begin \\\n    a = v; \\\n    if (a == a) b = v; \\\n  end\n\nmodule m;\n  int a, b;\n  initial begin\n    `SET_ALL(1)\n    if (b == b) a = 2;\n  end\nendmodule\n",
     )
     .unwrap();
-    let out = text(&run(&d, &["--no-config", "--no-cache", "--rule", "SV-COR-008", "m.sv"]));
+    let out = text(&run(&d, &["--no-config", "--no-cache", "--rule", "SVL-COR-004", "m.sv"]));
     let lines: Vec<&str> = out.lines().filter(|l| l.contains("m.sv:")).collect();
     // Reported where the macro is used, with the place in the body noted.
     assert_eq!(lines.len(), 3, "{out}");
-    assert!(lines[0].contains("m.sv:10:0: [ERROR] SV-COR-008"), "{out}");
+    assert!(lines[0].contains("m.sv:10:0: [ERROR] SVL-COR-004"), "{out}");
     assert!(lines[1].trim_start().starts_with("note: "), "{out}");
     assert!(lines[1].ends_with("m.sv:4:11: in the expansion of macro 'SET_ALL'"), "{out}");
     // Code written outside a macro has no such note.
-    assert!(lines[2].contains("m.sv:11:11: [ERROR] SV-COR-008"), "{out}");
+    assert!(lines[2].contains("m.sv:11:11: [ERROR] SVL-COR-004"), "{out}");
     let _ = std::fs::remove_dir_all(&d);
 }
 
@@ -452,12 +452,12 @@ fn the_uvm_library_is_left_out_beside_user_code() {
     library_and_testbench(&d);
     let lint = |extra: &[&str]| {
         let mut args =
-            vec!["--no-config", "--no-cache", "--rule", "SV-COR-008", "+incdir+uvm/src", "uvm/src/uvm_pkg.sv"];
+            vec!["--no-config", "--no-cache", "--rule", "SVL-COR-004", "+incdir+uvm/src", "uvm/src/uvm_pkg.sv"];
         args.extend(extra);
         text(&run(&d, &args))
     };
     let lines = |out: &str| -> Vec<String> {
-        out.lines().filter(|l| l.contains("SV-COR-008")).map(|l| l.split(": [").next().unwrap().to_string()).collect()
+        out.lines().filter(|l| l.contains("SVL-COR-004")).map(|l| l.split(": [").next().unwrap().to_string()).collect()
     };
     // Beside the testbench: only the user's own line, and a note.
     let out = lint(&["tb.sv"]);
@@ -496,7 +496,7 @@ fn native_cli_guideline_conformance_dump_globs_and_uvm_flags() {
             "--no-config",
             "--no-cache",
             "--rule",
-            "SV-COR-008",
+            "SVL-COR-004",
             "--exclude",
             "skip_me.sv",
             "skip_me.sv",
@@ -522,7 +522,7 @@ fn native_cli_guideline_conformance_dump_globs_and_uvm_flags() {
             "-ntb_opts",
             "uvm",
             "--rule",
-            "SV-COR-008",
+            "SVL-COR-004",
             "tb.sv",
         ])
         .output()

@@ -1,4 +1,4 @@
-//! SV-RND-027 (SoftConstraintShadowing): Flags soft constraints whose winner is
+//! SVL-RND-026 (SoftConstraintShadowing): Flags soft constraints whose winner is
 //! hard to predict: 'soft' inside an inline randomize() with { } block, and a
 //! soft constraint on a variable that a base class or another constraint block
 //! of the same class already constrains softly.
@@ -163,7 +163,7 @@ pub(crate) fn soft_constraint_shadowing(d: &Design, csts: &[Cst], out: &mut Sink
                         continue;
                     }
                     out.add(
-                        "SV-RND-027",
+                        "SVL-RND-026",
                         "SoftConstraintShadowing",
                         Severity::Warning,
                         format!(
@@ -199,7 +199,7 @@ is hidden from the reader. Keep one soft default and override it with a hard con
             soft_exprs(c, blk, &mut es);
             for e in es {
                 out.add(
-                    "SV-RND-027",
+                    "SVL-RND-026",
                     "SoftConstraintShadowing",
                     Severity::Warning,
                     "'soft' in an inline randomize() with { } block. The caller's intent is a requirement here; a soft inline constraint quietly loses to any class \

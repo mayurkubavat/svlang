@@ -1,4 +1,4 @@
-//! SV-MET-007 (LongTask): Flags tasks longer than the line budget (default 40
+//! SVL-MNT-035 (LongTask): Flags tasks longer than the line budget (default 40
 //! source lines, option max_lines).
 
 use crate::support::routine_metrics::{each_routine, Routine};
@@ -31,7 +31,7 @@ fn line_span(c: &Cst, r: &Routine) -> i64 {
 }
 
 pub(crate) fn long_task(c: &Cst, s: &mut Sink) {
-    let limit = crate::options::get("SV-MET-007", "max_lines", 40) as _;
+    let limit = crate::options::get("SVL-MNT-035", "max_lines", 40) as _;
     each_routine(c, |_, r| {
         if !r.is_task {
             return;
@@ -44,7 +44,7 @@ pub(crate) fn long_task(c: &Cst, s: &mut Sink) {
         report(
             s,
             r.times,
-            "SV-MET-007",
+            "SVL-MNT-035",
             "LongTask",
             Severity::Warning,
             format!("Task '{place}' is {lines} lines (limit {limit}). Split it into smaller tasks."),

@@ -1,4 +1,4 @@
-//! SV-RDB-001 (PositionalFlagLiterals): Flags calls that pass two or more 0/1
+//! SVL-MNT-042 (PositionalFlagLiterals): Flags calls that pass two or more 0/1
 //! literals positionally to 1-bit arguments; use named argument binding
 //! (clang-tidy bugprone-argument-comment, Clean Code flag arguments).
 
@@ -10,9 +10,9 @@ use svlang::syntax::NodeId;
 use svlang::syntax::SyntaxKind::*;
 
 /// The `min_flags` default.
-// Option `min_flags` (rules.SV-RDB-001.options).
+// Option `min_flags` (rules.SVL-MNT-042.options).
 fn min_flags() -> usize {
-    crate::options::get("SV-RDB-001", "min_flags", 2) as usize
+    crate::options::get("SVL-MNT-042", "min_flags", 2) as usize
 }
 
 /// A call of a user routine passing two or more 0/1 literals positionally
@@ -65,7 +65,7 @@ pub(crate) fn positional_flags(c: &Cst, out: &mut Sink) {
         let Some(t) = c.first_tok(call) else { continue };
         for _ in 0..times {
             out.add(
-                "SV-RDB-001",
+                "SVL-MNT-042",
                 "PositionalFlagLiterals",
                 Severity::Info,
                 format!(

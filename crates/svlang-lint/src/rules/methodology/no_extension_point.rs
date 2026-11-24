@@ -1,4 +1,4 @@
-//! UVM-PAT-003 (NoExtensionPoint): Flags a driver or monitor whose run_phase is
+//! UVM-CMP-012 (NoExtensionPoint): Flags a driver or monitor whose run_phase is
 //! long (25 statements or more; option min_statements) while the class and its
 //! user bases declare no virtual hook methods and use no callbacks.
 
@@ -72,9 +72,9 @@ fn count_into(c: &Cst, n: NodeId, count: &mut usize) {
 
 pub(crate) fn no_extension_point(d: &Design, csts: &[Cst], out: &mut Sink) {
     let ix = Index::new(csts);
-    // Option `min_statements` (rules.UVM-PAT-003.options).
+    // Option `min_statements` (rules.UVM-CMP-012.options).
     fn min() -> usize {
-        crate::options::get("UVM-PAT-003", "min_statements", 25) as usize
+        crate::options::get("UVM-CMP-012", "min_statements", 25) as usize
     }
     for cls in user_classes(d) {
         let r = role(d, cls);
@@ -104,7 +104,7 @@ pub(crate) fn no_extension_point(d: &Design, csts: &[Cst], out: &mut Sink) {
             continue;
         }
         out.add(
-            "UVM-PAT-003",
+            "UVM-CMP-012",
             "NoExtensionPoint",
             Severity::Info,
             format!(

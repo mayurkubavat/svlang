@@ -1,4 +1,4 @@
-//! SV-COV-011 (AtLeastZeroOrNegative): Flags option.at_least or
+//! SVL-COV-011 (AtLeastZeroOrNegative): Flags option.at_least or
 //! type_option.at_least set to 0 or negative values in covergroups/coverpoints.
 
 use crate::support::procedural::start;
@@ -21,7 +21,7 @@ pub(crate) fn at_least_zero(c: &Cst, s: &mut Sink) {
         let target = option_target(c, o);
         let Some(loc) = start(c, o) else { continue };
         s.add(
-            "SV-COV-011",
+            "SVL-COV-011",
             "AtLeastZeroOrNegative",
             Severity::Warning,
             format!(

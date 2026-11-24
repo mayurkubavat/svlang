@@ -3,7 +3,7 @@
 
 Each TEST_CASE in Slang's tests/unittests/ast/*.cpp that compiles one
 source text is a small design with a known verdict. The text is run
-through `svlang check` and through svlang-lint (Slang); per test file it reports
+through `svlang check` and through `svlang_compile_check` (Slang oracle); per test file it reports
 how many both accept, both reject, only Slang rejects (a native gap) and
 only `svlang check` rejects (a native false error). Cases that set compilation
 options or use several trees are skipped.
@@ -31,10 +31,6 @@ SVLANG = _default_bin('SVLANG', [('target', 'release', 'svlang'), ('target', 'de
 
 
 def _default_tests():
-    for b in ('build', 'build-dev', 'build-model'):
-        p = os.path.join(REPO, b, '_deps', 'slang-src', 'tests', 'unittests', 'ast')
-        if os.path.isdir(p):
-            return p
     return os.path.join(REPO, 'build', '_deps', 'slang-src', 'tests', 'unittests', 'ast')
 
 

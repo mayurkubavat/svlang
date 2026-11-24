@@ -1,4 +1,4 @@
-//! UVM-ROL-007 (ProceduralTimeoutInMonitor): Flags fork ... join_any blocks in
+//! UVM-CMP-024 (ProceduralTimeoutInMonitor): Flags fork ... join_any blocks in
 //! a monitor where one branch counts clock cycles (repeat (N) @(...)) and then
 //! reports an error: a handshake timeout written as procedural code.
 
@@ -23,7 +23,7 @@ pub(crate) fn procedural_timeout(c: &Cst, s: &mut Sink) {
                     continue;
                 }
                 s.add(
-                    "UVM-ROL-007",
+                    "UVM-CMP-024",
                     "ProceduralTimeoutInMonitor",
                     Severity::Info,
                     format!(

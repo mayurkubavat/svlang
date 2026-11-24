@@ -1,8 +1,8 @@
 {
   "name": "svlang",
   "displayName": "svlang — SystemVerilog & UVM",
-  "description": "IEEE 1800-2023 SystemVerilog and UVM language server, semantic highlighting, RTL/signal tracing, and static linter (474 rules, quick fixes).",
-  "version": "0.5.2",
+  "description": "IEEE 1800-2023 SystemVerilog and UVM language server, semantic highlighting, RTL/signal tracing, and static linter (475 rules, quick fixes).",
+  "version": "0.6.0",
   "publisher": "svlang",
   "license": "Apache-2.0",
   "engines": {
@@ -58,7 +58,7 @@
             "type": "boolean",
             "default": true,
             "scope": "resource",
-            "markdownDescription": "Report live IEEE 1800-2023 syntax and semantic compiler diagnostics (`SV-CMP-001`) even when automatic lint rules (`svlang.lint.trigger`) are `off`."
+            "markdownDescription": "Report live IEEE 1800-2023 syntax and semantic compiler diagnostics (`CMP-ERR-001`) even when automatic lint rules (`svlang.lint.trigger`) are `off`."
           },
           "svlang.lint.trigger": {
             "type": "string",
@@ -126,7 +126,7 @@
               "Use `.svlang-lint/config.py` preset (or `default` when unset).",
               "Soundness, methodology, performance, and security rules.",
               "All non-experimental lint rules (including style, smells, and advisory).",
-              "Pre-FPV formal-readiness rule pack (`SV-FPV-001..005`) and SVA checks.",
+              "Pre-FPV formal-readiness rule pack (`SVA-FPV-001..005`) and SVA checks.",
               "Soundness and correctness rules.",
               "UVM and verification methodology rules.",
               "Simulation and elaboration performance rules.",
@@ -147,7 +147,7 @@
             },
             "default": [],
             "scope": "resource",
-            "markdownDescription": "Additional rule IDs or names to enable (for example `[\"SV-RND-040\", \"UVM-NAM-101\"]`)."
+            "markdownDescription": "Additional rule IDs, names, or `DOM-GRP-*` prefix wildcards to enable (for example `[\"RTL-*\", \"SVA-FPV-*\", \"SVL-RND-030\"]`)."
           },
           "svlang.lint.ignore": {
             "type": "array",
@@ -156,7 +156,7 @@
             },
             "default": [],
             "scope": "resource",
-            "markdownDescription": "Rule IDs or names to silence in User or Workspace settings (for example `[\"SV-STY-104\", \"SV-STY-009\"]`). In `filesystemFirst` mode, applies when no repo config exists (switch `configPreference` to `editorFirst` to override repo configs too)."
+            "markdownDescription": "Rule IDs, names, or `DOM-GRP-*` prefix wildcards to silence in User or Workspace settings (for example `[\"SVL-NAM-*\", \"UVM-NAM-*\", \"SVL-STY-104\"]`). In `filesystemFirst` mode, applies when no repo config exists (switch `configPreference` to `editorFirst` to override repo configs too)."
           }
         }
       },

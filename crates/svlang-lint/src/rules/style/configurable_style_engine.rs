@@ -1,4 +1,4 @@
-//! SV-STY-100 (ConfigurableStyleEngine): Parameterizable code style engine
+//! SVL-STY-100 (ConfigurableStyleEngine): Parameterizable code style engine
 //! enforcing tab prohibitions, trailing whitespace limits, maximum line
 //! lengths, matching block end labels, and file naming.
 
@@ -72,7 +72,7 @@ fn textual(c: &Cst, s: &mut Sink, style: &Style) {
         let b = line.as_bytes();
         if let Some(tab) = line.find('\t').filter(|_| !style.allow_tabs) {
             s.add(
-                "SV-STY-101",
+                "SVL-STY-101",
                 "TabCharactersProhibited",
                 Severity::Warning,
                 format!(
@@ -85,7 +85,7 @@ fn textual(c: &Cst, s: &mut Sink, style: &Style) {
         if !style.allow_trailing_whitespace && matches!(b.last(), Some(b' ' | b'\t')) {
             let ws = b.iter().rposition(|&x| x != b' ' && x != b'\t').map_or(0, |i| i + 1);
             s.add(
-                "SV-STY-102",
+                "SVL-STY-102",
                 "TrailingWhitespace",
                 Severity::Warning,
                 "Line contains trailing whitespace characters at line end. Remove trailing spaces/tabs to prevent noisy version control diffs.".into(),
@@ -95,7 +95,7 @@ fn textual(c: &Cst, s: &mut Sink, style: &Style) {
         let max = style.max_line_length;
         if max > 0 && b.len() > max {
             s.add(
-                "SV-STY-103",
+                "SVL-STY-103",
                 "MaxLineLengthExceeded",
                 Severity::Warning,
                 format!(
@@ -119,7 +119,7 @@ fn textual(c: &Cst, s: &mut Sink, style: &Style) {
         if !found_header {
             let path = t.files.get(file as usize).map(|p| p.display().to_string()).unwrap_or_default();
             s.add(
-                "SV-STY-106",
+                "SVL-STY-106",
                 "MissingFileHeader",
                 Severity::Warning,
                 format!(
@@ -143,7 +143,7 @@ fn structural(c: &Cst, s: &mut Sink, style: &Style) {
             if p.file_stem().is_some_and(|s| s.to_string_lossy() != class) {
                 let fname = p.file_name().map(|f| f.to_string_lossy().into_owned()).unwrap_or_default();
                 s.add(
-                    "SV-STY-105",
+                    "SVL-STY-105",
                     "FileMatchesClassName",
                     Severity::Warning,
                     format!(
@@ -161,7 +161,7 @@ fn structural(c: &Cst, s: &mut Sink, style: &Style) {
         let Some((end, None)) = end_and_label(c, n, &["endclass"]) else { continue };
         let name = c.tree.child(n, Name).map(|x| c.tree.bare_text(x)).unwrap_or_default();
         s.add(
-            "SV-STY-104",
+            "SVL-STY-104",
             "MandatoryMatchingEndLabel",
             Severity::Warning,
             format!("Class '{name}' definition lacks matching end label (expected 'endclass : {name}')."),
@@ -179,7 +179,7 @@ fn structural(c: &Cst, s: &mut Sink, style: &Style) {
         }
         let (kind, kw) = if c.kind(n) == TaskDecl { ("Task", "endtask") } else { ("Function", "endfunction") };
         s.add(
-            "SV-STY-104",
+            "SVL-STY-104",
             "MandatoryMatchingEndLabel",
             Severity::Warning,
             format!("{kind} '{name}' lacks matching end label (expected '{kw} : {name}')."),
@@ -195,7 +195,7 @@ fn structural(c: &Cst, s: &mut Sink, style: &Style) {
             continue;
         }
         s.add(
-            "SV-STY-104",
+            "SVL-STY-104",
             "MandatoryMatchingEndLabel",
             Severity::Warning,
             format!("Interface '{name}' lacks matching end label (expected 'endinterface : {name}')."),

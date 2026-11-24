@@ -1,4 +1,4 @@
-//! SV-PKG-004 (PackageLayerInversion): Flags a package that imports a package
+//! SVL-MNT-040 (PackageLayerInversion): Flags a package that imports a package
 //! from a higher testbench layer, such as an agent package importing an env or
 //! test package.
 
@@ -26,7 +26,7 @@ pub(crate) fn package_layer_inversion(d: &Design, csts: &[Cst], out: &mut Sink) 
         }
         let (nf, nt) = (layer_name(lf), layer_name(lt));
         out.add(
-            "SV-PKG-004",
+            "SVL-MNT-040",
             "PackageLayerInversion",
             Severity::Warning,
             format!(

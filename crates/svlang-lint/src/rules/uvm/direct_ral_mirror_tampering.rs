@@ -1,4 +1,4 @@
-//! UVM-RAL-001 (DirectRalMirrorTampering): Direct assignment to internal RAL
+//! UVM-RAL-010 (DirectRalMirrorTampering): Direct assignment to internal RAL
 //! fields (m_value, m_mirrored, m_desired) bypasses register callbacks, access
 //! policy checks, and prediction pipelines.
 
@@ -36,7 +36,7 @@ pub(crate) fn ral_mirror_tampering(d: &Design, csts: &[Cst], s: &mut Sink) {
             let reg = if is_name_chain(c, value) { "reg".to_string() } else { c.text(value) };
             let Some(t) = c.first_tok(lhs) else { continue };
             s.add(
-                "UVM-RAL-001",
+                "UVM-RAL-010",
                 "DirectRalMirrorTampering",
                 Severity::Error,
                 format!(

@@ -1,4 +1,4 @@
-//! SV-LANG-003 (UnsizedLiteralInConcat): Disallow unbased unsized integer
+//! RTL-DAT-005 (UnsizedLiteralInConcat): Disallow unbased unsized integer
 //! literals inside concatenations ({1, 0, data}).
 
 use crate::support::literals::{ast_times, compact, integer_literal, is_streaming, unparen};
@@ -85,7 +85,7 @@ pub(crate) fn unsized_in_concat(c: &Cst, s: &mut Sink) {
             );
             for _ in 0..times {
                 s.add(
-                    "SV-LANG-003",
+                    "RTL-DAT-005",
                     "UnsizedLiteralInConcat",
                     Severity::Warning,
                     format!(

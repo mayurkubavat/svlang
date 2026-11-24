@@ -1,4 +1,4 @@
-//! SV-COV-004 (IllegalBinOverlap): Detects overlapping values between regular
+//! SVL-COV-004 (IllegalBinOverlap): Detects overlapping values between regular
 //! 'bins' and 'illegal_bins' or 'ignore_bins' within a coverpoint.
 
 use crate::support::procedural::start;
@@ -33,7 +33,7 @@ pub(crate) fn illegal_bin_overlap(c: &Cst, s: &mut Sink) {
             for (rname, rvals) in &regular {
                 if let Some(v) = svals.iter().find(|v| rvals.contains(v)) {
                     s.add(
-                        "SV-COV-004",
+                        "SVL-COV-004",
                         "IllegalBinOverlap",
                         Severity::Error,
                         format!(

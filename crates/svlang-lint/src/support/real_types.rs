@@ -1,5 +1,5 @@
 //! Expression types from the declarations the syntax names, for the
-//! real-number checks (SV-BUG-005, SV-BUG-006). An expression whose type the
+//! real-number checks (SVL-COR-012, SVL-COR-013). An expression whose type the
 //! syntax does not give is left alone.
 
 use std::collections::HashMap;

@@ -1,4 +1,4 @@
-//! UVM-PAT-001 (CallbackNotRegistered): Flags `uvm_do_callbacks(T, CB, ...) in
+//! UVM-CMP-010 (CallbackNotRegistered): Flags `uvm_do_callbacks(T, CB, ...) in
 //! classes where no `uvm_register_cb(T, CB) registers that pair for T or a base
 //! of T.
 
@@ -87,7 +87,7 @@ pub(crate) fn callback_not_registered(d: &Design, csts: &[Cst], out: &mut Sink) 
             for dcl in c.tree.children(dd).filter(|&x| c.kind(x) == Declarator) {
                 let Some(name) = c.tree.child(dcl, Name) else { continue };
                 out.add(
-                    "UVM-PAT-001",
+                    "UVM-CMP-010",
                     "CallbackNotRegistered",
                     Severity::Warning,
                     format!(

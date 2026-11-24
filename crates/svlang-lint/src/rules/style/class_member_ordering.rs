@@ -1,4 +1,4 @@
-//! SV-STY-024 (ClassMemberOrdering): Enforces canonical SystemVerilog / UVM
+//! SVL-STY-018 (ClassMemberOrdering): Enforces canonical SystemVerilog / UVM
 //! class member ordering inside multi-line classes:
 //! 1. Parameters & typedefs (`parameter`, `localparam`, `typedef`)
 //! 2. Properties / data declarations
@@ -54,7 +54,7 @@ pub(crate) fn class_member_ordering(c: &Cst, out: &mut Sink) {
             if let Some((prev_rank, prev_label)) = max_seen {
                 if rank < prev_rank {
                     out.add(
-                        "SV-STY-024",
+                        "SVL-STY-018",
                         "ClassMemberOrdering",
                         Severity::Info,
                         format!(

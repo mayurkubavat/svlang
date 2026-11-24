@@ -1,4 +1,4 @@
-//! SV-OOP-010 (ClassInstantiationInLoop): Disallows direct class instantiation
+//! SVL-PRF-016 (ClassInstantiationInLoop): Disallows direct class instantiation
 //! via new() inside simulation loops to prevent heap contention and memory
 //! allocation overhead.
 
@@ -41,7 +41,7 @@ pub(crate) fn new_in_loop(c: &Cst, s: &mut Sink) {
         for n in found {
             let Some(t) = c.first_tok(n) else { continue };
             s.add(
-                "SV-OOP-010",
+                "SVL-PRF-016",
                 "ClassInstantiationInLoop",
                 Severity::Warning,
                 "Direct object instantiation with 'new()' inside a simulation loop. Repeatedly creating dynamic heap objects in simulation loops triggers frequent garbage collection and memory manager lock contention. Preallocate objects outside the loop or reuse transaction instances from an object pool.".to_string(),

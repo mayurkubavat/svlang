@@ -1,4 +1,4 @@
-//! SV-TYP-012 (UnsignedLoopDowncountHazard): Flags `for` loops whose loop
+//! SVL-TYP-006 (UnsignedLoopDowncountHazard): Flags `for` loops whose loop
 //! control variable is declared with an unsigned integral type (`int unsigned`,
 //! `bit [...]`, `logic [...]`, `byte unsigned`) and tested with `>= 0` (or
 //! `0 <= i`) while decrementing, creating a non-terminating wrap-around loop.
@@ -126,7 +126,7 @@ pub(crate) fn unsigned_loop_downcount_hazard(c: &Cst, out: &mut Sink) {
         for var in unsigned_init_vars(c, &init) {
             if cond_has_ge_zero(c, cond, &var) && step_decrements(c, &steps, &var) {
                 out.add(
-                    "SV-TYP-012",
+                    "SVL-TYP-006",
                     "UnsignedLoopDowncountHazard",
                     Severity::Error,
                     format!(

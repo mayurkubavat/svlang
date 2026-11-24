@@ -1,4 +1,4 @@
-//! SV-STY-002 (MacroTrailingSemicolon): Flags unnecessary semicolons following
+//! SVL-STY-001 (MacroTrailingSemicolon): Flags unnecessary semicolons following
 //! `uvm_* macro invocations that create empty statements in declarative or
 //! procedural scopes.
 
@@ -21,7 +21,7 @@ pub(crate) fn macro_trailing_semicolon(c: &Cst, s: &mut Sink) {
         }
         if cur < src.len() && src[cur] == b';' {
             s.add(
-                "SV-STY-002",
+                "SVL-STY-001",
                 "MacroTrailingSemicolon",
                 Severity::Warning,
                 format!(

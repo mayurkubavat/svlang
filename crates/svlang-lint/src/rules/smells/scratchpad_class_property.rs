@@ -1,4 +1,4 @@
-//! SV-SML-001 (ScratchpadClassProperty): Disallow declaring scratchpad
+//! SVL-MNT-052 (ScratchpadClassProperty): Disallow declaring scratchpad
 //! variables or loop induction counters as class properties.
 
 use crate::support::class_index::{local_or_port, property_owner, referenced_name, routine_of, Classes};
@@ -59,7 +59,7 @@ pub(crate) fn scratchpad_property(c: &Cst, s: &mut Sink) {
                     report(
                         s,
                         units.times(c, n),
-                        "SV-SML-001",
+                        "SVL-MNT-052",
                         "ScratchpadClassProperty",
                         Severity::Warning,
                         format!(
@@ -86,7 +86,7 @@ pub(crate) fn scratchpad_property(c: &Cst, s: &mut Sink) {
                 report(
                     s,
                     units.times(c, cls.node),
-                    "SV-SML-001",
+                    "SVL-MNT-052",
                     "ScratchpadClassProperty",
                     Severity::Warning,
                     format!(

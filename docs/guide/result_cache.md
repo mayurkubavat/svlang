@@ -24,14 +24,14 @@ Some rules compare the whole design. A finding they report in one file can chang
 
 | Rule | Why it is whole-program |
 | :--- | :--- |
-| `SV-DUP-001` … `SV-DUP-006` | Clone detection and repeated argument groups across classes and packages |
-| `SV-DED-015` | A class parameter set by a specialization in another file |
-| `SV-PKG-004`, `SV-PKG-005` | The package dependency graph |
-| `SV-EVO-001`, `SV-EVO-002` | Git history across the tree (`--history` does not use the cache) |
-| `UVM-ARC-001`, `UVM-ARC-003` | Layer order, and one file included into several packages |
-| `UVM-TLM-001`, `UVM-TLM-004`, `UVM-VSEQ-001`, `UVM-SEQ-013`, `UVM-SEQ-014`, `UVM-SEQ-015` | Ports, sequencers, and sequence items wired in another file |
+| `SVL-MNT-021` … `SVL-MNT-026` | Clone detection and repeated argument groups across classes and packages |
+| `SVL-DED-015` | A class parameter set by a specialization in another file |
+| `SVL-MNT-040`, `SVL-MNT-041` | The package dependency graph |
+| `SVL-MNT-027`, `SVL-MNT-028` | Git history across the tree (`--history` does not use the cache) |
+| `UVM-CMP-001`, `UVM-CMP-003` | Layer order, and one file included into several packages |
+| `UVM-TLM-001`, `UVM-TLM-003`, `UVM-SEQ-019`, `UVM-SEQ-013`, `UVM-SEQ-014`, `UVM-SEQ-015` | Ports, sequencers, and sequence items wired in another file |
 | `UVM-CFG-005`, `UVM-CFG-010`, `UVM-CFG-011`, `UVM-PHS-010` | A config or phase access whose other end is another component |
-| `RAL-WIRE-001`, `RAL-MAP-001`, `RAL-MAP-002`, `RAL-COL-001` | Register maps, address ranges, and adapter wiring across the model |
+| `UVM-RAL-009`, `UVM-RAL-007`, `UVM-RAL-008`, `UVM-RAL-005` | Register maps, address ranges, and adapter wiring across the model |
 
 Every other rule is cached with its compilation unit. Its result for a file is reused when that file, its includes, and its imported packages are unchanged.
 

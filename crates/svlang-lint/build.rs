@@ -50,19 +50,21 @@ fn explain_data() {
     let mut seen: Vec<(String, String, String)> = Vec::new();
     for f in files {
         let text = std::fs::read_to_string(&f).unwrap_or_default();
-        let mut rest = text.as_str();
-        while let Some(at) = rest.find("options::get(") {
-            rest = &rest[at + "options::get(".len()..];
-            let Some(close) = rest.find(')') else { break };
-            let parts: Vec<&str> = rest[..close].split(',').map(str::trim).collect();
-            if parts.len() == 3 && parts[0].starts_with('"') && parts[1].starts_with('"') {
-                let entry = (
-                    parts[0].trim_matches('"').to_string(),
-                    parts[1].trim_matches('"').to_string(),
-                    parts[2].to_string(),
-                );
-                if !seen.contains(&entry) {
-                    seen.push(entry);
+        for marker in ["options::get(", "options::get_str("] {
+            let mut rest = text.as_str();
+            while let Some(at) = rest.find(marker) {
+                rest = &rest[at + marker.len()..];
+                let Some(close) = rest.find(')') else { break };
+                let parts: Vec<&str> = rest[..close].split(',').map(str::trim).collect();
+                if parts.len() == 3 && parts[0].starts_with('"') && parts[1].starts_with('"') {
+                    let entry = (
+                        parts[0].trim_matches('"').to_string(),
+                        parts[1].trim_matches('"').to_string(),
+                        parts[2].to_string(),
+                    );
+                    if !seen.contains(&entry) {
+                        seen.push(entry);
+                    }
                 }
             }
         }

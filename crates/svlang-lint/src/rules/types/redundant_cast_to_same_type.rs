@@ -1,4 +1,4 @@
-//! SV-TYP-008 (RedundantCastToSameType): Flags dynamic '$cast' calls or static
+//! SVL-TYP-002 (RedundantCastToSameType): Flags dynamic '$cast' calls or static
 //! type casts where the source and destination already have identical static
 //! types.
 //!
@@ -63,7 +63,7 @@ pub(crate) fn redundant_cast(c: &Cst, out: &mut Sink) {
         let Some(t) = c.first_tok(e) else { continue };
         for text in matches(e, d, s) {
             out.add(
-                "SV-TYP-008",
+                "SVL-TYP-002",
                 "RedundantCastToSameType",
                 Severity::Warning,
                 format!(
@@ -90,7 +90,7 @@ pub(crate) fn redundant_cast(c: &Cst, out: &mut Sink) {
         let Some(t) = c.first_tok(e) else { continue };
         for text in matches(e, e, inner) {
             out.add(
-                "SV-TYP-008",
+                "SVL-TYP-002",
                 "RedundantCastToSameType",
                 Severity::Info,
                 format!(

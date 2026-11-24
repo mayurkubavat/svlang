@@ -1,4 +1,4 @@
-//! SV-COV-016 (OverlappingRangesInCoverpointBin): Flags coverpoint bins
+//! SVL-COV-016 (OverlappingRangesInCoverpointBin): Flags coverpoint bins
 //! containing overlapping numerical value ranges.
 
 use crate::support::slang_ast::*;
@@ -70,7 +70,7 @@ pub(crate) fn overlapping_ranges(c: &Cst, s: &mut Sink) {
                 if a.0.max(b2.0) <= a.1.min(b2.1) {
                     let Some((name, t)) = bins_name(c, b) else { break 'found };
                     s.add(
-                        "SV-COV-016",
+                        "SVL-COV-016",
                         "OverlappingRangesInCoverpointBin",
                         Severity::Warning,
                         format!(

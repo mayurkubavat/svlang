@@ -1,4 +1,4 @@
-//! SV-DLY-003 (RepeatLoopWithoutTiming): Flags repeat loops inside testbench
+//! SVL-CON-019 (RepeatLoopWithoutTiming): Flags repeat loops inside testbench
 //! tasks that contain no time-consuming statements (#, @, wait).
 
 use crate::support::procedural::{loop_body, loop_kw, routine_name};
@@ -32,7 +32,7 @@ pub(crate) fn repeat_without_timing(c: &Cst, s: &mut Sink) {
             }
             let Some(kw) = c.tok(l, "repeat") else { continue };
             s.add(
-                "SV-DLY-003",
+                "SVL-CON-019",
                 "RepeatLoopWithoutTiming",
                 Severity::Warning,
                 format!(

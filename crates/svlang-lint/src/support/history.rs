@@ -1,4 +1,4 @@
-//! Git history for the change-history rules (SV-EVO-001 hotspots, SV-EVO-002
+//! Git history for the change-history rules (SVL-MNT-027 hotspots, SVL-MNT-028
 //! change coupling). Nothing is read unless `--history` is given ([`set_history`]).
 
 use crate::syntax::Cst;

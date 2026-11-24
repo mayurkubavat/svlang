@@ -1,4 +1,4 @@
-//! SV-BUG-002 (RepeatedElseIfCondition): Flags a condition that repeats an
+//! SVL-COR-009 (RepeatedElseIfCondition): Flags a condition that repeats an
 //! earlier condition of the same if/else-if chain, which makes the later branch
 //! dead (Sonar S1862).
 
@@ -52,7 +52,7 @@ pub(crate) fn repeated_else_if(c: &Cst, s: &mut Sink) {
                 continue;
             };
             s.add(
-                "SV-BUG-002",
+                "SVL-COR-009",
                 "RepeatedElseIfCondition",
                 Severity::Warning,
                 format!(

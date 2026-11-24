@@ -1,4 +1,4 @@
-//! SV-TYP-010 (TaskWithNonVoidReturnType): Disallows declaring tasks with
+//! SVL-TYP-004 (TaskWithNonVoidReturnType): Disallows declaring tasks with
 //! explicit non-void return types.
 
 use crate::syntax::Cst;
@@ -15,7 +15,7 @@ pub(crate) fn task_return_type(c: &Cst, s: &mut Sink) {
         let Some(first) = c.first_tok(rt) else { continue };
         let name = c.tree.child(n, Name).map(|x| c.trimmed(x)).unwrap_or_else(|| "task".into());
         s.add(
-            "SV-TYP-010",
+            "SVL-TYP-004",
             "TaskWithNonVoidReturnType",
             Severity::Error,
             format!(

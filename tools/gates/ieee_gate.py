@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """IEEE 1800 conformance gate for the native compiler (`svlang check`) against Slang.
 
-Runs every sv-tests file through `svlang check` and through svlang-lint (Slang) and
+Runs every sv-tests file through `svlang check` and through `svlang_compile_check` (Slang oracle) and
 reports, per LRM clause (the sv-tests chapter):
   legal        tests that must compile: how many each front end accepts;
   should_fail  tests that must be rejected: how many each front end rejects.

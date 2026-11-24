@@ -1,4 +1,4 @@
-//! UVM-REP-006 (BlanketErrorDemotion): Flags report catchers that demote or
+//! UVM-CMP-014 (BlanketErrorDemotion): Flags report catchers that demote or
 //! swallow errors without filtering on ID or message, and severity
 //! overrides/actions that disable UVM_ERROR or UVM_FATAL for every ID (Pylint
 //! W0718 broad-exception-caught).
@@ -52,7 +52,7 @@ pub(crate) fn blanket_error_demotion(d: &Design, csts: &[Cst], out: &mut Sink) {
             });
             if !filters && (demotion.is_some() || caught) {
                 out.add(
-                    "UVM-REP-006",
+                    "UVM-CMP-014",
                     "BlanketErrorDemotion",
                     Severity::Error,
                     format!(
@@ -74,7 +74,7 @@ hidden, including ones nobody has seen yet. Filter on the specific ID or message
                     && drops_action(&a1));
             if bad {
                 out.add(
-                    "UVM-REP-006",
+                    "UVM-CMP-014",
                     "BlanketErrorDemotion",
                     Severity::Error,
                     format!(

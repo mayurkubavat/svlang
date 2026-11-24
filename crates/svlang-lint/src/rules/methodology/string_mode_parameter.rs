@@ -1,4 +1,4 @@
-//! SV-CPL-001 (StringModeParameter): Flags routines whose string argument is
+//! SVL-MNT-008 (StringModeParameter): Flags routines whose string argument is
 //! compared against two or more literals to choose what to do, as in
 //! do_op("read").
 
@@ -24,12 +24,12 @@ pub(crate) fn string_mode_parameter(d: &Design, csts: &[Cst], out: &mut Sink) {
             None => r.c.tree.child(r.decl, Name).map(|n| r.c.tree.bare_text(n)).unwrap_or_default(),
         };
         let mut reported = HashSet::new();
-        for x in dispatches(d, &ix, &r, true, crate::options::get("SV-CPL-001", "min_values", 2) as _) {
+        for x in dispatches(d, &ix, &r, true, crate::options::get("SVL-MNT-008", "min_values", 2) as _) {
             if all_uvm_access_policies(&x.lits) || !reported.insert(x.sym.sym.clone()) {
                 continue;
             }
             out.add(
-                "SV-CPL-001",
+                "SVL-MNT-008",
                 "StringModeParameter",
                 Severity::Warning,
                 format!(

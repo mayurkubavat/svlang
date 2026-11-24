@@ -11,8 +11,8 @@ Configurations come from --set (repeatable, comma-separated defines, e.g.
 --set "FAST_SIM,WIDTH=64") and, with --auto, one per macro the sources test
 with `ifdef / `ifndef / `elsif and never `define themselves.
 
-  tools/quality/config_sweep.py --binary build/svlang-lint --auto -- tb.sv -I inc
-  tools/quality/config_sweep.py --binary build/svlang-lint --set A --set "B,C=2" --json out.json -- -f files.f
+  tools/quality/config_sweep.py --binary target/release/svlang --auto -- tb.sv -I inc
+  tools/quality/config_sweep.py --binary target/release/svlang --set A --set "B,C=2" --json out.json -- -f files.f
 
 --specializations adds the specialization sweep. A compiler checks a
 parameterized class once per specialization the design names, so code that
@@ -24,7 +24,7 @@ with each type parameter set to that type and value parameters left at their
 defaults. Errors that appear only then are code that breaks for some type,
 e.g. `v + 1` on a `type T` that could be a string.
 
-  tools/quality/config_sweep.py --binary build/svlang-lint --specializations -- -f files.f
+  tools/quality/config_sweep.py --binary target/release/svlang --specializations -- -f files.f
 
 Exit status: 1 when any configuration reports an error-severity finding (or
 does not run), 0 otherwise.

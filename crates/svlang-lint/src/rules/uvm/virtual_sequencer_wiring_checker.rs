@@ -1,4 +1,4 @@
-//! UVM-VSEQ-001 (VirtualSequencerWiringChecker): Statically verifies that
+//! UVM-SEQ-019 (VirtualSequencerWiringChecker): Statically verifies that
 //! sub-sequencer handles declared within a virtual sequencer are fully wired
 //! and assigned in connect_phase across the verification environment.
 
@@ -34,7 +34,7 @@ pub(crate) fn virtual_sequencer_wiring_checker(d: &Design, out: &mut Sink) {
             continue;
         }
         out.add(
-            "UVM-VSEQ-001",
+            "UVM-SEQ-019",
             "VirtualSequencerWiringChecker",
             Severity::Warning,
             format!(

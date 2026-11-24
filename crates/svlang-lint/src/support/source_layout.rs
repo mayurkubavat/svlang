@@ -74,7 +74,7 @@ pub(crate) fn at(c: &Cst, file: u32, offset: usize) -> Loc {
     c.loc_at(Origin { file, offset: offset as u32 })
 }
 
-/// UVM-BAN-001/002 scan real macro tokens in the main file of each tree
+/// UVM-DEP-006/002 scan real macro tokens in the main file of each tree
 /// (ignoring comments, string literals, and included files), reporting at most
 /// once per line.
 pub(crate) fn banned_macros(c: &Cst, s: &mut Sink, field: bool) {
@@ -100,7 +100,7 @@ pub(crate) fn banned_macros(c: &Cst, s: &mut Sink, field: bool) {
             {
                 reported_line = Some(loc.line);
                 s.add(
-                    "UVM-BAN-001",
+                    "UVM-DEP-006",
                     "UvmBannedFieldMacros",
                     Severity::Warning,
                     "The `uvm_field_* macro suite is banned in high-performance verification environments (Cliff Cummings / Verification Academy). \
@@ -120,7 +120,7 @@ pub(crate) fn banned_macros(c: &Cst, s: &mut Sink, field: bool) {
             if valid {
                 reported_line = Some(loc.line);
                 s.add(
-                    "UVM-BAN-002",
+                    "UVM-DEP-007",
                     "UvmBannedUvmDoMacros",
                     Severity::Warning,
                     "Macro '`uvm_do' is discouraged in modern sequence development. \
@@ -231,7 +231,7 @@ pub(crate) fn last_directive(text: &str, base: u32) -> u32 {
 /// The comments slang keeps as token trivia, each as (file, start, end)
 /// with the location of the token that carries it: not those in a branch
 /// not taken, in a `define line or right before a macro use; but those in
-/// a macro body after its first token, at each expansion (see SV-STY-003).
+/// a macro body after its first token, at each expansion (see SVL-STY-002).
 pub(crate) fn trivia_comments(c: &Cst) -> Vec<(u32, u32, u32, Loc)> {
     crate::shared::get("trivia_comments", c.tree_key(), || build_trivia_comments(c)).to_vec()
 }
@@ -299,7 +299,7 @@ pub(crate) fn build_trivia_comments(c: &Cst) -> Vec<(u32, u32, u32, Loc)> {
     out
 }
 
-/// SV-STY-007 (dashes) and SV-STY-008 (equals): an all-`-` or all-`=` line
+/// SVL-STY-005 (dashes) and SVL-STY-006 (equals): an all-`-` or all-`=` line
 /// comment outside 70..=85 characters.
 pub(crate) fn banners(c: &Cst, s: &mut Sink, dashes: bool) {
     for (f, a, e, loc) in trivia_comments(c) {
@@ -320,7 +320,7 @@ pub(crate) fn banners(c: &Cst, s: &mut Sink, dashes: bool) {
             if !dashes && only(b'=') && !(70..=85).contains(&n) {
                 let fx = fix('=');
                 s.add(
-                    "SV-STY-008",
+                    "SVL-STY-006",
                     "SectionHeaderBanner",
                     Severity::Info,
                     format!(
@@ -334,7 +334,7 @@ pub(crate) fn banners(c: &Cst, s: &mut Sink, dashes: bool) {
         } else if dashes && text.starts_with("//--") && only(b'-') && !(70..=85).contains(&n) {
             let fx = fix('-');
             s.add(
-                "SV-STY-007",
+                "SVL-STY-005",
                 "MethodBannerStyle",
                 Severity::Info,
                 format!(

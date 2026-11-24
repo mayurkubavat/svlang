@@ -1,4 +1,4 @@
-//! SV-LANG-002 (BitSelectOutOfBounds): Detects static out-of-bounds bit or
+//! RTL-DAT-004 (BitSelectOutOfBounds): Detects static out-of-bounds bit or
 //! element selects on vectors and arrays with fixed ranges.
 
 use crate::support::literal_values::{decl_of_expr, int_value};
@@ -78,7 +78,7 @@ pub(crate) fn bit_select_out_of_bounds(c: &Cst, s: &mut Sink) {
         }
         for _ in 0..ast_times(c, sel) {
             s.add(
-                "SV-LANG-002",
+                "RTL-DAT-004",
                 "BitSelectOutOfBounds",
                 Severity::Error,
                 format!(

@@ -1,4 +1,4 @@
-//! SV-RDB-004 (UndocumentedExtensionPoint): Flags new virtual methods without a
+//! SVL-MNT-045 (UndocumentedExtensionPoint): Flags new virtual methods without a
 //! preceding comment in classes meant to be extended: classes with user
 //! subclasses, classes named *base*, and callbacks (Checkstyle
 //! MissingJavadocMethod, Pylint C0116).
@@ -89,7 +89,7 @@ pub(crate) fn undocumented_extension_point(_: &Design, csts: &[Cst], s: &mut Sin
             }
             let Some(t) = name_tok(c, m) else { continue };
             s.add(
-                "SV-RDB-004",
+                "SVL-MNT-045",
                 "UndocumentedExtensionPoint",
                 Severity::Info,
                 format!(

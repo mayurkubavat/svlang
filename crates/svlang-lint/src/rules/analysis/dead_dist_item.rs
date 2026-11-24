@@ -1,4 +1,4 @@
-//! SV-RND-032 (DeadDistItem): Flags dist items whose values the class's
+//! SVL-RND-029 (DeadDistItem): Flags dist items whose values the class's
 //! hard constraints (or the variable's type) never allow: their weight is
 //! silently dropped, so the distribution is not the one written.
 
@@ -21,7 +21,7 @@ pub(crate) fn dead_dist_item(_: &Design, csts: &[Cst], out: &mut Sink) {
                         continue;
                     }
                     out.add(
-                        "SV-RND-032",
+                        "SVL-RND-029",
                         "DeadDistItem",
                         Severity::Warning,
                         format!(

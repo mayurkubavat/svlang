@@ -1,4 +1,4 @@
-//! SV-CON-017 (NbaToDynamicContainerOrHandle): Flags non-blocking assignments
+//! SVL-CON-013 (NbaToDynamicContainerOrHandle): Flags non-blocking assignments
 //! (`<=`) targeting local or module-scope dynamic arrays, queues, associative
 //! arrays, `string` variables, or class handles (and elements of dynamically
 //! sized containers), which are illegal or race-prone under IEEE 1800 §10.4.2.
@@ -13,7 +13,7 @@ pub(crate) fn nba_to_dynamic_container_or_handle(c: &Cst, out: &mut Sink) {
     let types = crate::expr_types::expr_types(c);
     // Collect local / module `DataDecl` variable declarations that are dynamic arrays,
     // queues, associative arrays, strings, or class handles (excluding class properties,
-    // which SV-PRF-009 already checks).
+    // which SVL-PRF-009 already checks).
     let mut dynamic_decls: std::collections::HashMap<(NodeId, String), String> = std::collections::HashMap::new();
     for dd in c.nodes(DataDecl) {
         let Some(scope) = std::iter::successors(c.parent(dd), |&a| c.parent(a)).find(|&a| {
@@ -64,14 +64,14 @@ pub(crate) fn nba_to_dynamic_container_or_handle(c: &Cst, out: &mut Sink) {
         if is_library_tok(c, op) {
             continue;
         }
-        // Skip functions, where SV-LANG-005 already flags all non-interface `<=`.
+        // Skip functions, where SVL-COR-022 already flags all non-interface `<=`.
         if std::iter::successors(c.parent(n), |&a| c.parent(a)).any(|a| c.kind(a) == FunctionDecl) {
             continue;
         }
         let Some(lhs) = c.tree.children(n).next() else { continue };
         let lhs = c.strip(lhs);
         // Only check plain local/module variable targets (`NameExpr` or `SelectExpr` on `NameExpr`)
-        // so class member `this.prop <= ...` / `prop <= ...` stays owned by SV-PRF-009.
+        // so class member `this.prop <= ...` / `prop <= ...` stays owned by SVL-PRF-009.
         let base_expr = if c.kind(lhs) == SelectExpr { c.tree.children(lhs).next().unwrap_or(lhs) } else { lhs };
         if c.kind(base_expr) != NameExpr {
             continue;
@@ -100,7 +100,7 @@ pub(crate) fn nba_to_dynamic_container_or_handle(c: &Cst, out: &mut Sink) {
         }
         let Some(ty_desc) = matched_ty else { continue };
         out.add(
-            "SV-CON-017",
+            "SVL-CON-013",
             "NbaToDynamicContainerOrHandle",
             Severity::Error,
             format!(

@@ -1,4 +1,4 @@
-//! SV-MET-005 (ComplexCondition): Flags conditions with more && / || operators
+//! SVL-MNT-033 (ComplexCondition): Flags conditions with more && / || operators
 //! than the threshold (default 5; Pylint R0916, Checkstyle
 //! BooleanExpressionComplexity).
 
@@ -8,7 +8,7 @@ use crate::syntax::Cst;
 use crate::{Severity, Sink};
 
 pub(crate) fn complex_condition(c: &Cst, s: &mut Sink) {
-    let limit = crate::options::get("SV-MET-005", "max_bool_ops", 5) as _;
+    let limit = crate::options::get("SVL-MNT-033", "max_bool_ops", 5) as _;
     each_routine(c, |_, r| {
         let m = routine_metrics(c, r.body);
         if m.max_bool_ops <= limit {
@@ -18,7 +18,7 @@ pub(crate) fn complex_condition(c: &Cst, s: &mut Sink) {
         report(
             s,
             r.times,
-            "SV-MET-005",
+            "SVL-MNT-033",
             "ComplexCondition",
             Severity::Warning,
             format!(

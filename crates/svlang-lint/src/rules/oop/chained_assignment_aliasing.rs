@@ -1,4 +1,4 @@
-//! SV-OOP-012 (ChainedAssignmentAliasing): Disallows chained assignment
+//! SVL-OOP-010 (ChainedAssignmentAliasing): Disallows chained assignment
 //! expressions (`h1 = h2 = h3;`) on class object handles.
 
 use crate::support::class_items::{declarators, kids, op};
@@ -83,7 +83,7 @@ pub(crate) fn chained_assignment(c: &Cst, s: &mut Sink) {
         }
         let Some(at) = c.toks(n).next() else { continue };
         s.add(
-            "SV-OOP-012",
+            "SVL-OOP-010",
             "ChainedAssignmentAliasing",
             Severity::Warning,
             "Chained class-handle assignment expression detected (e.g. 'h1 = h2 = h3;'). \

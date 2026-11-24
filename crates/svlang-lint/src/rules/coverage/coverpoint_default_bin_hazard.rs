@@ -1,4 +1,4 @@
-//! SV-COV-009 (CoverpointDefaultBinHazard): Flags non-ignoring 'default' bins
+//! SVL-COV-009 (CoverpointDefaultBinHazard): Flags non-ignoring 'default' bins
 //! in coverpoints that mask uncovered stimulus and give a false sense of
 //! coverage closure.
 
@@ -18,7 +18,7 @@ pub(crate) fn default_bin(c: &Cst, s: &mut Sink) {
         }
         let Some(t) = name_tok(c, n) else { continue };
         s.add(
-            "SV-COV-009",
+            "SVL-COV-009",
             "CoverpointDefaultBinHazard",
             Severity::Warning,
             format!(

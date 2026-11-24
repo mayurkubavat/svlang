@@ -1,4 +1,4 @@
-//! UVM-VIF-DIR (VirtualInterfaceModportDriveInversion): Detects procedural
+//! UVM-CMP-029 (VirtualInterfaceModportDriveInversion): Detects procedural
 //! signal driving (via '=' or '<=') on virtual interface handles inside passive
 //! uvm_monitor components.
 //!
@@ -61,7 +61,7 @@ pub(crate) fn virtual_interface_modport_drive_inversion(d: &Design, csts: &[Cst]
                     continue;
                 }
                 out.add(
-                    "UVM-VIF-DIR",
+                    "UVM-CMP-029",
                     "VirtualInterfaceModportDriveInversion",
                     Severity::Error,
                     format!(

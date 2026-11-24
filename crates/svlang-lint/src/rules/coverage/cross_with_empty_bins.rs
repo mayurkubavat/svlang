@@ -1,4 +1,4 @@
-//! SV-COV-008 (CrossWithEmptyBins): Detects degenerate covergroup cross
+//! SVL-COV-008 (CrossWithEmptyBins): Detects degenerate covergroup cross
 //! constructs specifying fewer than 2 coverpoints or empty cross products.
 
 use crate::support::names::cross_parts;
@@ -15,7 +15,7 @@ pub(crate) fn cross_with_empty_bins(c: &Cst, s: &mut Sink) {
         let Some(kw) = c.tok(n, "cross") else { continue };
         let label = label.unwrap_or_else(|| "unnamed_cross".into());
         s.add(
-            "SV-COV-008",
+            "SVL-COV-008",
             "CrossWithEmptyBins",
             Severity::Warning,
             format!(

@@ -1,4 +1,4 @@
-//! UVM-API-004 (ContribOnlyApi): Flags calls to, and classes extending, parts
+//! UVM-PRT-002 (ContribOnlyApi): Flags calls to, and classes extending, parts
 //! of the Accellera UVM library tagged `@uvm-contrib` (experimental / non-IEEE
 //! contributed extensions).
 
@@ -15,7 +15,7 @@ pub(crate) fn contrib_only_api(_: &Design, csts: &[Cst], out: &mut Sink) {
     let Some(pack) = api_pack(csts) else { return };
     let report = |out: &mut Sink, what: String, where_: &str, loc: Loc| {
         out.add(
-            "UVM-API-004",
+            "UVM-PRT-002",
             "ContribOnlyApi",
             Severity::Info,
             format!(

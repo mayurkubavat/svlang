@@ -1,4 +1,4 @@
-//! SV-RSC-002 (FileHandleNotClosed): Flags $fopen calls in classes that never
+//! SVL-COR-024 (FileHandleNotClosed): Flags $fopen calls in classes that never
 //! call $fclose, which loses buffered trace data and exhausts file handles in
 //! long regressions (Sonar S2095).
 
@@ -31,7 +31,7 @@ pub(crate) fn file_not_closed(c: &Cst, s: &mut Sink) {
         for call in opens {
             let Some(loc) = start(c, call) else { continue };
             s.add(
-                "SV-RSC-002",
+                "SVL-COR-024",
                 "FileHandleNotClosed",
                 Severity::Warning,
                 format!(

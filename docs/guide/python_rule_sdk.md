@@ -1,12 +1,12 @@
 # svlang-lint Python Plugin SDK
 
-The **svlang-lint Python Plugin SDK** allows verification and CAD teams to author custom, company-specific SystemVerilog and UVM static lint checks in pure Python, without modifying or recompiling the core C++ engine.
+The **svlang-lint Python Plugin SDK** allows verification and CAD teams to author custom, project-specific SystemVerilog and UVM static lint checks in pure Python without recompiling `svlang`.
 
 ---
 
 ## Key Benefits
 
-- **Zero C++ Recompilation**: Write rules in Python and execute them immediately with `./build/svlang-lint --python-rules <path>`.
+- **Zero Recompilation**: Write rules in Python and execute them immediately with `svlang lint --python-rules <path>`.
 - **Full Reporting Pipeline Integration**: Violations emitted by Python rules participate identically in:
   - Terminal colorized diagnostics
   - SARIF 2.1.0 output for CI/CD code scanning (`--sarif`)
@@ -89,8 +89,8 @@ class Project(ProjectConfig):
 ### 3. Running Custom Rules
 
 ```bash
-svlang-lint tb/top.sv -I tb/include --python-rules rules/company_rules.py   # one file
-svlang-lint tb/top.sv -I tb/include --python-rules rules/                    # a directory
+svlang lint tb/top.sv -I tb/include --python-rules rules/company_rules.py   # one file
+svlang lint tb/top.sv -I tb/include --python-rules rules/                    # a directory
 ```
 
 Python findings take part in waivers, baselines, JSON, SARIF and HTML like built-in ones.
@@ -108,7 +108,7 @@ rule_tests/COMP-FAC-001/expect.json   {"bad.sv": [{"rule": "COMP-FAC-001", "line
 ```
 
 ```bash
-python3 -m svlang_lint.testing --rules rules/ --tests rule_tests/ --binary svlang-lint -- -I tb/include
+python3 -m svlang_lint.testing --rules rules/ --tests rule_tests/ --binary svlang -- -I tb/include
 ```
 
 ---

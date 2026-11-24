@@ -1,4 +1,4 @@
-//! SV-RND-023 (UnallocatedRandObjectArray): Flags rand arrays of class handles
+//! SVL-RND-022 (UnallocatedRandObjectArray): Flags rand arrays of class handles
 //! whose elements are never created. randomize() sizes a dynamic array but does
 //! not construct objects, so every element stays null and its rand members are
 //! never randomized.
@@ -55,7 +55,7 @@ pub(crate) fn unallocated_rand_array(c: &Cst, s: &mut Sink) {
                 continue;
             }
             s.add(
-                "SV-RND-023",
+                "SVL-RND-022",
                 "UnallocatedRandObjectArray",
                 Severity::Error,
                 format!(

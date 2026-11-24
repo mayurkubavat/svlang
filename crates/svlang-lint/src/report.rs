@@ -21,12 +21,12 @@ fn level(sev: Severity) -> &'static str {
 /// svlang-lint's remediation estimate, in minutes.
 fn remediation(f: &Finding) -> u32 {
     match f.rule {
-        "SV-SML-004" => 60,
-        "SV-SML-002" => 30,
-        "SV-SML-001" => 20,
-        "SV-PRF-007" | "SV-PRF-008" => 5,
-        "SV-PRF-005" => 15,
-        "SV-PRF-009" => 10,
+        "SVL-MNT-055" => 60,
+        "SVL-MNT-053" => 30,
+        "SVL-MNT-052" => 20,
+        "SVL-PRF-007" | "SVL-PRF-008" => 5,
+        "SVL-PRF-005" => 15,
+        "SVL-PRF-009" => 10,
         _ => match f.severity {
             Severity::Error => 45,
             Severity::Warning | Severity::Style => 15,

@@ -1,4 +1,4 @@
-//! SV-RND-012 (ZeroWeightDistribution): Detects constraint distribution blocks
+//! SVL-RND-011 (ZeroWeightDistribution): Detects constraint distribution blocks
 //! where all weights evaluate to zero.
 
 use crate::support::spans::child_nodes;
@@ -20,7 +20,7 @@ pub(crate) fn zero_weight_dist(c: &Cst, s: &mut Sink) {
         });
         if !items.is_empty() && all_zero {
             s.add(
-                "SV-RND-012",
+                "SVL-RND-011",
                 "ZeroWeightDistribution",
                 Severity::Error,
                 "All weights in constraint distribution ('dist { ... }') evaluate to zero. \

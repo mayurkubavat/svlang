@@ -1,4 +1,4 @@
-//! SV-DSN-012 (PrimitiveObsession): Flags a rand integral field of a sequence
+//! SVL-MNT-019 (PrimitiveObsession): Flags a rand integral field of a sequence
 //! item or config that a constraint limits to a list of 3 to 16 single constant
 //! values ('x inside {0, 1, 2}').
 
@@ -60,7 +60,7 @@ pub(crate) fn primitive_obsession(c: &Cst, s: &mut Sink) {
                     continue;
                 }
                 s.add(
-                    "SV-DSN-012",
+                    "SVL-MNT-019",
                     "PrimitiveObsession",
                     Severity::Info,
                     format!(

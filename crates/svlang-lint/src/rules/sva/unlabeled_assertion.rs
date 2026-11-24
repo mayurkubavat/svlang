@@ -1,4 +1,4 @@
-//! SVA-LBL-001 (UnlabeledAssertion): Immediate and concurrent assertions must
+//! SVA-PRP-013 (UnlabeledAssertion): Immediate and concurrent assertions must
 //! declare an explicit label prefix (e.g. 'check_lbl: assert ...').
 
 use crate::syntax::Cst;
@@ -30,6 +30,6 @@ pub(crate) fn unlabeled_assertion(c: &Cst, s: &mut Sink) {
                  Unlabeled assertions impede automated regression failure triage, ticket assignment, and coverage correlation."
             )
         };
-        s.add("SVA-LBL-001", "UnlabeledAssertion", Severity::Warning, msg, c.loc(kw));
+        s.add("SVA-PRP-013", "UnlabeledAssertion", Severity::Warning, msg, c.loc(kw));
     }
 }

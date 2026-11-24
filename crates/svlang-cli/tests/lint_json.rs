@@ -16,7 +16,7 @@ fn json_report_has_svlang_lints_fields() {
         .unwrap();
     assert_eq!(st.code(), Some(0), "only infos and warnings: exit 0, as svlang-lint");
     let text = std::fs::read_to_string(&out).unwrap();
-    for key in ["\"tool\": \"svlang-lint\"", "\"compileErrors\": 0", "\"violations\": [", "\"ruleId\": \"SV-STY-003\""]
+    for key in ["\"tool\": \"svlang-lint\"", "\"compileErrors\": 0", "\"violations\": [", "\"ruleId\": \"SVL-STY-002\""]
     {
         assert!(text.contains(key), "{key} in {text}");
     }
@@ -30,7 +30,7 @@ fn presets_select_rules_as_svlang_lint() {
     let dir = std::env::temp_dir().join(format!("svlang-lint-preset-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let src = dir.join("t.sv");
-    // SV-STY-003 (a TODO comment) is a style rule, not a soundness one.
+    // SVL-STY-002 (a TODO comment) is a style rule, not a soundness one.
     std::fs::write(&src, "module m; // TODO: later\nendmodule\n").unwrap();
     let run = |extra: &[&str]| {
         let o = std::process::Command::new(env!("CARGO_BIN_EXE_svlang"))
@@ -39,7 +39,7 @@ fn presets_select_rules_as_svlang_lint() {
             .arg(&src)
             .output()
             .unwrap();
-        String::from_utf8_lossy(&o.stdout).contains("SV-STY-003")
+        String::from_utf8_lossy(&o.stdout).contains("SVL-STY-002")
     };
     assert!(!run(&[]), "the default selection has no style rules");
     assert!(!run(&["--preset", "default"]));
@@ -47,7 +47,7 @@ fn presets_select_rules_as_svlang_lint() {
     assert!(run(&["--preset", "all"]));
     assert!(!run(&["--preset", "soundness"]));
     assert!(!run(&["--preset=soundness"]));
-    assert!(run(&["--preset", "soundness", "--rule", "SV-STY-003"]), "--rule wins");
+    assert!(run(&["--preset", "soundness", "--rule", "SVL-STY-002"]), "--rule wins");
     let bad = std::process::Command::new(env!("CARGO_BIN_EXE_svlang"))
         .arg("lint")
         .args(["--preset", "nope"])
@@ -66,8 +66,8 @@ fn project_config_paths_rules_and_waivers() {
     }
     std::fs::write(
         dir.join(".svlang-lint/config.json"),
-        r#"{"preset": "all", "library_paths": ["vip/**"], "rules": {"SV-STY-003": "off", "SV-BAN-001": {"severity": "ERROR"}},
-            "waivers": [{"rule": "SV-STY-010", "path": "tb/top.sv", "line": 3, "reason": "known"}]}"#,
+        r#"{"preset": "all", "library_paths": ["vip/**"], "rules": {"SVL-STY-002": "off", "SVL-DEP-007": {"severity": "ERROR"}},
+            "waivers": [{"rule": "SVL-STY-008", "path": "tb/top.sv", "line": 3, "reason": "known"}]}"#,
     )
     .unwrap();
     std::fs::write(
@@ -90,11 +90,11 @@ fn project_config_paths_rules_and_waivers() {
         std::fs::read_to_string(&out).unwrap()
     };
     let with = run(&[]);
-    assert!(!with.contains("SV-STY-003"), "rule turned off: {with}");
+    assert!(!with.contains("SVL-STY-002"), "rule turned off: {with}");
     assert!(!with.contains("v.sv"), "library code is not reported: {with}");
     assert!(
         with.contains(
-            "\"ruleId\": \"SV-BAN-001\", \"ruleName\": \"LegacyRegWireInTestbench\", \"severity\": \"ERROR\""
+            "\"ruleId\": \"SVL-DEP-007\", \"ruleName\": \"LegacyRegWireInTestbench\", \"severity\": \"ERROR\""
         ),
         "{with}"
     );
@@ -104,10 +104,10 @@ fn project_config_paths_rules_and_waivers() {
         "not waived: {with}"
     );
     let without = run(&["--no-config", "--preset", "all"]);
-    assert!(without.contains("SV-STY-003") && without.contains("v.sv"), "{without}");
+    assert!(without.contains("SVL-STY-002") && without.contains("v.sv"), "{without}");
     // Without the config's preset the default rule set runs: no style rules.
     let default = run(&["--no-config"]);
-    assert!(!default.contains("SV-STY-003") && default.contains("SV-BAN-001"), "{default}");
+    assert!(!default.contains("SVL-STY-002") && default.contains("SVL-DEP-007"), "{default}");
     let _ = std::fs::remove_dir_all(&dir);
 }
 
@@ -117,7 +117,7 @@ fn rule_options_from_the_config() {
     std::fs::create_dir_all(&dir).unwrap();
     std::fs::write(
         dir.join("svlang-lint.json"),
-        r#"{"rules": {"MaxLineLength": {"options": {"max_columns": 40}}, "SV-MET-003": {"options": {"max_args": 2}}}}"#,
+        r#"{"rules": {"MaxLineLength": {"options": {"max_columns": 40}}, "SVL-MNT-031": {"options": {"max_args": 2}}}}"#,
     )
     .unwrap();
     std::fs::write(
@@ -162,11 +162,11 @@ fn style_block_from_the_config() {
         .unwrap();
     let text = String::from_utf8_lossy(&out.stdout);
     let has = |id: &str, file: &str| text.lines().any(|l| l.contains(id) && l.contains(file));
-    assert!(has("SV-STY-103", "bar.sv") && text.contains("limit of 30 characters"), "{text}");
-    assert!(!text.contains("SV-STY-101"), "tabs allowed: {text}");
-    assert!(!text.contains("SV-STY-104"), "end labels not required: {text}");
-    assert!(has("SV-STY-105", "bar.sv") && !has("SV-STY-105", "ok.sv"), "{text}");
-    assert!(has("SV-STY-106", "bar.sv") && !has("SV-STY-106", "ok.sv"), "{text}");
+    assert!(has("SVL-STY-103", "bar.sv") && text.contains("limit of 30 characters"), "{text}");
+    assert!(!text.contains("SVL-STY-101"), "tabs allowed: {text}");
+    assert!(!text.contains("SVL-STY-104"), "end labels not required: {text}");
+    assert!(has("SVL-STY-105", "bar.sv") && !has("SVL-STY-105", "ok.sv"), "{text}");
+    assert!(has("SVL-STY-106", "bar.sv") && !has("SVL-STY-106", "ok.sv"), "{text}");
     let _ = std::fs::remove_dir_all(&dir);
 }
 
@@ -185,7 +185,7 @@ fn naming_block_from_the_config() {
     let out = std::process::Command::new(env!("CARGO_BIN_EXE_svlang"))
         .arg("lint")
         .current_dir(&dir)
-        .args(["--rule", "SV-NAM-100", "t.sv"])
+        .args(["--rule", "SVL-NAM-100", "t.sv"])
         .output()
         .unwrap();
     let text = String::from_utf8_lossy(&out.stdout);
@@ -194,7 +194,7 @@ fn naming_block_from_the_config() {
         text.contains("Class identifier 'myThing' does not satisfy naming convention: must follow PascalCase."),
         "{text}"
     );
-    assert!(text.contains("[ERROR] SV-NAM-111") && text.contains("must end with suffix '_type'"), "{text}");
+    assert!(text.contains("[ERROR] SVL-NAM-111") && text.contains("must end with suffix '_type'"), "{text}");
     assert!(
         text.contains("Package identifier 'my_stuff' does not satisfy naming convention: must match pattern"),
         "suffix dropped, pattern kept: {text}"
@@ -210,12 +210,12 @@ fn waiver_files_regrades_and_baselines() {
     std::fs::create_dir_all(dir.join(".svlang-lint")).unwrap();
     std::fs::write(
         dir.join(".svlang-lint/config.json"),
-        r#"{"preset": "all", "waivers": [{"rule": "SV-BAN-001", "severity": "error", "reason": "regrade"}]}"#,
+        r#"{"preset": "all", "waivers": [{"rule": "SVL-DEP-007", "severity": "error", "reason": "regrade"}]}"#,
     )
     .unwrap();
     std::fs::write(
         dir.join("w.json"),
-        r#"{"waivers": [{"rule": "SV-STY-010", "file": "*t.sv*", "line": 3, "reason": "known"}]}"#,
+        r#"{"waivers": [{"rule": "SVL-STY-008", "file": "*t.sv*", "line": 3, "reason": "known"}]}"#,
     )
     .unwrap();
     let src = dir.join("t.sv");
@@ -231,7 +231,7 @@ fn waiver_files_regrades_and_baselines() {
         String::from_utf8_lossy(&o.stdout).into_owned()
     };
     let with = run(&["--waivers", "w.json"]);
-    assert!(with.contains("[ERROR] SV-BAN-001") && with.contains("[re-graded by waiver #1 (SV-BAN-001)]"), "{with}");
+    assert!(with.contains("[ERROR] SVL-DEP-007") && with.contains("[re-graded by waiver #1 (SVL-DEP-007)]"), "{with}");
     assert!(!with.contains("Unsized decimal literal '5'") && with.contains("Unsized decimal literal '6'"), "{with}");
     // A baseline of everything, then a line moves: still matched.
     run(&["--update-baseline", "b.json"]);
@@ -262,8 +262,8 @@ fn sarif_report() {
     for key in [
         "\"version\": \"2.1.0\"",
         "\"name\": \"svlang-lint\"",
-        "\"id\": \"SV-BAN-001\"",
-        "\"ruleId\": \"SV-BAN-001\",\n          \"level\": \"note\"",
+        "\"id\": \"SVL-DEP-007\"",
+        "\"ruleId\": \"SVL-DEP-007\",\n          \"level\": \"note\"",
         "\"remediationMinutes\": 5",
     ] {
         assert!(text.contains(key), "{key} in {text}");
@@ -287,7 +287,7 @@ fn html_dashboard() {
         .unwrap();
     let text = std::fs::read_to_string(&out).unwrap();
     assert!(text.starts_with("<!DOCTYPE html>") && text.trim_end().ends_with("</html>"), "{text}");
-    assert!(text.contains("<span class=\"rule-id\">SV-BAN-001</span>"), "{text}");
+    assert!(text.contains("<span class=\"rule-id\">SVL-DEP-007</span>"), "{text}");
     assert!(text.contains("module m; reg a; endmodule</div>"), "the source line: {text}");
     let _ = std::fs::remove_dir_all(&dir);
 }
@@ -297,27 +297,27 @@ fn inline_waiver_patterns_are_regexes() {
     // Line 2: "literal .9." does not match the message about '5', so it stays
     // (as with svlang-lint's std::regex). Line 3: a regex that matches waives.
     // Line 4: a pattern svlang lint refuses (a backreference) waives nothing and
-    // is a UVM-WV-001 error at the comment, whatever --rule selects.
+    // is a SVL-WVR-002 error at the comment, whatever --rule selects.
     let dir = std::env::temp_dir().join(format!("svlang-lint-inline-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     std::fs::write(
         dir.join("t.sv"),
-        "module m; integer i;\ninitial i = 5; // svlang-lint:waive SV-STY-010 \"literal .9.\"\n\
-         initial i = 6; // svlang-lint:waive SV-STY-010 \"literal '[0-9]'\"\n\
-         initial i = 7; // svlang-lint:waive SV-STY-010 \"(7)\\\\1\"\nendmodule\n",
+        "module m; integer i;\ninitial i = 5; // svlang-lint:waive SVL-STY-008 \"literal .9.\"\n\
+         initial i = 6; // svlang-lint:waive SVL-STY-008 \"literal '[0-9]'\"\n\
+         initial i = 7; // svlang-lint:waive SVL-STY-008 \"(7)\\\\1\"\nendmodule\n",
     )
     .unwrap();
     let out = std::process::Command::new(env!("CARGO_BIN_EXE_svlang"))
         .arg("lint")
         .current_dir(&dir)
-        .args(["--no-config", "--no-cache", "--rule", "SV-STY-010", "t.sv"])
+        .args(["--no-config", "--no-cache", "--rule", "SVL-STY-008", "t.sv"])
         .output()
         .unwrap();
     let text = String::from_utf8_lossy(&out.stdout);
-    let sty: Vec<&str> = text.lines().filter(|l| l.contains("] SV-STY-010 (")).collect();
+    let sty: Vec<&str> = text.lines().filter(|l| l.contains("] SVL-STY-008 (")).collect();
     assert_eq!(sty.len(), 2, "{text}");
     assert!(sty[0].contains("t.sv:2:") && sty[1].contains("t.sv:4:"), "{text}");
-    let wv: Vec<&str> = text.lines().filter(|l| l.contains("UVM-WV-001")).collect();
+    let wv: Vec<&str> = text.lines().filter(|l| l.contains("SVL-WVR-002")).collect();
     assert_eq!(wv.len(), 1, "{text}");
     assert!(wv[0].contains("t.sv:4:1:") && wv[0].contains("invalid message regex '(7)\\1'"), "{text}");
     let _ = std::fs::remove_dir_all(&dir);
@@ -328,14 +328,14 @@ fn waiver_file_with_a_bad_pattern_stops_the_run() {
     let dir = std::env::temp_dir().join(format!("svlang-lint-waiver-re-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     std::fs::write(dir.join("t.sv"), "module m; integer i; initial i = 5; endmodule\n").unwrap();
-    std::fs::write(dir.join("w.json"), r#"[{"rule": "SV-STY-010", "message": "(?=x)", "reason": "r"}]"#).unwrap();
-    std::fs::write(dir.join("ok.json"), r#"[{"rule": "SV-STY-010", "message": "literal '[5]'", "reason": "r"}]"#)
+    std::fs::write(dir.join("w.json"), r#"[{"rule": "SVL-STY-008", "message": "(?=x)", "reason": "r"}]"#).unwrap();
+    std::fs::write(dir.join("ok.json"), r#"[{"rule": "SVL-STY-008", "message": "literal '[5]'", "reason": "r"}]"#)
         .unwrap();
     let run = |w: &str| {
         std::process::Command::new(env!("CARGO_BIN_EXE_svlang"))
             .arg("lint")
             .current_dir(&dir)
-            .args(["--no-config", "--no-cache", "--rule", "SV-STY-010", "--waivers", w, "t.sv"])
+            .args(["--no-config", "--no-cache", "--rule", "SVL-STY-008", "--waivers", w, "t.sv"])
             .output()
             .unwrap()
     };
@@ -343,7 +343,7 @@ fn waiver_file_with_a_bad_pattern_stops_the_run() {
     assert_eq!(bad.status.code(), Some(2));
     assert!(String::from_utf8_lossy(&bad.stderr).contains("invalid message regex '(?=x)'"));
     let ok = run("ok.json");
-    assert!(!String::from_utf8_lossy(&ok.stdout).contains("SV-STY-010"), "{}", String::from_utf8_lossy(&ok.stdout));
+    assert!(!String::from_utf8_lossy(&ok.stdout).contains("SVL-STY-008"), "{}", String::from_utf8_lossy(&ok.stdout));
     let _ = std::fs::remove_dir_all(&dir);
 }
 
@@ -357,7 +357,7 @@ fn fix_rewrites_and_dry_run_shows_the_diff() {
         let o = std::process::Command::new(env!("CARGO_BIN_EXE_svlang"))
             .arg("lint")
             .current_dir(&dir)
-            .args(["--no-config", "--fix-rule", "SV-STY-015"])
+            .args(["--no-config", "--fix-rule", "SVL-STY-012"])
             .args(extra)
             .arg("a.sv")
             .output()
@@ -375,7 +375,7 @@ fn fix_rewrites_and_dry_run_shows_the_diff() {
     let fixed = run(&["--fix"]);
     assert!(fixed.contains("[svlang-lint] Applied 3 fix-it(s) in 1 file(s)."), "{fixed}");
     assert_eq!(std::fs::read_to_string(&src).unwrap(), "module m;\n  logic a;\nendmodule\n");
-    assert!(!fixed.contains("SV-STY-015"), "the next pass reports on the fixed text: {fixed}");
+    assert!(!fixed.contains("SVL-STY-012"), "the next pass reports on the fixed text: {fixed}");
     let _ = std::fs::remove_dir_all(&dir);
 }
 
@@ -390,7 +390,7 @@ fn fix_skips_files_with_semantic_errors() {
     let o = std::process::Command::new(env!("CARGO_BIN_EXE_svlang"))
         .arg("lint")
         .current_dir(&dir)
-        .args(["--no-config", "--no-cache", "--fix-rule", "SV-STY-015", "--fix", "a.sv"])
+        .args(["--no-config", "--no-cache", "--fix-rule", "SVL-STY-012", "--fix", "a.sv"])
         .output()
         .unwrap();
     let out = String::from_utf8_lossy(&o.stdout);
@@ -436,7 +436,7 @@ fn inputs_that_cannot_be_read_exit_2() {
 
 #[test]
 fn redundant_boolean_fix_keeps_x_and_z_behaviour() {
-    // SV-RDB-005: `b == 1'b0` -> `!b` everywhere (both X for X and Z);
+    // SVL-MNT-046: `b == 1'b0` -> `!b` everywhere (both X for X and Z);
     // `b == 1'b1` -> `b` only in a condition or on a 2-state `b`.
     let dir = std::env::temp_dir().join(format!("svlang-lint-fix-rdb-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
@@ -461,7 +461,7 @@ fn redundant_boolean_fix_keeps_x_and_z_behaviour() {
                 "--experimental",
                 "--fix",
                 "--fix-rule",
-                "SV-RDB-005",
+                "SVL-MNT-046",
             ])
             .args(extra)
             .arg("a.sv")
@@ -481,7 +481,7 @@ fn redundant_boolean_fix_keeps_x_and_z_behaviour() {
 
 #[test]
 fn banner_fix_makes_78_columns() {
-    // SV-STY-007 / SV-STY-008: a ragged separator comment becomes 78 characters.
+    // SVL-STY-005 / SVL-STY-006: a ragged separator comment becomes 78 characters.
     let dir = std::env::temp_dir().join(format!("svlang-lint-fix-banner-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     std::fs::write(
@@ -492,7 +492,7 @@ fn banner_fix_makes_78_columns() {
     std::process::Command::new(env!("CARGO_BIN_EXE_svlang"))
         .arg("lint")
         .current_dir(&dir)
-        .args(["--no-config", "--no-cache", "--fix", "--fix-rule", "SV-STY-007,SV-STY-008", "a.sv"])
+        .args(["--no-config", "--no-cache", "--fix", "--fix-rule", "SVL-STY-005,SVL-STY-006", "a.sv"])
         .output()
         .unwrap();
     let text = std::fs::read_to_string(dir.join("a.sv")).unwrap();
@@ -506,7 +506,7 @@ fn exit_status_follows_errors_only() {
     let dir = std::env::temp_dir().join(format!("svlang-lint-exit-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     std::fs::write(dir.join("w.sv"), "module m; // TODO: x\nendmodule\n").unwrap();
-    // A syntax error is an ERROR finding (SV-CMP-001).
+    // A syntax error is an ERROR finding (CMP-ERR-001).
     std::fs::write(dir.join("e.sv"), "module m; logic a endmodule\n").unwrap();
     let code = |f: &str| {
         std::process::Command::new(env!("CARGO_BIN_EXE_svlang"))
@@ -531,7 +531,7 @@ fn a_configured_rule_runs_outside_the_default_set() {
     let dir = std::env::temp_dir().join(format!("svlang-lint-configured-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(dir.join(".svlang-lint")).unwrap();
-    // SV-STY-003 (a TODO comment) and SV-STY-015 (trailing whitespace) are style rules.
+    // SVL-STY-002 (a TODO comment) and SVL-STY-012 (trailing whitespace) are style rules.
     std::fs::write(dir.join("t.sv"), "module m; // TODO: later  \nendmodule\n").unwrap();
     let run = |config: &str, extra: &[&str]| {
         std::fs::write(dir.join(".svlang-lint/config.json"), config).unwrap();
@@ -546,18 +546,18 @@ fn a_configured_rule_runs_outside_the_default_set() {
         String::from_utf8_lossy(&o.stdout).into_owned() + &String::from_utf8_lossy(&o.stderr)
     };
     let plain = run("{}", &[]);
-    assert!(!plain.contains("SV-STY-003") && !plain.contains("SV-STY-015"), "{plain}");
-    let configured = run(r#"{"rules": {"SV-STY-003": {"severity": "ERROR"}, "TrailingWhitespace": false}}"#, &[]);
-    assert!(configured.contains("[ERROR] SV-STY-003"), "{configured}");
-    assert!(!configured.contains("SV-STY-015"), "turned off is not asked for: {configured}");
-    let narrowed = run(r#"{"rules": {"SV-STY-003": {"severity": "ERROR"}}}"#, &["--preset", "soundness"]);
-    assert!(!narrowed.contains("SV-STY-003"), "{narrowed}");
-    // A style block asks for the style engine (SV-STY-100, reporting as SV-STY-102).
+    assert!(!plain.contains("SVL-STY-002") && !plain.contains("SVL-STY-012"), "{plain}");
+    let configured = run(r#"{"rules": {"SVL-STY-002": {"severity": "ERROR"}, "TrailingWhitespace": false}}"#, &[]);
+    assert!(configured.contains("[ERROR] SVL-STY-002"), "{configured}");
+    assert!(!configured.contains("SVL-STY-012"), "turned off is not asked for: {configured}");
+    let narrowed = run(r#"{"rules": {"SVL-STY-002": {"severity": "ERROR"}}}"#, &["--preset", "soundness"]);
+    assert!(!narrowed.contains("SVL-STY-002"), "{narrowed}");
+    // A style block asks for the style engine (SVL-STY-100, reporting as SVL-STY-102).
     let block = run(r#"{"style": {"allow_trailing_whitespace": false}}"#, &[]);
-    assert!(block.contains("SV-STY-102"), "{block}");
+    assert!(block.contains("SVL-STY-102"), "{block}");
     // The project's preset stands in for --preset.
     let preset = run(r#"{"preset": "style"}"#, &[]);
-    assert!(preset.contains("SV-STY-003") && preset.contains("SV-STY-015"), "{preset}");
+    assert!(preset.contains("SVL-STY-002") && preset.contains("SVL-STY-012"), "{preset}");
     let bad = run(r#"{"preset": "nope"}"#, &[]);
     assert!(bad.contains("preset: unknown preset 'nope'"), "{bad}");
     let _ = std::fs::remove_dir_all(&dir);
@@ -570,7 +570,7 @@ fn verissimo_native_fixes_preserve_semantics() {
     std::fs::create_dir_all(&dir).unwrap();
     let repo = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
 
-    // 1. SV-STY-020, SV-STY-021, SV-STY-022, SV-CON-017 safe fixes.
+    // 1. SVL-STY-014, SVL-STY-015, SVL-STY-016, SVL-CON-013 safe fixes.
     std::fs::write(
         dir.join("m.sv"),
         "`define ADD4(x) x + 4\nmodule m;\n  logic a; logic b;\n      string s;\n  initial begin\n    s <= \"hi\";\n  end\nendmodule\n",
@@ -584,7 +584,7 @@ fn verissimo_native_fixes_preserve_semantics() {
             "--no-cache",
             "--fix",
             "--fix-rule",
-            "SV-STY-020,SV-STY-021,SV-STY-022,SV-CON-017",
+            "SVL-STY-014,SVL-STY-015,SVL-STY-016,SVL-CON-013",
             "m.sv",
         ])
         .output()
@@ -622,7 +622,7 @@ fn verissimo_native_fixes_preserve_semantics() {
     assert!(fixed_seq.contains("get_starting_phase().raise_objection(this, \"r\");"), "{fixed_seq}");
     assert!(fixed_seq.contains("get_starting_phase().drop_objection(this, \"r\");"), "{fixed_seq}");
 
-    // 3. SV-API-001 + SV-STY-025 safe fixes (`ref` -> `const ref`, tabular port alignment).
+    // 3. SVL-MNT-001 + SVL-STY-019 safe fixes (`ref` -> `const ref`, tabular port alignment).
     std::fs::write(
         dir.join("align_and_ref.sv"),
         "`timescale 1ns/1ps\nmodule aligned_ports (\n    input  logic       clk,\n    input  logic       rst_n,\n    input  logic [7:0] din,\n    output logic [7:0]   dout\n);\n    assign dout = din ^ {8{clk & rst_n}};\nendmodule\nclass ref_helper;\n    function int peek_first(ref int arr[]);\n        return arr.size();\n    endfunction\nendclass\n",
@@ -638,7 +638,7 @@ fn verissimo_native_fixes_preserve_semantics() {
             "all",
             "--fix",
             "--fix-rule",
-            "SV-API-001,SV-STY-025",
+            "SVL-MNT-001,SVL-STY-019",
             "align_and_ref.sv",
         ])
         .output()
@@ -648,7 +648,7 @@ fn verissimo_native_fixes_preserve_semantics() {
     assert!(fixed_ar.contains("    output logic [7:0] dout\n"), "{fixed_ar}");
     assert!(fixed_ar.contains("function int peek_first(const ref int arr[]);"), "{fixed_ar}");
 
-    // 4. SV-PRF-001, SV-CON-012, and UVM-SEQ-018 `--unsafe-fixes` rewrites.
+    // 4. SVL-PRF-001, SVL-CON-008, and UVM-SEQ-018 `--unsafe-fixes` rewrites.
     std::fs::write(
         dir.join("unsafe_fixes.sv"),
         "`include \"uvm_mock.svh\"\nclass pkt_helper extends uvm_sequence #(uvm_sequence_item);\n  `uvm_object_utils(pkt_helper)\n  function new(string name = \"pkt_helper\"); super.new(name); endfunction\n  function int count_bytes(byte payload[]);\n    return payload.size();\n  endfunction\n  task body();\n    starting_phase.raise_objection(this, \"go\");\n    for (int i = 0; i < 2; i++) begin\n      fork\n        #1 $display(\"%0d\", i);\n      join_none\n    end\n    starting_phase.drop_objection(this, \"done\");\n  endtask\nendclass\n",
@@ -665,7 +665,7 @@ fn verissimo_native_fixes_preserve_semantics() {
             "--fix",
             "--unsafe-fixes",
             "--fix-rule",
-            "SV-PRF-001,SV-CON-012,UVM-SEQ-018",
+            "SVL-PRF-001,SVL-CON-008,UVM-SEQ-018",
             "unsafe_fixes.sv",
         ])
         .output()
@@ -677,5 +677,72 @@ fn verissimo_native_fixes_preserve_semantics() {
     assert!(fixed_u.contains("#1 $display(\"%0d\", __i);"), "{fixed_u}");
     assert!(fixed_u.contains("if (starting_phase != null) starting_phase.raise_objection"), "{fixed_u}");
     assert!(fixed_u.contains("if (starting_phase != null) starting_phase.drop_objection"), "{fixed_u}");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn prefix_wildcard_selectors_work_across_cli_config_and_inline_waivers() {
+    let dir = std::env::temp_dir().join(format!("svlang-lint-wildcards-{}", std::process::id()));
+    std::fs::create_dir_all(dir.join(".svlang-lint")).unwrap();
+    let src = dir.join("top.sv");
+    std::fs::write(&src, "module top; // TODO: check\n  reg r;\nendmodule\n").unwrap();
+
+    // 1. CLI `--rule 'SVL-STY-*'` selects SVL-STY-002 without running SVL-DEP-007.
+    let cli_sty = std::process::Command::new(env!("CARGO_BIN_EXE_svlang"))
+        .args(["lint", "--no-config", "--no-cache", "--rule", "SVL-STY-*"])
+        .arg(&src)
+        .output()
+        .unwrap();
+    let out_sty = String::from_utf8_lossy(&cli_sty.stdout);
+    assert!(out_sty.contains("SVL-STY-002"), "{out_sty}");
+    assert!(!out_sty.contains("SVL-DEP-007"), "{out_sty}");
+
+    // 2. Comma-separated CLI `--rule 'SVL-STY-*,SVL-DEP-*'` selects both prefixes.
+    let cli_both = std::process::Command::new(env!("CARGO_BIN_EXE_svlang"))
+        .args(["lint", "--no-config", "--no-cache", "--rule", "SVL-STY-*,SVL-DEP-*"])
+        .arg(&src)
+        .output()
+        .unwrap();
+    let out_both = String::from_utf8_lossy(&cli_both.stdout);
+    assert!(out_both.contains("SVL-STY-002") && out_both.contains("SVL-DEP-007"), "{out_both}");
+
+    // 3. Project config `"rules": {"SVL-STY-*": "off"}` + `"waivers": [{"rule": "SVL-DEP-*", ...}]`.
+    std::fs::write(
+        dir.join(".svlang-lint/config.json"),
+        r#"{"preset": "all", "rules": {"SVL-STY-*": "off"}, "waivers": [{"rule": "SVL-DEP-*", "path": "top.sv", "reason": "legacy reg"}]}"#,
+    )
+    .unwrap();
+    let report = dir.join("r.json");
+    let cfg_run = std::process::Command::new(env!("CARGO_BIN_EXE_svlang"))
+        .arg("lint")
+        .current_dir(&dir)
+        .args(["--no-cache", "--json"])
+        .arg(&report)
+        .arg("top.sv")
+        .status()
+        .unwrap();
+    assert_eq!(cfg_run.code(), Some(0));
+    let rjson = std::fs::read_to_string(&report).unwrap();
+    assert!(!rjson.contains("SVL-STY-002"), "turned off by SVL-STY-*: {rjson}");
+    assert!(!rjson.contains("SVL-DEP-007"), "waived by SVL-DEP-*: {rjson}");
+    assert!(rjson.contains("\"waived\": 1"), "{rjson}");
+
+    // 4. Inline and scoped block waivers with prefix wildcards (`SVL-STY-*`, `SVL-*`).
+    let waived_src = dir.join("waived.sv");
+    std::fs::write(
+        &waived_src,
+        "module waived;\n  // TODO: inline // svlang-lint:waive SVL-STY-*\n  // svlang-lint:off SVL-DEP-*\n  reg r;\n  // svlang-lint:on SVL-DEP-*\nendmodule\n",
+    )
+    .unwrap();
+    let inline_run = std::process::Command::new(env!("CARGO_BIN_EXE_svlang"))
+        .args(["lint", "--no-config", "--no-cache", "--preset", "all", "--warn-unused-waivers"])
+        .arg(&waived_src)
+        .output()
+        .unwrap();
+    let out_inline = String::from_utf8_lossy(&inline_run.stdout);
+    assert!(!out_inline.contains("SVL-STY-002"), "{out_inline}");
+    assert!(!out_inline.contains("SVL-DEP-007"), "{out_inline}");
+    assert!(!out_inline.contains("SVL-WVR-002"), "wildcard waivers matched cleanly: {out_inline}");
+
     let _ = std::fs::remove_dir_all(&dir);
 }

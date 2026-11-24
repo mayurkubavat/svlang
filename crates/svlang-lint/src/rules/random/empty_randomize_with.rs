@@ -1,4 +1,4 @@
-//! SV-RND-014 (EmptyRandomizeWith): Flags 'randomize() with {}' containing an
+//! SVL-RND-013 (EmptyRandomizeWith): Flags 'randomize() with {}' containing an
 //! empty inline constraint block.
 
 use crate::syntax::Cst;
@@ -20,7 +20,7 @@ pub(crate) fn empty_randomize_with(c: &Cst, s: &mut Sink) {
         }
         let Some(with) = c.tok(w, "with") else { continue };
         s.add(
-            "SV-RND-014",
+            "SVL-RND-013",
             "EmptyRandomizeWith",
             Severity::Warning,
             "Inline constraint block 'with { }' is empty. \

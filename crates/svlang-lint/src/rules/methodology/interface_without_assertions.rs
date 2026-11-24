@@ -1,4 +1,4 @@
-//! SV-DBC-001 (InterfaceWithoutAssertions): Flags an interface with clocking
+//! SVA-PRP-016 (InterfaceWithoutAssertions): Flags an interface with clocking
 //! blocks or modports, so a protocol interface, that holds no assertions
 //! (assert/assume/cover property, immediate asserts, property declarations or
 //! checkers) and is not the target of a bind.
@@ -47,7 +47,7 @@ pub(crate) fn interface_without_assertions(d: &Design, csts: &[Cst], out: &mut S
             continue;
         }
         out.add(
-            "SV-DBC-001",
+            "SVA-PRP-016",
             "InterfaceWithoutAssertions",
             Severity::Info,
             format!(

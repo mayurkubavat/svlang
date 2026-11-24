@@ -1,4 +1,4 @@
-//! SV-COR-001 (TautologicalCheckCompare): Detects tautological comparison
+//! SVL-COR-001 (TautologicalCheckCompare): Detects tautological comparison
 //! between identical expressions (e.g. 'act_pkt.data == act_pkt.data').
 
 use crate::support::class_items::{kids, op, trim};
@@ -33,7 +33,7 @@ pub(crate) fn tautological_compare(c: &Cst, s: &mut Sink) {
         let Some(at) = c.first_tok(n) else { continue };
         for _ in 0..visits(c, n) {
             s.add(
-                "SV-COR-001",
+                "SVL-COR-001",
                 "TautologicalCheckCompare",
                 Severity::Error,
                 format!(

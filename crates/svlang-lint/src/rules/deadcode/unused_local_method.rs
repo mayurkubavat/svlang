@@ -1,4 +1,4 @@
-//! SV-DED-014 (UnusedLocalMethod): Flags a local task or function that no
+//! SVL-DED-014 (UnusedLocalMethod): Flags a local task or function that no
 //! method of its class calls.
 
 use crate::support::handles::{body_refs_if_good, method_decl_in, routine_is_virtual};
@@ -39,7 +39,7 @@ pub(crate) fn unused_local_method(c: &Cst, out: &mut Sink) {
             let Some(nm) = c.tree.child(t, Name) else { continue };
             let Some(loc) = c.tree.token_bounds(nm).map(|(_, b)| c.loc(b)) else { continue };
             out.add(
-                "SV-DED-014",
+                "SVL-DED-014",
                 "UnusedLocalMethod",
                 Severity::Warning,
                 format!(

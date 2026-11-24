@@ -1,4 +1,4 @@
-//! SV-RND-008 (NonInvertibleConstraintOp): Disallow non-invertible operators
+//! SVL-RND-007 (NonInvertibleConstraintOp): Disallow non-invertible operators
 //! (%, /, **) inside constraint blocks.
 
 use crate::support::class_items::{class_items, decl_name, model_classes, op, subtree};
@@ -25,7 +25,7 @@ pub(crate) fn non_invertible_op(c: &Cst, s: &mut Sink) {
                 };
                 let Some(at) = c.first_tok(n) else { continue };
                 s.add(
-                    "SV-RND-008",
+                    "SVL-RND-007",
                     "NonInvertibleConstraintOp",
                     Severity::Warning,
                     format!(

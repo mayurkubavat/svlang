@@ -1,4 +1,4 @@
-//! SV-DSN-007 (EmptyOverrideOfConcrete): Flags an empty override of a user
+//! SVL-MNT-014 (EmptyOverrideOfConcrete): Flags an empty override of a user
 //! base-class method that has a body, which silently switches the inherited
 //! behavior off (Fowler 'refused bequest', Liskov substitution).
 
@@ -26,7 +26,7 @@ pub(crate) fn empty_override(c: &Cst, s: &mut Sink) {
                 continue;
             }
             s.add(
-                "SV-DSN-007",
+                "SVL-MNT-014",
                 "EmptyOverrideOfConcrete",
                 Severity::Warning,
                 format!(

@@ -1,4 +1,4 @@
-//! SV-BUG-001 (IdenticalBranches): Flags if/else and case branches whose bodies
+//! SVL-COR-008 (IdenticalBranches): Flags if/else and case branches whose bodies
 //! are token-identical to an earlier branch of the same statement (clang-tidy
 //! bugprone-branch-clone, Sonar S1871).
 
@@ -248,7 +248,7 @@ pub(crate) fn identical_branches(c: &Cst, s: &mut Sink) {
             report(
                 s,
                 times,
-                "SV-BUG-001",
+                "SVL-COR-008",
                 "IdenticalBranches",
                 Severity::Warning,
                 format!(

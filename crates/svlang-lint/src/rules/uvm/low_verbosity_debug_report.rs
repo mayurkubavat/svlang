@@ -1,4 +1,4 @@
-//! UVM-REP-005 (LowVerbosityDebugReport): Flags UVM debug or trace messages
+//! UVM-CMP-013 (LowVerbosityDebugReport): Flags UVM debug or trace messages
 //! configured with low verbosity (UVM_LOW or UVM_NONE).
 
 use crate::support::uvm_classes::{args, call_name, calls_in, int_value, string_value, unparen};
@@ -50,7 +50,7 @@ pub(crate) fn low_verbosity_debug(_d: &Design, csts: &[Cst], s: &mut Sink) {
             }
             let Some(t) = c.first_tok(n) else { continue };
             s.add(
-                "UVM-REP-005",
+                "UVM-CMP-013",
                 "LowVerbosityDebugReport",
                 Severity::Warning,
                 format!(

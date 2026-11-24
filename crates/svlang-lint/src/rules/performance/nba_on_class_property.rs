@@ -1,4 +1,4 @@
-//! SV-PRF-009 (NbaOnClassProperty): Disallow non-blocking assignments ('<=') on
+//! SVL-PRF-009 (NbaOnClassProperty): Disallow non-blocking assignments ('<=') on
 //! class properties.
 
 use crate::support::ast::{assignment_op, in_class, kids, symbol_ref, Ast, DeclKind};
@@ -41,7 +41,7 @@ fn nba_on_property(c: &Cst, a: &Ast, kept: &HashSet<(u32, u32, u32)>, s: &mut Si
             continue;
         }
         s.add(
-            "SV-PRF-009",
+            "SVL-PRF-009",
             "NbaOnClassProperty",
             Severity::Warning,
             format!(

@@ -1,8 +1,16 @@
 //! The S4 analyzers (rules/analysis): constraints, cross bins, clocked
 //! races, DPI prototypes and analysis ports without coverage.
 
-const IDS: &[&str] =
-    &["SV-RND-030", "SV-RND-031", "SV-RND-032", "SV-COV-018", "SV-RCE-002", "DPI-PRT-001", "UVM-TLM-007", "SV-COV-019"];
+const IDS: &[&str] = &[
+    "SVL-RND-027",
+    "SVL-RND-028",
+    "SVL-RND-029",
+    "SVL-COV-018",
+    "RTL-SYN-006",
+    "SVL-DPI-001",
+    "UVM-TLM-006",
+    "SVL-COV-019",
+];
 
 fn run(src: &str) -> Vec<(u32, &'static str, String)> {
     run_with(src, &[])
@@ -38,10 +46,10 @@ fn constraint_analyzers() {
     let got = run(include_str!("analysis_probe.sv"));
     // pkt: len > 10 (c1) with len < 5 (c2); b > 200 on a byte. ok: short_c
     // against long_c, as nothing calls constraint_mode.
-    assert_eq!(lines(&got, "SV-RND-030"), [6, 7, 12], "{got:?}");
-    let soft = got.iter().find(|g| g.1 == "SV-RND-031").expect("soft");
+    assert_eq!(lines(&got, "SVL-RND-027"), [6, 7, 12], "{got:?}");
+    let soft = got.iter().find(|g| g.1 == "SVL-RND-028").expect("soft");
     assert!(soft.0 == 5 && soft.2.contains("'x == 9'") && soft.2.contains("{[1:2], 7}"), "{soft:?}");
-    let dead = got.iter().find(|g| g.1 == "SV-RND-032").expect("dist");
+    let dead = got.iter().find(|g| g.1 == "SVL-RND-029").expect("dist");
     assert!(dead.0 == 5 && dead.2.contains("'[20:30] :/ 1'"), "{dead:?}");
 }
 
@@ -51,7 +59,7 @@ fn constraint_mode_keeps_blocks_apart() {
                constraint both { len > 3; len < 2; }\n  function void f(); short_c.constraint_mode(0); endfunction\nendclass\n";
     let got = run(src);
     // Across blocks: off, since a test may switch one off. Within one: still an error.
-    assert_eq!(lines(&got, "SV-RND-030"), [5], "{got:?}");
+    assert_eq!(lines(&got, "SVL-RND-027"), [5], "{got:?}");
 }
 
 #[test]
@@ -59,16 +67,16 @@ fn race_cross_and_dpi() {
     let got = run(include_str!("analysis_probe.sv"));
     // 'a' blocking on posedge, read on posedge; 'b' is written on negedge;
     // the block-local 't' is not shared.
-    let race: Vec<_> = got.iter().filter(|g| g.1 == "SV-RCE-002").collect();
+    let race: Vec<_> = got.iter().filter(|g| g.1 == "RTL-SYN-006").collect();
     assert_eq!(race.len(), 1, "{got:?}");
     assert!(race[0].0 == 17 && race[0].2.starts_with("'a' is written"), "{race:?}");
     // f: int(int) in m and n, void(longint) once; g is imported as cg_fn.
-    assert_eq!(lines(&got, "DPI-PRT-001"), [27], "{got:?}");
+    assert_eq!(lines(&got, "SVL-DPI-001"), [27], "{got:?}");
     // 64 x 64 and 64 x 64: at most 10,000 bins.
-    assert!(lines(&got, "SV-COV-018").is_empty(), "{got:?}");
+    assert!(lines(&got, "SVL-COV-018").is_empty(), "{got:?}");
     let big = run("module m(input logic clk);\n  logic [7:0] v; logic [15:0] w;\n  covergroup cg @(posedge clk);\n\
                    option.auto_bin_max = 256;\n    cp: coverpoint v;\n    cx: cross cp, w;\n  endgroup\nendmodule\n");
-    let x: Vec<_> = big.iter().filter(|g| g.1 == "SV-COV-018").collect();
+    let x: Vec<_> = big.iter().filter(|g| g.1 == "SVL-COV-018").collect();
     assert!(x.len() == 1 && x[0].0 == 6 && x[0].2.contains("65536 bins"), "{big:?}");
 }
 
@@ -95,7 +103,7 @@ fn analysis_port_without_coverage() {
                 function new(string name, uvm_component parent); super.new(name, parent); endfunction\n\
               endclass\n";
     let got = run_uvm(tb);
-    let f: Vec<_> = got.iter().filter(|g| g.1 == "UVM-TLM-007").collect();
+    let f: Vec<_> = got.iter().filter(|g| g.1 == "UVM-TLM-006").collect();
     // Line 6 of the file: the `include is line 1.
     assert!(f.len() == 1 && f[0].0 == 6 && f[0].2.contains("'pkt'") && f[0].2.contains("mon.pkt_ap"), "{got:?}");
     // A subscriber with a covergroup covers its type.
@@ -105,11 +113,11 @@ fn analysis_port_without_coverage() {
          function new(string name, uvm_component parent); super.new(name, parent); cg = new; endfunction\n\
          function void write(pkt t); b = t.b; cg.sample(); endfunction\nendclass\nclass sb extends uvm_component;",
     );
-    assert!(lines(&run_uvm(&sub), "UVM-TLM-007").is_empty());
+    assert!(lines(&run_uvm(&sub), "UVM-TLM-006").is_empty());
     // No covergroup anywhere: a testbench without coverage is a different finding.
     let none =
         tb.replace("covergroup cg; coverpoint a; endgroup", "").replace("cg = new;", "").replace("cg.sample();", "");
-    assert!(lines(&run_uvm(&none), "UVM-TLM-007").is_empty());
+    assert!(lines(&run_uvm(&none), "UVM-TLM-006").is_empty());
 }
 
 #[test]
@@ -135,7 +143,7 @@ fn covergroup_never_sampled() {
     let got = run(src);
     // lost_cg: instantiated, never sampled; orphan_cg: never instantiated. The
     // others have an event or are sampled from the module.
-    assert_eq!(lines(&got, "SV-COV-019"), [5, 6], "{got:?}");
-    let msgs: Vec<_> = got.iter().filter(|g| g.1 == "SV-COV-019").map(|g| g.2.as_str()).collect();
+    assert_eq!(lines(&got, "SVL-COV-019"), [5, 6], "{got:?}");
+    let msgs: Vec<_> = got.iter().filter(|g| g.1 == "SVL-COV-019").map(|g| g.2.as_str()).collect();
     assert!(msgs[0].contains("instance(s) lc are never sampled") && msgs[1].contains("never instantiated"), "{msgs:?}");
 }

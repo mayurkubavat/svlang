@@ -1,4 +1,4 @@
-//! SV-SVA-001 (ImmediateAssertInCombinatorialLogic): Simple immediate
+//! SVA-PRP-001 (ImmediateAssertInCombinatorialLogic): Simple immediate
 //! assertions in always_comb or combinatorial blocks evaluate transient delta
 //! glitches.
 
@@ -32,7 +32,7 @@ pub(crate) fn immediate_in_comb(c: &Cst, s: &mut Sink) {
                 add_n(
                     s,
                     n,
-                    "SV-SVA-001",
+                    "SVA-PRP-001",
                     "ImmediateAssertInCombinatorialLogic",
                     Severity::Warning,
                     "Simple immediate assertion 'assert (...)' evaluated inside combinatorial process block. \

@@ -1,4 +1,4 @@
-//! SV-RND-021 (ConstraintInsideInvertedRange): Disallows inverted value ranges
+//! SVL-RND-020 (ConstraintInsideInvertedRange): Disallows inverted value ranges
 //! [low : high] where low > high in set membership expressions.
 
 use crate::support::spans::child_nodes;
@@ -34,7 +34,7 @@ pub(crate) fn inverted_range(c: &Cst, s: &mut Sink) {
         let Some(open) = c.tok(n, "[") else { continue };
         if lo > hi {
             s.add(
-                "SV-RND-021",
+                "SVL-RND-020",
                 "ConstraintInsideInvertedRange",
                 Severity::Error,
                 format!(

@@ -1,4 +1,4 @@
-//! SV-COV-001 (UnreferencedCovergroup): Detects covergroups declared in classes
+//! SVL-COV-001 (UnreferencedCovergroup): Detects covergroups declared in classes
 //! or modules that are never instantiated with 'new()' or never sampled.
 
 use crate::support::slang_ast::*;
@@ -79,7 +79,7 @@ pub(crate) fn unreferenced_covergroup(c: &Cst, s: &mut Sink) {
     for (name, cls, loc, has_event) in declared {
         if !inst.contains(&name) {
             s.add(
-                "SV-COV-001",
+                "SVL-COV-001",
                 "UnreferencedCovergroup",
                 Severity::Warning,
                 format!(
@@ -90,7 +90,7 @@ pub(crate) fn unreferenced_covergroup(c: &Cst, s: &mut Sink) {
             );
         } else if !has_event && !sampled.contains(&name) {
             s.add(
-                "SV-COV-001",
+                "SVL-COV-001",
                 "UnreferencedCovergroup",
                 Severity::Warning,
                 format!(

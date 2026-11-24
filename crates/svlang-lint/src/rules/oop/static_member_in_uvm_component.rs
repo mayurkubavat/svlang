@@ -1,4 +1,4 @@
-//! SV-OOP-007 (StaticMemberInUvmComponent): Non-const static variable declared
+//! UVM-CMP-028 (StaticMemberInUvmComponent): Non-const static variable declared
 //! in a uvm_component subclass is shared across all instances simulation-wide.
 
 use crate::{Severity, Sink};
@@ -18,7 +18,7 @@ pub(crate) fn static_member_in_uvm_component(d: &Design, out: &mut Sink) {
                 continue;
             }
             out.add(
-                "SV-OOP-007",
+                "UVM-CMP-028",
                 "StaticMemberInUvmComponent",
                 Severity::Error,
                 format!(

@@ -25,7 +25,7 @@ if (get_is_active() == UVM_ACTIVE) begin
 end
 ```
 
-Enforced by: `UVM-RUS-001`
+Enforced by: `UVM-CMP-025`
 
 ## MG-4.2 (Shall)
 
@@ -47,7 +47,7 @@ Write:
 void'(uvm_config_db#(bus_agent_cfg)::get(this, "", "cfg", cfg));
 ```
 
-Enforced by: `UVM-RUS-002`, `UVM-RUS-003`
+Enforced by: `UVM-CFG-014`, `UVM-CMP-026`
 
 ## MG-4.3 (Should)
 
@@ -67,7 +67,7 @@ Write:
 bus_driver::type_id::set_type_override(slow_driver::get_type());
 ```
 
-Enforced by: `PORT-PRP-001`, `PORT-PTH-001`, `UVM-RUS-004`, `UVM-RUS-005`
+Enforced by: `SVL-PRT-001`, `SVL-PRT-002`, `UVM-CFG-015`, `UVM-FAC-008`
 
 ## MG-4.4 (Should)
 
@@ -75,7 +75,7 @@ Enforced by: `PORT-PRP-001`, `PORT-PTH-001`, `UVM-RUS-004`, `UVM-RUS-005`
 
 Without do_copy, do_compare and convert2string, clone() returns an empty copy, compare() always passes and logs print nothing useful.
 
-Enforced by: `SV-BUG-004`, `UVM-RUS-006`, `UVM-SEQ-008`
+Enforced by: `SVL-COR-011`, `UVM-SEQ-008`, `UVM-SEQ-020`
 
 ## MG-4.5 (Shall)
 
@@ -83,4 +83,4 @@ Enforced by: `SV-BUG-004`, `UVM-RUS-006`, `UVM-SEQ-008`
 
 Only factory-created classes can be replaced by tests. Direct new() and missing registration remove that extension point.
 
-Enforced by: `UVM-FAC-001`, `UVM-FAC-002`, `UVM-FAC-003`, `UVM-FAC-004`, `UVM-FAC-005`, `UVM-FAC-006`, `UVM-SEQ-010`, `UVM-STR-005`
+Enforced by: `UVM-FAC-001`, `UVM-FAC-002`, `UVM-FAC-003`, `UVM-FAC-004`, `UVM-FAC-005`, `UVM-FAC-006`, `UVM-FAC-007`, `UVM-SEQ-010`

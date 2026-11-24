@@ -22,7 +22,7 @@ Write:
 if (!act.compare(exp)) `uvm_error("SB", "mismatch")
 ```
 
-Enforced by: `SV-ERR-001`, `SV-ERR-002`, `SV-ERR-003`, `SV-IPC-001`, `SV-OOP-002`, `SV-RND-001`, `SV-SYS-001`, `SVA-ACT-001`, `UVM-CFG-004`, `UVM-LOG-002`, `UVM-REP-006`, `UVM-REP-007`, `UVM-REP-008`, `UVM-SCB-001`, `UVM-SCB-002`, `UVM-SEQ-006`, `UVM-TLM-002`, `UVM-TST-001`
+Enforced by: `SVA-PRP-008`, `SVL-CON-025`, `SVL-COR-019`, `SVL-COR-020`, `SVL-COR-021`, `SVL-OOP-002`, `SVL-RND-001`, `SVL-SEC-002`, `UVM-CFG-004`, `UVM-CMP-009`, `UVM-CMP-014`, `UVM-CMP-015`, `UVM-CMP-016`, `UVM-SEQ-006`, `UVM-TLM-002`, `UVM-TLM-010`, `UVM-TLM-011`, `UVM-TLM-012`
 
 ## MG-8.2 (Should)
 
@@ -30,4 +30,4 @@ Enforced by: `SV-ERR-001`, `SV-ERR-002`, `SV-ERR-003`, `SV-IPC-001`, `SV-OOP-002
 
 An interface that carries its own assertions checks the protocol in every testbench that uses it, including ones written later.
 
-Enforced by: `SV-DBC-001`
+Enforced by: `SVA-PRP-016`

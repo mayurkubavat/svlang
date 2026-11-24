@@ -1,4 +1,4 @@
-//! SV-DLY-002 (IntraAssignmentDelay): Disallows intra-assignment timing
+//! SVL-COR-018 (IntraAssignmentDelay): Disallows intra-assignment timing
 //! controls (e.g., a = #5 b; or a <= #5 b;) on procedural assignments.
 
 use crate::syntax::{assignments, Cst};
@@ -11,7 +11,7 @@ pub(crate) fn intra_assignment_delay(c: &Cst, s: &mut Sink) {
     for (op, _, rhs) in assignments(c) {
         if c.kind(rhs) == TimedExpr {
             s.add(
-                "SV-DLY-002",
+                "SVL-COR-018",
                 "IntraAssignmentDelay",
                 Severity::Error,
                 "Intra-assignment delay used on blocking procedural assignment ('='). \

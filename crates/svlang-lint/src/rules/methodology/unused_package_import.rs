@@ -1,4 +1,4 @@
-//! SV-PKG-003 (UnusedPackageImport): Flags package imports that supply no name
+//! SVL-MNT-039 (UnusedPackageImport): Flags package imports that supply no name
 //! used in their scope.
 
 use crate::support::defines_packages::{import_items, user_tok, Files};
@@ -209,7 +209,7 @@ pub(crate) fn unused_package_import(_: &Design, csts: &[Cst], out: &mut Sink) {
                 let what = format!("{pkg}::{name}");
                 for _ in 0..copies {
                     out.add(
-                    "SV-PKG-003",
+                    "SVL-MNT-039",
                     "UnusedPackageImport",
                     Severity::Warning,
                     format!(

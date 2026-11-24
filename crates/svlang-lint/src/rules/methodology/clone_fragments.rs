@@ -1,4 +1,4 @@
-//! SV-DUP-002 (CloneFragments): Finds runs of three or more statements (at
+//! SVL-MNT-022 (CloneFragments): Finds runs of three or more statements (at
 //! least 50 tokens) that appear in more than one place, also when variables and
 //! literals were renamed consistently.
 
@@ -111,13 +111,13 @@ struct Window {
 }
 
 pub(crate) fn clone_fragments(d: &Design, csts: &[Cst], out: &mut Sink) {
-    // Option `min_tokens` (rules.SV-DUP-002.options).
+    // Option `min_tokens` (rules.SVL-MNT-022.options).
     fn min_tokens() -> usize {
-        crate::options::get("SV-DUP-002", "min_tokens", 50) as usize
+        crate::options::get("SVL-MNT-022", "min_tokens", 50) as usize
     }
-    // Option `min_statements` (rules.SV-DUP-002.options).
+    // Option `min_statements` (rules.SVL-MNT-022.options).
     fn min_stmts() -> usize {
-        crate::options::get("SV-DUP-002", "min_statements", 3) as usize
+        crate::options::get("SVL-MNT-022", "min_statements", 3) as usize
     }
     let generated = Generated::new(d, csts);
     let mut names: Vec<String> = Vec::new();
@@ -216,7 +216,7 @@ pub(crate) fn clone_fragments(d: &Design, csts: &[Cst], out: &mut Sink) {
         covered_until.insert(b.list, b.last);
         let tokens = window_tokens(lw, b.first, b.last).len();
         out.add(
-            "SV-DUP-002",
+            "SVL-MNT-022",
             "CloneFragments",
             Severity::Warning,
             format!(

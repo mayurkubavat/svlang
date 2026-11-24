@@ -1,4 +1,4 @@
-//! SV-RDB-002 (MagicNumber): Flags numeric literals other than 0, 1 and -1 in
+//! SVL-MNT-043 (MagicNumber): Flags numeric literals other than 0, 1 and -1 in
 //! class method bodies: conditions, loop bounds and sizes; delays are left to
 //! the magic-delay rules (Checkstyle MagicNumber, Sonar S109).
 
@@ -67,7 +67,7 @@ pub(crate) fn magic_number(c: &Cst, s: &mut Sink) {
                             continue;
                         }
                         s.add(
-                            "SV-RDB-002",
+                            "SVL-MNT-043",
                             "MagicNumber",
                             Severity::Info,
                             format!(

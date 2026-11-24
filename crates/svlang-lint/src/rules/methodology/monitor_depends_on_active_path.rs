@@ -1,4 +1,4 @@
-//! UVM-ROL-005 (MonitorDependsOnActivePath): Flags monitors that hold a handle
+//! UVM-CMP-022 (MonitorDependsOnActivePath): Flags monitors that hold a handle
 //! to a driver, sequencer or sequence item port.
 
 use crate::support::class_roles::{property_class, role, user_classes, Role};
@@ -18,7 +18,7 @@ pub(crate) fn monitor_depends_on_active_path(d: &Design, out: &mut Sink) {
                 continue;
             }
             out.add(
-                "UVM-ROL-005",
+                "UVM-CMP-022",
                 "MonitorDependsOnActivePath",
                 Severity::Warning,
                 format!(

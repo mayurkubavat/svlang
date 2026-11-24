@@ -1,4 +1,4 @@
-//! SV-RDB-010 (UndocumentedTestbenchClass): Flags UVM components and sequences
+//! SVL-MNT-051 (UndocumentedTestbenchClass): Flags UVM components and sequences
 //! without a comment of at least min_words (default 10) words of prose right
 //! above the class.
 
@@ -36,9 +36,9 @@ fn prose_words(comments: &[(u32, String)]) -> usize {
 }
 
 pub(crate) fn undocumented_testbench_class(_: &Design, csts: &[Cst], s: &mut Sink) {
-    // Option `min_words` (rules.SV-RDB-010.options).
+    // Option `min_words` (rules.SVL-MNT-051.options).
     fn min_words() -> usize {
-        crate::options::get("SV-RDB-010", "min_words", 10) as usize
+        crate::options::get("SVL-MNT-051", "min_words", 10) as usize
     }
     let classes = Classes::new(csts);
     for (_, k) in classes.user() {
@@ -58,7 +58,7 @@ pub(crate) fn undocumented_testbench_class(_: &Design, csts: &[Cst], s: &mut Sin
         }
         let Some(nt) = name_tok(c, k.node) else { continue };
         s.add(
-            "SV-RDB-010",
+            "SVL-MNT-051",
             "UndocumentedTestbenchClass",
             Severity::Info,
             format!(

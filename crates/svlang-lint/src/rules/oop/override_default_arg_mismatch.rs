@@ -1,4 +1,4 @@
-//! SV-OOP-016 (OverrideDefaultArgMismatch): Virtual method override in a derived
+//! SVL-OOP-014 (OverrideDefaultArgMismatch): Virtual method override in a derived
 //! class changes or omits a default argument value declared on the base virtual
 //! method (IEEE 1800 § 8.20 static-type default value trap).
 
@@ -82,7 +82,7 @@ pub(crate) fn override_default_arg_mismatch(c: &Cst, out: &mut Sink) {
             let drv_ports = extract_port_defaults(c, m);
             let base_ports = extract_port_defaults(c, base_m);
             if drv_ports.len() != base_ports.len() {
-                // Parameter count mismatch is already covered by SV-OOP-015.
+                // Parameter count mismatch is already covered by SVL-OOP-013.
                 continue;
             }
             for ((d_arg, d_def, d_tok), (_b_arg, b_def, _)) in drv_ports.into_iter().zip(base_ports) {
@@ -93,7 +93,7 @@ pub(crate) fn override_default_arg_mismatch(c: &Cst, out: &mut Sink) {
                     match d_def {
                         None => {
                             out.add(
-                                "SV-OOP-016",
+                                "SVL-OOP-014",
                                 "OverrideDefaultArgMismatch",
                                 Severity::Warning,
                                 format!(
@@ -106,7 +106,7 @@ Calls through a '{}' handle will still supply '{}', whereas calls through '{}' r
                         }
                         Some(dd) if dd != bd => {
                             out.add(
-                                "SV-OOP-016",
+                                "SVL-OOP-014",
                                 "OverrideDefaultArgMismatch",
                                 Severity::Warning,
                                 format!(

@@ -21,7 +21,7 @@ import tempfile
 from pathlib import Path
 
 from _svlang import REPO, default_binary, lint_cmd
-RULE = "SV-COR-008"  # SelfComparison: if (a == a)
+RULE = "SVL-COR-004"  # SelfComparison: if (a == a)
 
 MODULE = """module {name};
   int a;

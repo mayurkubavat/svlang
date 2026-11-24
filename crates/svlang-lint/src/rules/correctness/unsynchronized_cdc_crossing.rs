@@ -1,4 +1,4 @@
-//! SV-CDC-001 (UnsynchronizedCdcCrossing): Signal driven in one clock domain
+//! RTL-CDC-001 (UnsynchronizedCdcCrossing): Signal driven in one clock domain
 //! sampled directly in another clock domain without a synchronizer.
 
 use crate::support::rtl_fsm_cdc;
@@ -15,7 +15,7 @@ pub(crate) fn unsynchronized_cdc_crossing(c: &Cst, out: &mut Sink) {
             format!("1-bit signal '{}' without a 2-FF synchronizer chain", hit.src_reg)
         };
         out.add(
-            "SV-CDC-001",
+            "RTL-CDC-001",
             "UnsynchronizedCdcCrossing",
             Severity::Warning,
             format!(

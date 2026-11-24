@@ -1,4 +1,4 @@
-//! SV-RND-042 (ForeachUnconstrainedArraySize): `foreach (arr[i])` in a constraint
+//! SVL-RND-032 (ForeachUnconstrainedArraySize): `foreach (arr[i])` in a constraint
 //! block over a `rand` dynamic array or queue whose `.size()` is never constrained.
 
 use crate::support::constraint_ir;
@@ -8,7 +8,7 @@ use crate::{Severity, Sink};
 pub(crate) fn foreach_unconstrained_array_size(c: &Cst, out: &mut Sink) {
     for hit in &constraint_ir::facts(c).unconstrained_foreach {
         out.add(
-            "SV-RND-042",
+            "SVL-RND-032",
             "ForeachUnconstrainedArraySize",
             Severity::Warning,
             format!(

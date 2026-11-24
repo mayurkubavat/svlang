@@ -1,8 +1,8 @@
 //! The UVM API packs (`crates/svlang-lint/data/uvm-api/*.json`, made by
 //! `tools/codegen/gen_uvm_api_pack.py`): for each UVM release, which classes,
 //! members and macros the library tags Accellera-only, and which macros,
-//! classes and methods it compiles only as deprecated API. Rules UVM-API-001,
-//! UVM-API-002 and UVM-API-003 read the pack of the release being compiled
+//! classes and methods it compiles only as deprecated API. Rules UVM-PRT-001,
+//! UVM-DEP-008 and UVM-DEP-009 read the pack of the release being compiled
 //! (UVM 1.1d, 1.2, 2020-2.0, 2020.3.0, 2020.3.1).
 
 use std::collections::HashSet;

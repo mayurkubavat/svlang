@@ -1,4 +1,4 @@
-//! UVM-BAN-001 (UvmBannedFieldMacros): Bans the `uvm_field_* macro suite.
+//! UVM-DEP-006 (UvmBannedFieldMacros): Bans the `uvm_field_* macro suite.
 
 use crate::support::source_layout::banned_macros;
 use crate::syntax::Cst;

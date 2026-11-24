@@ -1,4 +1,4 @@
-//! SV-DED-016 (UnreferencedTypedef): Flags `typedef` declarations inside
+//! SVL-DED-016 (UnreferencedTypedef): Flags `typedef` declarations inside
 //! modules, interfaces, classes, tasks, and functions (excluding `package`
 //! public APIs and UVM `type_id` / `this_type` idioms) whose defined type
 //! identifier never appears anywhere else in the enclosing scope or compile.
@@ -59,7 +59,7 @@ pub(crate) fn unreferenced_typedef(c: &Cst, out: &mut Sink) {
         };
         if !used && seen.insert((c.tree.tokens[nt as usize].origin.file, c.tree.tokens[nt as usize].origin.offset)) {
             out.add(
-                "SV-DED-016",
+                "SVL-DED-016",
                 "UnreferencedTypedef",
                 Severity::Info,
                 format!(

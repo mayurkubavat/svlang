@@ -1,4 +1,4 @@
-//! SV-PRF-003 (DynArrayIncrementalResizeInLoop): Growing dynamic arrays
+//! SVL-PRF-003 (DynArrayIncrementalResizeInLoop): Growing dynamic arrays
 //! incrementally inside loops with new[arr.size()+1](arr) causes O(N^2) memory
 //! reallocation bottlenecks.
 
@@ -30,7 +30,7 @@ fn resize_in_loop(c: &Cst, a: &Ast, s: &mut Sink) {
         }
         let Some(at) = c.first_tok(n) else { continue };
         s.add(
-            "SV-PRF-003",
+            "SVL-PRF-003",
             "DynArrayIncrementalResizeInLoop",
             Severity::Warning,
             "Dynamic array resize 'new[...](existing_array)' invoked inside a loop. \

@@ -1,4 +1,4 @@
-//! SV-CON-013 (BlockingEventTriggerInClockedBlock): Disallows blocking event
+//! SVL-CON-009 (BlockingEventTriggerInClockedBlock): Disallows blocking event
 //! triggers (-> ev) inside clocked blocks; non-blocking triggers (->> ev)
 //! should be used instead.
 
@@ -31,7 +31,7 @@ pub(crate) fn blocking_trigger(c: &Cst, s: &mut Sink) {
         }
         let ev = c.tree.children(n).next().map(|e| c.text(e)).unwrap_or_else(|| "event".to_string());
         s.add(
-            "SV-CON-013",
+            "SVL-CON-009",
             "BlockingEventTriggerInClockedBlock",
             Severity::Warning,
             format!(

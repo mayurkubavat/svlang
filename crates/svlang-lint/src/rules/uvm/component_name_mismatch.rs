@@ -1,4 +1,4 @@
-//! UVM-STY-003 (ComponentNameMismatch): Disallows passing hardcoded string
+//! UVM-CMP-027 (ComponentNameMismatch): Disallows passing hardcoded string
 //! literals to super.new() in uvm_component constructors.
 
 use crate::support::uvm_classes::{comp_decl, routines_in, Ix};
@@ -45,7 +45,7 @@ pub(crate) fn component_name_mismatch(d: &Design, csts: &[Cst], s: &mut Sink) {
             if text.len() >= 2 && text.starts_with('"') && text.ends_with('"') {
                 let Some(t) = c.first_tok(e) else { continue };
                 s.add(
-                    "UVM-STY-003",
+                    "UVM-CMP-027",
                     "ComponentNameMismatch",
                     Severity::Error,
                     format!(

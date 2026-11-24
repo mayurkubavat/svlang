@@ -1,6 +1,6 @@
 //! Rules that ask what a reference reaches (`sem::reach`) answer from the
-//! declarations, not from how the handle is named: SV-INT-001 and
-//! SV-LANG-005 on interface and clocking block drives.
+//! declarations, not from how the handle is named: SVL-CON-024 and
+//! SVL-COR-022 on interface and clocking block drives.
 
 /// The interface, the config and the base class: another file than the driver's.
 const LIB: &str = "\
@@ -63,7 +63,7 @@ fn findings() -> Vec<(&'static str, u32)> {
         svlang::syntax::parse_source(TB, "tb.sv", Default::default()),
     ];
     let d = svlang_model::build(&trees);
-    let only = |id: &str| matches!(id, "SV-INT-001" | "SV-LANG-005");
+    let only = |id: &str| matches!(id, "SVL-CON-024" | "SVL-COR-022");
     let mut out: Vec<(&'static str, u32)> = svlang_lint::Session::new()
         .lint_all(&d, &trees, only)
         .1
@@ -84,17 +84,17 @@ fn interface_drives_are_recognised_by_declaration() {
         findings(),
         [
             // `bus` is a virtual interface and `drv` its clocking block.
-            ("SV-INT-001", 5),
+            ("SVL-CON-024", 5),
             // `alt` is a typedef of a virtual interface.
-            ("SV-INT-001", 6),
+            ("SVL-CON-024", 6),
             // `port` is inherited from a class in another file.
-            ("SV-INT-001", 7),
+            ("SVL-CON-024", 7),
             // `V` is a type parameter: not resolved, so judged by the name `vif`.
-            ("SV-INT-001", 9),
+            ("SVL-CON-024", 9),
             // A clocking block of an interface instance.
-            ("SV-INT-001", 23),
+            ("SVL-CON-024", 23),
             // `my_vif` is a struct, whatever its name: '<=' in a function.
-            ("SV-LANG-005", 16),
+            ("SVL-COR-022", 16),
         ]
     );
 }
@@ -130,7 +130,7 @@ endclass
 ";
     // `apb_bus` is an interface without the suffix; `printable_if` is a
     // class with it; `unknown_if` is not declared, so its name decides.
-    assert_eq!(lint(src, &["SV-OOP-008"]), [("SV-OOP-008", 8), ("SV-OOP-008", 10)]);
+    assert_eq!(lint(src, &["SVL-OOP-007"]), [("SVL-OOP-007", 8), ("SVL-OOP-007", 10)]);
 }
 
 #[test]
@@ -161,7 +161,7 @@ class drv_c;
     endtask
 endclass
 ";
-    assert_eq!(lint(src, &["SV-DRV-001"]), [("SV-DRV-001", 13)]);
+    assert_eq!(lint(src, &["SVL-CON-021"]), [("SVL-CON-021", 13)]);
 }
 
 #[test]
@@ -183,7 +183,7 @@ class my_monitor extends uvm_monitor;
 endclass
 ";
     // The handle is `bus`, not `vif`; the struct only has `intf` in its name.
-    assert_eq!(lint(src, &["UVM-VIF-DIR"]), [("UVM-VIF-DIR", 10)]);
+    assert_eq!(lint(src, &["UVM-CMP-029"]), [("UVM-CMP-029", 10)]);
 }
 
 /// A UVM small enough to read: the classes the objection rules look for.

@@ -124,7 +124,7 @@ def test_selection(binary):
         run(binary, "--guideline", "MG-4", "-I", str(COMMON), str(src), "--json", str(report))
         data = json.loads(report.read_text())
         ids = {v["ruleId"] for v in data["violations"]}
-        check(ids == {"UVM-RUS-001"}, f"--guideline MG-4 reported {sorted(ids)}, expected only UVM-RUS-001")
+        check(ids == {"UVM-CMP-025"}, f"--guideline MG-4 reported {sorted(ids)}, expected only UVM-CMP-025")
         for v in data["violations"]:
             check(v.get("guidelines") == ["MG-4.1"], f"finding lists guidelines {v.get('guidelines')}")
         conf = {c["guideline"]: c for c in data.get("conformance", [])}

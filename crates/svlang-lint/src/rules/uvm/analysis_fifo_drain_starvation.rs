@@ -1,4 +1,4 @@
-//! UVM-TLM-006 (AnalysisFifoDrainStarvation): Detects instantiated
+//! UVM-TLM-005 (AnalysisFifoDrainStarvation): Detects instantiated
 //! uvm_tlm_analysis_fifo components that receive transactions via connect_phase
 //! but have zero drain operations (.get(), .try_get()) across all task-based
 //! phases, causing unbounded simulation heap memory growth and fatal bad_alloc
@@ -62,7 +62,7 @@ pub(crate) fn fifo_drain_starvation(d: &Design, csts: &[Cst], s: &mut Sink) {
             continue;
         }
         s.add(
-            "UVM-TLM-006",
+            "UVM-TLM-005",
             "AnalysisFifoDrainStarvation",
             Severity::Warning,
             format!(

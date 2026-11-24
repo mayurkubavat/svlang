@@ -1,4 +1,4 @@
-//! SV-BUG-005 (IntegerDivisionToReal): Flags integer divisions whose result is
+//! SVL-COR-012 (IntegerDivisionToReal): Flags integer divisions whose result is
 //! used as a real value, which truncates before the conversion (Sonar S2184,
 //! SpotBugs ICAST_IDIV_CAST_TO_DOUBLE).
 
@@ -78,7 +78,7 @@ pub(crate) fn integer_division_to_real(c: &Cst, s: &mut Sink) {
             outer = p;
         }
         s.add(
-            "SV-BUG-005",
+            "SVL-COR-012",
             "IntegerDivisionToReal",
             Severity::Warning,
             format!(

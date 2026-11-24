@@ -1,5 +1,5 @@
 //! The UVM API packs are chosen by the compiled UVM's version string, and
-//! the 1.x packs drive UVM-API-002/003 there.
+//! the 1.x packs drive UVM-DEP-008/003 there.
 
 use std::fs;
 
@@ -53,14 +53,14 @@ fn run(uvm: &str, ids: &[&str]) -> Vec<String> {
 
 #[test]
 fn uvm_1_2_gets_its_own_pack() {
-    let got = run(UVM12, &["UVM-API-001", "UVM-API-002", "UVM-API-003"]);
+    let got = run(UVM12, &["UVM-PRT-001", "UVM-DEP-008", "UVM-DEP-009"]);
     // print_config is Accellera-only in UVM 2020; UVM 1.2 has no IEEE tags.
-    assert!(!got.iter().any(|l| l.contains("UVM-API-001")), "{got:?}");
-    let api2: Vec<_> = got.iter().filter(|l| l.contains("UVM-API-002")).collect();
+    assert!(!got.iter().any(|l| l.contains("UVM-PRT-001")), "{got:?}");
+    let api2: Vec<_> = got.iter().filter(|l| l.contains("UVM-DEP-008")).collect();
     assert_eq!(api2.len(), 1, "{got:?}");
     assert!(api2[0].starts_with("6 ") && api2[0].contains("`uvm_sequencer_utils is deprecated in UVM 1.2"), "{got:?}");
     assert!(api2[0].contains("UVM_NO_DEPRECATED"), "{got:?}");
-    let api3: Vec<_> = got.iter().filter(|l| l.contains("UVM-API-003")).collect();
+    let api3: Vec<_> = got.iter().filter(|l| l.contains("UVM-DEP-009")).collect();
     assert_eq!(api3.len(), 2, "{got:?}");
     assert!(
         api3[0].starts_with("2 ") && api3[0].contains("class 'uvm_random_sequence' ('my_rand' extends it)"),
@@ -75,10 +75,10 @@ fn uvm_2020_keeps_the_2020_pack() {
         "parameter string uvm_revision = `UVM_VERSION_STRING;",
         "parameter string UVM_VERSION_STRING = \"Accellera:1800.2:UVM:2020.3.1\";",
     );
-    let got = run(&uvm, &["UVM-API-001", "UVM-API-003"]);
+    let got = run(&uvm, &["UVM-PRT-001", "UVM-DEP-009"]);
     assert!(
-        got.iter().any(|l| l.contains("UVM-API-001") && l.contains("print_config") && l.contains("UVM 2020.3.1")),
+        got.iter().any(|l| l.contains("UVM-PRT-001") && l.contains("print_config") && l.contains("UVM 2020.3.1")),
         "{got:?}"
     );
-    assert!(!got.iter().any(|l| l.contains("UVM-API-003")), "{got:?}");
+    assert!(!got.iter().any(|l| l.contains("UVM-DEP-009")), "{got:?}");
 }

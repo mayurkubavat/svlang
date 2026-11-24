@@ -1,4 +1,4 @@
-//! SV-DEP-003 (LegacyAlwaysBlock): Flags RTL-style sensitivity-list `always @(...)`
+//! SVL-DEP-003 (LegacyAlwaysBlock): Flags RTL-style sensitivity-list `always @(...)`
 //! blocks that should use IEEE 1800 `always_comb`, `always_ff`, or `always_latch`,
 //! while exempting valid testbench `#delay` clock generators and multi-wait processes.
 
@@ -37,7 +37,7 @@ pub(crate) fn legacy_always(c: &Cst, s: &mut Sink) {
             continue;
         }
         s.add(
-            "SV-DEP-003",
+            "SVL-DEP-003",
             "LegacyAlwaysBlock",
             Severity::Warning,
             "RTL sensitivity-list 'always @(...)' block should use an IEEE 1800 § 9.2.2 intent-specific block. \

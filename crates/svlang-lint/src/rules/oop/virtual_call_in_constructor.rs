@@ -1,4 +1,4 @@
-//! SV-OOP-005 (VirtualCallInConstructor): Never call virtual methods inside
+//! SVL-OOP-005 (VirtualCallInConstructor): Never call virtual methods inside
 //! constructors.
 
 use crate::{Severity, Sink};
@@ -18,7 +18,7 @@ pub(crate) fn virtual_call_in_constructor(d: &Design, out: &mut Sink) {
                     continue;
                 }
                 out.add(
-                    "SV-OOP-005",
+                    "SVL-OOP-005",
                     "VirtualCallInConstructor",
                     Severity::Warning,
                     format!(

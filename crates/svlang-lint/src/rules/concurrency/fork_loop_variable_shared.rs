@@ -1,4 +1,4 @@
-//! SV-THR-001 (ForkLoopVariableShared): Spawning background threads with
+//! SVL-CON-028 (ForkLoopVariableShared): Spawning background threads with
 //! fork..join_none inside loops without copying the loop variable to an
 //! automatic local variable causes all threads to see the final loop index.
 
@@ -79,7 +79,7 @@ pub(crate) fn fork_loop_variable(c: &Cst, s: &mut Sink) {
                     add_n(
                         s,
                         n,
-                        "SV-THR-001",
+                        "SVL-CON-028",
                         "ForkLoopVariableShared",
                         Severity::Error,
                         format!(

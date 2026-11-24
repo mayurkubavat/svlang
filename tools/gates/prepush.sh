@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
-# Everything CI runs on a push, run locally first: rust_gate (fmt/clippy),
-# cargo test, netlist gate, rule docs freshness, end-to-end Python integration
-# suites, release archive + smoke test, and the uvm-core ERROR budget.
+# 3-Tier verification runner:
+#   Tier 1 (inner loop):  hygiene, rust_gate (guidelines, fmt, clippy), cargo test
+#   Tier 2 (integration): netlist_gate, gen_rule_docs --check, 12 Python CLI/SDK
+#                         suites, dist release archive + smoke.sh, uvm-core ERROR budget
+#   Tier 3 (oracles):     optional C++ Slang / std::regex differential gates (--oracles)
 #
-#   tools/gates/prepush.sh              # full Rust + integration flow
-#   tools/gates/prepush.sh --quick      # skip slow dist archive and uvm-core steps
-#   tools/gates/prepush.sh --oracles    # also run Slang differential gates (needs build/ oracles)
+#   tools/gates/prepush.sh              # Tier 1 + full Tier 2 CI parity
+#   tools/gates/prepush.sh --quick      # Tier 1 + fast Tier 2 (skips dist archive & uvm-core)
+#   tools/gates/prepush.sh --oracles    # Tier 1 + Tier 2 + Tier 3 differential oracles
 set -u
 DVQ="${DVQ-$HOME/.local/bin/dvq run build --}"; [ -x "$HOME/.local/bin/dvq" ] || DVQ=
 if [ -n "$DVQ" ] && [ -z "${DVQ_CLASS:-}${RDEV_JOB_ID:-}" ]; then
@@ -47,14 +49,19 @@ uvm_ok() { [ -n "${UVM_HOME:-}" ] && [ -f "$UVM_HOME/src/uvm_pkg.sv" ]; }
 
 uvm_ref=2020.3.1
 if [ -z "${UVM_HOME:-}" ] && [ "$quick" = 0 ]; then
-    UVM_HOME="${XDG_CACHE_HOME:-$HOME/.cache}/svlang/uvm-core-$uvm_ref"
-    export UVM_HOME
-    if ! uvm_ok; then
-        echo "fetching uvm-core $uvm_ref into $UVM_HOME (once per machine)"
-        mkdir -p "$(dirname "$UVM_HOME")"
-        git -c advice.detachedHead=false clone -q --depth 1 --branch "$uvm_ref" \
-            https://github.com/accellera-official/uvm-core.git "$UVM_HOME.tmp.$$" \
-            && mv "$UVM_HOME.tmp.$$" "$UVM_HOME" || rm -rf "$UVM_HOME.tmp.$$"
+    if [ -f "$PWD/references/corpus/uvm-$uvm_ref/src/uvm_pkg.sv" ]; then
+        UVM_HOME="$PWD/references/corpus/uvm-$uvm_ref"
+        export UVM_HOME
+    else
+        UVM_HOME="${XDG_CACHE_HOME:-$HOME/.cache}/svlang/uvm-core-$uvm_ref"
+        export UVM_HOME
+        if ! uvm_ok; then
+            echo "fetching uvm-core $uvm_ref into $UVM_HOME (once per machine)"
+            mkdir -p "$(dirname "$UVM_HOME")"
+            git -c advice.detachedHead=false clone -q --depth 1 --branch "$uvm_ref" \
+                https://github.com/accellera-official/uvm-core.git "$UVM_HOME.tmp.$$" \
+                && mv "$UVM_HOME.tmp.$$" "$UVM_HOME" || rm -rf "$UVM_HOME.tmp.$$"
+        fi
     fi
 fi
 
@@ -92,9 +99,11 @@ else
 fi
 
 if [ "$oracles" = 1 ]; then
-    echo "Optional Slang differential oracle gates"
+    echo "Tier 3: Optional Slang & std::regex differential oracle gates"
     [ -f build/build.ninja ] || step "configure oracles" cmake --preset oracles
     step "build oracles" cmake --build build -j 4
+    step "build native regexcheck example" cargo build --locked --release -p svlang-lint --example regexcheck
+    step "regex gate (pattern.rs vs std::regex)" python3 tools/gates/regex_gate.py
     step "slang unit gate (svlang check vs slang)" python3 tools/gates/slang_unit_gate.py --max-false=1 --max-gaps=370
     if uvm_ok; then
         step "spec gate (--model, uvm-core)" python3 tools/gates/spec_gate.py --model --max-differ=0 --uvm "$UVM_HOME/src"

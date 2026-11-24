@@ -1,4 +1,4 @@
-//! SV-DUP-004 (RepeatedStringLiteral): Flags a string literal, such as a report
+//! SVL-MNT-024 (RepeatedStringLiteral): Flags a string literal, such as a report
 //! ID or a file name, written four or more times in the code.
 
 use crate::support::class_roles::user_classes;
@@ -84,9 +84,9 @@ fn worth_naming(v: &str) -> bool {
 }
 
 pub(crate) fn repeated_string_literal(d: &Design, csts: &[Cst], out: &mut Sink) {
-    // Option `min_count` (rules.SV-DUP-004.options).
+    // Option `min_count` (rules.SVL-MNT-024.options).
     fn min_count() -> usize {
-        crate::options::get("SV-DUP-004", "min_count", 4) as usize
+        crate::options::get("SVL-MNT-024", "min_count", 4) as usize
     }
     let mut generated = Generated::new(d, csts);
     let mut seen = HashSet::new();
@@ -164,7 +164,7 @@ pub(crate) fn repeated_string_literal(d: &Design, csts: &[Cst], out: &mut Sink) 
         }
         let files: BTreeSet<&str> = locs.iter().map(|l| d.file_name(*l)).collect();
         out.add(
-            "SV-DUP-004",
+            "SVL-MNT-024",
             "RepeatedStringLiteral",
             Severity::Info,
             format!(

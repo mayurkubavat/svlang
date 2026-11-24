@@ -1,4 +1,4 @@
-//! SV-MET-009 (ConfigKnobBudget): Flags a configuration object (a uvm_object
+//! SVL-MNT-037 (ConfigKnobBudget): Flags a configuration object (a uvm_object
 //! named *cfg* or *config*) that declares more than max_knobs (default 12) data
 //! members of its own.
 
@@ -7,9 +7,9 @@ use crate::{Severity, Sink};
 use svlang_model::Design;
 
 pub(crate) fn config_knob_budget(d: &Design, out: &mut Sink) {
-    // Option `max_knobs` (rules.SV-MET-009.options).
+    // Option `max_knobs` (rules.SVL-MNT-037.options).
     fn limit() -> usize {
-        crate::options::get("SV-MET-009", "max_knobs", 12) as usize
+        crate::options::get("SVL-MNT-037", "max_knobs", 12) as usize
     }
     for cls in user_classes(d) {
         if role(d, cls) != Role::Config {
@@ -20,7 +20,7 @@ pub(crate) fn config_knob_budget(d: &Design, out: &mut Sink) {
             continue;
         }
         out.add(
-            "SV-MET-009",
+            "SVL-MNT-037",
             "ConfigKnobBudget",
             Severity::Warning,
             format!(

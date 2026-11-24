@@ -1,4 +1,4 @@
-//! SV-SML-003 (GenericReportId): Disallow generic single-word report IDs
+//! SVL-MNT-054 (GenericReportId): Disallow generic single-word report IDs
 //! ('ERR', 'INFO', 'DEBUG') in UVM reporting macros.
 
 use crate::support::statements::{call_args, call_name, report, start, string_literal, Units};
@@ -38,7 +38,7 @@ pub(crate) fn generic_report_id(c: &Cst, s: &mut Sink) {
             report(
                 s,
                 units.times(c, call),
-                "SV-SML-003",
+                "SVL-MNT-054",
                 "GenericReportId",
                 Severity::Info,
                 format!(

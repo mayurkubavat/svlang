@@ -1,4 +1,4 @@
-//! SV-BAN-001 (LegacyRegWireInTestbench): Discourages legacy Verilog-1995 'reg'
+//! SVL-DEP-007 (LegacyRegWireInTestbench): Discourages legacy Verilog-1995 'reg'
 //! variable declarations in favor of IEEE 1800 'logic' (leaving 'wire' nets intact).
 
 use crate::support::names::DIRECTIONS;
@@ -22,7 +22,7 @@ pub(crate) fn legacy_reg_wire(c: &Cst, s: &mut Sink) {
         let Some(first) = c.keyword(ty) else { continue };
         if c.text_of(first) == "reg" {
             s.add(
-                "SV-BAN-001",
+                "SVL-DEP-007",
                 "LegacyRegWireInTestbench",
                 Severity::Info,
                 "Legacy Verilog-1995 keyword 'reg' is discouraged in modern SystemVerilog (IEEE 1800 § 6.8). \

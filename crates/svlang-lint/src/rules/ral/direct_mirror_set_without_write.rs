@@ -1,4 +1,4 @@
-//! RAL-ACC-001 (DirectMirrorSetWithoutWrite): Flags direct reg.set(...) calls
+//! UVM-RAL-001 (DirectMirrorSetWithoutWrite): Flags direct reg.set(...) calls
 //! that update only software mirrors without issuing physical DUT write
 //! transactions.
 
@@ -34,7 +34,7 @@ pub(crate) fn direct_mirror_set(_d: &Design, csts: &[Cst], s: &mut Sink) {
             }
             let Some(t) = c.first_tok(n) else { continue };
             s.add(
-                "RAL-ACC-001",
+                "UVM-RAL-001",
                 "DirectMirrorSetWithoutWrite",
                 Severity::Warning,
                 format!(

@@ -1,5 +1,5 @@
 //! Routine metrics (`metrics::computeRoutineMetrics`) for the SV-MET and
-//! SV-SML-004 rules.
+//! SVL-MNT-055 rules.
 
 use svlang::syntax::{NodeId, SyntaxKind};
 

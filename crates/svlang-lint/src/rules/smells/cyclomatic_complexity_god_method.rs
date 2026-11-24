@@ -1,4 +1,4 @@
-//! SV-SML-004 (CyclomaticComplexityGodMethod): Detects subroutines with high
+//! SVL-MNT-055 (CyclomaticComplexityGodMethod): Detects subroutines with high
 //! McCabe Cyclomatic Complexity ($M > 15$).
 
 use crate::support::routine_metrics::visited;
@@ -37,8 +37,8 @@ fn cyclomatic_simple(c: &Cst, body: NodeId) -> i64 {
 
 pub(crate) fn god_method(c: &Cst, s: &mut Sink) {
     let units = Units::new(c);
-    let max = crate::options::get("SV-SML-004", "max_complexity", 15) as _;
-    let warn = crate::options::get("SV-SML-004", "warning_complexity", 25) as _;
+    let max = crate::options::get("SVL-MNT-055", "max_complexity", 15) as _;
+    let warn = crate::options::get("SVL-MNT-055", "warning_complexity", 25) as _;
     for d in c.nodes(FunctionDecl).into_iter().chain(c.nodes(TaskDecl)) {
         let Some(body) = c.tree.child(d, Body) else { continue };
         let Some(nm) = c.tree.child(d, Name) else { continue };
@@ -53,7 +53,7 @@ pub(crate) fn god_method(c: &Cst, s: &mut Sink) {
         report(
             s,
             units.times(c, d),
-            "SV-SML-004",
+            "SVL-MNT-055",
             "CyclomaticComplexityGodMethod",
             sev,
             format!(

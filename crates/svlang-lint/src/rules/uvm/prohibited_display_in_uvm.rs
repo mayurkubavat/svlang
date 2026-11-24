@@ -1,4 +1,4 @@
-//! UVM-LOG-002 (ProhibitedDisplayInUvm): Disallow direct
+//! UVM-CMP-009 (ProhibitedDisplayInUvm): Disallow direct
 //! $display/$write/$strobe calls inside UVM classes (components, objects,
 //! sequences).
 
@@ -42,7 +42,7 @@ pub(crate) fn display_in_uvm(d: &Design, csts: &[Cst], s: &mut Sink) {
                 }
                 let Some(t) = c.first_tok(n) else { continue };
                 s.add(
-                    "UVM-LOG-002",
+                    "UVM-CMP-009",
                     "ProhibitedDisplayInUvm",
                     Severity::Warning,
                     format!(

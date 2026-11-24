@@ -1,4 +1,4 @@
-//! UVM-CPL-002 (HandleToEnvOrTest): Flags sequences, items, agents, config
+//! UVM-CMP-006 (HandleToEnvOrTest): Flags sequences, items, agents, config
 //! objects and helpers that store a handle to a user env or test class.
 
 use crate::support::class_roles::{is_library, property_class, role, role_name, user_classes, Role};
@@ -21,7 +21,7 @@ pub(crate) fn handle_to_env_or_test(d: &Design, out: &mut Sink) {
                 continue;
             }
             out.add(
-                "UVM-CPL-002",
+                "UVM-CMP-006",
                 "HandleToEnvOrTest",
                 Severity::Warning,
                 format!(

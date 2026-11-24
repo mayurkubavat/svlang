@@ -1,4 +1,4 @@
-//! SV-CMP-001 (CompilerError): Reports the SystemVerilog compiler's errors
+//! CMP-ERR-001 (CompilerError): Reports the SystemVerilog compiler's errors
 //! (syntax, elaboration and type errors) as findings, so they appear in every
 //! report and in the editor next to the lint findings.
 
@@ -18,7 +18,7 @@ fn semantic_diags(c: &Cst) -> SemaDiags {
 /// errors of the native front end (its messages, not slang's).
 pub(crate) fn compiler_errors(c: &Cst, out: &mut Sink) {
     let mut add = |msg: &str, loc: svlang_model::Loc| {
-        out.add("SV-CMP-001", "CompilerError", Severity::Error, msg.to_string(), loc);
+        out.add("CMP-ERR-001", "CompilerError", Severity::Error, msg.to_string(), loc);
     };
     for d in &c.tree.pp_diagnostics {
         add(&d.message, c.origin_loc(d.origin));

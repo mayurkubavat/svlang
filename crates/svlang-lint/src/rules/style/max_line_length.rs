@@ -1,4 +1,4 @@
-//! SV-STY-016 (MaxLineLength): Flags source lines exceeding 120 characters
+//! SVL-STY-013 (MaxLineLength): Flags source lines exceeding 120 characters
 //! (option: max_columns) to preserve readability across split-view editors and
 //! terminal reviews.
 
@@ -8,7 +8,7 @@ use crate::{Severity, Sink};
 
 pub(crate) fn max_line_length(c: &Cst, s: &mut Sink) {
     // Option `max_columns`.
-    let max = crate::options::get("SV-STY-016", "max_columns", 120).max(1) as usize;
+    let max = crate::options::get("SVL-STY-013", "max_columns", 120).max(1) as usize;
     for (f, text) in buffers(c) {
         if text.len() == 1 {
             continue;
@@ -17,7 +17,7 @@ pub(crate) fn max_line_length(c: &Cst, s: &mut Sink) {
             let len = end - start;
             if len > max {
                 s.add(
-                    "SV-STY-016",
+                    "SVL-STY-013",
                     "MaxLineLength",
                     Severity::Info,
                     format!(

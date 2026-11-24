@@ -1,4 +1,4 @@
-//! SV-TYP-001 (MixedSignComparison): Comparing signed and unsigned integers
+//! SVL-TYP-001 (MixedSignComparison): Comparing signed and unsigned integers
 //! causes implicit unsigned coercion of the signed operand.
 
 use crate::expr_types::{visit_types, ETy};
@@ -119,7 +119,7 @@ pub(crate) fn mixed_sign_comparison(c: &Cst, out: &mut Sink) {
                 if ls { (&lt.text, &rt.text, "LHS") } else { (&rt.text, &lt.text, "RHS") };
             for _ in 0..k {
                 out.add(
-                    "SV-TYP-001",
+                    "SVL-TYP-001",
                     "MixedSignComparison",
                     Severity::Warning,
                     format!(

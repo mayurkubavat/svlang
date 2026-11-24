@@ -1,4 +1,4 @@
-//! SV-STY-008 (SectionHeaderBanner): Standardizes major section divider banners
+//! SVL-STY-006 (SectionHeaderBanner): Standardizes major section divider banners
 //! to uniform 70–80 character widths.
 
 use crate::support::source_layout::banners;

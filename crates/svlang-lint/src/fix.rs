@@ -322,7 +322,7 @@ pub fn apply(
     let mut per_file: BTreeMap<String, Vec<TextEdit>> = BTreeMap::new();
     let (mut unsafe_skipped, mut broken_fixes) = (0usize, 0usize);
     for f in found {
-        if !only.is_empty() && !only.iter().any(|o| o == f.rule || o == f.name) {
+        if !only.is_empty() && !only.iter().any(|o| crate::rule_selector_matches(o, f.rule, f.name)) {
             continue;
         }
         for x in &f.fixes {

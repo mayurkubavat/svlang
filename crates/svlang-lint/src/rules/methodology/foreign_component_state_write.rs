@@ -1,4 +1,4 @@
-//! UVM-CPL-003 (ForeignComponentStateWrite): Flags assignments to properties of
+//! UVM-CMP-007 (ForeignComponentStateWrite): Flags assignments to properties of
 //! another component through a handle, except a parent setting up its own
 //! subtree in new() and the build, connect and end_of_elaboration phases
 //! (content coupling, MG-2.1).
@@ -71,7 +71,7 @@ pub(crate) fn foreign_component_state_write(d: &Design, csts: &[Cst], out: &mut 
                 continue;
             }
             out.add(
-                "UVM-CPL-003",
+                "UVM-CMP-007",
                 "ForeignComponentStateWrite",
                 Severity::Warning,
                 format!(

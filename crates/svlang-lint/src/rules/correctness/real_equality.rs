@@ -1,4 +1,4 @@
-//! SV-BUG-006 (RealEquality): Flags == and != on real or shortreal operands,
+//! SVL-COR-013 (RealEquality): Flags == and != on real or shortreal operands,
 //! except against an exact zero (Sonar S1244, clang-tidy float equality).
 
 use crate::support::class_items::{kids, op, user_code};
@@ -40,7 +40,7 @@ pub(crate) fn real_equality(c: &Cst, s: &mut Sink) {
         }
         let Some(at) = c.first_tok(n) else { continue };
         s.add(
-            "SV-BUG-006",
+            "SVL-COR-013",
             "RealEquality",
             Severity::Warning,
             format!(

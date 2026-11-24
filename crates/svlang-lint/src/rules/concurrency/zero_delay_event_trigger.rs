@@ -1,4 +1,4 @@
-//! SV-RCE-001 (ZeroDelayEventTrigger): Flags blocking event triggers ('->
+//! SVL-CON-026 (ZeroDelayEventTrigger): Flags blocking event triggers ('->
 //! event') which cause zero-delay simulation race conditions.
 
 use crate::syntax::Cst;
@@ -12,7 +12,7 @@ pub(crate) fn zero_delay_event_trigger(c: &Cst, s: &mut Sink) {
         let Some(name) = c.items(n).into_iter().next() else { continue };
         let ev = c.last_text(name);
         s.add(
-            "SV-RCE-001",
+            "SVL-CON-026",
             "ZeroDelayEventTrigger",
             Severity::Warning,
             format!(

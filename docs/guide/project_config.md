@@ -5,8 +5,11 @@ behave. It is written in Python as ordinary classes, so a team can keep a
 shared base config and each block can override just what it needs.
 
 ```bash
-# Write a starter config, then edit it
-./build/svlang-lint --dump-config .svlang-lint/config.py
+# Auto-discover sources/filelists/UVM and write .svlang-lint/config.py + baseline.json
+svlang lint --init
+
+# Or write a commented starter config template, then edit it
+svlang lint --dump-config .svlang-lint/config.py
 ```
 
 svlang-lint looks for configuration files in the working directory and its parents (first hit wins):
@@ -40,7 +43,7 @@ class Project(ProjectConfig):
         max_columns = 140                    # rule option
 
     class NoCasex(RuleConfig):
-        rule = "SV-COR-009"
+        rule = "RTL-DAT-002"
         severity = Severity.Error
         exclude_paths = ["legacy/**"]       # this rule only
 
@@ -57,7 +60,7 @@ class Project(ProjectConfig):
 
 # A reusable waiver is a class; subclass it to widen or narrow it.
 class LegacyMacros(Waiver):
-    rules = ["SV-STY-002", "OneStatementPerLine"]
+    rules = ["SVL-STY-001", "OneStatementPerLine"]
     paths = ["**/legacy/**"]
     reason = "Vendor macros we cannot edit"
     owner = "dv-infra"
@@ -89,7 +92,7 @@ class DmaBlock(CompanyBase):
         max_columns = 160
 
     waivers = CompanyBase.waivers + [
-        Waiver("SV-STY-002", path="**/legacy/**", reason="Vendor macros"),
+        Waiver("SVL-STY-001", path="**/legacy/**", reason="Vendor macros"),
     ]
 ```
 
@@ -139,12 +142,12 @@ Running from `blocks/dma/` prints the layers that were loaded.
 | `waivers` | `Waiver(...)` objects or `Waiver` subclasses with `rules`, `paths`, `line`, `reason` (mandatory), `owner`, `expires` (YYYY-MM-DD), and optional `message`. Empty `rules` / `paths` mean every rule / file. `message` is a regular expression searched against the diagnostic text; the waiver applies only when rule, path, line, and that expression all match. An invalid expression is an error that names the config file and the waiver. With `severity` (`Severity.Error` / `Warning` / `Info`, or the name as a string; `"severity"` in a waivers JSON file) the waiver does not hide the finding but reports it at that severity, with `[re-graded by ...]` after its message, for example to keep known issues visible at Info while a fix is tracked. |
 | `style`, `naming` | Same dicts as the legacy JSON `style` / `naming` blocks. |
 | `compat` | Legacy compatibility dict accepted for backwards compatibility with older configs (ignored by the native Rust engine). |
-| `RuleConfig.rule` | Rule ID (`"SV-STY-016"`) or name (`"MaxLineLength"`); defaults to the class name. |
+| `RuleConfig.rule` | Rule ID (`"SVL-STY-013"`), prefix wildcard (`"UVM-NAM-*"`), or rule name (`"MaxLineLength"`); defaults to the class name. Exact rule entries take precedence over wildcard entries. |
 | `RuleConfig.enabled` | `False` skips the rule entirely (also for Python plugin rules). A rule you configure in any other way runs even when the preset leaves it out: a `RuleConfig` for a style rule, or a `style` / `naming` block, turns those checks on without `preset = "all"`. `--preset` on the command line narrows the run to that preset. |
 | `RuleConfig.severity` | `Severity.Error`, `Severity.Warning` or `Severity.Info`. |
 | `RuleConfig.exclude_paths` | Globs where only this rule is silenced. |
 | `RuleConfig.only_paths` | Globs where this rule reports; elsewhere it is silent. For example strict naming only under `env/**`, or a rule kept out of generated code without listing every other folder. `exclude_paths` still applies inside them. |
-| any other attribute | A rule option, e.g. `max_columns` (SV-STY-016), `max_complexity` / `warning_complexity` (SV-SML-004). |
+| any other attribute | A rule option, e.g. `max_columns` (SVL-STY-013), `max_complexity` / `warning_complexity` (SVL-MNT-055). |
 
 **The UVM library needs no configuration.** When a compile holds `uvm_pkg.sv` and files outside
 its folder, that folder is library code: nothing is reported in its files, nor for what its macros expand to in your
@@ -175,25 +178,25 @@ svlang lint tb/top.sv -I $UVM_HOME/src --library '$UVM_HOME' --exclude 'tb/gen/*
 A waiver comment can carry the same expression in quotes. It is searched, not matched against the whole message:
 
 ```systemverilog
-if (a == a) $display("one"); // svlang-lint:waive SV-COR-008 "expression 'a'"
-// svlang-lint: waive SV-COR-008 "expression 'b'"
+if (a == a) $display("one"); // svlang-lint:waive SVL-COR-004 "expression 'a'"
+// svlang-lint: waive SVL-COR-004 "expression 'b'"
 if (b == b) $display("two");
 ```
 
-`--report-unused-waivers` prints waivers that matched nothing in this run, and waivers whose `expires` date has passed, as `UVM-WV-001` warnings (they also count in the summary). It is off by default: one waiver file is often used for runs that lint different files, so a waiver that matched nothing this time is not always stale. `--strict-waivers` turns the warnings on and still exits 4 while any unused, expired, or stale entry remains.
+`--report-unused-waivers` prints waivers that matched nothing in this run, and waivers whose `expires` date has passed, as `SVL-WVR-002` warnings (they also count in the summary). It is off by default: one waiver file is often used for runs that lint different files, so a waiver that matched nothing this time is not always stale. `--strict-waivers` turns the warnings on and still exits 4 while any unused, expired, or stale entry remains.
 
 ### JSON form
 
 The same settings are accepted as JSON (`.svlang-lint.json`), which is also what
 the Python config is converted to internally. Comments and trailing commas are
-allowed. Rules may use a shorthand: `"SV-COR-009": "error"`, `"MaxLineLength": "off"`.
+allowed. Rules may use a shorthand: `"RTL-DAT-002": "error"`, `"MaxLineLength": "off"`.
 
 ```json
 {
   "library_paths": ["$UVM_HOME", "vip/**"],
   "rules": {
     "MaxLineLength": { "options": { "max_columns": 140 } },
-    "SV-COR-009": { "severity": "ERROR", "exclude_paths": ["legacy/**"] },
+    "RTL-DAT-002": { "severity": "ERROR", "exclude_paths": ["legacy/**"] },
     "GenericReportId": "off"
   },
   "waivers": [

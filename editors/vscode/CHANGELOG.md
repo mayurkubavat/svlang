@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.0
+
+- **Strict 2-Tier `DOM-GRP-NNN` (`3-3-3`) Rule Taxonomy**: Standardized all 475 diagnostics across 5 domains (`CMP-*`, `RTL-*`, `SVL-*`, `SVA-*`, `UVM-*`) and 34 prefixes (`CMP-ERR-001` for live compiler errors, `RTL-FSM-*`, `SVL-CON-*`, `SVA-FPV-*`, `UVM-RAL-*`, etc.).
+- **Prefix Wildcard Rule Selection & Ignoring**: `svlang.lint.select`, `svlang.lint.ignore`, and inline/block waiver directives (`// svlang-lint:waive`, `// svlang-lint:off`) now accept domain and group wildcards such as `"RTL-*"`, `"SVL-NAM-*"`, `"UVM-NAM-*"`, and `"SVA-*"`.
+- **Redesigned Extension Documentation**: Updated Marketplace / Open VSX overview, operating modes, rule domain matrix, and configuration examples.
+
 ## 0.5.2
 
 - **Mode 1 Default (Code Browsing + Live Syntax/Semantics, On-Demand Lint)**: Changed `svlang.lint.trigger` default to `"off"` and added `svlang.diagnostics.syntaxAndSemantics` (default `true`). Code navigation, semantic highlighting, `` `ifdef `` dimming, RTL/signal tracing, and IEEE 1800-2023 syntax/semantic checks work out of the box while the 474 static lint rules stay quiet until `Lint Now` or `onSave`/`onType` is enabled.

@@ -1,4 +1,4 @@
-//! SV-RND-018 (RandomizeInConstructor): Disallows calling randomize() inside
+//! SVL-RND-017 (RandomizeInConstructor): Disallows calling randomize() inside
 //! class constructors (new()).
 
 use crate::{Severity, Sink};
@@ -18,7 +18,7 @@ pub(crate) fn randomize_in_constructor(d: &Design, out: &mut Sink) {
                     continue;
                 }
                 out.add(
-                    "SV-RND-018",
+                    "SVL-RND-017",
                     "RandomizeInConstructor",
                     Severity::Warning,
                     format!(

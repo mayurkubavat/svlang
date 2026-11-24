@@ -1,4 +1,4 @@
-//! SV-DED-013 (UnusedRoutineArgument): Flags task and function arguments that
+//! SVL-DED-013 (UnusedRoutineArgument): Flags task and function arguments that
 //! the body never uses (clang-tidy misc-unused-parameters, Pylint W0613).
 
 use crate::support::handles::{body_refs_if_good, routine_is_virtual};
@@ -35,7 +35,7 @@ pub(crate) fn unused_routine_argument(c: &Cst, out: &mut Sink) {
             let Some(loc) = c.first_tok(nm).map(|t| c.loc(t)) else { continue };
             for _ in 0..n {
                 out.add(
-                    "SV-DED-013",
+                    "SVL-DED-013",
                     "UnusedRoutineArgument",
                     Severity::Info,
                     format!("Argument '{a}' of '{name}' is never used. Remove it, or use it if the caller expects it to have an effect."),

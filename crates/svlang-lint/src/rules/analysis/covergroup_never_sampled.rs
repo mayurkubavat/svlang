@@ -1,10 +1,10 @@
-//! SV-COV-019 (CovergroupNeverSampled): Flags a covergroup declared in a
+//! SVL-COV-019 (CovergroupNeverSampled): Flags a covergroup declared in a
 //! module, interface, program or package that never collects a sample: it
 //! has no sampling event (`covergroup cg @(posedge clk)`), and either nothing
 //! instantiates it, or no instance of it is ever sampled with `.sample()`
 //! anywhere in the design.
 //!
-//! SV-COV-001 judges covergroups declared in classes, one file at a time;
+//! SVL-COV-001 judges covergroups declared in classes, one file at a time;
 //! this rule covers the others, across every file of the compile (an
 //! interface's covergroup is often sampled from a bound checker or a test in
 //! another file). Instances are the variables declared with the covergroup's
@@ -105,6 +105,6 @@ pub(crate) fn covergroup_never_sampled(_: &Design, csts: &[Cst], out: &mut Sink)
             }
             Some(_) => continue,
         };
-        out.add("SV-COV-019", "CovergroupNeverSampled", Severity::Warning, msg, *loc);
+        out.add("SVL-COV-019", "CovergroupNeverSampled", Severity::Warning, msg, *loc);
     }
 }

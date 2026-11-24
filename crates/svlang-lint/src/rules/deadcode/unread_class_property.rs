@@ -1,4 +1,4 @@
-//! SV-DED-005 (UnreadClassProperty): Flags class properties that are assigned
+//! SVL-DED-005 (UnreadClassProperty): Flags class properties that are assigned
 //! or written to, but never read anywhere in the class.
 
 use crate::support::ast::class_properties;
@@ -15,7 +15,7 @@ pub(crate) fn unread_property(c: &Cst, s: &mut Sink) {
         for (p, t, _) in props {
             if u.written.contains(&p) && !u.read.contains(&p) {
                 s.add(
-                    "SV-DED-005",
+                    "SVL-DED-005",
                     "UnreadClassProperty",
                     Severity::Info,
                     format!(

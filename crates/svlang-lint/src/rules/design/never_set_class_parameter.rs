@@ -1,4 +1,4 @@
-//! SV-DED-015 (NeverSetClassParameter): Flags a parameter of a user
+//! SVL-DED-015 (NeverSetClassParameter): Flags a parameter of a user
 //! parameterized class that no specialization in the linted design ever sets.
 
 use crate::support::class_index::*;
@@ -81,7 +81,7 @@ pub(crate) fn never_set_parameter(c: &Cst, s: &mut Sink) {
         })
     {
         s.add(
-            "SV-DED-015",
+            "SVL-DED-015",
             "NeverSetClassParameter",
             Severity::Info,
             "Parameter 'T' of class 'mailbox' is never set by any specialization; every user takes the default. Make it a \
@@ -132,7 +132,7 @@ pub(crate) fn never_set_parameter(c: &Cst, s: &mut Sink) {
             }
             let tok = params.iter().find(|(n, _)| *n == name).map(|(_, t)| *t).unwrap();
             s.add(
-                "SV-DED-015",
+                "SVL-DED-015",
                 "NeverSetClassParameter",
                 Severity::Info,
                 format!(

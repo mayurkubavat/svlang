@@ -1,4 +1,4 @@
-//! UVM-STY-002 (ConstraintNameSuffix): Enforces a naming standard requiring all
+//! SVL-NAM-005 (ConstraintNameSuffix): Enforces a naming standard requiring all
 //! constraint blocks to end with '_c' suffix.
 
 use crate::{Severity, Sink};
@@ -14,7 +14,7 @@ pub(crate) fn constraint_name_suffix(d: &Design, out: &mut Sink) {
                 continue;
             }
             out.add(
-                "UVM-STY-002",
+                "SVL-NAM-005",
                 "ConstraintNameSuffix",
                 Severity::Warning,
                 format!(

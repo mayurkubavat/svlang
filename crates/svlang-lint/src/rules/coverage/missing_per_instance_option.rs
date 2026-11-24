@@ -1,4 +1,4 @@
-//! SV-COV-020 (MissingPerInstanceOption): Embedded `covergroup` in a `uvm_component`
+//! SVL-COV-020 (MissingPerInstanceOption): Embedded `covergroup` in a `uvm_component`
 //! subclass omits `option.per_instance = 1`, collapsing multi-agent instance
 //! coverage into type-only coverage.
 
@@ -37,7 +37,7 @@ pub(crate) fn missing_per_instance_option(d: &Design, csts: &[Cst], out: &mut Si
                 let tok = c.tree.child(cg, Name).and_then(|nm| c.first_tok(nm)).or_else(|| c.first_tok(cg));
                 if let Some(t) = tok {
                     out.add(
-                        "SV-COV-020",
+                        "SVL-COV-020",
                         "MissingPerInstanceOption",
                         Severity::Info,
                         format!(

@@ -1,4 +1,4 @@
-//! SV-COV-002 (ZeroWeightCoverpoint): Flags covergroups, coverpoints, or
+//! SVL-COV-002 (ZeroWeightCoverpoint): Flags covergroups, coverpoints, or
 //! crosses configured with option.weight or type_option.weight set to 0.
 
 use crate::support::procedural::start;
@@ -22,7 +22,7 @@ pub(crate) fn zero_weight(c: &Cst, s: &mut Sink) {
         let target = option_target(c, o);
         let Some(loc) = start(c, o) else { continue };
         s.add(
-            "SV-COV-002",
+            "SVL-COV-002",
             "ZeroWeightCoverpoint",
             Severity::Warning,
             format!(

@@ -1,4 +1,4 @@
-//! SV-COV-010 (CrossWithAllBinsIgnored): Flags covergroup cross constructs
+//! SVL-COV-010 (CrossWithAllBinsIgnored): Flags covergroup cross constructs
 //! where all defined bins are ignore_bins, producing vacuous 0-bin coverage
 //! metrics.
 
@@ -19,7 +19,7 @@ pub(crate) fn cross_all_ignored(c: &Cst, s: &mut Sink) {
         let Some(kw) = kw else { continue };
         let name = label(c, n).unwrap_or_else(|| "anonymous_cross".into());
         s.add(
-            "SV-COV-010",
+            "SVL-COV-010",
             "CrossWithAllBinsIgnored",
             Severity::Warning,
             format!(

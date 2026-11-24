@@ -1,4 +1,4 @@
-//! SV-TIM-002 (MissingTimescaleInModule): Flags files containing unitless
+//! SVL-COR-027 (MissingTimescaleInModule): Flags files containing unitless
 //! nonzero procedural `#delay` controls that lack an explicit `` `timescale ``
 //! or `timeunit` declaration (IEEE 1800-2023 §3.14).
 
@@ -86,7 +86,7 @@ pub(crate) fn missing_timescale(c: &Cst, s: &mut Sink) {
         }
         let Some(at) = first.and_then(|n| c.first_tok(n)) else { continue };
         s.add(
-            "SV-TIM-002",
+            "SVL-COR-027",
             "MissingTimescaleInModule",
             Severity::Warning,
             "File contains unitless procedural '#delay' controls without a '`timescale' or 'timeunit' declaration. \

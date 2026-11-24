@@ -1,4 +1,4 @@
-//! SV-DED-007 (UnusedPureRoutineResult): Flags calls to pure functions or
+//! SVL-DED-007 (UnusedPureRoutineResult): Flags calls to pure functions or
 //! value-returning routines ($sformatf, $realtime, len, toupper, sum) used as
 //! standalone statements where the result is discarded.
 
@@ -25,7 +25,7 @@ pub(crate) fn unused_pure_result(c: &Cst, s: &mut Sink) {
         let name = c.text_of(last);
         if name == "$sformatf" {
             s.add(
-                "SV-DED-007",
+                "SVL-DED-007",
                 "UnusedPureRoutineResult",
                 Severity::Warning,
                 "Result of pure system function '$sformatf()' is discarded in a standalone statement. \
@@ -52,7 +52,7 @@ pub(crate) fn unused_pure_result(c: &Cst, s: &mut Sink) {
                 | "$pow"
         ) {
             s.add(
-                "SV-DED-007",
+                "SVL-DED-007",
                 "UnusedPureRoutineResult",
                 Severity::Warning,
                 format!("Result of value-returning system function '{name}()' is discarded in a standalone statement."),
@@ -75,7 +75,7 @@ pub(crate) fn unused_pure_result(c: &Cst, s: &mut Sink) {
                 | "product"
         ) {
             s.add(
-                "SV-DED-007",
+                "SVL-DED-007",
                 "UnusedPureRoutineResult",
                 Severity::Warning,
                 format!("Result of value-returning pure routine '.{name}()' is discarded in a standalone statement."),

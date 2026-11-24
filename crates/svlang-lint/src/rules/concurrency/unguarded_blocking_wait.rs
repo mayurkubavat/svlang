@@ -1,4 +1,4 @@
-//! SV-CON-015 (UnguardedBlockingWait): Flags wait(vif.sig) and @(vif.sig) in
+//! SVL-CON-011 (UnguardedBlockingWait): Flags wait(vif.sig) and @(vif.sig) in
 //! drivers and sequences that are not raced against a timeout in fork ...
 //! join_any.
 
@@ -9,7 +9,7 @@ use crate::{Severity, Sink};
 use svlang::syntax::{NodeId, SyntaxKind};
 use SyntaxKind::*;
 
-/// `swe::classRole` reduced to the two roles SV-CON-015 needs.
+/// `swe::classRole` reduced to the two roles SVL-CON-011 needs.
 fn role_of(c: &Cst, cls: NodeId) -> &'static str {
     for n in base_names(c, cls) {
         if !n.starts_with("uvm_") {
@@ -152,7 +152,7 @@ pub(crate) fn unguarded_wait(c: &Cst, s: &mut Sink) {
                 }
                 let Some(loc) = start(c, x) else { continue };
                 s.add(
-                    "SV-CON-015",
+                    "SVL-CON-011",
                     "UnguardedBlockingWait",
                     Severity::Warning,
                     format!(

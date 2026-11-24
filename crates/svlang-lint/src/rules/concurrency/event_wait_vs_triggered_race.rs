@@ -1,4 +1,4 @@
-//! SV-CON-016 (EventWaitVsTriggeredRace): Flags `@(ev)` / `@ev` named-event
+//! SVL-CON-012 (EventWaitVsTriggeredRace): Flags `@(ev)` / `@ev` named-event
 //! waits inside `fork ... join_none` (or `join_any`) child threads when the
 //! same event `ev` is triggered with `-> ev` in an enclosing or sibling thread.
 //! Because `fork ... join_none` schedules child threads only after the parent
@@ -60,7 +60,7 @@ pub(crate) fn event_wait_vs_triggered_race(c: &Cst, out: &mut Sink) {
                     let ev_name = c.trimmed(ev_expr);
                     if triggered.contains(&ev_name) {
                         out.add(
-                            "SV-CON-016",
+                            "SVL-CON-012",
                             "EventWaitVsTriggeredRace",
                             Severity::Warning,
                             format!(

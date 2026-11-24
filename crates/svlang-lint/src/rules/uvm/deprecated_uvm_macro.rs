@@ -1,4 +1,4 @@
-//! UVM-API-002 (DeprecatedUvmMacro): Flags uses of UVM macros that the UVM
+//! UVM-DEP-008 (DeprecatedUvmMacro): Flags uses of UVM macros that the UVM
 //! version being compiled keeps only as deprecated API: in UVM 2020 the ones
 //! defined only under UVM_ENABLE_DEPRECATED_API (`uvm_do_with, `uvm_do_on,
 //! `uvm_do_pri, `uvm_create_on, `uvm_send_pri and the rest of that family), in
@@ -36,7 +36,7 @@ pub(crate) fn deprecated_uvm_macro(_: &Design, csts: &[Cst], out: &mut Sink) {
                 let name = &text[1..];
                 if pack.deprecated_macros.contains(name) && seen.insert((fs.path(f as u32), lx.toks[i].1)) {
                     out.add(
-                        "UVM-API-002",
+                        "UVM-DEP-008",
                         "DeprecatedUvmMacro",
                         Severity::Warning,
                         if pack.removed_by_define() {

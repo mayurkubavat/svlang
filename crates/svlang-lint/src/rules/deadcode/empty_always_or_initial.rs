@@ -1,4 +1,4 @@
-//! SV-DED-009 (EmptyAlwaysOrInitial): Disallows initial, always, always_comb,
+//! SVL-DED-009 (EmptyAlwaysOrInitial): Disallows initial, always, always_comb,
 //! always_ff, always_latch, or final procedural blocks with empty bodies.
 
 use crate::syntax::{procedural_blocks, Cst};
@@ -20,7 +20,7 @@ pub(crate) fn empty_procedural_block(c: &Cst, s: &mut Sink) {
     for (n, kw) in procedural_blocks(c) {
         if effectively_empty(c, c.items(n).into_iter().next()) {
             s.add(
-                "SV-DED-009",
+                "SVL-DED-009",
                 "EmptyAlwaysOrInitial",
                 Severity::Warning,
                 format!(

@@ -1,4 +1,4 @@
-//! UVM-RUS-006 (IncompleteItemContract): Flags concrete sequence items with
+//! UVM-SEQ-020 (IncompleteItemContract): Flags concrete sequence items with
 //! fields that implement neither field macros nor do_copy(), do_compare() and
 //! convert2string()/do_print().
 
@@ -68,7 +68,7 @@ pub(crate) fn incomplete_item_contract(d: &Design, csts: &[Cst], out: &mut Sink)
             list.push_str(m);
         }
         out.add(
-            "UVM-RUS-006",
+            "UVM-SEQ-020",
             "IncompleteItemContract",
             Severity::Warning,
             format!(

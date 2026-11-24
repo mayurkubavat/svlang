@@ -1,4 +1,4 @@
-//! SV-COV-014 (CoverpointWeightZero): Flags covergroups or coverpoints where
+//! SVL-COV-014 (CoverpointWeightZero): Flags covergroups or coverpoints where
 //! 'option.weight' or 'type_option.weight' is set to 0, silently excluding it
 //! from coverage scores.
 
@@ -24,7 +24,7 @@ pub(crate) fn weight_zero(c: &Cst, s: &mut Sink) {
         let target = if text.contains("type_option") { "type_option.weight" } else { "option.weight" };
         let Some(first) = c.first_tok(e) else { continue };
         s.add(
-            "SV-COV-014",
+            "SVL-COV-014",
             "CoverpointWeightZero",
             Severity::Warning,
             format!(

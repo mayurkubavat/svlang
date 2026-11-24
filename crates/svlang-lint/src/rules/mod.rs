@@ -1,5 +1,5 @@
 //! Every rule, one folder per category as under `cpp/src/rules/`, one file per
-//! rule named after the rule (`SV-OOP-003` MissingSuperNew is
+//! rule named after the rule (`SVL-OOP-003` MissingSuperNew is
 //! `oop/missing_super_new.rs`). Helpers several rules share live outside
 //! `rules/`, in the support modules of the crate root.
 

@@ -1,4 +1,4 @@
-//! SV-PRF-011 (DynamicArrayNewInLoop): Disallows dynamic array allocation
+//! SVL-PRF-011 (DynamicArrayNewInLoop): Disallows dynamic array allocation
 //! (new[...]) inside simulation loops to prevent heap contention and memory
 //! churn.
 
@@ -33,7 +33,7 @@ pub(crate) fn new_array_in_loop(c: &Cst, s: &mut Sink) {
             }
             let Some(at) = c.first_tok(n) else { continue };
             s.add(
-                "SV-PRF-011",
+                "SVL-PRF-011",
                 "DynamicArrayNewInLoop",
                 Severity::Warning,
                 "Dynamic array allocation 'new[...]' is invoked inside a simulation loop. \

@@ -1,4 +1,4 @@
-//! UVM-DAG-001 (UvmDanglingConfigString): Static UVM component DAG path
+//! UVM-CFG-012 (UvmDanglingConfigString): Static UVM component DAG path
 //! matching: detects glob strings in uvm_config_db::set() that match zero
 //! instantiated components in the verification hierarchy.
 
@@ -82,7 +82,7 @@ pub(crate) fn dangling_config_string(d: &Design, csts: &[Cst], s: &mut Sink) {
             }
             let Some(t) = c.first_tok(inst) else { continue };
             s.add(
-                "UVM-DAG-001",
+                "UVM-CFG-012",
                 "UvmDanglingConfigString",
                 Severity::Error,
                 format!(

@@ -1,4 +1,4 @@
-//! SV-LOC-001 (ArrayLocatorEmptyQueueDeref): Disallows immediate element
+//! SVL-PRF-015 (ArrayLocatorEmptyQueueDeref): Disallows immediate element
 //! dereferencing on array locator methods (e.g., q.find()[0]).
 
 use crate::support::ast::{is_name, kids};
@@ -53,7 +53,7 @@ pub(crate) fn locator_deref(c: &Cst, s: &mut Sink) {
         let Some(name) = locator_name(c, base) else { continue };
         let Some(open) = c.tok(n, "[") else { continue };
         s.add(
-            "SV-LOC-001",
+            "SVL-PRF-015",
             "ArrayLocatorEmptyQueueDeref",
             Severity::Error,
             format!(

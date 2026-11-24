@@ -1,4 +1,4 @@
-//! SV-RND-009 (StaticConstraint): Disallows static constraints.
+//! SVL-RND-008 (StaticConstraint): Disallows static constraints.
 
 use crate::syntax::Cst;
 use crate::{Severity, Sink};
@@ -12,7 +12,7 @@ pub(crate) fn static_constraint(c: &Cst, s: &mut Sink) {
         };
         let name = c.tree.child(n, Name).map(|x| c.trimmed(x)).unwrap_or_else(|| "unnamed".into());
         s.add(
-            "SV-RND-009",
+            "SVL-RND-008",
             "StaticConstraint",
             Severity::Warning,
             format!(

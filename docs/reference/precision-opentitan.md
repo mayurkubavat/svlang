@@ -30,25 +30,25 @@ Over all of `ibex-dv`, ERROR findings went from 586 to 226.
 
 | Rule | OT findings | Cause | Fix (both engines) |
 |---|---|---|---|
-| SV-DED-003 AccidentalEmptyConditional | 78 | `` `DV_CHECK `` expands to `if (T_) ; else begin ... end`, a deliberate idiom (an X condition takes the else) | An empty then-branch with an `else` is not reported |
-| SV-OOP-011 DowncastWithoutDynamicCast | 39 (142 in ibex-dv) | Names that look like UVM classes (`uvm_` prefix) matched: `uvm_radix_enum'(...)`, `uvm_reg_data_t'(...)` are enum and vector casts | A name a typedef declares is not a class unless a class of that name exists |
-| SVA-VAC-001 SvaVacuousAntecedent | 17 | Any `a && !b` was called constant false (`valid && !ready`) | Only a term together with its own negation (`req && !req`) |
-| SV-ERR-002 UseAfterFailedNullCheck | 13 | `` `downcast `` / `` `dv_fatal `` guard the fatal with `uvm_report_enabled(..., ID_)` where `ID_` is `$sformatf("%m")` or `` `gfn `` (`get_full_name()`): not recognized as a report guard, so the path was thought to continue | Calls that build the message id do not stop a condition being the report guard |
+| SVL-DED-003 AccidentalEmptyConditional | 78 | `` `DV_CHECK `` expands to `if (T_) ; else begin ... end`, a deliberate idiom (an X condition takes the else) | An empty then-branch with an `else` is not reported |
+| SVL-OOP-009 DowncastWithoutDynamicCast | 39 (142 in ibex-dv) | Names that look like UVM classes (`uvm_` prefix) matched: `uvm_radix_enum'(...)`, `uvm_reg_data_t'(...)` are enum and vector casts | A name a typedef declares is not a class unless a class of that name exists |
+| SVA-PRP-015 SvaVacuousAntecedent | 17 | Any `a && !b` was called constant false (`valid && !ready`) | Only a term together with its own negation (`req && !req`) |
+| SVL-COR-020 UseAfterFailedNullCheck | 13 | `` `downcast `` / `` `dv_fatal `` guard the fatal with `uvm_report_enabled(..., ID_)` where `ID_` is `$sformatf("%m")` or `` `gfn `` (`get_full_name()`): not recognized as a report guard, so the path was thought to continue | Calls that build the message id do not stop a condition being the report guard |
 | UVM-CFG-005 ConfigDbCrossComponentResolver | 8 | `dv_base_agent::CFG_T`, a type parameter, compared as text with the concrete `*_agent_cfg` types set elsewhere | A type declared in the calling class (type parameter, class typedef) is not compared |
 
 ### The last 15, fixed next (2026-11-09)
 
 | Rule | OT findings | Cause | Fix (both engines) |
 |---|---|---|---|
-| SV-LANG-005 NonBlockingInFunction | 8 | `reset_signals()` drives interface signals with `<=`. IEEE 1800 13.4.4 allows nonblocking assignments in functions, and this is the drive SV-INT-001 asks for | Clocking block and virtual interface targets are not reported; the message no longer says the LRM forbids `<=` |
-| SV-INT-001 BlockingAssignmentToInterface | 4 | `cfg.vif.if_mode = ...` in `build_phase`: configuration bits written before simulation time starts | Not reported in build, connect, end_of_elaboration and start_of_simulation phases |
+| SVL-COR-022 NonBlockingInFunction | 8 | `reset_signals()` drives interface signals with `<=`. IEEE 1800 13.4.4 allows nonblocking assignments in functions, and this is the drive SVL-CON-024 asks for | Clocking block and virtual interface targets are not reported; the message no longer says the LRM forbids `<=` |
+| SVL-CON-024 BlockingAssignmentToInterface | 4 | `cfg.vif.if_mode = ...` in `build_phase`: configuration bits written before simulation time starts | Not reported in build, connect, end_of_elaboration and start_of_simulation phases |
 | UVM-CFG-001 UvmConfigDbTypeMismatch | 2 | `get` through the type parameter `CFG_T` | A type parameter on either side is not compared (as UVM-CFG-005) |
-| UVM-TST-001 CheckerCannotFail | 1 | `dv_base_scoreboard #(RAL_T, CFG_T, COV_T)`, a parameterized base | Parameterized checkers are bases their subclasses fill in |
+| UVM-TLM-012 CheckerCannotFail | 1 | `dv_base_scoreboard #(RAL_T, CFG_T, COV_T)`, a parameterized base | Parameterized checkers are bases their subclasses fill in |
 
 OpenTitan DV ERROR findings are now 0 (from 170); over all of ibex-dv, 586 -> 207.
 
 ### Volume
 
-SV-STY-010 (magic numbers, INFO) is 3,015 of the 5,263 findings, mostly
+SVL-STY-008 (magic numbers, INFO) is 3,015 of the 5,263 findings, mostly
 widths and field sizes in register and CSR code. It is advisory and off by
 default; it should stay so.

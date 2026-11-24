@@ -9,27 +9,25 @@ use crate::json::Json;
 use crate::{profile, Severity};
 
 /// The categories, in the order the catalog lists them.
-pub const CATEGORIES: [&str; 20] = [
-    "UVM",
-    "OOP",
-    "Architecture",
+pub const CATEGORIES: [&str; 18] = [
+    "Compiler",
+    "RTL",
     "Correctness",
+    "Types",
+    "OOP",
     "Concurrency",
     "Randomization",
     "Coverage",
     "SVA",
-    "Types",
-    "DeadCode",
+    "UVM",
     "Performance",
+    "DeadCode",
+    "Maintainability",
     "Portability",
     "Security",
-    "DPI",
-    "RTL_TB_Bridge",
     "Deprecated",
     "Style",
     "Naming",
-    "Maintainability",
-    "Advisory",
 ];
 
 /// One catalog line: a rule, or an id a rule reports under.

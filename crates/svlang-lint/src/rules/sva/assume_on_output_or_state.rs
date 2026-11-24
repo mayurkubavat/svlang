@@ -1,4 +1,4 @@
-//! SV-FPV-001 (AssumeOnOutputOrState): `assume` or `assume property` constraining
+//! SVA-FPV-001 (AssumeOnOutputOrState): `assume` or `assume property` constraining
 //! a module `output` port or internal sequential state rather than primary inputs.
 
 use crate::support::formal_ready;
@@ -8,7 +8,7 @@ use crate::{Severity, Sink};
 pub(crate) fn assume_on_output_or_state(c: &Cst, out: &mut Sink) {
     for hit in &formal_ready::facts(c).assume_output_or_state {
         out.add(
-            "SV-FPV-001",
+            "SVA-FPV-001",
             "AssumeOnOutputOrState",
             Severity::Warning,
             format!(

@@ -1,4 +1,4 @@
-//! SV-DAT-001 (MissingReturnPath): Non-void function has a control-flow path
+//! SVL-COR-015 (MissingReturnPath): Non-void function has a control-flow path
 //! that reaches end-of-function without returning a value.
 
 use crate::support::cfg_dataflow;
@@ -8,7 +8,7 @@ use crate::{Severity, Sink};
 pub(crate) fn missing_return_path(c: &Cst, out: &mut Sink) {
     for hit in &cfg_dataflow::facts(c).missing_returns {
         out.add(
-            "SV-DAT-001",
+            "SVL-COR-015",
             "MissingReturnPath",
             Severity::Warning,
             format!(

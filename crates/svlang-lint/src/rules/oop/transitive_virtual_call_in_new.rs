@@ -1,4 +1,4 @@
-//! SV-OOP-017 (TransitiveVirtualCallInNew): Constructor `new()` calls a
+//! SVL-OOP-015 (TransitiveVirtualCallInNew): Constructor `new()` calls a
 //! non-virtual helper method on `this` that transitively invokes a virtual method.
 
 use crate::support::call_graph;
@@ -8,7 +8,7 @@ use svlang_model::Design;
 pub(crate) fn transitive_virtual_call_in_new(d: &Design, out: &mut Sink) {
     for hit in call_graph::ctor_transitive_virtual_calls(d) {
         out.add(
-            "SV-OOP-017",
+            "SVL-OOP-015",
             "TransitiveVirtualCallInNew",
             Severity::Warning,
             format!(

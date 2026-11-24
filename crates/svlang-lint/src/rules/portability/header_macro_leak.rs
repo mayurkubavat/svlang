@@ -1,4 +1,4 @@
-//! SV-MAC-001 (HeaderMacroLeak): Macros defined inside header files (.svh) must
+//! SVL-PRT-004 (HeaderMacroLeak): Macros defined inside header files (.svh) must
 //! be undef'd with `undef before the end of the file unless registered as
 //! public API macros.
 
@@ -51,7 +51,7 @@ pub(crate) fn header_macro_leak(c: &Cst, s: &mut Sink) {
             continue;
         }
         s.add(
-            "SV-MAC-001",
+            "SVL-PRT-004",
             "HeaderMacroLeak",
             Severity::Warning,
             format!(

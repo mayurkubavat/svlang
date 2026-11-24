@@ -1,4 +1,4 @@
-//! SV-DUP-005 (CopiedAgentPackage): Flags two packages whose classes have the
+//! SVL-MNT-025 (CopiedAgentPackage): Flags two packages whose classes have the
 //! same roles, fields and method bodies apart from renamed identifiers, for at
 //! least three classes and 80% of the classes in the larger package (classes
 //! with almost no code are not counted).
@@ -36,17 +36,17 @@ fn class_shape(d: &Design, ix: &Index, cls: &Class) -> (String, usize) {
 }
 
 pub(crate) fn copied_agent_package(d: &Design, csts: &[Cst], out: &mut Sink) {
-    // Option `min_classes` (rules.SV-DUP-005.options).
+    // Option `min_classes` (rules.SVL-MNT-025.options).
     fn min_classes() -> usize {
-        crate::options::get("SV-DUP-005", "min_classes", 3) as usize
+        crate::options::get("SVL-MNT-025", "min_classes", 3) as usize
     }
-    // Option `min_similarity` (rules.SV-DUP-005.options).
+    // Option `min_similarity` (rules.SVL-MNT-025.options).
     fn min_percent() -> usize {
-        crate::options::get("SV-DUP-005", "min_similarity", 80) as usize
+        crate::options::get("SVL-MNT-025", "min_similarity", 80) as usize
     }
-    // Option `min_class_tokens` (rules.SV-DUP-005.options).
+    // Option `min_class_tokens` (rules.SVL-MNT-025.options).
     fn min_tokens() -> usize {
-        crate::options::get("SV-DUP-005", "min_class_tokens", 12) as usize
+        crate::options::get("SVL-MNT-025", "min_class_tokens", 12) as usize
     }
     let ix = Index::new(csts);
     let mut generated = Generated::new(d, csts);
@@ -83,7 +83,7 @@ pub(crate) fn copied_agent_package(d: &Design, csts: &[Cst], out: &mut Sink) {
                 continue;
             }
             out.add(
-                "SV-DUP-005",
+                "SVL-MNT-025",
                 "CopiedAgentPackage",
                 Severity::Info,
                 format!(

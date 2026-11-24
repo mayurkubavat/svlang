@@ -1,4 +1,4 @@
-//! SV-RDB-007 (NonDescriptiveName): Flags class properties, and locals of
+//! SVL-MNT-048 (NonDescriptiveName): Flags class properties, and locals of
 //! routines longer than min_lines (default 10), named tmp, temp, val, obj, foo,
 //! d, t and the like (with or without a number; locals also data and value).
 
@@ -57,14 +57,14 @@ fn locals(c: &Cst, routine: NodeId) -> Vec<(String, u32)> {
 }
 
 pub(crate) fn non_descriptive_name(_: &Design, csts: &[Cst], s: &mut Sink) {
-    // Option `min_lines` (rules.SV-RDB-007.options).
+    // Option `min_lines` (rules.SVL-MNT-048.options).
     fn min_lines() -> u32 {
-        crate::options::get("SV-RDB-007", "min_lines", 10) as u32
+        crate::options::get("SVL-MNT-048", "min_lines", 10) as u32
     }
     let classes = Classes::new(csts);
     let report = |s: &mut Sink, name: &str, where_: String, loc: Loc| {
         s.add(
-            "SV-RDB-007",
+            "SVL-MNT-048",
             "NonDescriptiveName",
             Severity::Info,
             format!(

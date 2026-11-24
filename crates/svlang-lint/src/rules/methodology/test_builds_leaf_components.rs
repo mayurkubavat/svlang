@@ -1,4 +1,4 @@
-//! UVM-ROL-004 (TestBuildsLeafComponents): Flags tests that create drivers,
+//! UVM-CMP-021 (TestBuildsLeafComponents): Flags tests that create drivers,
 //! monitors, sequencers, agents, scoreboards or subscribers directly.
 
 use crate::support::class_roles::{role, role_name, user_classes, Index, Role};
@@ -22,7 +22,7 @@ pub(crate) fn test_builds_leaf_components(d: &Design, csts: &[Cst], out: &mut Si
                 continue;
             }
             out.add(
-                "UVM-ROL-004",
+                "UVM-CMP-021",
                 "TestBuildsLeafComponents",
                 Severity::Warning,
                 format!(

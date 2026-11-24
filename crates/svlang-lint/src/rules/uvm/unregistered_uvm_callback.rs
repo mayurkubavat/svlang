@@ -1,4 +1,4 @@
-//! UVM-CBK-001 (UnregisteredUvmCallback): Flags `uvm_callbacks#(T, CB)::add(...)`
+//! UVM-CMP-005 (UnregisteredUvmCallback): Flags `uvm_callbacks#(T, CB)::add(...)`
 //! or `` `uvm_do_callbacks(T, CB, ...) `` uses where the callback class `CB` is
 //! defined in the compilation without a matching `` `uvm_register_cb(T, CB) ``
 //! registration, which causes runtime warnings and silently dropped callbacks.
@@ -78,7 +78,7 @@ pub(crate) fn unregistered_uvm_callback(d: &Design, csts: &[Cst], out: &mut Sink
                 if reported.insert((loc.file, loc.line, cb_bare.to_string())) {
                     let host = params.first().copied().unwrap_or("T");
                     out.add(
-                        "UVM-CBK-001",
+                        "UVM-CMP-005",
                         "UnregisteredUvmCallback",
                         Severity::Warning,
                         format!(

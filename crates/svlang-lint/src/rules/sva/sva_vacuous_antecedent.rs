@@ -1,4 +1,4 @@
-//! SVA-VAC-001 (SvaVacuousAntecedent): Detects constant-false antecedents in
+//! SVA-PRP-015 (SvaVacuousAntecedent): Detects constant-false antecedents in
 //! assertion implications (0 |-> ...).
 //!
 //! Constant false: a false literal, or `&&` terms of which one is the
@@ -80,7 +80,7 @@ pub(crate) fn vacuous_antecedent(c: &Cst, s: &mut Sink) {
         let vacuous = matches!(ant.as_str(), "0" | "1'b0" | "'0" | "false" | "1'sb0") || contradictory(&ant);
         let Some(t) = c.first_tok(left).filter(|_| vacuous) else { continue };
         s.add(
-            "SVA-VAC-001",
+            "SVA-PRP-015",
             "SvaVacuousAntecedent",
             Severity::Error,
             format!(

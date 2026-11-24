@@ -1,4 +1,4 @@
-//! SV-COV-015 (MissingIffOnCovergroupClock): Covergroups sampled by a clocking
+//! SVL-COV-015 (MissingIffOnCovergroupClock): Covergroups sampled by a clocking
 //! event should specify an 'iff' reset guard condition.
 
 use crate::support::names::name_tok;
@@ -19,7 +19,7 @@ pub(crate) fn missing_iff(c: &Cst, s: &mut Sink) {
         let Some(first) = c.first_tok(ev) else { continue };
         let cg = name_tok(c, n).map(|t| c.text_of(t)).unwrap_or("");
         s.add(
-            "SV-COV-015",
+            "SVL-COV-015",
             "MissingIffOnCovergroupClock",
             Severity::Warning,
             format!(

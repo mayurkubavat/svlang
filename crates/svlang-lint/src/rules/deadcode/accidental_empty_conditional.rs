@@ -1,4 +1,4 @@
-//! SV-DED-003 (AccidentalEmptyConditional): Detects accidental semicolons
+//! SVL-DED-003 (AccidentalEmptyConditional): Detects accidental semicolons
 //! immediately following if() or while() headers.
 //!
 //! `if (c) ; else ...` is not reported: with an else the empty branch is a
@@ -22,7 +22,7 @@ pub(crate) fn empty_conditional(c: &Cst, s: &mut Sink) {
             report(
                 s,
                 units.times(c, n),
-                "SV-DED-003",
+                "SVL-DED-003",
                 "AccidentalEmptyConditional",
                 Severity::Error,
                 "Conditional statement 'if (...)' has an empty branch body (stray semicolon ';'). \
@@ -41,7 +41,7 @@ pub(crate) fn empty_conditional(c: &Cst, s: &mut Sink) {
             report(
                 s,
                 units.times(c, n),
-                "SV-DED-003",
+                "SVL-DED-003",
                 "AccidentalEmptyConditional",
                 Severity::Error,
                 "Loop statement 'while (...)' has an empty body (stray semicolon ';'). \

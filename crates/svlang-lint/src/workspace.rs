@@ -29,7 +29,7 @@ pub struct EditorOptions {
     pub config_preference: String,
     /// Only run automatic lint when a repo config file exists (`svlang.lint.requireConfig`).
     pub require_config: bool,
-    /// Keep IEEE 1800 syntax & semantic compiler checks (`SV-CMP-001`) active when automatic linting is `off`.
+    /// Keep IEEE 1800 syntax & semantic compiler checks (`CMP-ERR-001`) active when automatic linting is `off`.
     pub syntax_diagnostics: bool,
     /// Default/override rule preset (`svlang.lint.preset`).
     pub preset: Option<String>,
@@ -150,30 +150,40 @@ impl Workspace {
         let preset = if editor_first || !has_repo_config { ed_preset.or(cfg_preset) } else { cfg_preset.or(ed_preset) };
         let selected = crate::rule_selection(preset, false)?;
         let apply_editor_rules = editor_first || !has_repo_config;
-        let sel_set: HashSet<&str> = editor.select.iter().map(String::as_str).collect();
+        let sel_list: Vec<&str> = editor.select.iter().map(|s| s.trim()).filter(|s| !s.is_empty()).collect();
         let ign_set: HashSet<String> = if apply_editor_rules {
             editor.ignore.iter().map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect()
         } else {
             HashSet::new()
         };
+        let matches_any = |patterns: &[&str], id: &str, name: &str| {
+            patterns.iter().any(|p| crate::rule_selector_matches(p, id, name))
+        };
+        let matches_ign = |id: &str, name: &str| ign_set.iter().any(|p| crate::rule_selector_matches(p, id, name));
+        let matches_sel_or_sub = |id: &str, name: &str| {
+            matches_any(&sel_list, id, name)
+                || crate::sub_rules(id)
+                    .iter()
+                    .any(|s| matches_any(&sel_list, s.id, s.name) || matches_any(&sel_list, s.id, s.finding_name))
+        };
 
         let keep = crate::rules()
             .into_iter()
             .filter(|r| {
-                if apply_editor_rules && (ign_set.contains(r.id) || ign_set.contains(r.name)) {
+                if apply_editor_rules && matches_ign(r.id, r.name) {
                     return false;
                 }
                 if apply_editor_rules
-                    && !sel_set.is_empty()
+                    && !sel_list.is_empty()
                     && !editor_first
                     && editor.preset.is_none()
                     && config.is_none()
                 {
-                    return sel_set.contains(r.id) || sel_set.contains(r.name);
+                    return matches_sel_or_sub(r.id, r.name);
                 }
                 selected(r.id)
                     || config.as_ref().is_some_and(|c| c.selects(r.id, r.name))
-                    || (apply_editor_rules && (sel_set.contains(r.id) || sel_set.contains(r.name)))
+                    || (apply_editor_rules && matches_sel_or_sub(r.id, r.name))
             })
             .map(|r| r.id)
             .collect();
@@ -237,7 +247,7 @@ impl Workspace {
         self.check_inner(open, false)
     }
 
-    /// Runs only IEEE 1800-2023 syntax and semantic compiler checks (`SV-CMP-001`)
+    /// Runs only IEEE 1800-2023 syntax and semantic compiler checks (`CMP-ERR-001`)
     /// without invoking static lint rules (used in Mode 1 when automatic linting is off).
     pub fn check_compiler_only(&self, open: &[PathBuf]) -> Result<Checked, String> {
         self.check_inner(open, true)
@@ -280,7 +290,8 @@ impl Workspace {
         self.session.reset_waivers();
         let (files, mut findings) = self.session.lint_all(&design, &trees, |id| {
             if compiler_only {
-                id == "SV-CMP-001" && !self.ignored.contains("SV-CMP-001")
+                id == "CMP-ERR-001"
+                    && !self.ignored.iter().any(|p| crate::rule_selector_matches(p, "CMP-ERR-001", "CompilerError"))
             } else {
                 self.keep.contains(id)
             }
@@ -289,7 +300,7 @@ impl Workspace {
             filter_standalone_compiler_noise(&trees, &files, &mut findings);
         }
         if !self.ignored.is_empty() {
-            findings.retain(|f| !self.ignored.contains(f.rule) && !self.ignored.contains(f.name));
+            findings.retain(|f| !self.ignored.iter().any(|p| crate::rule_selector_matches(p, f.rule, f.name)));
         }
         let inline = self.session.inline_waived();
         crate::fix::guard_macro_calls(&mut findings);
@@ -309,7 +320,7 @@ impl Workspace {
     }
 }
 
-/// Suppresses missing-external-context `SV-CMP-001` noise when standalone files are
+/// Suppresses missing-external-context `CMP-ERR-001` noise when standalone files are
 /// opened in the editor without a `.svlang-lint/config.py` or `.f` filelist, while
 /// preserving all genuine syntax errors and self-contained IEEE 1800 semantic errors.
 fn filter_standalone_compiler_noise(trees: &[svlang::syntax::Tree], files: &[String], findings: &mut Vec<Finding>) {
@@ -386,7 +397,7 @@ fn filter_standalone_compiler_noise(trees: &[svlang::syntax::Tree], files: &[Str
     }
 
     findings.retain(|f| {
-        if f.rule != "SV-CMP-001" {
+        if f.rule != "CMP-ERR-001" {
             return true;
         }
         let msg = f.message.as_str();

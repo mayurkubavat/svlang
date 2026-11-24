@@ -1,4 +1,4 @@
-//! UVM-TLM-003 (UvmTlmPortSuffix): Enforces standard UVM TLM port suffix naming
+//! UVM-NAM-005 (UvmTlmPortSuffix): Enforces standard UVM TLM port suffix naming
 //! conventions (_ap for analysis ports, _imp for imps, _export for exports,
 //! _port for ports, _fifo for TLM FIFOs).
 
@@ -42,7 +42,7 @@ pub(crate) fn tlm_port_suffix(c: &Cst, s: &mut Sink) {
             }
             let Some(t) = c.first_tok(nm) else { continue };
             s.add(
-                "UVM-TLM-003",
+                "UVM-NAM-005",
                 "UvmTlmPortSuffix",
                 Severity::Warning,
                 format!(

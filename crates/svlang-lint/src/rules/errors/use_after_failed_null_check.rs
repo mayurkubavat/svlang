@@ -1,4 +1,4 @@
-//! SV-ERR-002 (UseAfterFailedNullCheck): Flags a handle that a null check, a
+//! SVL-COR-020 (UseAfterFailedNullCheck): Flags a handle that a null check, a
 //! failed uvm_config_db::get() or a failed $cast() showed to be null,
 //! dereferenced later on the same path because the failure branch did not stop
 //! (SpotBugs NP_NULL_ON_SOME_PATH).
@@ -231,7 +231,7 @@ pub(crate) fn use_after_failed_null_check(c: &Cst, out: &mut Sink) {
             let Some(loc) = start(c, at) else { continue };
             for _ in 0..n {
                 out.add(
-                    "SV-ERR-002",
+                    "SVL-COR-020",
                     "UseAfterFailedNullCheck",
                     Severity::Error,
                     format!(

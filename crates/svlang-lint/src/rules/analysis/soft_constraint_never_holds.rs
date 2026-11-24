@@ -1,4 +1,4 @@
-//! SV-RND-031 (SoftConstraintNeverHolds): Flags soft constraints that the
+//! SVL-RND-028 (SoftConstraintNeverHolds): Flags soft constraints that the
 //! class's own hard constraints always override (`soft x == 9` with
 //! `x inside {[1:3]}`): the default they express never takes effect.
 
@@ -18,7 +18,7 @@ pub(crate) fn soft_never_holds(_: &Design, csts: &[Cst], out: &mut Sink) {
                     continue;
                 }
                 out.add(
-                    "SV-RND-031",
+                    "SVL-RND-028",
                     "SoftConstraintNeverHolds",
                     Severity::Warning,
                     format!(

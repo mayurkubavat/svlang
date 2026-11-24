@@ -1,4 +1,4 @@
-//! SVA-ACT-003 (SideEffectInAssertionAction): Flags assignments, increments and
+//! SVA-PRP-010 (SideEffectInAssertionAction): Flags assignments, increments and
 //! other writes inside the pass or fail action of an immediate or concurrent
 //! assertion.
 
@@ -44,7 +44,7 @@ pub(crate) fn side_effect_in_action(c: &Cst, s: &mut Sink) {
                 add_n(
                     s,
                     n,
-                    "SVA-ACT-003",
+                    "SVA-PRP-010",
                     "SideEffectInAssertionAction",
                     Severity::Warning,
                     format!(

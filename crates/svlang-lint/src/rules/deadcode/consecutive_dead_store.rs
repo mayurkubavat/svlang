@@ -1,4 +1,4 @@
-//! SV-DED-004 (ConsecutiveDeadStore): Detects consecutive assignments to the
+//! SVL-DED-004 (ConsecutiveDeadStore): Detects consecutive assignments to the
 //! same variable where the initial value is immediately overwritten without
 //! being read.
 
@@ -40,7 +40,7 @@ pub(crate) fn dead_store(c: &Cst, s: &mut Sink) {
                 report(
                     s,
                     units.times(c, b),
-                    "SV-DED-004",
+                    "SVL-DED-004",
                     "ConsecutiveDeadStore",
                     Severity::Warning,
                     format!(

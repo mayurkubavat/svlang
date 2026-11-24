@@ -8,7 +8,7 @@
 //! `*` waives any rule. A quoted pattern after the rule narrows the waiver to
 //! findings whose message it matches, searched for as `std::regex_search`
 //! does ([`crate::pattern`]). A pattern that does not compile, or a quote left
-//! open, waives nothing and is reported as a UVM-WV-001 error at the comment,
+//! open, waives nothing and is reported as a SVL-WVR-002 error at the comment,
 //! as svlang-lint reports it.
 
 use std::collections::{HashMap, HashSet};
@@ -68,7 +68,7 @@ fn message_pattern(rest: &str) -> Result<Option<String>, String> {
     Err(out)
 }
 
-/// The message of the UVM-WV-001 error for a waiver comment whose pattern
+/// The message of the SVL-WVR-002 error for a waiver comment whose pattern
 /// is unusable (svlang-lint's wording).
 pub(crate) const BAD_PATTERN: &str = "invalid message regex '";
 
@@ -90,7 +90,8 @@ fn waives(text: &str, f: &Finding, at: u32, same_line: bool, compiled: &mut Comp
             if rest.starts_with('-') || rest.starts_with(':') {
                 continue;
             }
-            if !rest.contains(f.rule) && !rest.contains('*') {
+            let head = rest.split('"').next().unwrap_or(rest);
+            if !rule_ids(head).any(|r| crate::rule_selector_matches(r, f.rule, "")) {
                 continue;
             }
             match message_pattern(rest) {
@@ -229,14 +230,14 @@ fn waives_in_blocks(
     compiled: &mut Compiled,
     bad: &mut Bad,
 ) -> Option<u32> {
-    if f.rule == "SV-WVR-001" {
+    if f.rule == "SVL-WVR-001" {
         return None;
     }
     for sp in spans {
         if line < sp.start_line || line > sp.end_line {
             continue;
         }
-        if !sp.rules.iter().any(|r| r == "*" || r == f.rule) {
+        if !sp.rules.iter().any(|r| crate::rule_selector_matches(r, f.rule, "")) {
             continue;
         }
         match message_pattern(&sp.rest) {
@@ -313,7 +314,7 @@ pub(crate) fn apply_into(
     for (path, line, pattern, why) in bad_at {
         let Some(file) = files.iter().position(|f| *f == path) else { continue };
         findings.push(Finding {
-            rule: "UVM-WV-001",
+            rule: "SVL-WVR-002",
             name: "UnusedWaiver",
             severity: crate::Severity::Error,
             message: format!("{BAD_PATTERN}{pattern}': {why}"),
@@ -339,11 +340,11 @@ pub(crate) fn apply(findings: &mut Vec<Finding>, files: &[String]) -> usize {
     apply_into(findings, files, &state)
 }
 
-/// The UVM-WV-001 errors [`apply`] added for unusable waiver patterns: kept
+/// The SVL-WVR-002 errors [`apply`] added for unusable waiver patterns: kept
 /// out of the config, waivers and `--changed-since`, as svlang-lint adds them
 /// after those.
 pub(crate) fn is_bad_pattern(f: &Finding) -> bool {
-    f.rule == "UVM-WV-001" && f.message.starts_with(BAD_PATTERN)
+    f.rule == "SVL-WVR-002" && f.message.starts_with(BAD_PATTERN)
 }
 
 /// A waiver comment that waived nothing: (file, line, comment text).
@@ -388,7 +389,8 @@ pub(crate) fn unused_comments_with(
             if used.contains(&(file.clone(), line)) {
                 continue;
             }
-            if rule_ids(&l[at..]).any(|r| r == "*" || active.contains(r)) {
+            let head = l[at..].split('"').next().unwrap_or(&l[at..]);
+            if rule_ids(head).any(|r| r == "*" || active.iter().any(|a| crate::rule_selector_matches(r, a, ""))) {
                 unused.push((file.clone(), line, l[comment.unwrap_or(at)..].to_string()));
             }
         }
@@ -402,7 +404,7 @@ pub(crate) fn unused_comments(files: &[String], active: &HashSet<&str>) -> (usiz
     unused_comments_with(files, active, &used)
 }
 
-/// The rule IDs (`SV-STY-002`, `UVM-NAM-101.x`) and `*` in `text`, as
+/// The rule IDs (`SVL-STY-001`, `UVM-NAM-101.x`) and `*` in `text`, as
 /// svlang-lint's `[A-Z][A-Z0-9]*-[A-Z][A-Z0-9]*-[0-9]+[A-Za-z0-9.]*|\*`.
 fn rule_ids(text: &str) -> impl Iterator<Item = &str> {
     let b = text.as_bytes();
@@ -424,12 +426,12 @@ fn rule_ids(text: &str) -> impl Iterator<Item = &str> {
     })
 }
 
-/// The length of a rule ID at the start of `b`, if one starts there.
+/// The length of a rule ID or prefix wildcard (`RTL-*`, `SVL-STY-*`) at the start of `b`.
 fn id_at(b: &[u8]) -> Option<usize> {
     let up = |c: u8| c.is_ascii_uppercase();
     let upnum = |c: u8| c.is_ascii_uppercase() || c.is_ascii_digit();
     let mut i = 0;
-    for _ in 0..2 {
+    for seg in 0..2 {
         if !b.get(i).copied().is_some_and(up) {
             return None;
         }
@@ -441,6 +443,12 @@ fn id_at(b: &[u8]) -> Option<usize> {
             return None;
         }
         i += 1;
+        if seg == 0 && b.get(i) == Some(&b'*') {
+            return Some(i + 1);
+        }
+    }
+    if b.get(i) == Some(&b'*') {
+        return Some(i + 1);
     }
     let digits = i;
     while b.get(i).is_some_and(u8::is_ascii_digit) {
@@ -461,17 +469,18 @@ mod tests {
 
     #[test]
     fn finds_rule_ids_as_svlang_lint_does() {
-        let ids: Vec<&str> = rule_ids(" SV-STY-002 -- x, UVM-NAM-101.a and * not sv-sty-1 or A-B-").collect();
-        assert_eq!(ids, ["SV-STY-002", "UVM-NAM-101.a", "*"]);
+        let ids: Vec<&str> =
+            rule_ids(" SVL-STY-001 -- x, RTL-*, SVL-NAM-*, UVM-NAM-101.a and * not sv-sty-1 or A-B-").collect();
+        assert_eq!(ids, ["SVL-STY-001", "RTL-*", "SVL-NAM-*", "UVM-NAM-101.a", "*"]);
     }
 
     #[test]
     fn parses_closed_and_unclosed_block_waivers() {
         let lines: Vec<String> = [
-            "// svlang-lint:off SV-STY-002",
+            "// svlang-lint:off SVL-STY-001",
             "int a;",
-            "// svlang-lint:on SV-STY-002",
-            "// verissimo_lint: waive_start SV-DED-001",
+            "// svlang-lint:on SVL-STY-001",
+            "// verissimo_lint: waive_start SVL-DED-001",
             "int b;",
         ]
         .into_iter()
@@ -480,6 +489,6 @@ mod tests {
         let (spans, unclosed) = parse_blocks(&lines);
         assert_eq!(spans.len(), 2);
         assert_eq!((spans[0].start_line, spans[0].end_line), (1, 3));
-        assert_eq!(unclosed, vec![(4, "SV-DED-001".to_string())]);
+        assert_eq!(unclosed, vec![(4, "SVL-DED-001".to_string())]);
     }
 }

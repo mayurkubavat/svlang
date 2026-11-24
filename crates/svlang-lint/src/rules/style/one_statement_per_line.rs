@@ -1,4 +1,4 @@
-//! SV-STY-011 (OneStatementPerLine): Prohibit multiple procedural statements on
+//! SVL-STY-009 (OneStatementPerLine): Prohibit multiple procedural statements on
 //! the same line separated by semicolons.
 
 use crate::support::source_layout::Buffers;
@@ -31,7 +31,7 @@ fn check_items(c: &Cst, s: &mut Sink, b: &Buffers, items: &[NodeId]) {
         if l == b.line(next) && l != last_reported {
             last_reported = l;
             s.add(
-                "SV-STY-011",
+                "SVL-STY-009",
                 "OneStatementPerLine",
                 Severity::Warning,
                 format!(

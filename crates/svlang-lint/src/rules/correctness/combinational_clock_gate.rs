@@ -1,4 +1,4 @@
-//! SV-RTL-003 (CombinationalClockOrResetGate): `always_ff` clocked by a locally
+//! RTL-SYN-003 (CombinationalClockOrResetGate): `always_ff` clocked by a locally
 //! driven combinational net instead of a primary clock or clock-gating cell.
 
 use crate::support::rtl_fsm_cdc;
@@ -8,7 +8,7 @@ use crate::{Severity, Sink};
 pub(crate) fn combinational_clock_gate(c: &Cst, out: &mut Sink) {
     for hit in &rtl_fsm_cdc::facts(c).comb_clock_gate {
         out.add(
-            "SV-RTL-003",
+            "RTL-SYN-003",
             "CombinationalClockOrResetGate",
             Severity::Warning,
             format!(

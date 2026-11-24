@@ -1,4 +1,4 @@
-//! SV-OOP-002 (UncheckedDynamicCast): The return value of $cast(dest, src) must
+//! SVL-OOP-002 (UncheckedDynamicCast): The return value of $cast(dest, src) must
 //! be checked (e.g., in an if statement or assert) to prevent silent
 //! null-pointer dereferences on cast failures.
 
@@ -21,7 +21,7 @@ pub(crate) fn unchecked_dynamic_cast(c: &Cst, s: &mut Sink) {
         }
         for _ in 0..ast_times(c, e) {
             s.add(
-                "SV-OOP-002",
+                "SVL-OOP-002",
                 "UncheckedDynamicCast",
                 Severity::Warning,
                 "Return value of $cast() is ignored or cast to void. If dynamic cast fails, destination handle remains null, risking runtime null-pointer dereferences."

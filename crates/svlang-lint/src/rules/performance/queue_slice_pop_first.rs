@@ -1,4 +1,4 @@
-//! SV-PRF-008 (QueueSlicePopFirst): Disallow queue slicing ('q = q[1:$]') to
+//! SVL-PRF-008 (QueueSlicePopFirst): Disallow queue slicing ('q = q[1:$]') to
 //! drop head elements.
 
 use crate::support::ast::{assignment_op, kids, source_text, symbol_ref, type_head, typedef_named, unparen, Ast, Decl};
@@ -54,7 +54,7 @@ fn queue_slice(c: &Cst, a: &Ast, s: &mut Sink) {
         }
         let Some(at) = c.first_tok(lhs) else { continue };
         s.add(
-            "SV-PRF-008",
+            "SVL-PRF-008",
             "QueueSlicePopFirst",
             Severity::Warning,
             format!(

@@ -1,4 +1,4 @@
-//! SV-STY-001 (ClassMemberPrefix): Enforces that member properties of
+//! UVM-NAM-003 (ClassMemberPrefix): Enforces that member properties of
 //! uvm_component classes begin with 'm_' prefix to distinguish local member
 //! state from arguments and parameters.
 
@@ -16,7 +16,7 @@ pub(crate) fn class_member_prefix(d: &Design, out: &mut Sink) {
             }
             if !p.name.starts_with("m_") {
                 out.add(
-                    "SV-STY-001",
+                    "UVM-NAM-003",
                     "ClassMemberPrefix",
                     Severity::Info,
                     format!(

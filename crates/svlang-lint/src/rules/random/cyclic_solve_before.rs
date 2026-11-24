@@ -1,4 +1,4 @@
-//! SV-RND-010 (CyclicSolveBefore): Detects cyclic dependencies in
+//! SVL-RND-009 (CyclicSolveBefore): Detects cyclic dependencies in
 //! solve...before constraint ordering (e.g. solve a before b and solve b before
 //! a).
 
@@ -84,7 +84,7 @@ pub(crate) fn cyclic_solve_before(c: &Cst, s: &mut Sink) {
                     }
                     if u == v || has_path(&adj, v, u) {
                         s.add(
-                            "SV-RND-010",
+                            "SVL-RND-009",
                             "CyclicSolveBefore",
                             Severity::Error,
                             format!(

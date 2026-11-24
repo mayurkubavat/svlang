@@ -1,4 +1,4 @@
-//! SV-NAM-002 (PackageNamingConvention): Enforces that package identifiers end
+//! SVL-NAM-001 (PackageNamingConvention): Enforces that package identifiers end
 //! with '_pkg' (e.g., 'axi_pkg') to standardize namespaces.
 
 use crate::support::names::name_tok;
@@ -12,7 +12,7 @@ pub(crate) fn package_naming(c: &Cst, s: &mut Sink) {
         let name = c.text_of(t);
         if !name.is_empty() && !name.ends_with("_pkg") {
             s.add(
-                "SV-NAM-002",
+                "SVL-NAM-001",
                 "PackageNamingConvention",
                 Severity::Warning,
                 format!(

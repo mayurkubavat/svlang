@@ -6,40 +6,32 @@
 
 ## Key Features
 
-- **474 Specialized Verification Rules** ([catalog](../rules/README.md)): coverage across 20 categories (UVM methodology, OOP design, concurrency & delta-cycle races, SVA assertion health, formal readiness, RTL/FSM/CDC, coverage bins, random constraints, and code style).
+- **475 Rules & Sub-Rules in a 2-Tier `DOM-GRP-NNN` (`3-3-3`) Taxonomy** ([catalog](../rules/README.md)): 5 top-level domains (`CMP`, `RTL`, `SVL`, `SVA`, `UVM`), 34 3-letter groups, and 18 categories covering RTL/FSM/CDC, SVA & formal readiness (`SVA-FPV-*`), UVM methodology & RAL, concurrency & delta-cycle races, solver constraints, coverage, OOP, performance, security, and style.
+- **Prefix Wildcard Targeting**: Select, auto-fix, ignore, or waive whole domains and groups (`--rule 'RTL-*'`, `--rule 'SVL-CON-*,SVA-*'`, `--fix-rule 'SVL-STY-*'`, `// svlang-lint:off SVL-STY-*`).
 - **Deep Semantic Graph Analyzers**:
-  - **Objection Control Flow Graph (CFG)**: Verifies every `raise_objection()` path strictly reaches a matching `drop_objection()` across routines and branches without early-return leaks or asymmetric divergence.
-  - **Config DB Cross-Component Resolver**: Matches `set()` and `get()` calls across hierarchy strings to detect type mismatches and unconfigured lookups.
-  - **TLM Port-to-Export Elaboration Checker**: Detects unmapped driver pull ports and unconnected analysis ports across `connect_phase()` methods.
-- **Sub-Second Execution**: Pure-Rust parallel rule engine analyzing complex verification environments across all CPU cores.
-- **Type-Safe Semantic Analysis**: Resolves symbol hierarchies, parameterizations, expression types, and virtual method tables using `svlang`'s IEEE 1800-2023 compiler front end.
-- **Automated Fix-It Engine (`--fix`)**: Applies rewrites that do not change simulation behaviour (end labels, whitespace). Fixes that can change behaviour need `--unsafe-fixes`; suggestions marked display-only are never applied.
-- **Baseline Technical Debt Management (`--baseline`)**: Snapshot legacy violations into a JSON baseline to enforce zero-regression on new pull requests.
-- **Granular Waivers (`--waivers`)**: Waive rules by rule ID, file glob pattern, or line number with mandatory rationale tracking.
-- **CI/CD Integration**: Emits industry-standard SARIF 2.1.0 (for GitHub Code Scanning / GitLab Code Quality) and interactive, self-contained HTML dashboards.
-- **Modular Unit Testsuite**: Paired `bad.sv`, `good.sv`, and `expect.json` test cases under `testdata/rules/`.
+  - **Objection Control Flow Graph (CFG)**: Verifies every `raise_objection()` path strictly reaches a matching `drop_objection()` across routines and branches without early-return leaks or asymmetric divergence (`UVM-OBJ-001`, `UVM-OBJ-003`, `UVM-PHS-006`).
+  - **Config DB Cross-Component Resolver**: Matches `set()` and `get()` calls across hierarchy strings to detect type mismatches and unconfigured lookups (`UVM-CFG-001`, `UVM-CFG-005`, `UVM-CFG-012`).
+  - **TLM Port-to-Export Elaboration Checker**: Detects unmapped driver pull ports, unconnected analysis ports, and starved analysis FIFOs across `connect_phase()` (`UVM-TLM-001`, `UVM-TLM-003`, `UVM-TLM-005`).
+- **Sub-Second Parallel Execution**: Pure-Rust multi-core scheduler analyzing large RTL and UVM environments with deterministic output order and incremental `.svlang_lint_cache/` reuse.
+- **Automated Fix-It Engine (`--fix`)**: Applies simulation-preserving safe rewrites automatically; behavior-changing fixes require `--unsafe-fixes`, and display-only hints are shown without modifying files.
+- **Zero-Regression Baselines & Scoped Waivers**: Fingerprint-based `.svlang-lint/baseline.json`, expiring/re-grading waivers in `.svlang-lint/config.py` / `waivers.json`, and Verissimo-compatible inline/block waivers.
+- **CI/CD & IDE Integration**: Emits SARIF 2.1.0, JSON, self-contained HTML dashboards, and powers `svlang lsp` + the [`svlang.svlang`](../../editors/vscode/README.md) VS Code / Open VSX extension.
 
 ---
 
-## Rule Domain Categories
+## `DOM-GRP-NNN` Rule Taxonomy
 
-| Category | Description |
-| :--- | :--- |
-| **UVM Methodology** | Factory registration, phasing, objection CFG balancing, cross-component config_db, TLM topology |
-| **Concurrency** | Delta-cycle oscillations, `always_comb` triggers, fork-join variable capture, circular wait deadlocks |
-| **SVA & Formal Readiness** | Vacuous antecedents, combinatorial assert glitches, disable-iff resets, pre-FPV checks (`SV-FPV-*`) |
-| **Randomization** | Unchecked `randomize()`, non-pure functions in constraints, contradictory constraints, cyclic `solve-before` |
-| **Coverage** | Cross-bin explosion, illegal bin overlaps, 0-weight coverpoints, unreferenced covergroups |
-| **OOP & Architecture** | Non-virtual overrides, object slicing, downcast safety, virtual call in constructor |
-| **Performance** | Deep-copying dynamic arrays by value, string concatenation in loops, unbounded arrays in constraints |
-| **Correctness & Safety** | Off-by-one queue indexing, self-comparisons, non-blocking assignments in functions, casex hazards |
-| **Types & DPI** | Mixed-sign comparisons, redundant `$cast`, non-void task return types, conflicting DPI prototypes |
-| **RTL & Dead Code** | Latches, FSM/CDC checks, unused locals/fields/parameters, unreachable statements |
-| **Deprecated & Smells** | OVM legacy APIs, banned `uvm_field_*` macros, `uvm_do` hiding, god-methods, magic delays |
-| **Style & Formatting** | Mandatory end labels, line length limits, capitalization, naming conventions |
-| **Software Engineering** | Copy-paste bugs, unreported failures, testbench layering, cohesion/coupling metrics, cognitive complexity |
+Every diagnostic ID follows **`DOM-GRP-NNN`** (3-letter domain, 3-letter group, 3-digit number):
 
-> Every rule, with its category, severity, presets, guidelines and links to its bad/good examples, is listed in the generated [Rule Catalog](../rules/README.md) (`svlang lint --list-rules --json -` gives the same data as JSON).
+| Domain | Selector | Groups (`DOM-GRP`) | Categories | What it checks |
+| :--- | :--- | :--- | :--- | :--- |
+| **`CMP`** | `CMP-*` | `CMP-ERR` | `Compiler` | Preprocessor, parser, elaboration, and IEEE 1800 semantic errors (`CMP-ERR-001`) & warnings (`CMP-ERR-002`) |
+| **`RTL`** | `RTL-*` | `RTL-SYN`, `RTL-FSM`, `RTL-CDC`, `RTL-DAT` | `RTL` | Reset polarity/completeness, gated clocks, inferred latches, clocked blocking races, FSM deadlocks/unreachable states, CDC, `casex`/X-equality, part-selects |
+| **`SVL`** | `SVL-*` | `SVL-COR`, `SVL-TYP`, `SVL-OOP`, `SVL-CON`, `SVL-RND`, `SVL-COV`, `SVL-PRF`, `SVL-DED`, `SVL-MNT`, `SVL-WVR`, `SVL-PRT`, `SVL-DPI`, `SVL-SEC`, `SVL-DEP`, `SVL-STY`, `SVL-NAM` | `Correctness`, `Types`, `OOP`, `Concurrency`, `Randomization`, `Coverage`, `Performance`, `DeadCode`, `Maintainability`, `Portability`, `Security`, `Deprecated`, `Style`, `Naming` | SV expressions & CFG dataflow, OOP & `$cast`, `fork`/`join` & clocking blocks, constraint solver soundness, covergroups, container performance, dead code, complexity/clones, DPI-C, security, style & naming |
+| **`SVA`** | `SVA-*` | `SVA-PRP`, `SVA-FPV` | `SVA` | Concurrent/immediate SVA clocks, resets, action blocks, vacuous antecedents, and pre-FPV formal readiness (`SVA-FPV-001..005`) |
+| **`UVM`** | `UVM-*` | `UVM-FAC`, `UVM-PHS`, `UVM-OBJ`, `UVM-CFG`, `UVM-SEQ`, `UVM-TLM`, `UVM-CMP`, `UVM-RAL`, `UVM-DEP`, `UVM-PRT`, `UVM-NAM` | `UVM`, `Deprecated`, `Portability`, `Naming` | Factory, phasing, objections, `uvm_config_db`, sequences/sequencers, TLM/scoreboards, component layering/roles, RAL register blocks/maps, UVM deprecations & naming |
+
+> Every rule, with its category, severity, presets, guidelines and links to its `bad.sv`/`good.sv` examples, is listed in the generated [Rule Catalog](../rules/README.md) (`svlang lint --list-rules --json -` gives the same data as JSON).
 
 ---
 
@@ -92,7 +84,7 @@ svlang lint tb/top.sv --preset soundness
 # Run only UVM methodology checks
 svlang lint tb/top.sv --preset methodology
 
-# Run pre-FPV formal-readiness checks (SV-FPV-001..005)
+# Run pre-FPV formal-readiness checks (SVA-FPV-001..005)
 svlang lint tb/top.sv --preset formal-ready
 
 # Run only performance optimizations
@@ -130,21 +122,23 @@ svlang lint tb/top.sv --conformance            # pass/fail per guideline after a
 svlang lint tb/top.sv --guideline MG-9.2 --history  # hotspots and change coupling from git
 ```
 
-### Single-Rule Targeting
-Run or debug a specific rule against a source file in milliseconds:
+### Rule & Prefix Wildcard Targeting
+Run or debug a single rule, a comma-separated list, or an entire `DOM-*` / `DOM-GRP-*` prefix in milliseconds:
 ```bash
-svlang lint tb/my_seq.sv --rule UVM-BAN-001
+svlang lint rtl/alu.sv --rule 'RTL-*'
+svlang lint tb/top.sv  --rule 'SVL-CON-*,UVM-OBJ-*'
+svlang lint tb/my_seq.sv --rule UVM-DEP-006
 svlang lint tb/my_scb.sv --rule ScoreboardLeftoverQueue
 ```
 
 ### Compiler errors and warnings
-The front end's own diagnostics are findings too: errors are `SV-CMP-001` and warnings `SV-CMP-002`. They appear in the console, JSON, SARIF, HTML and the editor, and can be waived or baselined like any other finding.
+The front end's own diagnostics are findings too: errors are `CMP-ERR-001` and warnings `CMP-ERR-002`. They appear in the console, JSON, SARIF, HTML and the editor, and can be waived or baselined like any other finding.
 
 ### Findings in macros
 A finding in code that a macro produced is reported at the line that uses the macro (column 0), because that is the line you can waive or change, with a note naming the macro and pointing at the place in its body the finding is about:
 
 ```
-tb/env.sv:10:0: [ERROR] SV-COR-008 (SelfComparison): Self-comparison detected: ...
+tb/env.sv:10:0: [ERROR] SVL-COR-004 (SelfComparison): Self-comparison detected: ...
     note: tb/defs.svh:4:11: in the expansion of macro 'SET_ALL'
 ```
 
@@ -156,7 +150,7 @@ The note is in the console, JSON (`related`), SARIF (`relatedLocations`) and the
 | Status | Meaning |
 |---|---|
 | 0 | No ERROR finding. |
-| 1 | At least one ERROR finding, compiler errors (`SV-CMP-001`) included; also `--strict-new-files` when a new file has findings. |
+| 1 | At least one ERROR finding, compiler errors (`CMP-ERR-001`) included; also `--strict-new-files` when a new file has findings. |
 | 2 | The run could not start: an unknown option, a source, file list (nested ones too), library file or `-y` directory that is missing or cannot be read (a directory or device given as a source included), or a configuration that fails to load. A missing `-I` / `+incdir+` directory is not an error. Unknown simulator options (`+acc`, `-l run.log`) are ignored. |
 | 4 | `--strict-waivers` found unused, expired or stale waivers. |
 
@@ -183,12 +177,12 @@ svlang lint tb/top.sv --cache-dir /tmp/svlang-lint-cache
 ```
 
 ### Automated Fix-It Rewrites
-Each fix is `safe`, `unsafe`, or `display-only`. `--fix` writes only safe fixes (end labels, whitespace, rewrites that keep the same simulation behaviour). `casex` to `casez`, `==` to `===`, scheduling changes, and edits that touch factory names, `config_db`, objections, or phase order are unsafe: they are reported, and applied only with `--unsafe-fixes`. A display-only fix (for example a suggested `at_least` value) is shown in JSON, SARIF, HTML, and the editor, and is never written automatically. Unsafe fixes that were left alone are counted: `N fixes applied, M unsafe fixes skipped (use --unsafe-fixes)`. Style fixes (safe unless noted): end labels (SV-STY-005/006/104), trailing whitespace and tabs (SV-STY-015/101/102), a space between a control keyword and `(` (SV-STY-012), one statement per line at the same indent (SV-STY-011), the `;` after a `` `uvm_* `` macro call (SV-STY-002), the width of an unsized based literal such as `'hFF` to `32'hFF` (SV-STY-010; not for `x`/`z` digits or plain decimals, whose signedness would change), and an `` `ifndef `` include guard around a header (SV-STY-013, unsafe: a header meant to be included twice stops working). Naming rules have no fix, since a rename must update every use across files. UVM fixes (all unsafe): a missing `` `uvm_object_utils `` / `` `uvm_component_utils `` is added after the class header (UVM-FAC-003, not for parameterized classes), a missing `super.<phase>(phase)` becomes the phase's first statement after its declarations (UVM-PHS-001), and a `$display("fmt", ...)` statement becomes `` `uvm_info(get_type_name(), $sformatf("fmt", ...), UVM_LOW) `` (UVM-LOG-002, instance methods only).
+Each fix is `safe`, `unsafe`, or `display-only`. `--fix` writes only safe fixes (end labels, whitespace, rewrites that keep the same simulation behaviour). `casex` to `casez`, `==` to `===`, scheduling changes, and edits that touch factory names, `config_db`, objections, or phase order are unsafe: they are reported, and applied only with `--unsafe-fixes`. A display-only fix (for example a suggested `at_least` value) is shown in JSON, SARIF, HTML, and the editor, and is never written automatically. Unsafe fixes that were left alone are counted: `N fixes applied, M unsafe fixes skipped (use --unsafe-fixes)`. Style fixes (safe unless noted): end labels (SVL-STY-003/006/104), trailing whitespace and tabs (SVL-STY-012/101/102), a space between a control keyword and `(` (SVL-STY-010), one statement per line at the same indent (SVL-STY-009), the `;` after a `` `uvm_* `` macro call (SVL-STY-001), the width of an unsized based literal such as `'hFF` to `32'hFF` (SVL-STY-008; not for `x`/`z` digits or plain decimals, whose signedness would change), and an `` `ifndef `` include guard around a header (SVL-STY-011, unsafe: a header meant to be included twice stops working). Naming rules have no fix, since a rename must update every use across files. UVM fixes (all unsafe): a missing `` `uvm_object_utils `` / `` `uvm_component_utils `` is added after the class header (UVM-FAC-003, not for parameterized classes), a missing `super.<phase>(phase)` becomes the phase's first statement after its declarations (UVM-PHS-001), and a `$display("fmt", ...)` statement becomes `` `uvm_info(get_type_name(), $sformatf("fmt", ...), UVM_LOW) `` (UVM-CMP-009, instance methods only).
 ```bash
 svlang lint tb/legacy_code.sv --fix-dry-run   # print the diff, change nothing
 svlang lint tb/legacy_code.sv --fix           # rewrite safe fixes
 svlang lint tb/legacy_code.sv --fix --unsafe-fixes   # also apply behaviour-changing fixes
-svlang lint tb/legacy_code.sv --fix --fix-rule SV-COR-009,SV-STY-005   # only these rules' fixes
+svlang lint tb/legacy_code.sv --fix --fix-rule RTL-DAT-002,SVL-STY-003   # only these rules' fixes
 ```
 Fixes land in the file that holds the code, including included `.svh` files. Waived and baselined findings are not fixed. A file edited after it was read is skipped, and a file with compile errors is never rewritten. Fixes inside macro expansions are left alone, and a fix whose replacement would drop a macro call the code wrote (for example `` d[1+`MSB:7] `` rewritten from the expansion) becomes display-only. One `--fix` run repeats passes until nothing changes: overlapping fixes and findings that a fix uncovers are handled in the next pass, and the final report shows what is left in the fixed code. It stops after 10 passes, or as soon as fixes start undoing each other, with a warning. `tests/test_fix_invariants.py` checks on every rule test file, and on mutated copies, that `--fix` never crashes or hangs, adds no compile errors, keeps every macro call, and settles in one run. Each file is written to a temporary copy and renamed into place. In the editor a safe fix is the preferred quick fix; unsafe and display-only fixes are offered as ordinary code actions.
 
@@ -225,7 +219,7 @@ svlang lint tb/*.sv --python-rules my_rules/ --sarif results.sarif
 See [Python Rule SDK Documentation](python_rule_sdk.md) for full API reference, context query helpers, and tutorials.
 
 ### Explain a rule
-`--explain SV-DUP-002` (ID or name) prints what the rule checks, the methodology guidelines
+`--explain SVL-MNT-022` (ID or name) prints what the rule checks, the methodology guidelines
 it enforces, the options it reads with their defaults, and a flagged and a fixed example.
 The examples are the rule's regression tests (`testdata/rules/<category>/<ID>/`), compiled into
 the binary at build time, so they always match what the rule does.
@@ -238,23 +232,17 @@ set and sets nobody reads marked. Findings are attached to the component class t
 in. Use a `.json` path for the same data in machine-readable form.
 
 ### Language Server Protocol (LSP) & IDE Integration
-Run svlang-lint as an in-editor daemon for live linting and code browsing in VS Code, Cursor or any LSP client:
+Run `svlang` as an in-editor language server for VS Code, Cursor, Antigravity, Neovim, or any LSP client:
 ```bash
-# The language server, over stdin/stdout (`svlang lint --lsp` starts the same one)
+# Language server over stdin/stdout (`svlang lint --lsp` starts the same server)
 svlang lsp
 ```
-One server gives lint diagnostics and quick fixes (a rule's fix, or a waiver
-comment on the line above), outline, go to definition, references, hover and
-completion. It lints on a thread of its own once typing pauses, so browsing
-answers while a check runs. Initialization options: `lint` and `navigation`
-(both `true` by default), `libraryPaths`, `exclude`, `useUvmHome`.
-The server finds the project config from the workspace root and compiles the
-project the way the CLI does, with your unsaved buffers in place of the files on
-disk. Give the config `sources` (or `filelists`), `include_dirs` and `defines`
-so a class in an included `.svh` is linted with the UVM library and the rest of
-the testbench around it; without them, the open files are compiled on their own.
-Each finding carries its rule ID and a precise range, and offers a "Waive RULE on
-this line" quick fix (plus the rule's own fix where it has one).
+`svlang lsp` provides:
+- **Compiler-backed navigation & highlighting**: semantic tokens, inactive `` `ifdef `` region dimming, document outline, workspace symbols, go-to-definition/type-definition, find references, Type Hierarchy, Call Hierarchy, **RTL Module Hierarchy** (`svlang/rtlHierarchy`), and **Signal Driver/Load Tracing** (`svlang/traceSignal`).
+- **Mode 1 default workflow**: in the VS Code / Open VSX extension (`svlang.svlang`), `svlang.lint.trigger` defaults to `"off"` with `svlang.diagnostics.syntaxAndSemantics = true` — giving instant code browsing and live IEEE 1800-2023 syntax/semantic checks (`CMP-ERR-001`) out of the box, while full static lint rules run on demand (`Lint Now` in the Status Bar) or automatically when switched to `"onSave"` / `"onType"`.
+- **Quick fixes & waivers**: safe/unsafe rule fixes, `source.fixAll.svlang`, inline `// svlang-lint-disable-next-line <RULE>` insertion, and one-click `Ignore <RULE>` in Workspace or User settings.
+
+Project context comes automatically from `.svlang-lint/config.py` (or editor settings `svlang.compile.{filelists,includeDirs,defines}` when no repo config is present), evaluating unsaved editor buffers in memory via `svlang::syntax::overlay`:
 
 ```python
 class Project(ProjectConfig):
@@ -263,7 +251,7 @@ class Project(ProjectConfig):
     defines = ["UVM_NO_DPI"]
 ```
 
-See [`editors/vscode/`](../../editors/vscode/) for the ready-to-use VS Code / Cursor extension.
+See [`editors/vscode/README.md`](../../editors/vscode/README.md) for the full extension guide.
 
 ---
 
@@ -314,7 +302,7 @@ class Project(ProjectConfig):
         max_columns = 140
 
     class NoCasex(RuleConfig):
-        rule = "SV-COR-009"
+        rule = "RTL-DAT-002"
         severity = Severity.Error
 
     waivers = [Waiver("UVM-OBJ-002", path="tb/stress_seq.sv", line=142, reason="Stress bench")]
@@ -346,10 +334,10 @@ bring old findings back. Editing the flagged line does: that finding is treated 
 and must be fixed or re-baselined. Entries that no longer match anything are reported so the
 baseline only shrinks; `--update-baseline` drops them.
 
-Inline waivers go on the flagged line (`// svlang-lint:waive SV-COR-008 reason`) or on the line
-above it (`// svlang-lint-disable-next-line SV-COR-008`). A quoted regular expression limits
-the waiver to diagnostics whose message matches it (`// svlang-lint:waive SV-COR-008 "expression 'a'"`
-or `// svlang-lint: waive SV-COR-008 "expression 'a'"`). The same `message` field is accepted on
+Inline waivers go on the flagged line (`// svlang-lint:waive SVL-COR-004 reason`) or on the line
+above it (`// svlang-lint-disable-next-line SVL-COR-004`). A quoted regular expression limits
+the waiver to diagnostics whose message matches it (`// svlang-lint:waive SVL-COR-004 "expression 'a'"`
+or `// svlang-lint: waive SVL-COR-004 "expression 'a'"`). The same `message` field is accepted on
 a waiver in `config.py` and in JSON.
 
 ### Waivers Configuration
@@ -359,7 +347,7 @@ Document approved exceptions in `.svlang-lint/waivers.json` (auto-discovered) or
   "version": "1.0",
   "waivers": [
     {
-      "rule": "SV-STY-002",
+      "rule": "SVL-STY-001",
       "path": "*legacy_block*",
       "reason": "Permit trailing semicolons in legacy third-party macros"
     },
@@ -396,7 +384,7 @@ Waivers and baselines pile up unless something prunes them. `--waiver-report` li
 waivers that matched nothing in this run, expired waivers, waivers without an owner,
 waiver comments in your sources that no longer waive anything, baseline entries whose
 finding is gone, and how many findings are waived per rule and per owner.
-`--report-unused-waivers` also records each unused or expired waiver as a `UVM-WV-001`
+`--report-unused-waivers` also records each unused or expired waiver as a `SVL-WVR-002`
 warning in the finding list and the summary. It is off by default, because a shared waiver
 file is often applied to runs that do not contain every waived file. `--strict-waivers`
 turns those warnings on, prints the same hygiene report, and exits with status 4 while any

@@ -1,4 +1,4 @@
-//! UVM-OBS-002 (BlockingInObserver): Analysis write() implementations
+//! UVM-TLM-009 (BlockingInObserver): Analysis write() implementations
 //! (uvm_subscriber::write and the `write<SFX>` methods behind
 //! `uvm_analysis_imp<SFX>`) must be functions that finish in zero time.
 
@@ -41,7 +41,7 @@ pub(crate) fn blocking_in_observer(d: &Design, csts: &[Cst], s: &mut Sink) {
                     continue;
                 };
                 s.add(
-                    "UVM-OBS-002",
+                    "UVM-TLM-009",
                     "BlockingInObserver",
                     Severity::Error,
                     format!(
@@ -57,7 +57,7 @@ pub(crate) fn blocking_in_observer(d: &Design, csts: &[Cst], s: &mut Sink) {
             let Some(fork) = found else { continue };
             let Some(t) = c.first_tok(fork) else { continue };
             s.add(
-                "UVM-OBS-002",
+                "UVM-TLM-009",
                 "BlockingInObserver",
                 Severity::Warning,
                 format!(

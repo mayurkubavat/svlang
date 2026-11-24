@@ -1,4 +1,4 @@
-//! UVM-TST-002 (FixedDelayBeforeDrop): Flags a constant #delay immediately
+//! UVM-OBJ-006 (FixedDelayBeforeDrop): Flags a constant #delay immediately
 //! before drop_objection(), used to let traffic drain (xUnit 'sleepy test',
 //! Sonar S2925).
 
@@ -54,7 +54,7 @@ pub(crate) fn fixed_delay_before_drop(c: &Cst, s: &mut Sink) {
         let Some(e) = kids(c, tc).first().copied() else { return };
         let Some(at) = c.first_tok(t) else { return };
         s.add(
-            "UVM-TST-002",
+            "UVM-OBJ-006",
             "FixedDelayBeforeDrop",
             Severity::Warning,
             format!(

@@ -1,4 +1,4 @@
-//! SV-LANG-004 (PartSelectReversed): Detects reversed or inverted part-select
+//! RTL-DAT-006 (PartSelectReversed): Detects reversed or inverted part-select
 //! slicing on vectors (e.g. vec[0:7] on logic [7:0] vec).
 
 use crate::support::literal_values::int_value;
@@ -18,7 +18,7 @@ pub(crate) fn part_select_reversed(c: &Cst, s: &mut Sink) {
         let [_, l, r] = k[..] else { continue };
         let (Some(lv), Some(rv)) = (int_value(c, l), int_value(c, r)) else { continue };
         s.add(
-            "SV-LANG-004",
+            "RTL-DAT-006",
             "PartSelectReversed",
             Severity::Error,
             format!(

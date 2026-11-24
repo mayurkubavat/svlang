@@ -1,4 +1,4 @@
-//! SV-DED-010 (EmptyForkJoin): Disallows empty fork...join, fork...join_any, or
+//! SVL-DED-010 (EmptyForkJoin): Disallows empty fork...join, fork...join_any, or
 //! fork...join_none blocks that contain zero statements.
 
 use crate::syntax::Cst;
@@ -17,7 +17,7 @@ pub(crate) fn empty_fork_join(c: &Cst, s: &mut Sink) {
             continue;
         };
         s.add(
-            "SV-DED-010",
+            "SVL-DED-010",
             "EmptyForkJoin",
             Severity::Warning,
             format!(

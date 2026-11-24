@@ -1,4 +1,4 @@
-//! SV-OOP-018 (MissingSuperInDoHook): Flags `do_copy`, `do_compare`,
+//! SVL-OOP-016 (MissingSuperInDoHook): Flags `do_copy`, `do_compare`,
 //! `do_print`, `do_pack`, and `do_unpack` overrides in derived user classes
 //! whose base class is also a user class (or explicitly overrides the same
 //! hook) when the override omits `super.do_*()`, silently dropping base-class
@@ -39,7 +39,7 @@ pub(crate) fn missing_super_in_do_hook(d: &Design, out: &mut Sink) {
             let calls_super = m.calls.iter().any(|k| k.name == m.name && k.receiver == "super");
             if !calls_super {
                 out.add(
-                    "SV-OOP-018",
+                    "SVL-OOP-016",
                     "MissingSuperInDoHook",
                     Severity::Warning,
                     format!(

@@ -1,54 +1,41 @@
-# Documentation
+# Documentation Index
 
-## Using the svlang library
+## Editor & IDE Integration
 
-- [svlang crate](../crates/svlang/README.md): the Rust API, with examples;
-  reference on [docs.rs](https://docs.rs/svlang).
-- [pysvlang](../crates/svlang-py/README.md): the Python bindings.
-- [sv-netlist](../crates/sv-netlist/README.md): the word-level RTL netlist.
-- [Rust architecture](architecture/rust.md): how the crates fit together.
+- [VS Code, Cursor & Antigravity Extension (`svlang.svlang`)](../editors/vscode/README.md): Mode 1 live syntax/semantic checks, on-demand/on-save 475-rule linting, Status Bar Control Center, RTL Hierarchy, Signal Driver/Load Trace, and `.vscode/settings.json` recipes.
 
-## Using the linter
+## Linter & CLI (`svlang`)
 
-- [svlang-lint guide](guide/svlang-lint.md): building, running, profiles, fixes,
-  reports, Python rules, LSP, CI, baselines and waivers.
-- [Project configuration](guide/project_config.md): `.svlang-lint/config.py`,
-  library paths, per-rule options and waivers in Python.
-- [Python rule SDK](guide/python_rule_sdk.md): writing rules in Python.
-- [Result cache](guide/result_cache.md): how incremental runs reuse results.
-- [VS Code extension](../editors/vscode/README.md).
+- [`svlang` CLI Overview](../crates/svlang-cli/README.md): unified `check`, `lint`, `lsp`, `filelist`, `map`, `hier`, `cst`, `netlist`, `btor2`, `aiger`, and `yosys` subcommands.
+- [svlang-lint User Guide](guide/svlang-lint.md): presets, `DOM-GRP-NNN` prefix wildcards, safe/unsafe `--fix`, SARIF/JSON/HTML reports, baselines, inline/block waivers, LSP, pre-commit, and GitHub Actions.
+- [Project Configuration](guide/project_config.md): `.svlang-lint/config.py`, layered configs, library paths, per-rule options, and expiring/re-grading waivers.
+- [Python Rule SDK](guide/python_rule_sdk.md): authoring custom corporate or project rules in Python.
+- [Incremental Result Cache](guide/result_cache.md): how `.svlang_lint_cache/` tracks compilation units, includes, and rule options.
 
-## Rules and methodology
+## Rules & Methodology
 
-- [Rule catalog](rules/README.md) (generated; `rules/catalog.json` is the same as JSON).
-- [UVM methodology guide](methodology/README.md): guidelines MG-1 to MG-9 and
-  the rules that enforce them.
+- [Rule Catalog (`DOM-GRP-NNN`)](rules/README.md): generated catalog of all 475 rules and sub-rules across 5 domains (`CMP`, `RTL`, `SVL`, `SVA`, `UVM`), 34 prefixes, and 18 categories ([`catalog.json`](rules/catalog.json) for tools).
+- [UVM Methodology Guide (`MG-1`..`MG-9`)](methodology/README.md): architectural guidelines for layered, reusable UVM verification environments and the rules enforcing each.
+- [Deep Semantic & Dataflow Rules](rules/native-rules.md): constraint-interval solver, declaration-resolved virtual interface checks, and inter-procedural objection CFG pairing.
 
-## Reference
+## Compiler & Netlist SDK (`svlang` / `pysvlang`)
 
-- [IEEE 1800 conformance corpus](reference/conformance.md).
-- [Measured vendor tables](reference/vendor-tables.md): which non-standard
-  SystemVerilog each tool accepts.
-- [sv-tests conformance](reference/sv-tests.md): svlang on the public
-  SystemVerilog conformance suite, by clause.
-- [Front-end census](reference/census.md): which constructs stop open RTL
-  designs from lowering to the netlist, ranked by the modules they block.
-- Robustness: `tools/quality/mutate_smoke.py` damages source files in small
-  ways and checks that svlang reports errors and never crashes or hangs.
-- [Semantic-analysis rules](rules/native-rules.md): constraint solver,
-  declaration-resolved interface rules, and cross-routine objection pairing.
-- [Optional Slang differential oracles](../third_party/slang/README.md): pin,
-  patches and updating it for `tools/oracles/`.
+- [`svlang` Rust SDK](../crates/svlang/README.md): `Driver` and `Compilation` APIs with runnable [`examples/`](../crates/svlang/examples/) and [docs.rs/svlang](https://docs.rs/svlang).
+- [`pysvlang` Python Bindings](../crates/svlang-py/README.md): parsing, elaboration, hierarchy inspection, and netlist lowering from Python.
+- [`sv-netlist` Word-Level RTL IR](../crates/sv-netlist/README.md): procedural lowering, SVA NFA/DFA synthesis, loop unrolling, black-boxing, and formal backends.
 
-## Architecture
+## Architecture & Conformance Reference
 
-- [Overview](architecture/overview.md): workspace layout, crates, and optional
-  differential compiler oracles.
-- [Rust workspace](architecture/rust.md): crates, pipeline, parallel rule
-  engine, language server, gates.
-- [Rust history](architecture/rust-history.md): build and tool usage, and the
-  record of each stage (R0 bridge to N6) with its measurements.
+- [Workspace Overview](architecture/overview.md): repository map, pure-Rust crate stack, and optional differential compiler oracles.
+- [Rust Architecture](architecture/rust.md): crate boundaries, parallel lint scheduler, LSP server, and conformance gates.
+- [Rust Engineering History](architecture/rust-history.md): milestone measurements and architectural evolution.
+- [IEEE 1800 & 1800.2 Conformance](reference/conformance.md): LRM clause probes, `ieee_gate.py`, and UVM version API packs.
+- [sv-tests Conformance](reference/sv-tests.md): clause-by-clause results across 1,024 public SystemVerilog tests.
+- [RTL Netlist Census](reference/census.md): open-source RTL elaboration and netlist lowering coverage.
+- [Measured Vendor Tables](reference/vendor-tables.md): empirical simulator behavior on non-standard SystemVerilog constructs.
+- [OpenTitan DV Precision Study](reference/precision-opentitan.md): zero-ERROR precision validation on `lowrisc_ip/dv`.
+- [Optional Slang Oracles](../third_party/slang/README.md): dev-only `cmake --preset oracles` reference dumpers.
 
 ## Contributing
 
-- [CONTRIBUTING.md](../CONTRIBUTING.md): adding a rule, its tests and its docs.
+- [CONTRIBUTING.md](../CONTRIBUTING.md): `DOM-GRP-NNN` prefix allocation table, adding rules and `bad.sv`/`good.sv` fixtures, and verification gates.

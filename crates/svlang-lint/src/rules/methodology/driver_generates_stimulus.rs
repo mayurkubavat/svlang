@@ -1,4 +1,4 @@
-//! UVM-ROL-001 (DriverGeneratesStimulus): Flags drivers that randomize sequence
+//! UVM-CMP-018 (DriverGeneratesStimulus): Flags drivers that randomize sequence
 //! items or start sequences.
 
 use crate::support::class_roles::{role, role_name, Ctx, Index, Role};
@@ -55,7 +55,7 @@ pub(crate) fn driver_generates_stimulus(d: &Design, csts: &[Cst], out: &mut Sink
                 continue;
             };
             out.add(
-                "UVM-ROL-001",
+                "UVM-CMP-018",
                 "DriverGeneratesStimulus",
                 Severity::Warning,
                 format!(

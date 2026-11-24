@@ -1,4 +1,4 @@
-//! SV-STY-027 (DuplicateMacroRedefinition): Uses the Preprocessor Event Table
+//! SVL-MNT-056 (DuplicateMacroRedefinition): Uses the Preprocessor Event Table
 //! ([`svlang::syntax::Tree::macro_defs`] and [`svlang::syntax::Tree::cond_events`])
 //! to flag silently redefining an already-defined user macro in the same file
 //! with a different replacement body without an intervening `` `undef `` or
@@ -85,7 +85,7 @@ pub(crate) fn duplicate_macro_redefinition(c: &Cst, out: &mut Sink) {
             {
                 let prev_loc = at(c, prev.origin.file, prev.origin.offset as usize);
                 out.add(
-                    "SV-STY-027",
+                    "SVL-MNT-056",
                     "DuplicateMacroRedefinition",
                     Severity::Warning,
                     format!(

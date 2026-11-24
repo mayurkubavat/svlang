@@ -1,4 +1,4 @@
-//! SV-RND-025 (DistWideRangeColonEq): Flags '[lo:hi] := w' in a dist when the
+//! SVL-RND-024 (DistWideRangeColonEq): Flags '[lo:hi] := w' in a dist when the
 //! range holds more than max_range_values (default 16) values and the dist also
 //! has items of another size. ':=' applies the weight to each value, which is
 //! rarely what the author meant; ':/' shares it.
@@ -44,13 +44,13 @@ pub(crate) fn dist_wide_range(c: &Cst, s: &mut Sink) {
                 }
                 for (&it, w) in items.iter().zip(&widths) {
                     let Some(w) = *w else { continue };
-                    if w <= crate::options::get("SV-RND-025", "max_range_values", 16) as _ || c.tok(it, ":=").is_none()
+                    if w <= crate::options::get("SVL-RND-024", "max_range_values", 16) as _ || c.tok(it, ":=").is_none()
                     {
                         continue;
                     }
                     let Some(at) = c.tree.children(it).next().and_then(|v| c.first_tok(v)) else { continue };
                     s.add(
-                        "SV-RND-025",
+                        "SVL-RND-024",
                         "DistWideRangeColonEq",
                         Severity::Warning,
                         format!(

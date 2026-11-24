@@ -1,4 +1,4 @@
-//! SV-STY-020 (InconsistentBlockIndentation): Uses [`crate::shared::tree_layout`]
+//! SVL-STY-014 (InconsistentBlockIndentation): Uses [`crate::shared::tree_layout`]
 //! to flag multi-line `begin ... end`, `class`, `module`, `function`, and `task`
 //! blocks whose direct child items/statements are unindented relative to the
 //! block header or inconsistently indented relative to sibling items, offering
@@ -26,7 +26,7 @@ fn block_children(c: &Cst, n: NodeId) -> Vec<NodeId> {
 
 pub(crate) fn inconsistent_block_indentation(c: &Cst, out: &mut Sink) {
     let layout = crate::shared::tree_layout(c);
-    let indent_step = crate::options::get("SV-STY-020", "indent_spaces", 2).max(1) as u32;
+    let indent_step = crate::options::get("SVL-STY-014", "indent_spaces", 2).max(1) as u32;
 
     for n in c.tree.preorder() {
         if !matches!(c.kind(n), SeqBlock | ClassDecl | ModuleDecl | InterfaceDecl | FunctionDecl | TaskDecl) {
@@ -88,7 +88,7 @@ pub(crate) fn inconsistent_block_indentation(c: &Cst, out: &mut Sink) {
             let tok_off = c.tree.tokens[kt as usize].origin.offset as usize;
             let replacement = " ".repeat(expected as usize);
             out.add(
-                "SV-STY-020",
+                "SVL-STY-014",
                 "InconsistentBlockIndentation",
                 Severity::Info,
                 format!(

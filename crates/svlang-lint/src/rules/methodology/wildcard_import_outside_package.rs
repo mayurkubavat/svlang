@@ -1,4 +1,4 @@
-//! SV-PKG-002 (WildcardImportOutsidePackage): Flags 'import pkg::*' at file
+//! SVL-MNT-038 (WildcardImportOutsidePackage): Flags 'import pkg::*' at file
 //! ($unit) scope, and inside files that are `include'd into a package.
 
 use crate::support::defines_packages::{import_items, user_tok, Files};
@@ -44,7 +44,7 @@ it and the package's real dependencies are hidden. Import in the package file it
                     }
                     _ => continue,
                 };
-                out.add("SV-PKG-002", "WildcardImportOutsidePackage", Severity::Warning, msg, c.loc(kw));
+                out.add("SVL-MNT-038", "WildcardImportOutsidePackage", Severity::Warning, msg, c.loc(kw));
             }
         }
     }

@@ -10,7 +10,7 @@ Copied code drifts: a fix lands in one copy and not the others. The third copy i
 
 Copied code drifts as fixes land in one copy only.
 
-Four rules look for copies at different sizes. SV-DUP-001 finds a whole method body repeated in another class. SV-DUP-002 finds a run of three or more statements (50 tokens by default) repeated anywhere, also when variables and literals were renamed consistently; a macro call counts as the call written, not as the code it expands to, and called routine names must match, so `raise_objection` and `drop_objection` are not taken for copies. SV-DUP-003 finds a constraint pasted into two classes that do not inherit from each other, and SV-RND-011 a constraint repeated inside one class. SV-DUP-004 (advisory) finds a string literal, such as a report ID, written four or more times. Files whose header says a tool generated them ("auto-generated", "do not edit") are left out, since their copies come from one template.
+Four rules look for copies at different sizes. SVL-MNT-021 finds a whole method body repeated in another class. SVL-MNT-022 finds a run of three or more statements (50 tokens by default) repeated anywhere, also when variables and literals were renamed consistently; a macro call counts as the call written, not as the code it expands to, and called routine names must match, so `raise_objection` and `drop_objection` are not taken for copies. SVL-MNT-023 finds a constraint pasted into two classes that do not inherit from each other, and SVL-RND-010 a constraint repeated inside one class. SVL-MNT-024 (advisory) finds a string literal, such as a report ID, written four or more times. Files whose header says a tool generated them ("auto-generated", "do not edit") are left out, since their copies come from one template.
 
 Instead of:
 
@@ -41,9 +41,9 @@ function void finish(bus_item t, string kind);
 endfunction
 ```
 
-The thresholds are options in the project config: `min_tokens` and `min_statements` for SV-DUP-002, `min_tokens` for SV-DUP-003 and `min_count` for SV-DUP-004.
+The thresholds are options in the project config: `min_tokens` and `min_statements` for SVL-MNT-022, `min_tokens` for SVL-MNT-023 and `min_count` for SVL-MNT-024.
 
-Enforced by: `SV-DUP-001`, `SV-DUP-002`, `SV-DUP-003`, `SV-DUP-004`, `SV-RND-011`
+Enforced by: `SVL-MNT-021`, `SVL-MNT-022`, `SVL-MNT-023`, `SVL-MNT-024`, `SVL-RND-010`
 
 ## MG-7.2 (May)
 
@@ -51,6 +51,6 @@ Enforced by: `SV-DUP-001`, `SV-DUP-002`, `SV-DUP-003`, `SV-DUP-004`, `SV-RND-011
 
 Two agents that differ only in names and widths are one parameterized agent waiting to happen.
 
-SV-DUP-005 (advisory) compares packages class by class. A class's shape is its UVM role, its number of fields and its method bodies with identifiers renamed. When two packages share at least three shapes, covering 80% of the classes in the larger one, they are reported as one agent copied and renamed. Classes with almost no code are not counted, since small classes look alike by chance. The fix is a parameterized agent, or a shared base agent with small subclasses for what really differs.
+SVL-MNT-025 (advisory) compares packages class by class. A class's shape is its UVM role, its number of fields and its method bodies with identifiers renamed. When two packages share at least three shapes, covering 80% of the classes in the larger one, they are reported as one agent copied and renamed. Classes with almost no code are not counted, since small classes look alike by chance. The fix is a parameterized agent, or a shared base agent with small subclasses for what really differs.
 
-Enforced by: `SV-DUP-005`
+Enforced by: `SVL-MNT-025`

@@ -1,4 +1,4 @@
-//! RAL-WIRE-001 (RalPredictorAdapterWiring): Verifies that all instantiated
+//! UVM-RAL-009 (RalPredictorAdapterWiring): Verifies that all instantiated
 //! uvm_reg_predictor components have their .map property assigned in
 //! connect_phase.
 
@@ -28,7 +28,7 @@ pub(crate) fn ral_predictor_adapter_wiring(d: &Design, out: &mut Sink) {
             continue;
         }
         out.add(
-            "RAL-WIRE-001",
+            "UVM-RAL-009",
             "RalPredictorAdapterWiring",
             Severity::Warning,
             format!(

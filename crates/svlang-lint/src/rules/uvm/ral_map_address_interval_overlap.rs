@@ -1,4 +1,4 @@
-//! RAL-MAP-002 (RalMapAddressIntervalOverlap): Detects 1D address interval
+//! UVM-RAL-008 (RalMapAddressIntervalOverlap): Detects 1D address interval
 //! overlaps and register aliasing collisions within the same uvm_reg_map in a
 //! uvm_reg_block, preventing silent register corruption in hardware.
 
@@ -105,7 +105,7 @@ pub(crate) fn ral_map_overlap(d: &Design, csts: &[Cst], s: &mut Sink) {
                 let (e1, e2) = (s1.wrapping_add(*z1).wrapping_sub(1), s2.wrapping_add(*z2).wrapping_sub(1));
                 if s1 <= &e2 && s2 <= &e1 {
                     s.add(
-                        "RAL-MAP-002",
+                        "UVM-RAL-008",
                         "RalMapAddressIntervalOverlap",
                         Severity::Error,
                         format!(

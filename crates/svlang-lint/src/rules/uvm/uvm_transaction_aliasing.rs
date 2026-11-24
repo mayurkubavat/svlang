@@ -1,4 +1,4 @@
-//! UVM-ALS-001 (UvmTransactionAliasing): Disallows in-place mutation of
+//! UVM-TLM-007 (UvmTransactionAliasing): Disallows in-place mutation of
 //! transaction objects after broadcasting via an analysis port (.write()).
 
 use crate::support::uvm_syntax::{assignment, body_items, callee, first_ordered, stmt_expr};
@@ -40,7 +40,7 @@ pub(crate) fn transaction_aliasing(c: &Cst, s: &mut Sink) {
             let Some(base) = base.filter(|b| !b.is_empty() && written.contains(b)) else { continue };
             let Some(at) = c.first_tok(lhs) else { continue };
             s.add(
-                "UVM-ALS-001",
+                "UVM-TLM-007",
                 "UvmTransactionAliasing",
                 Severity::Warning,
                 format!(

@@ -1,4 +1,4 @@
-//! SV-COV-005 (UnboundedTransitionBins): Transition sequences in coverpoint
+//! SVL-COV-005 (UnboundedTransitionBins): Transition sequences in coverpoint
 //! bins must not specify unbounded repetitions (e.g., [*1:$], [->1:$]).
 
 use crate::support::slang_ast::*;
@@ -22,7 +22,7 @@ pub(crate) fn unbounded_transition(c: &Cst, s: &mut Sink) {
             .map(|x| x.0)
             .unwrap_or_else(|| "unnamed_bin".into());
         s.add(
-            "SV-COV-005",
+            "SVL-COV-005",
             "UnboundedTransitionBins",
             Severity::Warning,
             format!(

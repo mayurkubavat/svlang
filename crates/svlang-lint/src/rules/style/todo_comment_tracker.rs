@@ -1,4 +1,4 @@
-//! SV-STY-003 (TodoCommentTracker): Tracks unresolved TODO, FIXME, ICEBOX,
+//! SVL-STY-002 (TodoCommentTracker): Tracks unresolved TODO, FIXME, ICEBOX,
 //! HACK, and XXX comment markers across the codebase.
 
 use crate::syntax::Cst;
@@ -55,7 +55,7 @@ fn comments(text: &str, base: u32) -> Vec<(u32, u32, bool)> {
 
 const TAGS: [&str; 5] = ["TODO", "FIXME", "ICEBOX", "HACK", "XXX"];
 
-/// SV-STY-003 reads the comments slang keeps as token trivia: not those in
+/// SVL-STY-002 reads the comments slang keeps as token trivia: not those in
 /// a branch not taken, in a `define line, or right before a macro use
 /// (the expansion's first token takes the use's place); but those inside
 /// a macro body, after its first token, at each expansion.
@@ -78,7 +78,7 @@ pub(crate) fn todo_comments(c: &Cst, s: &mut Sink) {
             snippet = format!("{}...", &snippet[..cut]);
         }
         s.add(
-            "SV-STY-003",
+            "SVL-STY-002",
             "TodoCommentTracker",
             Severity::Info,
             format!(

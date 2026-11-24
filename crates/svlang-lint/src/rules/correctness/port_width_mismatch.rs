@@ -1,4 +1,4 @@
-//! SV-RTL-004 (PortWidthMismatch): Elaborated module/interface instance port
+//! RTL-SYN-004 (PortWidthMismatch): Elaborated module/interface instance port
 //! connection width differs from the formal port width.
 
 use crate::support::rtl_fsm_cdc;
@@ -8,7 +8,7 @@ use crate::{Severity, Sink};
 pub(crate) fn port_width_mismatch(c: &Cst, out: &mut Sink) {
     for hit in &rtl_fsm_cdc::facts(c).port_width_mismatches {
         out.add(
-            "SV-RTL-004",
+            "RTL-SYN-004",
             "PortWidthMismatch",
             Severity::Warning,
             format!(

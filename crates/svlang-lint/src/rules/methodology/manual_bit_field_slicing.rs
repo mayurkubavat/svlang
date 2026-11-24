@@ -1,4 +1,4 @@
-//! SV-CNS-005 (ManualBitFieldSlicing): Flags a vector that is cut into three or
+//! SVL-MNT-006 (ManualBitFieldSlicing): Flags a vector that is cut into three or
 //! more different fixed part-selects (hdr[7:0], hdr[15:8], hdr[31:16]).
 
 use crate::support::class_roles::{Index, Typedefs};
@@ -23,9 +23,9 @@ fn is_integral_type(td: &Typedefs, ty: &str) -> bool {
 }
 
 pub(crate) fn manual_bit_field_slicing(d: &Design, csts: &[Cst], out: &mut Sink) {
-    // Option `min_fields` (rules.SV-CNS-005.options).
+    // Option `min_fields` (rules.SVL-MNT-006.options).
     fn threshold() -> usize {
-        crate::options::get("SV-CNS-005", "min_fields", 3) as usize
+        crate::options::get("SVL-MNT-006", "min_fields", 3) as usize
     }
     let ix = Index::new(csts);
     let mut uses: Vec<(SymInfo, BTreeSet<String>, Loc)> = Vec::new();
@@ -59,7 +59,7 @@ pub(crate) fn manual_bit_field_slicing(d: &Design, csts: &[Cst], out: &mut Sink)
         }
         let list: Vec<String> = ranges.iter().map(|r| format!("[{r}]")).collect();
         out.add(
-            "SV-CNS-005",
+            "SVL-MNT-006",
             "ManualBitFieldSlicing",
             Severity::Info,
             format!(

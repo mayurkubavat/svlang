@@ -1,4 +1,4 @@
-//! SV-CON-009 (WaitForkWithoutFork): Flags 'wait fork;' statements in tasks or
+//! SVL-CON-005 (WaitForkWithoutFork): Flags 'wait fork;' statements in tasks or
 //! routines that contain no 'fork' blocks.
 
 use crate::support::procedural::{routine_name, start};
@@ -20,7 +20,7 @@ pub(crate) fn wait_fork_without_fork(c: &Cst, s: &mut Sink) {
                 if c.kind(x) == WaitStmt && c.toks(x).any(|t| c.text_of(t) == "fork") {
                     if let Some(loc) = start(c, x) {
                         s.add(
-                            "SV-CON-009",
+                            "SVL-CON-005",
                             "WaitForkWithoutFork",
                             Severity::Warning,
                             format!(

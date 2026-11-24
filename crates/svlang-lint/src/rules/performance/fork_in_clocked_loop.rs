@@ -1,4 +1,4 @@
-//! SV-PRF-013 (ForkInClockedLoop): Flags fork/join, join_any, and join_none
+//! SVL-PRF-013 (ForkInClockedLoop): Flags fork/join, join_any, and join_none
 //! inside a clocked loop (always_ff, always @(posedge/negedge), or a loop that
 //! waits on a clock edge).
 
@@ -45,7 +45,7 @@ pub(crate) fn fork_in_clocked_loop(c: &Cst, s: &mut Sink) {
             .map(|t| c.text_of(t))
             .unwrap_or("");
         s.add(
-            "SV-PRF-013",
+            "SVL-PRF-013",
             "ForkInClockedLoop",
             Severity::Warning,
             format!(

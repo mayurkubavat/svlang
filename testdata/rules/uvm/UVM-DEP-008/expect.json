@@ -1,0 +1,1 @@
+{ "bad.sv": [ { "rule": "UVM-DEP-008", "line": 10 } ] }

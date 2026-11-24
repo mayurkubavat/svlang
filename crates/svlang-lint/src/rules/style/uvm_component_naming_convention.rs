@@ -1,4 +1,4 @@
-//! SV-NAM-001 (UvmComponentNamingConvention): Enforces standard naming
+//! UVM-NAM-001 (UvmComponentNamingConvention): Enforces standard naming
 //! conventions for UVM components: classes derived from uvm_driver must end
 //! with '_driver', uvm_monitor with '_monitor', uvm_agent with '_agent',
 //! uvm_env with '_env', and uvm_test with '_test'.
@@ -22,7 +22,7 @@ pub(crate) fn uvm_component_naming_convention(d: &Design, out: &mut Sink) {
             if derives_from(d, Some(cls.id), base) {
                 if !cls.name.ends_with(suffix) {
                     out.add(
-                        "SV-NAM-001",
+                        "UVM-NAM-001",
                         "UvmComponentNamingConvention",
                         Severity::Warning,
                         format!(

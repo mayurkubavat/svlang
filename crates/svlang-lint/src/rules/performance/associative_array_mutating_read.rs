@@ -1,4 +1,4 @@
-//! SV-ASC-001 (AssociativeArrayMutatingRead): Flags unguarded associative-array
+//! SVL-PRF-014 (AssociativeArrayMutatingRead): Flags unguarded associative-array
 //! read lookups in relational comparisons without an `.exists(...)` check
 //! (IEEE 1800-2023 §7.8.6).
 
@@ -129,7 +129,7 @@ pub(crate) fn assoc_mutating_read(c: &Cst, out: &mut Sink) {
             }
             let Some(loc) = start(c, side) else { continue };
             out.add(
-                "SV-ASC-001",
+                "SVL-PRF-014",
                 "AssociativeArrayMutatingRead",
                 Severity::Info,
                 format!(

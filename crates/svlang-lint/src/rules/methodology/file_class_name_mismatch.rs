@@ -1,4 +1,4 @@
-//! SV-PKG-001 (FileClassNameMismatch): Flags `include'd class files that define
+//! SVL-STY-020 (FileClassNameMismatch): Flags `include'd class files that define
 //! more than one top-level class, or whose one class is not named after the
 //! file (my_drv.svh holding my_driver).
 
@@ -56,7 +56,7 @@ pub(crate) fn file_class_name_mismatch(_: &Design, csts: &[Cst], out: &mut Sink)
                 continue;
             }
             out.add(
-                "SV-PKG-001",
+                "SVL-STY-020",
                 "FileClassNameMismatch",
                 Severity::Warning,
                 format!(
@@ -73,7 +73,7 @@ pub(crate) fn file_class_name_mismatch(_: &Design, csts: &[Cst], out: &mut Sink)
                 continue;
             }
             out.add(
-                "SV-PKG-001",
+                "SVL-STY-020",
                 "FileClassNameMismatch",
                 Severity::Warning,
                 format!(

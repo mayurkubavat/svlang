@@ -1,4 +1,4 @@
-//! SV-CON-012 (ForkLoopVariableCapture): Disallows referencing loop variables
+//! SVL-CON-008 (ForkLoopVariableCapture): Disallows referencing loop variables
 //! directly inside 'fork ... join_none' or 'join_any' blocks without an
 //! automatic local variable copy. The copy may sit in the fork's own
 //! declarations, which the parent thread initializes. The C++ rule is the same.
@@ -125,7 +125,7 @@ pub(crate) fn fork_loop_capture(c: &Cst, s: &mut Sink) {
             let fixes =
                 decl_types.get(var).map(|dt| automatic_copy_fixes(c, b, var, dt, &locals, &ids)).unwrap_or_default();
             s.add(
-                "SV-CON-012",
+                "SVL-CON-008",
                 "ForkLoopVariableCapture",
                 Severity::Error,
                 format!(

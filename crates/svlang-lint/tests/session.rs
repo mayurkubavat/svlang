@@ -7,7 +7,7 @@ const SRC: &str = "class c;\n\
                    endfunction\n\
                    endclass\n";
 
-/// How many findings SV-MET-003 (too many arguments) has in [`SRC`].
+/// How many findings SVL-MNT-031 (too many arguments) has in [`SRC`].
 fn count(lint: impl FnOnce(&svlang_model::Design, &[svlang::syntax::Tree]) -> Vec<svlang_lint::Finding>) -> usize {
     let tree = svlang::syntax::parse_source(SRC, "t.sv", Default::default());
     let d = svlang_model::build(std::slice::from_ref(&tree));
@@ -16,9 +16,9 @@ fn count(lint: impl FnOnce(&svlang_model::Design, &[svlang::syntax::Tree]) -> Ve
 
 #[test]
 fn sessions_keep_their_own_settings_side_by_side() {
-    let only = |id: &str| id == "SV-MET-003";
+    let only = |id: &str| id == "SVL-MNT-031";
     let mut strict = svlang_lint::Session::new();
-    strict.set_options(&[("SV-MET-003".to_string(), "max_args".to_string(), 2)]);
+    strict.set_options(&[("SVL-MNT-031".to_string(), "max_args".to_string(), 2)]);
     let plain = svlang_lint::Session::new();
     std::thread::scope(|s| {
         let runs: Vec<_> = (0..8)
@@ -38,7 +38,7 @@ fn sessions_keep_their_own_settings_side_by_side() {
     // The process's own session was not touched: three arguments are fine.
     assert_eq!(count(|d, trees| svlang_lint::lint_all(d, trees, only).1), 0);
     // And it still is what the free setters change.
-    svlang_lint::options::set(&[("SV-MET-003".to_string(), "max_args".to_string(), 1)]);
+    svlang_lint::options::set(&[("SVL-MNT-031".to_string(), "max_args".to_string(), 1)]);
     assert_eq!(count(|d, trees| svlang_lint::lint_all(d, trees, only).1), 1);
     assert_eq!(count(|d, trees| plain.lint_all(d, trees, only).1), 0);
 }

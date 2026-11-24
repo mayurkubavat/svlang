@@ -1,4 +1,4 @@
-//! SV-RND-045 (RandModeInRandomizeCallback): Mutating `.rand_mode(val)` or
+//! SVL-RND-035 (RandModeInRandomizeCallback): Mutating `.rand_mode(val)` or
 //! `.constraint_mode(val)` inside `post_randomize()`.
 
 use svlang::syntax::SyntaxKind::*;
@@ -43,7 +43,7 @@ pub(crate) fn rand_mode_in_randomize_callback(c: &Cst, out: &mut Sink) {
                 if matches!(mname.as_str(), "rand_mode" | "constraint_mode") {
                     if let Some(tok) = c.first_tok(call) {
                         out.add(
-                            "SV-RND-045",
+                            "SVL-RND-035",
                             "RandModeInRandomizeCallback",
                             Severity::Warning,
                             format!(

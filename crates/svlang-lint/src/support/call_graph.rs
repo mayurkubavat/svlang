@@ -1,5 +1,5 @@
 //! Inter-procedural class-hierarchy call-graph summaries for constructor
-//! virtual dispatch (`SV-OOP-017`).
+//! virtual dispatch (`SVL-OOP-015`).
 
 use std::collections::{HashSet, VecDeque};
 
@@ -35,7 +35,7 @@ fn is_self_call(receiver: &str) -> bool {
 }
 
 /// Finds `new()` calls to non-virtual helper methods on `this` that transitively
-/// invoke a virtual method (which `SV-OOP-005` misses because `SV-OOP-005` only
+/// invoke a virtual method (which `SVL-OOP-005` misses because `SVL-OOP-005` only
 /// checks direct calls in `new()`).
 pub(crate) fn ctor_transitive_virtual_calls(d: &Design) -> Vec<CtorTransitiveVirtualCall> {
     let mut out = Vec::new();
@@ -60,7 +60,7 @@ pub(crate) fn ctor_transitive_virtual_calls(d: &Design) -> Vec<CtorTransitiveVir
                 continue;
             };
             if helper_m.is_virtual || helper_m.declared_virtual {
-                // Direct virtual call in `new()` belongs to SV-OOP-005.
+                // Direct virtual call in `new()` belongs to SVL-OOP-005.
                 continue;
             }
             if let Some(virt_name) = reaches_virtual_method(d, cls, &top_call.name) {

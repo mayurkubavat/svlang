@@ -1,4 +1,4 @@
-//! SV-PRF-007 (QueueConcatAppend): Disallow queue concatenation ('q = {q, x}'
+//! SVL-PRF-007 (QueueConcatAppend): Disallow queue concatenation ('q = {q, x}'
 //! or 'q = {x, q}').
 
 use crate::support::style_config::ast_visits;
@@ -98,7 +98,7 @@ pub(crate) fn queue_concat_append(c: &Cst, out: &mut Sink) {
             .flatten();
         for _ in 0..ast_visits(c, e) {
             out.add(
-                "SV-PRF-007",
+                "SVL-PRF-007",
                 "QueueConcatAppend",
                 Severity::Warning,
                 format!(

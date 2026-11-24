@@ -1,4 +1,4 @@
-//! SV-COV-006 (CovergroupCrossBinExplosion): Disallows crossing 3 or more
+//! SVL-COV-006 (CovergroupCrossBinExplosion): Disallows crossing 3 or more
 //! coverpoints without 'ignore_bins' or 'binsof' exclusion filters.
 
 use crate::support::cross_labels::{cross_parts, label};
@@ -19,7 +19,7 @@ pub(crate) fn cross_explosion(c: &Cst, s: &mut Sink) {
         let Some(kw) = kw.filter(|_| !filtered) else { continue };
         let name = label(c, n).unwrap_or_else(|| "unnamed_cross".into());
         s.add(
-            "SV-COV-006",
+            "SVL-COV-006",
             "CovergroupCrossBinExplosion",
             Severity::Error,
             format!(

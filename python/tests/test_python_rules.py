@@ -39,9 +39,20 @@ def lint(binary, cwd, rules, source, *extra):
     return json.loads(out.read_text())["violations"], res.stderr
 
 
+def _default_binary() -> str:
+    env_bin = os.environ.get("SVLANG")
+    if env_bin and Path(env_bin).is_file():
+        return env_bin
+    for profile in ("release", "dist", "debug"):
+        cand = REPO / "target" / profile / "svlang"
+        if cand.is_file():
+            return str(cand)
+    return str(REPO / "target" / "release" / "svlang")
+
+
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--binary", default=str(REPO / "build" / "svlang-lint"))
+    ap.add_argument("--binary", default=_default_binary())
     binary = str(Path(ap.parse_args().binary).resolve())
 
     with tempfile.TemporaryDirectory() as tmp:

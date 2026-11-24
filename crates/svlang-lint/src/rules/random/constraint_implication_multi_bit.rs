@@ -1,4 +1,4 @@
-//! SV-RND-019 (ConstraintImplicationMultiBit): Flags constraint implication
+//! SVL-RND-018 (ConstraintImplicationMultiBit): Flags constraint implication
 //! expressions 'A -> B' where condition 'A' is a multi-bit vector without an
 //! explicit boolean comparison.
 
@@ -106,7 +106,7 @@ pub(crate) fn implication_multi_bit(c: &Cst, s: &mut Sink) {
                 let Some(width) = w.expr(c, cls, pred).filter(|&x| x > 1) else { continue };
                 let Some(at) = c.first_tok(unparen(c, pred)) else { continue };
                 s.add(
-                    "SV-RND-019",
+                    "SVL-RND-018",
                     "ConstraintImplicationMultiBit",
                     Severity::Warning,
                     format!(

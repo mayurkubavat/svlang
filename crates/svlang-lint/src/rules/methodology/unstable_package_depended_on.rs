@@ -1,4 +1,4 @@
-//! SV-PKG-005 (UnstablePackageDependedOn): Computes instability I = Ce / (Ca +
+//! SVL-MNT-041 (UnstablePackageDependedOn): Computes instability I = Ce / (Ca +
 //! Ce) for each user package from its imports and flags a package that depends
 //! on a less stable one.
 
@@ -15,7 +15,7 @@ pub(crate) fn unstable_package_depended_on(d: &Design, csts: &[Cst], out: &mut S
             continue;
         }
         out.add(
-            "SV-PKG-005",
+            "SVL-MNT-041",
             "UnstablePackageDependedOn",
             Severity::Info,
             format!(

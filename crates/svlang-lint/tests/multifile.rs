@@ -18,7 +18,7 @@ fn rules_read_declarations_of_other_files() {
     let (files, found) = svlang_lint::lint_all(&d, &trees, |_| true);
     let oop13: Vec<_> = found
         .iter()
-        .filter(|f| f.rule == "SV-OOP-013")
+        .filter(|f| f.rule == "SVL-OOP-011")
         .map(|f| {
             let (file, line, _) = f.position_in(&files);
             (file, line)
@@ -26,7 +26,7 @@ fn rules_read_declarations_of_other_files() {
         .collect();
     assert!(
         oop13.iter().any(|(f, l)| f.ends_with("b.sv") && *l == 10),
-        "SV-OOP-013 not reported at b.sv:10: {oop13:?}"
+        "SVL-OOP-011 not reported at b.sv:10: {oop13:?}"
     );
 }
 
@@ -64,7 +64,7 @@ fn every_rule_runs_on_fixtures_as_one_compile() {
     assert!(!found.is_empty());
     // The severity a rule declares is the worst it reports: presets, the
     // ERROR budget and the catalog go by it. (A rule may report a milder
-    // tier, as SV-STY-010 does for decimal literals.)
+    // tier, as SVL-STY-008 does for decimal literals.)
     let declared: std::collections::HashMap<&str, svlang_lint::Severity> =
         svlang_lint::catalog::entries().into_iter().map(|e| (e.id, e.severity)).collect();
     for f in &found {

@@ -1,4 +1,4 @@
-//! PORT-PRP-001 (ProprietaryVendorCalls): Disallow unguarded
+//! SVL-PRT-001 (ProprietaryVendorCalls): Disallow unguarded
 //! simulator-proprietary system tasks ($vcdpluson, $fsdbDumpvars, $shm_open).
 
 use crate::syntax::Cst;
@@ -28,7 +28,7 @@ pub(crate) fn vendor_calls(c: &Cst, s: &mut Sink) {
             continue;
         }
         s.add(
-            "PORT-PRP-001",
+            "SVL-PRT-001",
             "ProprietaryVendorCalls",
             Severity::Warning,
             format!(

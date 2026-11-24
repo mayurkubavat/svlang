@@ -1,4 +1,4 @@
-//! SVA-RST-001 (DisableIffReset): Concurrent assertions and property
+//! SVA-PRP-014 (DisableIffReset): Concurrent assertions and property
 //! declarations should include a 'disable iff (...)' reset guard (unless
 //! covered by `default disable iff` or the paired property/assertion, since
 //! nested `disable iff` is illegal per IEEE 1800-2023 §16.12.1).
@@ -63,7 +63,7 @@ pub(crate) fn disable_iff_reset(c: &Cst, s: &mut Sink) {
             continue;
         }
         s.add(
-            "SVA-RST-001",
+            "SVA-PRP-014",
             "DisableIffReset",
             Severity::Warning,
             format!(
@@ -94,7 +94,7 @@ pub(crate) fn disable_iff_reset(c: &Cst, s: &mut Sink) {
             continue;
         }
         s.add(
-            "SVA-RST-001",
+            "SVA-PRP-014",
             "DisableIffReset",
             Severity::Warning,
             format!(

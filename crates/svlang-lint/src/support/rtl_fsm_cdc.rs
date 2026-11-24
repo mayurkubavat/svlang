@@ -1,5 +1,5 @@
-//! RTL, FSM, Clock/Reset, and CDC semantic analyzer (`SV-FSM-002`, `SV-FSM-003`,
-//! `SV-CDC-001`, `SV-RTL-001`, `SV-RTL-002`, `SV-RTL-003`, `SV-RTL-004`).
+//! RTL, FSM, Clock/Reset, and CDC semantic analyzer (`RTL-FSM-002`, `RTL-FSM-003`,
+//! `RTL-CDC-001`, `RTL-SYN-001`, `RTL-SYN-002`, `RTL-SYN-003`, `RTL-SYN-004`).
 
 use std::collections::{HashMap, HashSet, VecDeque};
 
@@ -838,7 +838,7 @@ fn extract_rhs_states(c: &Cst, rhs: NodeId, target_var: &str, members: &HashSet<
     txt == target_var
 }
 
-// ---- SV-RTL-004: Elaborated Port Connection Width Mismatch ----
+// ---- RTL-SYN-004: Elaborated Port Connection Width Mismatch ----
 
 fn analyze_port_widths(c: &Cst, out: &mut Vec<PortWidthMismatch>) {
     let elab = crate::shared::elaboration(c);

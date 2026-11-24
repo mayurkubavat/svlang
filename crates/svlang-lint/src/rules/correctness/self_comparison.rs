@@ -1,4 +1,4 @@
-//! SV-COR-008 (SelfComparison): Disallows self-comparisons where an operand is
+//! SVL-COR-004 (SelfComparison): Disallows self-comparisons where an operand is
 //! compared to itself (e.g. a == a), which tautologically evaluates to constant
 //! true or false. Not two equal literals (`"" == ""`), which is what a macro
 //! argument's default expands to. The C++ rule is the same.
@@ -37,7 +37,7 @@ pub(crate) fn self_comparison(c: &Cst, s: &mut Sink) {
         let (ls, rs) = (c.trimmed(l), c.trimmed(r));
         if !ls.is_empty() && ls == rs && !lone_literal(&ls) {
             s.add(
-                "SV-COR-008",
+                "SVL-COR-004",
                 "SelfComparison",
                 Severity::Error,
                 format!(

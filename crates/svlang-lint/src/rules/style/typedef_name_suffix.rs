@@ -1,4 +1,4 @@
-//! SV-STY-004 (TypedefNameSuffix): Enforces naming conventions for typedefs:
+//! SVL-NAM-003 (TypedefNameSuffix): Enforces naming conventions for typedefs:
 //! enums must end with '_e', and structs/data types must end with '_t'.
 
 use crate::support::copies::copies;
@@ -75,7 +75,7 @@ pub(crate) fn typedef_name_suffix(c: &Cst, s: &mut Sink) {
         };
         let Some(at) = c.tree.child(*n, Name).and_then(|x| c.first_tok(x)) else { continue };
         for _ in 0..copies(c, *n) {
-            s.add("SV-STY-004", "TypedefNameSuffix", Severity::Warning, msg.clone(), c.loc(at));
+            s.add("SVL-NAM-003", "TypedefNameSuffix", Severity::Warning, msg.clone(), c.loc(at));
         }
     }
     // slang gives each cover cross an implicit struct typedef, CrossValType,
@@ -85,7 +85,7 @@ pub(crate) fn typedef_name_suffix(c: &Cst, s: &mut Sink) {
         let Some(at) = at else { continue };
         for _ in 0..copies(c, n) {
             s.add(
-                "SV-STY-004",
+                "SVL-NAM-003",
                 "TypedefNameSuffix",
                 Severity::Warning,
                 "Structure typedef 'CrossValType' does not end with standard suffix '_t'. By convention, struct and data types must end with '_t'.".into(),

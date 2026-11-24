@@ -1,4 +1,4 @@
-//! SV-CNC-003 (PollingLoop): Flags loops that test a flag or signal and wait a
+//! SVL-CON-017 (PollingLoop): Flags loops that test a flag or signal and wait a
 //! constant #delay between tests, instead of wait(), @ or an event (busy-wait
 //! smell, Sonar S2925).
 
@@ -149,7 +149,7 @@ pub(crate) fn polling_loop(c: &Cst, s: &mut Sink) {
                     add_n(
                         s,
                         n,
-                        "SV-CNC-003",
+                        "SVL-CON-017",
                         "PollingLoop",
                         Severity::Warning,
                         format!(

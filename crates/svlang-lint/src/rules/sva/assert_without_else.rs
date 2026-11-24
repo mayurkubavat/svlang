@@ -1,4 +1,4 @@
-//! SVA-ACT-001 (AssertWithoutElse): Immediate and concurrent assertions must
+//! SVA-PRP-008 (AssertWithoutElse): Immediate and concurrent assertions must
 //! include an 'else' action block (e.g. 'else `uvm_error(...)').
 
 use crate::support::procedural::start;
@@ -22,7 +22,7 @@ pub(crate) fn assert_without_else(c: &Cst, s: &mut Sink) {
             add_n(
                 s,
                 times(c, a),
-                "SVA-ACT-001",
+                "SVA-PRP-008",
                 "AssertWithoutElse",
                 Severity::Warning,
                 "Immediate assertion lacks an 'else' action block. Assertions without explicit action blocks \
@@ -40,7 +40,7 @@ pub(crate) fn assert_without_else(c: &Cst, s: &mut Sink) {
             add_n(
                 s,
                 times(c, a),
-                "SVA-ACT-001",
+                "SVA-PRP-008",
                 "AssertWithoutElse",
                 Severity::Warning,
                 "Concurrent assertion lacks an 'else' action block. When this assertion fails, the simulator emits \

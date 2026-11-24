@@ -1,4 +1,4 @@
-//! PORT-PTH-001 (HardcodedHostPaths): Disallow hardcoded absolute filesystem
+//! SVL-PRT-002 (HardcodedHostPaths): Disallow hardcoded absolute filesystem
 //! paths (/home/..., C:\...) in file operations ($readmemh, $fopen).
 
 use crate::support::ast::{call_site, string_value, subtree, unparen, Ast};
@@ -24,7 +24,7 @@ fn hardcoded_paths(c: &Cst, a: &Ast, s: &mut Sink) {
         }
         let Some(at) = c.first_tok(arg) else { continue };
         s.add(
-            "PORT-PTH-001",
+            "SVL-PRT-002",
             "HardcodedHostPaths",
             Severity::Error,
             format!(

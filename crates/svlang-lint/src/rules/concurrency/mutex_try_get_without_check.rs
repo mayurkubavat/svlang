@@ -1,4 +1,4 @@
-//! SV-CON-008 (MutexTryGetWithoutCheck): Flags non-blocking semaphore or mutex
+//! SVL-CON-004 (MutexTryGetWithoutCheck): Flags non-blocking semaphore or mutex
 //! try_get() calls whose return status is ignored, which risks threads
 //! executing critical sections without holding the lock.
 
@@ -34,7 +34,7 @@ pub(crate) fn try_get_unchecked(c: &Cst, s: &mut Sink) {
             add_n(
                 s,
                 times(c, st),
-                "SV-CON-008",
+                "SVL-CON-004",
                 "MutexTryGetWithoutCheck",
                 Severity::Warning,
                 format!(

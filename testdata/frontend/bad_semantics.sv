@@ -1,4 +1,4 @@
-// Compile errors the native front end reports as slang does (SV-CMP-001).
+// Compile errors the native front end reports as slang does (CMP-ERR-001).
 // Each `// error:` comment names the message expected on that line.
 interface bus_if (input logic clk);
   logic v;

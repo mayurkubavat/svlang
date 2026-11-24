@@ -1,4 +1,4 @@
-//! SV-DRV-001 (DrivingDuringReset): Disallow driving virtual interface control
+//! SVL-CON-021 (DrivingDuringReset): Disallow driving virtual interface control
 //! signals without an active reset check or synchronization guard.
 
 use crate::support::slang_ast::*;
@@ -46,7 +46,7 @@ pub(crate) fn driving_during_reset(c: &Cst, s: &mut Sink) {
         let Some(ft) = c.first_tok(nm) else { continue };
         let name = c.text_of(ft);
         s.add(
-            "SV-DRV-001",
+            "SVL-CON-021",
             "DrivingDuringReset",
             Severity::Warning,
             format!(

@@ -1,4 +1,4 @@
-//! SV-STY-007 (MethodBannerStyle): Standardizes method separator pre-banners.
+//! SVL-STY-005 (MethodBannerStyle): Standardizes method separator pre-banners.
 
 use crate::support::source_layout::banners;
 use crate::syntax::Cst;

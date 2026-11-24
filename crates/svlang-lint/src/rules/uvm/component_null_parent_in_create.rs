@@ -1,4 +1,4 @@
-//! UVM-STR-005 (ComponentNullParentInCreate): Flags UVM component factory
+//! UVM-FAC-007 (ComponentNullParentInCreate): Flags UVM component factory
 //! create calls passing 'null' as the parent handle, creating orphaned
 //! hierarchy nodes.
 
@@ -33,7 +33,7 @@ pub(crate) fn null_parent_create(c: &Cst, s: &mut Sink) {
         let call_text = whole.rsplit('\n').next().unwrap_or("").trim_matches([' ', '\t', '\r']);
         let Some(t) = c.first_tok(e) else { continue };
         s.add(
-            "UVM-STR-005",
+            "UVM-FAC-007",
             "ComponentNullParentInCreate",
             Severity::Warning,
             format!(

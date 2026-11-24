@@ -1,4 +1,4 @@
-//! SV-RND-020 (RandcInDynamicContainer): Disallows declaring 'randc' cyclic
+//! SVL-RND-019 (RandcInDynamicContainer): Disallows declaring 'randc' cyclic
 //! variables on dynamic arrays, queues, or associative arrays (IEEE 1800 §
 //! 18.4.1).
 
@@ -34,7 +34,7 @@ pub(crate) fn randc_dynamic(c: &Cst, s: &mut Sink) {
                     continue;
                 }
                 s.add(
-                    "SV-RND-020",
+                    "SVL-RND-019",
                     "RandcInDynamicContainer",
                     Severity::Error,
                     format!(

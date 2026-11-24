@@ -4,6 +4,24 @@ What changed in each release of the svlang crates (`svlang`, `sv-*`,
 `svlang-model`, `svlang-lint`, `svlang-lsp`, `svlang-cli`), `pysvlang`, and the
 `svlang.svlang` VS Code / Open VSX extension. They share one version number.
 
+## 0.6.0 (2026-11-23)
+
+### Breaking: Strict 2-Tier `DOM-GRP-NNN` (`3-3-3`) Lint Rule Taxonomy (`svlang-lint`)
+
+- **Standardized 475 Rule & Sub-Rule Signatures (`^(CMP|RTL|SVL|SVA|UVM)-[A-Z]{3}-[0-9]{3}$`)**: Consolidated 105 fragmented prefixes into **5 domains** (`CMP`, `RTL`, `SVL`, `SVA`, `UVM`) and **34 `DOM-GRP` prefixes** with zero legacy aliases:
+  - `CMP-ERR-001..002`: Compiler error & warning diagnostics (`Compiler`).
+  - `RTL-{CDC,DAT,FSM,SYN}-*`: Synthesizable RTL structure, FSM reachability/deadlocks, CDC, and X-optimism/width rules (`RTL`).
+  - `SVL-{CON,COR,COV,DED,DEP,DPI,MNT,NAM,OOP,PRF,PRT,RND,SEC,STY,TYP,WVR}-*`: Core SystemVerilog correctness, types, OOP, concurrency, randomization, coverage, performance, dead code, maintainability, portability, security, deprecated constructs, style, naming, and waivers.
+  - `SVA-{FPV,PRP}-*`: Concurrent/immediate SVA assertions and formal-readiness checks (`SVA`).
+  - `UVM-{CFG,CMP,DEP,FAC,NAM,OBJ,PHS,PRT,RAL,SEQ,TLM}-*`: IEEE 1800.2 UVM factory, phases, objections, `uvm_config_db`, sequences, TLM/scoreboards, component roles, RAL register models, portability, deprecated APIs, and UVM naming.
+- **Orthogonal Category Cleanup & Catalog Completeness**: Replaced overloaded/ad-hoc categories (`Advisory`, `RTL_TB_Bridge`) with 18 deterministic prefix-mapped categories, registered `SVL-WVR-002` (`UnusedWaiver`) in the rule catalog, and added string option metadata extraction (`options::get_str`) for `svlang lint --explain` and `catalog.json`.
+- **Prefix Wildcard Selectors (`DOM-*`, `DOM-GRP-*`)**: Added `svlang_lint::rule_selector_matches` supporting trailing `*` prefix wildcards (`RTL-*`, `SVL-CON-*`, `SVA-*`, `UVM-NAM-*`) across CLI `--rule` / `--fix-rule`, `.svlang-lint/config.{py,json}`, `waivers.json`, inline/block waivers (`// svlang-lint:waive`, `// svlang-lint:off`), and VS Code `svlang.lint.select` / `svlang.lint.ignore`.
+
+### Documentation, Storefront & Verification Tooling
+
+- **Catalog & Documentation Overhaul**: Regenerated `docs/rules/README.md` with **Domains (`DOM-*`)** and **Prefix & Category Matrix (`DOM-GRP-*`)** tables, updated `README.md`, `CONTRIBUTING.md`, `docs/`, `crates/svlang-lint/README.md`, and overhauled the `svlang.svlang` VS Code Marketplace / Open VSX storefront page (`editors/vscode/README.md`).
+- **3-Tier Verification & Gate Cleanup**: Wired `regex_gate.py` against `configurable_naming_engine.rs` into `tools/gates/prepush.sh --oracles` and removed retired C++ / `dv-*` path references across `tools/`, `python/tests/`, and `third_party/slang/`.
+
 ## 0.5.2 (2026-11-23)
 
 ### Editor & Language Server (`svlang-lsp`, `svlang.svlang`)

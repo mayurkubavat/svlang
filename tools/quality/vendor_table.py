@@ -65,7 +65,7 @@ def probes():
 def accepted(tool, res):
     text = res.stdout + res.stderr
     if tool == "svlang-lint":
-        return "SV-CMP-001 (" not in text
+        return "CMP-ERR-001 (" not in text
     if tool == "svlang":
         return res.returncode == 0
     if tool == "verilator":
@@ -74,9 +74,11 @@ def accepted(tool, res):
 
 
 def first_error(text):
+    prefix = str(REPO) + os.sep
     for line in text.splitlines():
         if re.search(r"error|Error|ERROR", line):
-            return re.sub(r"\x1b\[[0-9;]*m", "", line).strip()[:200]
+            clean = re.sub(r"\x1b\[[0-9;]*m", "", line).replace(prefix, "").strip()
+            return clean[:200]
     return ""
 
 
@@ -88,9 +90,9 @@ def measure(tool, out_dir):
         print(f"{tool}: cannot run {ver_cmd[0]}: {e}", file=sys.stderr)
         return 2
     version = (v.stdout or v.stderr).strip().splitlines()[0] if (v.stdout or v.stderr).strip() else "unknown"
-    if tool in ("svlang", "svlang-lint"):
+    if tool in ("svlang", "slang"):
         # Ours: the commit it was built from says more than a version number.
-        g = subprocess.run(["git", "-C", str(REPO), "describe", "--always", "--dirty"], capture_output=True, text=True)
+        g = subprocess.run(["git", "-C", str(REPO), "describe", "--always"], capture_output=True, text=True)
         version = f"{tool} at {g.stdout.strip() or 'unknown commit'}"
     results = {}
     for name, f, _, _ in probes():

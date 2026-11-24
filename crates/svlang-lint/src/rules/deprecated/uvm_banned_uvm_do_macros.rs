@@ -1,4 +1,4 @@
-//! UVM-BAN-002 (UvmBannedUvmDoMacros): Discourages black-box `uvm_do macros in
+//! UVM-DEP-007 (UvmBannedUvmDoMacros): Discourages black-box `uvm_do macros in
 //! sequence bodies.
 
 use crate::support::source_layout::banned_macros;

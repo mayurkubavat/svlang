@@ -1,4 +1,4 @@
-//! SV-RDB-008 (UnclearAbbreviation): Flags class, property, method and local
+//! SVL-MNT-049 (UnclearAbbreviation): Flags class, property, method and local
 //! names containing a vowel-less word of four or more letters (trnsfr, chnnl,
 //! rgstr) that is not a common DV short form (clk, cfg, ctrl, jtag, ...).
 
@@ -45,7 +45,7 @@ pub(crate) fn unclear_abbreviation(_: &Design, csts: &[Cst], s: &mut Sink) {
     let check = |s: &mut Sink, name: &str, loc: Loc| {
         if let Some(w) = ident_words(name).into_iter().find(|w| is_unclear_abbreviation(w)) {
             s.add(
-                "SV-RDB-008",
+                "SVL-MNT-049",
                 "UnclearAbbreviation",
                 Severity::Info,
                 format!("'{name}' abbreviates by dropping vowels ('{w}'). Spell the word out, or use the team's agreed short form."),

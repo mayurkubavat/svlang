@@ -1,4 +1,4 @@
-//! SV-PRF-010 (StringConcatInLoop): Disallows iterative in-place string or
+//! SVL-PRF-010 (StringConcatInLoop): Disallows iterative in-place string or
 //! unpacked array/queue concatenation (`s = {s, ...}`) or `$sformatf`
 //! accumulation inside loop bodies to prevent O(N^2) memory reallocation.
 
@@ -90,7 +90,7 @@ pub(crate) fn concat_in_loop(c: &Cst, s: &mut Sink) {
                 }
                 _ => continue,
             };
-            s.add("SV-PRF-010", "StringConcatInLoop", Severity::Warning, msg, c.loc(op));
+            s.add("SVL-PRF-010", "StringConcatInLoop", Severity::Warning, msg, c.loc(op));
         }
     }
 }

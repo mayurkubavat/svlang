@@ -1,4 +1,4 @@
-//! SV-DSN-005 (DeepInheritance): Flags classes with more than 3 user-defined
+//! SVL-MNT-012 (DeepInheritance): Flags classes with more than 3 user-defined
 //! ancestors above the UVM base class (CK depth of inheritance tree, Pylint
 //! too-many-ancestors).
 
@@ -7,7 +7,7 @@ use crate::syntax::Cst;
 use crate::{Severity, Sink};
 
 pub(crate) fn deep_inheritance(c: &Cst, s: &mut Sink) {
-    let limit = crate::options::get("SV-DSN-005", "max_depth", 3) as _;
+    let limit = crate::options::get("SVL-MNT-012", "max_depth", 3) as _;
     each_class(c, |classes, cm| {
         if cm.dit <= limit {
             return;
@@ -21,7 +21,7 @@ pub(crate) fn deep_inheritance(c: &Cst, s: &mut Sink) {
             chain.push_str(&format!(" : {b}"));
         }
         s.add(
-            "SV-DSN-005",
+            "SVL-MNT-012",
             "DeepInheritance",
             Severity::Info,
             format!(

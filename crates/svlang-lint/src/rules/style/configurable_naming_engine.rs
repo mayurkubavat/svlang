@@ -1,4 +1,4 @@
-//! SV-NAM-100 (ConfigurableNamingEngine): Parameterizable naming convention
+//! SVL-NAM-100 (ConfigurableNamingEngine): Parameterizable naming convention
 //! engine validating regex, prefix, suffix, and casing conventions across
 //! packages, interfaces, UVM classes, covergroups, and constraints.
 
@@ -122,7 +122,7 @@ fn default_spec(kind: &str) -> Option<Spec> {
     };
     Some(match kind {
         "Package" => s(
-            "SV-NAM-101",
+            "SVL-NAM-101",
             "Package",
             pat("^[a-z0-9_]+_pkg$"),
             "",
@@ -131,7 +131,7 @@ fn default_spec(kind: &str) -> Option<Spec> {
             "Packages should end with '_pkg' for clean namespace identification.",
         ),
         "Interface" => s(
-            "SV-NAM-102",
+            "SVL-NAM-102",
             "Interface",
             pat("^[a-z0-9_]+_if$"),
             "",
@@ -221,7 +221,7 @@ fn default_spec(kind: &str) -> Option<Spec> {
             "UVM scoreboards must end with '_scoreboard' or '_scb'.",
         ),
         "Covergroup" => s(
-            "SV-NAM-105",
+            "SVL-NAM-105",
             "Covergroup",
             pat("^[a-zA-Z0-9_]+_cg$"),
             "",
@@ -230,7 +230,7 @@ fn default_spec(kind: &str) -> Option<Spec> {
             "Covergroup declarations must end with '_cg' suffix.",
         ),
         "Coverpoint" => s(
-            "SV-NAM-106",
+            "SVL-NAM-106",
             "Coverpoint",
             pat("^cp_[a-zA-Z0-9_]+$"),
             "cp_",
@@ -239,7 +239,7 @@ fn default_spec(kind: &str) -> Option<Spec> {
             "Coverpoints should start with 'cp_' prefix.",
         ),
         "Cross" => s(
-            "SV-NAM-107",
+            "SVL-NAM-107",
             "Cross",
             pat("^(cross|cx)_[a-zA-Z0-9_]+$"),
             "",
@@ -248,7 +248,7 @@ fn default_spec(kind: &str) -> Option<Spec> {
             "Cross coverages should start with 'cross_' or 'cx_' prefix.",
         ),
         "Parameter" => s(
-            "SV-NAM-109",
+            "SVL-NAM-109",
             "Parameter",
             Option::None,
             "",
@@ -257,7 +257,7 @@ fn default_spec(kind: &str) -> Option<Spec> {
             "Parameters and constants should follow ALL_CAPS conventions.",
         ),
         "TypedefEnum" => s(
-            "SV-NAM-110",
+            "SVL-NAM-110",
             "TypedefEnum",
             pat("^[a-zA-Z0-9_]+_e$"),
             "",
@@ -266,7 +266,7 @@ fn default_spec(kind: &str) -> Option<Spec> {
             "Enum typedefs should end with '_e' suffix.",
         ),
         "Typedef" => s(
-            "SV-NAM-111",
+            "SVL-NAM-111",
             "Typedef",
             pat("^[a-zA-Z0-9_]+_t$"),
             "",
@@ -275,7 +275,7 @@ fn default_spec(kind: &str) -> Option<Spec> {
             "User-defined typedefs should end with '_t' suffix.",
         ),
         "Constraint" => s(
-            "SV-NAM-112",
+            "SVL-NAM-112",
             "Constraint",
             pat("^[a-zA-Z0-9_]+_c$"),
             "",
@@ -287,7 +287,7 @@ fn default_spec(kind: &str) -> Option<Spec> {
         "Class" => Spec {
             enabled: false,
             ..s(
-                "SV-NAM-104",
+                "SVL-NAM-104",
                 "Class",
                 Option::None,
                 "",

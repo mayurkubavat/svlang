@@ -18,7 +18,7 @@ interpreter).
     svlang lint tb/*.sv +incdir+tb --preset methodology
     svlang lint -f tb.f --json findings.json --sarif findings.sarif
     svlang lint --init            # write a starter .svlang-lint/config.py
-    svlang lint --explain SV-RND-001
+    svlang lint --explain SVL-RND-001
     svlang lsp                    # serve LSP over stdio to any editor
     svlang btor2 -f rtl.f -top top -o top.btor2
 

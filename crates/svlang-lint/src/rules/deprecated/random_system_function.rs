@@ -1,4 +1,4 @@
-//! SV-DEP-004 (RandomSystemFunction): Disallow legacy Verilog '$random'.
+//! SVL-DEP-004 (RandomSystemFunction): Disallow legacy Verilog '$random'.
 
 use crate::support::copies::{calls, copies};
 use crate::syntax::Cst;
@@ -11,7 +11,7 @@ pub(crate) fn random_system_function(c: &Cst, s: &mut Sink) {
         }
         for _ in 0..copies(c, n) {
             s.add(
-                "SV-DEP-004",
+                "SVL-DEP-004",
                 "RandomSystemFunction",
                 Severity::Warning,
                 "Verilog system function '$random' is superseded in IEEE 1800 § 20.15. \

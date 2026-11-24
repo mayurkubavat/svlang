@@ -1,74 +1,33 @@
-# IEEE 1800 and 1800.2 conformance
+# IEEE 1800 and 1800.2 Conformance
 
-svlang-lint aims to lint any code that is legal IEEE 1800-2023 SystemVerilog and
-IEEE 1800.2 UVM. Slang does the parsing and elaboration; the pieces below keep
-that claim measured, and make the parts slang cannot do explicit add-ons.
+`svlang` compiles IEEE 1800-2023 SystemVerilog and IEEE 1800.2 UVM in pure Rust, and cross-checks its preprocessor, parser, elaboration, type system, and netlist lowering against suite gates and optional differential compiler oracles.
 
-## LRM probes (`lrm_conformance_test`)
+## LRM Clause Probes & Conformance Gates
 
-`testdata/conformance/lrm/` holds one probe file per clause group of IEEE
-1800-2023 (clauses 5 to 35) plus one for the constructs 2023 added.
-`testdata/conformance/clauses.json` maps each clause to its probe. The test runs
-every probe with all rules on and fails when:
+- `testdata/conformance/lrm/` and `testdata/conformance/ieee1800_2023/` hold positive and negative IEEE 1800-2023 probes across clauses 5 through 35 (`testdata/conformance/clauses.json`).
+- Legal probes must compile with zero `CMP-ERR-001` diagnostics under `svlang check` and `svlang lint --preset all --experimental`, while negative probes must be rejected cleanly.
+- Clauses without compile-time static semantics are documented as `out_of_scope` in `clauses.json` (Clause 32 SDF back-annotation and Clause 34 encrypted envelopes).
 
-- svlang-lint crashes or does not write a JSON report;
-- a probe reports a compile error (SV-CMP-001), meaning legal code was rejected;
-- a clause from 5 to 35 has no probe, or a probe is not in the manifest.
-
-Clauses with no compile-time meaning are marked `out_of_scope` with the reason:
-32 (SDF back-annotation happens in the simulator) and 34 (protected envelopes
-cannot be decrypted; the `opaque-ip` override handles the code around them).
-
-When slang or svlang-lint rejects legal code, add the construct to its clause's
-probe first; the test then fails until it is fixed or an override covers it.
-
-## AST coverage (`ast_coverage_floor_test`)
-
-Compiling a construct is not the same as checking it. `tools/quality/ast_coverage.py`
-counts the slang AST kinds (symbols, statements, expressions, timing controls,
-assertion expressions, constraints) that some rule or analysis names, and lists
-the ones nothing inspects:
-
-```
-python3 tools/quality/ast_coverage.py               # table of inspected / total, and the gaps
-python3 tools/quality/ast_coverage.py --json cov.json
+```sh
+cargo test -p svlang --test ieee_and_census_fixes
+python3 tools/gates/netlist_gate.py
 ```
 
-`testdata/conformance/ast_coverage_floor.json` records the current counts. The
-test fails when a category drops below its floor. When new rules inspect more
-kinds, raise the floor in the same change.
+With the optional dev-only Slang dumpers built (`cmake --preset oracles && cmake --build build -j 4`), differential gates compare `svlang` against Slang across preprocessing, syntax trees, symbol binding, generic specializations, expression types/widths, and Slang's own AST unit tests:
 
-## Language version
-
-The `lang-std` override (on by default) compiles as IEEE 1800-2023 unless
-`--std` names another version. Slang's own default is 1800-2017.
-
-## UVM versions
-
-`uvm::ApiPack` detects the UVM release being compiled (from `uvm_pkg`'s
-version parameters) and loads its API pack from `data/uvm-api/`, generated from
-the `@uvm-ieee`, `@uvm-accellera` and `@uvm-contrib` tags in uvm-core:
-
-```
-python3 tools/codegen/gen_uvm_api_pack.py ../uvm-core --out data/uvm-api
+```sh
+python3 tools/gates/ieee_gate.py
+python3 tools/gates/sym_gate.py --specs --types --values
+python3 tools/gates/expr_gate.py
+python3 tools/gates/slang_unit_gate.py
 ```
 
-Packs are embedded in the binary at build time; `SVLANG_LINT_UVM_API_PACK=<file>`
-replaces them for one run. Rules UVM-API-001 (Accellera-only API) and
-UVM-API-002 (deprecated macro) read only the pack, so a new UVM release needs a
-new pack, not new code.
+## UVM Release API Packs (`1.1d`, `1.2`, `2020.3.1`)
 
-## Keeping up with slang
+`svlang_lint::uvm_api` detects the UVM release being compiled from `uvm_pkg`'s version parameters and selects the matching API pack embedded from `crates/svlang-lint/data/uvm-api/`:
 
-`tools/quality/slang_canary.py` builds svlang-lint against slang master in a separate
-folder, runs the conformance, overlay and rule suites, and writes a Markdown
-report. When an override's slang bug is fixed, or a known crash stops
-crashing, the overlay test fails and names it, so the workaround is deleted
-when the pin moves.
-
-```
-python3 tools/quality/slang_canary.py --work ../canary --uvm-home ../uvm-core --report canary.md
+```sh
+python3 tools/codegen/gen_uvm_api_pack.py ../uvm-core --out crates/svlang-lint/data/uvm-api
 ```
 
-`svlang-lint --list-addons` lists the overrides, profiles and UVM API packs in
-the binary.
+`SVLANG_LINT_UVM_API_PACK=<file>` overrides the embedded pack for a single run. Rules `UVM-PRT-001` (`AccelleraOnlyApi`), `UVM-PRT-002` (`ContribOnlyApi`), `UVM-DEP-008` (`DeprecatedUvmMacro`), and `UVM-DEP-009` (`DeprecatedUvmApi`) read directly from the active version pack, so supporting a new UVM release only requires generating its pack JSON.

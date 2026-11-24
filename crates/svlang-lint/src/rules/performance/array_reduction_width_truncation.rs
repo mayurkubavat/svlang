@@ -1,4 +1,4 @@
-//! SV-PRF-002 (ArrayReductionWidthTruncation): Array reduction methods (.sum,
+//! SVL-PRF-002 (ArrayReductionWidthTruncation): Array reduction methods (.sum,
 //! .product) accumulate at element bit-width before extension to LHS.
 
 use crate::expr_types::expr_types;
@@ -42,7 +42,7 @@ pub(crate) fn array_reduction_width(c: &Cst, out: &mut Sink) {
         let Some(t) = c.first_tok(call) else { continue };
         for _ in 0..ast_visits(c, e) {
             out.add(
-                "SV-PRF-002",
+                "SVL-PRF-002",
                 "ArrayReductionWidthTruncation",
                 Severity::Error,
                 format!(

@@ -1,4 +1,4 @@
-//! SV-INT-001 (BlockingAssignmentToInterface): Disallows blocking assignments
+//! SVL-CON-024 (BlockingAssignmentToInterface): Disallows blocking assignments
 //! ('=') when driving virtual interface or clocking block signals from
 //! procedural code.
 //!
@@ -83,7 +83,7 @@ pub(crate) fn blocking_to_interface(c: &Cst, s: &mut Sink) {
         let lhs = slang_trimmed(c, l);
         if drives_interface(c, l, &lhs) && !in_setup_phase(c, b) {
             s.add(
-                "SV-INT-001",
+                "SVL-CON-024",
                 "BlockingAssignmentToInterface",
                 Severity::Error,
                 format!(
@@ -93,7 +93,7 @@ pub(crate) fn blocking_to_interface(c: &Cst, s: &mut Sink) {
             )
             .fixes
             .extend({
-                // A function may not hold '<=' cleanly either (SV-LANG-005
+                // A function may not hold '<=' cleanly either (SVL-COR-022
                 // would undo the fix), so there the rewrite is only shown.
                 let in_function = crate::support::slang_ast::ancestors(c, b).any(|a| c.kind(a) == FunctionDecl);
                 let (desc, safety) = if in_function {

@@ -295,7 +295,7 @@ fn diagnostics_and_quick_fixes() {
     c.notify("textDocument/didOpen", &open(DRIVE));
     let d = c.diagnostics(&file);
     // The blocking drive of a clocking block signal, on the `=` of line 11.
-    assert!(d.contains(r#""code":"SV-INT-001""#), "{d}");
+    assert!(d.contains(r#""code":"SVL-CON-024""#), "{d}");
     assert!(d.contains(r#""source":"svlang-lint""#) && d.contains(r#""severity":1"#), "{d}");
     let (line, col) = pos(DRIVE, "= 8'hFF", 0, 0);
     assert!(d.contains(&format!(r#""start":{{"line":{line},"character":{col}}}"#)), "{d}");
@@ -311,8 +311,8 @@ fn diagnostics_and_quick_fixes() {
     assert!(r.contains(r#""kind":"quickfix""#) && r.contains(r#""newText":"<=""#), "{r}");
     assert!(r.contains(&format!(r#""end":{{"line":{line},"character":{}}}"#, col + 1)), "{r}");
     // And the finding can be waived with a comment on the line above.
-    assert!(r.contains(r#""title":"Waive SV-INT-001 on this line""#), "{r}");
-    assert!(r.contains(r#""newText":"    // svlang-lint-disable-next-line SV-INT-001\n""#), "{r}");
+    assert!(r.contains(r#""title":"Waive SVL-CON-024 on this line""#), "{r}");
+    assert!(r.contains(r#""newText":"    // svlang-lint-disable-next-line SVL-CON-024\n""#), "{r}");
 
     // Typing the fix clears it, without a save.
     let change = format!(
@@ -322,10 +322,10 @@ fn diagnostics_and_quick_fixes() {
     );
     c.notify("textDocument/didChange", &change);
     let d = c.diagnostics(&file);
-    assert!(!d.contains(r#""code":"SV-INT-001""#), "{d}");
+    assert!(!d.contains(r#""code":"SVL-CON-024""#), "{d}");
 
     // So does the waiver comment.
-    let waived = DRIVE.replace("    vif.cb", "    // svlang-lint-disable-next-line SV-INT-001\n    vif.cb");
+    let waived = DRIVE.replace("    vif.cb", "    // svlang-lint-disable-next-line SVL-CON-024\n    vif.cb");
     let change = format!(
         r#"{{"textDocument":{{"uri":"file://{}","version":3}},"contentChanges":[{{"text":{}}}]}}"#,
         file.display(),
@@ -333,7 +333,7 @@ fn diagnostics_and_quick_fixes() {
     );
     c.notify("textDocument/didChange", &change);
     let d = c.diagnostics(&file);
-    assert!(!d.contains(r#""code":"SV-INT-001""#), "{d}");
+    assert!(!d.contains(r#""code":"SVL-CON-024""#), "{d}");
 
     // Closing the file takes its diagnostics away.
     c.notify("textDocument/didClose", &format!(r#"{{"textDocument":{{"uri":"file://{}"}}}}"#, file.display()));
@@ -373,8 +373,8 @@ endmodule\n";
     );
     c.notify("textDocument/didOpen", &open);
     let d = c.diagnostics(&file);
-    assert!(d.contains(r#""code":"SV-FPV-001""#), "{d}");
-    assert!(d.contains(r#""code":"SV-FPV-003""#), "{d}");
+    assert!(d.contains(r#""code":"SVA-FPV-001""#), "{d}");
+    assert!(d.contains(r#""code":"SVA-FPV-003""#), "{d}");
 
     let actions = c.request(
         "textDocument/codeAction",
@@ -388,7 +388,7 @@ endmodule\n";
     assert!(actions.contains("Insert 'disable iff (!rst_ni)'"), "{actions}");
     assert!(actions.contains(r#""newText":") disable iff (!rst_ni)""#), "{actions}");
 
-    // Applying both quick fixes clears SV-FPV-001 and SV-FPV-003.
+    // Applying both quick fixes clears SVA-FPV-001 and SVA-FPV-003.
     let fixed = src.replace("m_bad_out: assume property", "m_bad_out: assert property").replace(
         "a_no_rst:  assert property (@(posedge clk) req",
         "a_no_rst:  assert property (@(posedge clk) disable iff (!rst_ni) req",
@@ -400,8 +400,8 @@ endmodule\n";
     );
     c.notify("textDocument/didChange", &change);
     let d2 = c.diagnostics(&file);
-    assert!(!d2.contains(r#""code":"SV-FPV-001""#), "{d2}");
-    assert!(!d2.contains(r#""code":"SV-FPV-003""#), "{d2}");
+    assert!(!d2.contains(r#""code":"SVA-FPV-001""#), "{d2}");
+    assert!(!d2.contains(r#""code":"SVA-FPV-003""#), "{d2}");
 
     let _ = c.request("shutdown", "null");
     let _ = std::fs::remove_dir_all(&dir);
@@ -536,13 +536,13 @@ fn lint_trigger_require_config_ignore_and_fix_all() {
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
 
-    // Style violation with safe autofix: missing matching end label (SV-STY-104) + trailing space (SV-STY-102).
+    // Style violation with safe autofix: missing matching end label (SVL-STY-104) + trailing space (SVL-STY-102).
     let src = "module demo;\n  logic a;   \nendmodule\n";
     let file = dir.join("demo.sv");
     std::fs::write(&file, src).unwrap();
 
     // Start with `requireConfig: true` and `preset: "style"`: automatic open stays in `standalone` mode (0 diags),
-    // then `svlang/lintNow` runs on demand and reports SV-STY-104 & SV-STY-102 + `source.fixAll.svlang`!
+    // then `svlang/lintNow` runs on demand and reports SVL-STY-104 & SVL-STY-102 + `source.fixAll.svlang`!
     let mut c = Client::start_with_opts(&dir, r#"{"requireConfig":true,"preset":"style"}"#);
     let open = format!(
         r#"{{"textDocument":{{"uri":"file://{}","languageId":"systemverilog","version":1,"text":{}}}}}"#,
@@ -558,7 +558,7 @@ fn lint_trigger_require_config_ignore_and_fix_all() {
     // Manual `svlang/lintNow` runs even without a config file!
     let _ = c.request("svlang/lintNow", "{}");
     let d_manual = c.diagnostics(&file);
-    assert!(d_manual.contains(r#""code":"SV-STY-102""#), "{d_manual}");
+    assert!(d_manual.contains(r#""code":"SVL-STY-102""#), "{d_manual}");
 
     // `source.fixAll.svlang` returns combined safe fixes!
     let fix_all = c.request(
@@ -570,10 +570,10 @@ fn lint_trigger_require_config_ignore_and_fix_all() {
     );
     assert!(fix_all.contains(r#""kind":"source.fixAll.svlang""#), "{fix_all}");
 
-    // Adding `SV-STY-102` to `ignore` via `svlang/setLintOptions` (with `requireConfig: false`) silences `SV-STY-102`!
-    let _ = c.request("svlang/setLintOptions", r#"{"requireConfig":false,"preset":"style","ignore":["SV-STY-102"]}"#);
+    // Adding `SVL-STY-102` to `ignore` via `svlang/setLintOptions` (with `requireConfig: false`) silences `SVL-STY-102`!
+    let _ = c.request("svlang/setLintOptions", r#"{"requireConfig":false,"preset":"style","ignore":["SVL-STY-102"]}"#);
     let d_ignored = c.diagnostics(&file);
-    assert!(!d_ignored.contains(r#""code":"SV-STY-102""#), "{d_ignored}");
+    assert!(!d_ignored.contains(r#""code":"SVL-STY-102""#), "{d_ignored}");
 
     let _ = c.request("shutdown", "null");
     let _ = std::fs::remove_dir_all(&dir);
@@ -586,7 +586,7 @@ fn mode1_syntax_diagnostics_keep_compiler_checks_with_lint_off() {
     std::fs::create_dir_all(&dir).unwrap();
 
     // Clean IEEE 1800-2023 SV file that intentionally violates static lint rules
-    // (legacy `reg` SV-BAN-001 + trailing space SV-STY-102 + blocking in clocked always SV-COR-001):
+    // (legacy `reg` SVL-DEP-007 + trailing space SVL-STY-102 + blocking in clocked always SVL-COR-001):
     // in Mode 1 (`lintTrigger: "off"`, `syntaxDiagnostics: true`), 0 diagnostics should appear!
     let clean_sv = "module mode1_demo(input logic clk, output logic q);\n  reg r;   \n  always_ff @(posedge clk) q = 1'b0;\nendmodule\n";
     let file = dir.join("mode1_demo.sv");
@@ -605,7 +605,7 @@ fn mode1_syntax_diagnostics_keep_compiler_checks_with_lint_off() {
     assert!(st1.contains(r#""state":"syntax""#), "{st1}");
 
     // Introduce an IEEE 1800 semantic error (undeclared identifier `missing_sig` in a self-contained module):
-    // Mode 1 immediately reports `SV-CMP-001` with `source: "svlang"` while still suppressing lint rules!
+    // Mode 1 immediately reports `CMP-ERR-001` with `source: "svlang"` while still suppressing lint rules!
     let broken_sv =
         "module mode1_demo(input logic clk, output logic q);\n  reg r;   \n  assign q = missing_sig;\nendmodule\n";
     let change = format!(
@@ -615,10 +615,10 @@ fn mode1_syntax_diagnostics_keep_compiler_checks_with_lint_off() {
     );
     c.notify("textDocument/didChange", &change);
     let d_broken = c.diagnostics(&file);
-    assert!(d_broken.contains(r#""code":"SV-CMP-001""#), "Mode 1 must report compiler diagnostics: {d_broken}");
+    assert!(d_broken.contains(r#""code":"CMP-ERR-001""#), "Mode 1 must report compiler diagnostics: {d_broken}");
     assert!(d_broken.contains(r#""source":"svlang""#), "{d_broken}");
-    assert!(!d_broken.contains(r#""code":"SV-BAN-001""#), "{d_broken}");
-    assert!(!d_broken.contains(r#""code":"SV-STY-102""#), "{d_broken}");
+    assert!(!d_broken.contains(r#""code":"SVL-DEP-007""#), "{d_broken}");
+    assert!(!d_broken.contains(r#""code":"SVL-STY-102""#), "{d_broken}");
 
     // Fix the compiler error -> diagnostics clear back to [] while `svlang/lintNow` still runs all lint rules on demand!
     let fix_change = format!(
@@ -632,7 +632,7 @@ fn mode1_syntax_diagnostics_keep_compiler_checks_with_lint_off() {
 
     let _ = c.request("svlang/lintNow", "{}");
     let d_manual = c.diagnostics(&file);
-    assert!(d_manual.contains(r#""code":"SV-BAN-001""#), "Manual Lint Now must still run lint rules: {d_manual}");
+    assert!(d_manual.contains(r#""code":"SVL-DEP-007""#), "Manual Lint Now must still run lint rules: {d_manual}");
     assert!(d_manual.contains(r#""source":"svlang-lint""#), "{d_manual}");
 
     let _ = c.request("shutdown", "null");

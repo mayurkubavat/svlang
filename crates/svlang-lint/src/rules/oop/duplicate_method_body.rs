@@ -1,4 +1,4 @@
-//! SV-DUP-001 (DuplicateMethodBody): Detects identical or copy-pasted
+//! SVL-MNT-021 (DuplicateMethodBody): Detects identical or copy-pasted
 //! subroutine method bodies across different classes.
 
 use crate::support::class_items::decl_name;
@@ -72,7 +72,7 @@ pub(crate) fn duplicate_body(_: &Design, csts: &[Cst], s: &mut Sink) {
                     Some((kc, km, kl)) => {
                         if *kc != cname {
                             let f = s.add(
-                                "SV-DUP-001",
+                                "SVL-MNT-021",
                                 "DuplicateMethodBody",
                                 Severity::Warning,
                                 format!(

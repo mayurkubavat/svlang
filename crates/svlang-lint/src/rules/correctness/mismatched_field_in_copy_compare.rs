@@ -1,4 +1,4 @@
-//! SV-BUG-004 (MismatchedFieldInCopyCompare): In do_copy/do_compare and similar
+//! SVL-COR-011 (MismatchedFieldInCopyCompare): In do_copy/do_compare and similar
 //! field-wise methods, flags a field of this object paired with a differently
 //! named field of the other object when the matching field exists.
 
@@ -141,7 +141,7 @@ impl Pairing<'_, '_, '_> {
         let cast = c.kind(unparen(c, theirs)) == CastExpr;
         let text = if converted || cast { String::new() } else { expr_text(c, theirs) };
         s.add(
-            "SV-BUG-004",
+            "SVL-COR-011",
             "MismatchedFieldInCopyCompare",
             Severity::Error,
             format!(

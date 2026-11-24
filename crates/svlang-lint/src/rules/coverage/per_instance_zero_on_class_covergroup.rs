@@ -1,4 +1,4 @@
-//! SV-COV-021 (PerInstanceZeroOnClassCovergroup): Flags `option.per_instance = 0`
+//! SVL-COV-021 (PerInstanceZeroOnClassCovergroup): Flags `option.per_instance = 0`
 //! explicitly assigned inside a `covergroup` declared in a `class` or a
 //! parameterized `module`/`interface`, which merges multi-instance coverage
 //! holes into type-level totals.
@@ -32,7 +32,7 @@ pub(crate) fn per_instance_zero_on_class_covergroup(c: &Cst, out: &mut Sink) {
             let txt = c.trimmed(opt).replace([' ', '\t'], "");
             if txt == "option.per_instance=0;" || txt == "option.per_instance=1'b0;" || txt == "option.per_instance=0" {
                 out.add(
-                    "SV-COV-021",
+                    "SVL-COV-021",
                     "PerInstanceZeroOnClassCovergroup",
                     Severity::Warning,
                     format!(

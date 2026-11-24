@@ -1,4 +1,4 @@
-//! SV-COV-017 (UnreachableCoverBin): Flags coverpoint bins whose values all lie
+//! SVL-COV-017 (UnreachableCoverBin): Flags coverpoint bins whose values all lie
 //! outside the range of the coverpoint expression (for example bins {[16:31]}
 //! on a 4-bit value).
 
@@ -194,7 +194,7 @@ pub(crate) fn unreachable_bin(c: &Cst, s: &mut Sink) {
             add_n(
                 s,
                 n,
-                "SV-COV-017",
+                "SVL-COV-017",
                 "UnreachableCoverBin",
                 Severity::Warning,
                 format!(

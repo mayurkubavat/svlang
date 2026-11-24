@@ -1,4 +1,4 @@
-//! SV-OOP-003 (MissingSuperNew): Constructors in derived classes should
+//! SVL-OOP-003 (MissingSuperNew): Constructors in derived classes should
 //! explicitly invoke super.new(...) to ensure base class state is initialized.
 
 use crate::{find_method, Severity, Sink};
@@ -17,7 +17,7 @@ pub(crate) fn missing_super_new(d: &Design, out: &mut Sink) {
             continue;
         }
         out.add(
-            "SV-OOP-003",
+            "SVL-OOP-003",
             "MissingSuperNew",
             Severity::Warning,
             format!(

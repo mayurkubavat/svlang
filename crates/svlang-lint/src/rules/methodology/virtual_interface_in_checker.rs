@@ -1,4 +1,4 @@
-//! UVM-ROL-006 (VirtualInterfaceInChecker): Flags virtual interface handles in
+//! UVM-CMP-023 (VirtualInterfaceInChecker): Flags virtual interface handles in
 //! scoreboards and subscribers.
 
 use crate::support::class_roles::{role, role_name, user_classes, Role};
@@ -13,7 +13,7 @@ pub(crate) fn virtual_interface_in_checker(d: &Design, out: &mut Sink) {
         }
         for p in cls.properties.iter().filter(|p| p.is_virtual_interface) {
             out.add(
-                "UVM-ROL-006",
+                "UVM-CMP-023",
                 "VirtualInterfaceInChecker",
                 Severity::Warning,
                 format!(

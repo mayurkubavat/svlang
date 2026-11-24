@@ -1,4 +1,4 @@
-//! SV-MET-001 (CognitiveComplexity): Flags routines whose Sonar cognitive
+//! SVL-MNT-029 (CognitiveComplexity): Flags routines whose Sonar cognitive
 //! complexity (nesting-weighted branching, with fork/join counted as nesting)
 //! exceeds the threshold (default 25; Sonar S3776).
 
@@ -8,7 +8,7 @@ use crate::syntax::Cst;
 use crate::{Severity, Sink};
 
 pub(crate) fn cognitive_complexity(c: &Cst, s: &mut Sink) {
-    let limit = crate::options::get("SV-MET-001", "threshold", 25) as _;
+    let limit = crate::options::get("SVL-MNT-029", "threshold", 25) as _;
     each_routine(c, |_, r| {
         let m = routine_metrics(c, r.body);
         if m.cognitive <= limit {
@@ -17,7 +17,7 @@ pub(crate) fn cognitive_complexity(c: &Cst, s: &mut Sink) {
         report(
             s,
             r.times,
-            "SV-MET-001",
+            "SVL-MNT-029",
             "CognitiveComplexity",
             Severity::Warning,
             format!(

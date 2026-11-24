@@ -1,4 +1,4 @@
-//! SV-PRF-012 (UnboundedDynamicArrayInConstraint): Flags dynamic array or queue
+//! SVL-PRF-012 (UnboundedDynamicArrayInConstraint): Flags dynamic array or queue
 //! size constraints with an upper bound (< or <=) lacking an explicit lower
 //! bound.
 
@@ -23,7 +23,7 @@ pub(crate) fn unbounded_size(c: &Cst, s: &mut Sink) {
         let lower = expr.contains('>') || expr.contains("inside") || expr.contains("==");
         let Some(t) = c.first_tok(e).filter(|_| upper && !lower) else { continue };
         s.add(
-            "SV-PRF-012",
+            "SVL-PRF-012",
             "UnboundedDynamicArrayInConstraint",
             Severity::Warning,
             format!(

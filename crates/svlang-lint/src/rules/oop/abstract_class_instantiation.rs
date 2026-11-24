@@ -1,4 +1,4 @@
-//! SV-OOP-013 (AbstractClassInstantiation): Disallows direct instantiation of
+//! SVL-OOP-011 (AbstractClassInstantiation): Disallows direct instantiation of
 //! abstract (virtual) classes via 'new()'.
 
 use crate::support::class_fields::{class_property, declared_type};
@@ -78,7 +78,7 @@ pub(crate) fn abstract_new(c: &Cst, s: &mut Sink) {
         }
         let Some(at) = c.first_tok(n) else { continue };
         s.add(
-            "SV-OOP-013",
+            "SVL-OOP-011",
             "AbstractClassInstantiation",
             Severity::Error,
             "Cannot instantiate abstract (virtual) class via 'new()'. In SystemVerilog (IEEE 1800 § 8.21), virtual \

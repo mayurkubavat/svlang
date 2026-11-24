@@ -1,4 +1,4 @@
-//! UVM-ROL-002 (CoverageOutsideObservers): Flags covergroups declared in
+//! UVM-CMP-019 (CoverageOutsideObservers): Flags covergroups declared in
 //! drivers and sequences.
 
 use crate::support::class_roles::{role, role_name, user_classes, Role};
@@ -16,7 +16,7 @@ pub(crate) fn coverage_outside_observers(d: &Design, out: &mut Sink) {
                 continue;
             }
             out.add(
-                "UVM-ROL-002",
+                "UVM-CMP-019",
                 "CoverageOutsideObservers",
                 Severity::Warning,
                 format!(

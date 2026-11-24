@@ -1,0 +1,14 @@
+{
+  "bad.sv": [
+    {
+      "rule": "SVL-STY-020",
+      "file": "bus_drv.svh",
+      "line": 2
+    },
+    {
+      "rule": "SVL-STY-020",
+      "file": "bus_seqs.svh",
+      "line": 6
+    }
+  ]
+}

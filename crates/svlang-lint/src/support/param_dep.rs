@@ -3,8 +3,8 @@
 //!
 //! `idx_t'(sel)` with `idx_t = logic [IdxWidth-1:0]` is redundant only
 //! where IdxWidth is 1; `cnt == 0` compares a 1-bit value only where the
-//! counter's width parameter is 1. Rules that judge the code (SV-TYP-008,
-//! SV-RDB-005) leave such cases alone, in both engines.
+//! counter's width parameter is 1. Rules that judge the code (SVL-TYP-002,
+//! SVL-MNT-046) leave such cases alone, in both engines.
 
 use crate::support::slang_ast::{ancestors, kids, lookup, DeclKind};
 use crate::syntax::Cst;

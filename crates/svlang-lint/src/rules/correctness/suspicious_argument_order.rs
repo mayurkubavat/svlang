@@ -1,4 +1,4 @@
-//! SV-BUG-007 (SuspiciousArgumentOrder): Flags positional calls where an
+//! SVL-COR-014 (SuspiciousArgumentOrder): Flags positional calls where an
 //! argument's name matches a different parameter of the callee, such as
 //! write(len, addr) for write(addr, len) (clang-tidy
 //! readability-suspicious-call-argument, Sonar S2234).
@@ -110,7 +110,7 @@ pub(crate) fn suspicious_argument_order(c: &Cst, s: &mut Sink) {
         let same = formals[i].1.is_some() && types.arg_type(a) == formals[i].1;
         let text = if same { expr_text(c, a) } else { String::new() };
         s.add(
-            "SV-BUG-007",
+            "SVL-COR-014",
             "SuspiciousArgumentOrder",
             Severity::Warning,
             format!(

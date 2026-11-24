@@ -1,4 +1,4 @@
-//! SV-RND-015 (UnconstrainedRandVariable): Flags non-static 'rand' class
+//! SVL-RND-014 (UnconstrainedRandVariable): Flags non-static 'rand' class
 //! properties that are never constrained in any constraint block within the
 //! class.
 
@@ -126,7 +126,7 @@ pub(crate) fn unconstrained_rand(c: &Cst, s: &mut Sink) {
                 continue;
             }
             s.add(
-                "SV-RND-015",
+                "SVL-RND-014",
                 "UnconstrainedRandVariable",
                 Severity::Warning,
                 format!(

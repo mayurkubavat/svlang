@@ -1,4 +1,4 @@
-//! SV-DUP-003 (DuplicatedConstraint): Flags a constraint body repeated in two
+//! SVL-MNT-023 (DuplicatedConstraint): Flags a constraint body repeated in two
 //! classes that do not inherit from each other.
 
 use crate::support::class_roles::{derives, user_classes, Index};
@@ -10,9 +10,9 @@ use svlang::syntax::SyntaxKind::*;
 use svlang_model::{Class, Design};
 
 pub(crate) fn duplicated_constraint(d: &Design, csts: &[Cst], out: &mut Sink) {
-    // Option `min_tokens` (rules.SV-DUP-003.options).
+    // Option `min_tokens` (rules.SVL-MNT-023.options).
     fn min_tokens() -> usize {
-        crate::options::get("SV-DUP-003", "min_tokens", 8) as usize
+        crate::options::get("SVL-MNT-023", "min_tokens", 8) as usize
     }
     let ix = Index::new(csts);
     let mut generated = Generated::new(d, csts);
@@ -45,7 +45,7 @@ pub(crate) fn duplicated_constraint(d: &Design, csts: &[Cst], out: &mut Sink) {
             match found {
                 Some((k, kname, kat)) => {
                     out.add(
-                        "SV-DUP-003",
+                        "SVL-MNT-023",
                         "DuplicatedConstraint",
                         Severity::Warning,
                         format!(

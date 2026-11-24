@@ -1,0 +1,16 @@
+{
+  "bad.sv": [
+    {
+      "rule": "SVL-OOP-021",
+      "line": 19
+    },
+    {
+      "rule": "SVL-OOP-021",
+      "line": 20
+    },
+    {
+      "rule": "SVL-OOP-021",
+      "line": 21
+    }
+  ]
+}

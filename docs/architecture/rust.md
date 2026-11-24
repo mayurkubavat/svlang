@@ -127,22 +127,19 @@ the serial order and sorted by position and rule, then inline waivers are
 applied, so output is the same for any thread count. `SVLANG_PROFILE=1`
 prints the cost of each rule.
 
-Every ported rule matches its C++ twin under `cpp/src/rules/` with the same id,
-name, severity and message text; `tools/gates/lint_parity.py` compares the two
-finding for finding.
-
-The source is laid out by rule family, as `cpp/src/rules/` is:
+The source is laid out by implementation family under `crates/svlang-lint/src/rules/`,
+while public rule IDs follow the strict `DOM-GRP-NNN` (`3-3-3`) taxonomy enforced by
+`crates/svlang-lint/tests/catalog.rs`:
 
 ```
 crates/svlang-lint/src/
-  lib.rs             Rule, Check, lint_all and the parallel runner
+  lib.rs             Rule, Check, rule_selector_matches, lint_all and the parallel runner
   rules/mod.rs       collects every family
   rules/<family>/    one file per rule, named after it, plus mod.rs that
                      registers the family (uvm/, methodology/, random/, ...)
   support/           helpers several rules share, one module per topic
-                     (class_index, statements, slang_ast, ...)
+                     (class_index, statements, cfg_dataflow, rtl_fsm_cdc, ...)
   syntax.rs          Cst: a tree with parents, per-kind node lists, locations
-  expr_types.rs      expression types as slang gives them (--exprs)
   shared.rs          work built once per compile and shared between threads
   session.rs         Session: the settings one run of the rules reads
   uvm_api.rs, waivers.rs
@@ -179,32 +176,28 @@ What it published is kept, and code actions (a rule's fix, a waiver comment)
 are answered from it. The project is reloaded when its config or waiver
 files change.
 
-## How correctness is checked
+## How correctness is checked (3-Tier Pyramid)
 
-Each layer has a gate against slang, run from `tools/gates/` (most need
-`UVM_SRC` pointing at a UVM source tree):
+Verification is split into three tiers (`tools/gates/prepush.sh`):
+
+1. **Tier 1 — Fast pure-Rust inner loop** (`cargo test --locked`, `tools/gates/rust_gate.sh`, `tools/gates/hygiene.sh`):
+   Runs unit tests, all 475 `testdata/rules/` fixtures, `DOM-GRP-NNN` catalog invariants, distilled IEEE 1800 / regex regression vectors (`testdata/conformance/`, `testdata/regex/vectors.tsv`), `gen_guidelines.py --check`, `cargo fmt --check`, and Clippy (`-D warnings`).
+2. **Tier 2 — Integration & corpus ratchet** (`tools/gates/prepush.sh`, `.github/workflows/rust.yml`):
+   Runs `netlist_gate.py`, `gen_rule_docs.py --check`, all 12 end-to-end Python CLI / `--fix` mutation / SDK suites (`tests/test_*.py`, `python/tests/test_python_rules.py`), release tarball `smoke.sh`, and `tools/quality/error_budget.py` against IEEE UVM `2020.3.1`.
+3. **Tier 3 — Optional Slang & `std::regex` differential oracles** (`tools/gates/prepush.sh --oracles`, `cmake --preset oracles && cmake --build build -j 4`):
+   Compares compiler internals stage by stage against upstream Slang (`tools/oracles/*.cpp`, ~880 LOC; most gates take `UVM_SRC` pointing at a UVM source tree):
 
 | Gate | Compares |
 | --- | --- |
-| `pp_parity.py` | preprocessed tokens |
-| `cst_parity.py` | parse outline and canonical expressions (`--exprs`) |
-| `model_parity.py` | `Design::dump` of the native and slang models (`--bodies`, `--types`) |
-| `sym_gate.py` | scopes, types, values and hierarchy from `svlang check` |
-| `ieee_gate.py` | errors on every sv-tests file (legal and should-fail) |
-| `slang_unit_gate.py` | semantic errors on slang's own unit test cases |
-| `expr_gate.py` | expression types from `svlang lint --exprs` |
-| `spec_gate.py` | specialization counts from `svlang lint --specs` |
-| `netlist_gate.py` | word-level RTL lowering, memory blasting, and fail-closed diagnostics from `svlang check --netlist` |
-| `lint_parity.py` | `svlang lint` findings against C++ `svlang-lint` |
-
-Plus `cargo test` (native) and `cargo test -p sv-slang`
-(the Slang bridge and the tests that load through Slang), and
-`rust_gate.sh`: `cargo fmt --check` (`rustfmt.toml`) and Clippy with
-`-D warnings` on all targets, natively and on `sv-slang` when
-`libsvlang_lint_model` is built. Clippy takes the MSRV from `rust-version` in
-the root `Cargo.toml`. A change to the front end should keep
-every gate where it was; a change to a rule should keep `lint_parity.py`
-identical.
+| `pp_parity.py` | preprocessed token streams (`sv-preprocessor` vs `svlang_pp_dump`) |
+| `cst_parity.py` | parse outline and canonical operator expressions (`sv-syntax` vs `svlang_cst_*`) |
+| `sym_gate.py` | scopes, types, constant values, and hierarchy (`svlang check --symbols` vs `svlang_sym_dump`) |
+| `ieee_gate.py` | legal and `:should_fail` verdicts across `sv-tests` (`svlang check` vs `svlang_compile_check`) |
+| `slang_unit_gate.py` | semantic verdicts on Slang's own AST unit test cases |
+| `expr_gate.py` | IEEE 11.6/11.8 expression widths, signedness, and 4-state flags (`svlang lint --exprs` vs `svlang_exprdump`) |
+| `spec_gate.py` | generic class specialization counts (`svlang lint --specs` vs `svlang_specdump`) |
+| `regex_gate.py` | ECMAScript waiver/naming regex semantics (`svlang_lint::pattern` vs C++ `std::regex`) |
+| `netlist_gate.py` | word-level RTL lowering, memory blasting, and fail-closed diagnostics (`svlang check --netlist`, pure Rust) |
 
 ## Where to start
 

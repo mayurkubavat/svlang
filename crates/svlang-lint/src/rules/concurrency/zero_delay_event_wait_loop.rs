@@ -1,4 +1,4 @@
-//! SV-EVT-001 (ZeroDelayEventWaitLoop): Using wait(event.triggered) inside a
+//! SVL-CON-022 (ZeroDelayEventWaitLoop): Using wait(event.triggered) inside a
 //! loop without an intervening time-advancing delay (@ or #) causes a
 //! zero-delay infinite delta loop that hangs the simulator at 100% CPU.
 
@@ -39,7 +39,7 @@ pub(crate) fn triggered_wait_loop(c: &Cst, s: &mut Sink) {
         add_n(
             s,
             times(c, l),
-            "SV-EVT-001",
+            "SVL-CON-022",
             "ZeroDelayEventWaitLoop",
             Severity::Error,
             "Loop contains 'wait(event.triggered)' without an intervening simulation time advance (@ or #). \

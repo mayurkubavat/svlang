@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Integration tests for the git-history rules: SV-EVO-001 (hotspots) and SV-EVO-002 (change
+Integration tests for the git-history rules: SVL-MNT-027 (hotspots) and SVL-MNT-028 (change
 coupling). Each case builds a small git repository in a temp directory, commits to it, and
 runs svlang-lint with --history. Without --history the rules must stay silent.
 """
@@ -83,30 +83,30 @@ def hotspot_case(binary, work):
         commit(root, files, f"change {i}")
     srcs = ["busy.sv", "calm.sv", "small.sv"]
 
-    found, out = run(binary, root, srcs + ["--rule", "SV-EVO-001"])
+    found, out = run(binary, root, srcs + ["--rule", "SVL-MNT-027"])
     check("hotspot: silent without --history", found == [], out)
 
-    found, out = run(binary, root, srcs + ["--history", "--rule", "SV-EVO-001"])
-    files = [f for f, r, _ in found if r == "SV-EVO-001"]
+    found, out = run(binary, root, srcs + ["--history", "--rule", "SVL-MNT-027"])
+    files = [f for f, r, _ in found if r == "SVL-MNT-027"]
     check("hotspot: the complex, often-changed file is reported", files == ["busy.sv"], out)
     check("hotspot: message gives churn and complexity",
           any("changed in 4 of the last 4 commits" in l and "complexity 21" in l and "'decode'" in l
               for _, _, l in found), out)
 
     cfg = root / ".svlang-lint.json"
-    cfg.write_text('{ "rules": { "SV-EVO-001": { "options": { "min_commits": 1 } } } }')
-    found, out = run(binary, root, srcs + ["--history", "--rule", "SV-EVO-001"])
-    files = [f for f, r, _ in found if r == "SV-EVO-001"]
+    cfg.write_text('{ "rules": { "SVL-MNT-027": { "options": { "min_commits": 1 } } } }')
+    found, out = run(binary, root, srcs + ["--history", "--rule", "SVL-MNT-027"])
+    files = [f for f, r, _ in found if r == "SVL-MNT-027"]
     check("hotspot: min_commits option, ranked by score", files == ["busy.sv", "calm.sv"], out)
-    cfg.write_text('{ "rules": { "SV-EVO-001": { "options": { "min_commits": 1, "top_files": 1 } } } }')
-    found, out = run(binary, root, srcs + ["--history", "--rule", "SV-EVO-001"])
-    check("hotspot: top_files option", [f for f, r, _ in found if r == "SV-EVO-001"] == ["busy.sv"], out)
+    cfg.write_text('{ "rules": { "SVL-MNT-027": { "options": { "min_commits": 1, "top_files": 1 } } } }')
+    found, out = run(binary, root, srcs + ["--history", "--rule", "SVL-MNT-027"])
+    check("hotspot: top_files option", [f for f, r, _ in found if r == "SVL-MNT-027"] == ["busy.sv"], out)
 
     # Outside a repository there is no history and no finding.
     plain = work / "plain"
     plain.mkdir()
     shutil.copy(root / "busy.sv", plain / "busy.sv")
-    found, out = run(binary, plain, ["busy.sv", "--history", "--rule", "SV-EVO-001"])
+    found, out = run(binary, plain, ["busy.sv", "--history", "--rule", "SVL-MNT-027"])
     check("hotspot: file outside a git repository is skipped", found == [], out)
 
 
@@ -136,21 +136,21 @@ def coupling_case(binary, work):
     # A sweeping commit that touches every file does not count.
     commit(root, {n: (root / n).read_text() + "// header\n" for n in names}, "reformat")
 
-    found, out = run(binary, root, names + ["--rule", "SV-EVO-002"])
+    found, out = run(binary, root, names + ["--rule", "SVL-MNT-028"])
     check("coupling: silent without --history", found == [], out)
 
     cfg = root / ".svlang-lint.json"
-    cfg.write_text('{ "rules": { "SV-EVO-002": { "options": { "max_commit_files": 4 } } } }')
-    found, out = run(binary, root, names + ["--history", "--rule", "SV-EVO-002"])
-    pairs = [l for f, r, l in found if r == "SV-EVO-002"]
+    cfg.write_text('{ "rules": { "SVL-MNT-028": { "options": { "max_commit_files": 4 } } } }')
+    found, out = run(binary, root, names + ["--history", "--rule", "SVL-MNT-028"])
+    pairs = [l for f, r, l in found if r == "SVL-MNT-028"]
     check("coupling: one finding, for agent and env", len(pairs) == 1 and "'agent.sv'" in pairs[0]
           and "'env.sv'" in pairs[0], out)
     check("coupling: shared count and degree, sweeping commit left out",
           bool(pairs) and "in 4 commits, 88%" in pairs[0], out)
 
-    cfg.write_text('{ "rules": { "SV-EVO-002": { "options": { "max_commit_files": 10 } } } }')
-    found, out = run(binary, root, names + ["--history", "--rule", "SV-EVO-002"])
-    pairs = [l for f, r, l in found if r == "SV-EVO-002"]
+    cfg.write_text('{ "rules": { "SVL-MNT-028": { "options": { "max_commit_files": 10 } } } }')
+    found, out = run(binary, root, names + ["--history", "--rule", "SVL-MNT-028"])
+    pairs = [l for f, r, l in found if r == "SVL-MNT-028"]
     check("coupling: max_commit_files lets the sweeping commits count",
           len(pairs) == 2 and "in 6 commits, 92%" in pairs[0] and "'test.sv'" in pairs[1], out)
 
@@ -165,9 +165,9 @@ def main():
         return 0
     with tempfile.TemporaryDirectory() as tmp:
         work = Path(tmp)
-        print("SV-EVO-001 hotspots")
+        print("SVL-MNT-027 hotspots")
         hotspot_case(binary, work)
-        print("SV-EVO-002 change coupling")
+        print("SVL-MNT-028 change coupling")
         coupling_case(binary, work)
     if failures:
         print(f"\n{len(failures)} history test(s) failed")

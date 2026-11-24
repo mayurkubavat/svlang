@@ -1,4 +1,4 @@
-//! SV-LSP-001 (LspConstraintContradiction): Disallows unconditionally disabling
+//! SVL-OOP-018 (LspConstraintContradiction): Disallows unconditionally disabling
 //! inherited constraints via '.constraint_mode(0)' in derived classes.
 
 use crate::syntax::Cst;
@@ -24,7 +24,7 @@ pub(crate) fn lsp_constraint_mode(c: &Cst, s: &mut Sink) {
             }
             let Some(t) = c.first_tok(m) else { continue };
             s.add(
-                "SV-LSP-001",
+                "SVL-OOP-018",
                 "LspConstraintContradiction",
                 Severity::Error,
                 format!(

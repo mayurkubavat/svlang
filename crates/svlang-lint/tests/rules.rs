@@ -31,9 +31,9 @@ fn oop_rules() {
     let src = "class a; int x; function void f(); endfunction endclass\n\
                class b extends a; int x; function void f(); endfunction function new(); endfunction endclass\n";
     let got = findings(src);
-    assert!(got.contains(&("t.sv".into(), 2, 24, "SV-OOP-004")), "{got:?}");
-    assert!(got.contains(&("t.sv".into(), 2, 41, "SV-OOP-001")), "{got:?}");
-    assert!(got.contains(&("t.sv".into(), 2, 67, "SV-OOP-003")), "{got:?}");
+    assert!(got.contains(&("t.sv".into(), 2, 24, "SVL-OOP-004")), "{got:?}");
+    assert!(got.contains(&("t.sv".into(), 2, 41, "SVL-OOP-001")), "{got:?}");
+    assert!(got.contains(&("t.sv".into(), 2, 67, "SVL-OOP-003")), "{got:?}");
 }
 
 #[test]
@@ -46,11 +46,11 @@ fn component_rules() {
          endclass\n"
     );
     let got: Vec<_> = findings(&src).into_iter().map(|f| f.3).collect();
-    for id in ["SV-OOP-007", "SV-STY-001", "UVM-PHS-002", "UVM-PHS-009", "UVM-OBJ-001", "SV-NAM-001"] {
+    for id in ["UVM-CMP-028", "UVM-NAM-003", "UVM-PHS-002", "UVM-PHS-009", "UVM-OBJ-001", "UVM-NAM-001"] {
         assert!(got.contains(&id), "{id} missing in {got:?}");
     }
     // my_mon derives from uvm_monitor but lacks the _monitor suffix.
-    assert!(got.contains(&"SV-NAM-001"), "{got:?}");
+    assert!(got.contains(&"UVM-NAM-001"), "{got:?}");
 }
 
 #[test]
@@ -58,7 +58,7 @@ fn macro_code_is_reported_at_the_expansion() {
     let src = "`define DECL static int n;\nclass uvm_component; endclass\n\
                class c_env extends uvm_component;\n  `DECL\nendclass\n";
     let got = findings(src);
-    assert!(got.contains(&("t.sv".into(), 4, 0, "SV-OOP-007")), "{got:?}");
+    assert!(got.contains(&("t.sv".into(), 4, 0, "UVM-CMP-028")), "{got:?}");
 }
 
 #[test]
@@ -74,7 +74,7 @@ fn factory_and_phase_rules() {
     assert!(got.contains(&(6, "UVM-FAC-002")), "{got:?}");
     assert!(got.contains(&(7, "UVM-PHS-001")), "{got:?}");
     assert!(got.contains(&(9, "UVM-FAC-003")), "{got:?}");
-    assert!(got.contains(&(9, "UVM-BAN-003")), "{got:?}");
+    assert!(got.contains(&(9, "UVM-SEQ-021")), "{got:?}");
     assert!(!got.contains(&(5, "UVM-FAC-003")), "{got:?}");
 }
 
@@ -97,22 +97,22 @@ fn syntax_rules() {
         })
         .collect();
     for want in [
-        (1, 11, "SV-DEP-002"),
-        (2, 1, "SV-DEP-003"),
-        (2, 11, "SV-COR-009"),
-        (2, 11, "SV-COR-006"),
-        (3, 15, "SV-DED-010"),
-        (3, 25, "SV-RCE-001"),
-        (3, 34, "SV-DLY-002"),
-        (3, 48, "SV-COR-008"),
-        (3, 56, "SV-DEP-005"),
-        (5, 1, "SV-DEP-001"),
-        (6, 23, "SV-CON-007"),
-        (6, 61, "SV-CON-005"),
+        (1, 11, "SVL-DEP-002"),
+        (2, 1, "SVL-DEP-003"),
+        (2, 11, "RTL-DAT-002"),
+        (2, 11, "RTL-DAT-001"),
+        (3, 15, "SVL-DED-010"),
+        (3, 25, "SVL-CON-026"),
+        (3, 34, "SVL-COR-018"),
+        (3, 48, "SVL-COR-004"),
+        (3, 56, "SVL-DEP-005"),
+        (5, 1, "SVL-DEP-001"),
+        (6, 23, "SVL-CON-003"),
+        (6, 61, "SVL-CON-002"),
     ] {
         assert!(got.contains(&want), "{want:?} not in {got:?}");
     }
-    assert_eq!(got.iter().filter(|g| g.2 == "SV-DEP-005").count(), 1, "{got:?}");
+    assert_eq!(got.iter().filter(|g| g.2 == "SVL-DEP-005").count(), 1, "{got:?}");
 }
 
 #[test]
@@ -128,24 +128,24 @@ fn syntax_rules_batch_two() {
     let (_, found) = svlang_lint::lint_all(&d, std::slice::from_ref(&tree), |_| true);
     let got: Vec<_> = found.iter().map(|f| f.rule).collect();
     for want in [
-        "SV-NAM-002",
-        "SV-NAM-003",
-        "SV-DEP-006",
-        "SV-BAN-001",
-        "SV-COV-015",
-        "SV-COV-009",
-        "SV-COV-008",
-        "SV-RND-009",
-        "SV-TYP-010",
-        "SVA-LBL-001",
-        "SV-CON-010",
-        "SV-CON-004",
-        "SV-RND-014",
+        "SVL-NAM-001",
+        "SVL-NAM-002",
+        "SVL-DEP-006",
+        "SVL-DEP-007",
+        "SVL-COV-015",
+        "SVL-COV-009",
+        "SVL-COV-008",
+        "SVL-RND-008",
+        "SVL-TYP-004",
+        "SVA-PRP-013",
+        "SVL-CON-006",
+        "SVL-CON-001",
+        "SVL-RND-013",
         "UVM-PHS-007",
     ] {
         assert!(got.contains(&want), "{want} not in {got:?}");
     }
-    assert_eq!(got.iter().filter(|r| **r == "SV-BAN-001").count(), 1, "{got:?}");
+    assert_eq!(got.iter().filter(|r| **r == "SVL-DEP-007").count(), 1, "{got:?}");
 }
 
 #[test]
@@ -164,14 +164,14 @@ fn syntax_rules_batch_three() {
     let d = svlang_model::build(std::slice::from_ref(&tree));
     let (_, found) = svlang_lint::lint_all(&d, std::slice::from_ref(&tree), |_| true);
     let count = |id: &str| found.iter().filter(|f| f.rule == id).count();
-    assert_eq!(count("SV-RND-021"), 1);
-    assert_eq!(count("SV-COR-020"), 1);
+    assert_eq!(count("SVL-RND-020"), 1);
+    assert_eq!(count("SVL-COR-006"), 1);
     // Once (two enclosing loops, one finding); a `new` argument is not
     // slang's NewClassExpression.
-    assert_eq!(count("SV-OOP-010"), 1);
-    assert_eq!(count("SV-CON-013"), 1);
-    assert_eq!(count("SVA-CYC-001"), 2);
-    assert_eq!(count("SV-SVA-004"), 1);
+    assert_eq!(count("SVL-PRF-016"), 1);
+    assert_eq!(count("SVL-CON-009"), 1);
+    assert_eq!(count("SVA-PRP-012"), 2);
+    assert_eq!(count("SVA-PRP-004"), 1);
     assert_eq!(count("UVM-SEQ-007"), 1);
 }
 
@@ -191,9 +191,9 @@ fn syntax_rules_batch_three_b() {
     let d = svlang_model::build(std::slice::from_ref(&tree));
     let (_, found) = svlang_lint::lint_all(&d, std::slice::from_ref(&tree), |_| true);
     let count = |id: &str| found.iter().filter(|f| f.rule == id).count();
-    assert_eq!(count("SV-ARR-001"), 1);
-    assert_eq!(count("SV-RND-012"), 1);
-    let todo: Vec<_> = found.iter().filter(|f| f.rule == "SV-STY-003").map(|f| f.message.as_str()).collect();
+    assert_eq!(count("SVL-COR-007"), 1);
+    assert_eq!(count("SVL-RND-011"), 1);
+    let todo: Vec<_> = found.iter().filter(|f| f.rule == "SVL-STY-002").map(|f| f.message.as_str()).collect();
     // The body comment once per expansion.
     assert_eq!(todo.len(), 4, "{todo:?}");
     assert!(todo.iter().all(|m| !m.contains("dropped") && !m.contains("not taken")), "{todo:?}");
@@ -214,12 +214,12 @@ fn syntax_rules_batch_four() {
     let d = svlang_model::build(std::slice::from_ref(&tree));
     let (_, found) = svlang_lint::lint_all(&d, std::slice::from_ref(&tree), |_| true);
     let count = |id: &str| found.iter().filter(|f| f.rule == id).count();
-    assert_eq!(count("SV-COR-005"), 1);
-    assert_eq!(count("SV-COR-007"), 1);
-    assert_eq!(count("SV-COR-011"), 1);
+    assert_eq!(count("SVL-COR-002"), 1);
+    assert_eq!(count("SVL-COR-003"), 1);
+    assert_eq!(count("SVL-COR-005"), 1);
     // A replication is not slang's ConcatenationExpression.
-    assert_eq!(count("SV-PRF-010"), 1);
-    assert_eq!(count("SV-CON-012"), 1);
+    assert_eq!(count("SVL-PRF-010"), 1);
+    assert_eq!(count("SVL-CON-008"), 1);
 }
 
 #[test]
@@ -243,14 +243,14 @@ fn syntax_rules_batch_five() {
     let (_, found) = svlang_lint::lint_all(&d, std::slice::from_ref(&tree), |_| true);
     let count = |id: &str| found.iter().filter(|f| f.rule == id).count();
     for id in [
-        "PORT-PRP-001",
+        "SVL-PRT-001",
         "UVM-CFG-003",
         "UVM-CFG-004",
         "UVM-TLM-002",
-        "UVM-STR-005",
-        "SV-LSP-001",
-        "SV-OCP-001",
-        "SV-STR-001",
+        "UVM-FAC-007",
+        "SVL-OOP-018",
+        "SVL-OOP-019",
+        "SVL-COR-025",
     ] {
         assert_eq!(count(id), 1, "{id}");
     }
@@ -275,13 +275,13 @@ fn syntax_rules_batch_six() {
     let (_, found) = svlang_lint::lint_all(&d, std::slice::from_ref(&tree), |_| true);
     let count = |id: &str| found.iter().filter(|f| f.rule == id).count();
     for id in [
-        "SV-COV-006",
-        "SV-COV-010",
-        "SV-COV-012",
+        "SVL-COV-006",
+        "SVL-COV-010",
+        "SVL-COV-012",
         "UVM-PHS-004",
-        "SVA-VAC-001",
-        "SVA-RST-001",
-        "SV-PRF-012",
+        "SVA-PRP-015",
+        "SVA-PRP-014",
+        "SVL-PRF-012",
         "UVM-SEQ-012",
     ] {
         assert!(count(id) >= 1, "{id}");
@@ -313,30 +313,30 @@ fn expected(json: &str) -> Vec<(String, u32)> {
 fn uvm_and_ral_rules_on_fixtures() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let ids = [
-        "RAL-ACC-001",
-        "RAL-ACC-002",
-        "RAL-BLK-001",
-        "RAL-COL-001",
-        "RAL-MAP-001",
-        "RAL-MAP-002",
-        "UVM-ALS-001",
-        "UVM-DAG-001",
+        "UVM-RAL-001",
+        "UVM-RAL-002",
+        "UVM-RAL-004",
+        "UVM-RAL-005",
+        "UVM-RAL-007",
+        "UVM-RAL-008",
+        "UVM-TLM-007",
+        "UVM-CFG-012",
         "UVM-FAC-004",
         "UVM-FAC-005",
-        "UVM-LOG-002",
+        "UVM-CMP-009",
         "UVM-OBJ-002",
         "UVM-OBJ-003",
         "UVM-OBJ-004",
         "UVM-OBJ-005",
-        "UVM-OBS-002",
+        "UVM-TLM-009",
         "UVM-PHS-005",
         "UVM-PHS-006",
         "UVM-PHS-008",
         "UVM-PHS-010",
-        "UVM-RAL-001",
-        "UVM-REP-005",
-        "UVM-SCB-001",
-        "UVM-SCB-002",
+        "UVM-RAL-010",
+        "UVM-CMP-013",
+        "UVM-TLM-010",
+        "UVM-TLM-011",
         "UVM-SEQ-005",
         "UVM-SEQ-006",
         "UVM-SEQ-008",
@@ -345,13 +345,13 @@ fn uvm_and_ral_rules_on_fixtures() {
         "UVM-SEQ-011",
         "UVM-SEQ-014",
         "UVM-SEQ-015",
-        "UVM-STY-003",
+        "UVM-CMP-027",
+        "UVM-TLM-003",
         "UVM-TLM-004",
         "UVM-TLM-005",
-        "UVM-TLM-006",
     ];
     for id in ids {
-        let area = if id == "UVM-RAL-001" { "oop" } else { "uvm" };
+        let area = if id == "UVM-RAL-010" { "oop" } else { "uvm" };
         let dir = root.join("testdata/rules").join(area).join(id);
         let json = std::fs::read_to_string(dir.join("expect.json")).unwrap();
         let args =
@@ -389,7 +389,7 @@ fn mirror_set_on_element_select() {
                function void f(); foo[2].set(1); bar.set(3); (bar).set(1); endfunction\nendclass\n";
     let tree = svlang::syntax::parse_source(src, "t.sv", Default::default());
     let d = svlang_model::build(std::slice::from_ref(&tree));
-    let (_, found) = svlang_lint::lint_all(&d, std::slice::from_ref(&tree), |r| r == "RAL-ACC-001");
+    let (_, found) = svlang_lint::lint_all(&d, std::slice::from_ref(&tree), |r| r == "UVM-RAL-001");
     assert_eq!(found.len(), 1);
     assert!(found[0].message.starts_with("Direct mirror update 'reg.set(...)'"));
 }
@@ -411,31 +411,31 @@ fn group_g_rules() {
     }
     let count = |id: &str| found.iter().filter(|r| **r == id).count();
     for id in [
-        "DPI-TYP-001",
-        "SV-LOC-001",
-        "SV-PRF-011",
-        "SV-PRF-013",
-        "SV-SYS-001",
-        "SV-DED-005",
-        "SV-DED-006",
-        "SV-DED-011",
-        "SV-MOD-001",
-        "SV-MAC-001",
-        "SV-ERR-003",
-        "UVM-TST-002",
-        "PORT-PTH-001",
-        "SEC-LOG-001",
-        "SV-PRF-005",
-        "SV-PRF-004",
-        "SV-PRF-003",
-        "SV-PRF-009",
-        "SV-PRF-008",
+        "SVL-DPI-002",
+        "SVL-PRF-015",
+        "SVL-PRF-011",
+        "SVL-PRF-013",
+        "SVL-SEC-002",
+        "SVL-DED-005",
+        "SVL-DED-006",
+        "SVL-DED-011",
+        "SVL-PRT-003",
+        "SVL-PRT-004",
+        "SVL-COR-021",
+        "UVM-OBJ-006",
+        "SVL-PRT-002",
+        "SVL-SEC-001",
+        "SVL-PRF-005",
+        "SVL-PRF-004",
+        "SVL-PRF-003",
+        "SVL-PRF-009",
+        "SVL-PRF-008",
     ] {
         assert!(count(id) >= 1, "{id}");
     }
     // One NBA per specialization-free class site plus the module one; the
     // interface member and the local are not class properties.
-    assert_eq!(count("SV-PRF-009"), 7);
+    assert_eq!(count("SVL-PRF-009"), 7);
 }
 
 /// Group C (concurrency, SVA, coverage): each rule fires on its repo fixture
@@ -444,43 +444,43 @@ fn group_g_rules() {
 fn concurrency_sva_coverage_rules() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata");
     let cases = [
-        ("SV-CNC-002", "concurrency/SV-CNC-002", 1),
-        ("SV-CNC-003", "concurrency/SV-CNC-003", 2),
-        ("SV-CNC-004", "concurrency/SV-CNC-004", 2),
-        ("SV-CON-006", "concurrency/SV-CON-006", 1),
-        ("SV-CON-008", "concurrency/SV-CON-008", 1),
-        ("SV-CON-009", "concurrency/SV-CON-009", 1),
-        ("SV-CON-011", "concurrency/SV-CON-011", 1),
-        ("SV-CON-014", "concurrency/SV-CON-014", 3),
-        ("SV-CON-015", "concurrency/SV-CON-015", 3),
-        ("SV-COV-001", "coverage/SV-COV-001", 1),
-        ("SV-COV-002", "coverage/SV-COV-002", 1),
-        ("SV-COV-004", "coverage/SV-COV-004", 1),
-        ("SV-COV-005", "coverage/SV-COV-005", 1),
-        ("SV-COV-011", "coverage/SV-COV-011", 1),
-        ("SV-COV-013", "coverage/SV-COV-013", 1),
-        ("SV-COV-016", "coverage/SV-COV-016", 1),
-        ("SV-COV-017", "coverage/SV-COV-017", 1),
-        ("SV-DLY-003", "concurrency/SV-DLY-003", 1),
-        ("SV-DLY-004", "concurrency/SV-DLY-004", 1),
-        ("SV-DRV-001", "rtl_tb_bridge/SV-DRV-001", 1),
-        ("SV-EVT-001", "concurrency/SV-EVT-001", 1),
-        ("SV-FOR-001", "concurrency/SV-FOR-001", 1),
-        ("SV-INT-001", "rtl_tb_bridge/SV-INT-001", 1),
-        ("SV-IPC-001", "concurrency/SV-IPC-001", 1),
-        ("SV-RSC-001", "concurrency/SV-RSC-001", 3),
-        ("SV-RSC-002", "concurrency/SV-RSC-002", 1),
-        ("SV-SVA-001", "sva/SV-SVA-001", 1),
-        ("SV-SVA-002", "sva/SV-SVA-002", 1),
-        ("SV-SVA-003", "sva/SV-SVA-003", 1),
-        ("SV-SVA-005", "sva/SV-SVA-005", 1),
-        ("SV-THR-001", "concurrency/SV-THR-001", 1),
-        ("SV-THR-002", "concurrency/SV-THR-002", 1),
-        ("SV-THR-003", "concurrency/SV-THR-003", 1),
-        ("SVA-ACT-001", "sva/SVA-ACT-001", 1),
-        ("SVA-ACT-002", "sva/SVA-ACT-002", 1),
-        ("SVA-ACT-003", "sva/SVA-ACT-003", 4),
-        ("SVA-CTX-001", "sva/SVA-CTX-001", 1),
+        ("SVL-CON-016", "concurrency/SVL-CON-016", 1),
+        ("SVL-CON-017", "concurrency/SVL-CON-017", 2),
+        ("SVL-CON-018", "concurrency/SVL-CON-018", 2),
+        ("RTL-SYN-007", "concurrency/RTL-SYN-007", 1),
+        ("SVL-CON-004", "concurrency/SVL-CON-004", 1),
+        ("SVL-CON-005", "concurrency/SVL-CON-005", 1),
+        ("SVL-CON-007", "concurrency/SVL-CON-007", 1),
+        ("SVL-CON-010", "concurrency/SVL-CON-010", 3),
+        ("SVL-CON-011", "concurrency/SVL-CON-011", 3),
+        ("SVL-COV-001", "coverage/SVL-COV-001", 1),
+        ("SVL-COV-002", "coverage/SVL-COV-002", 1),
+        ("SVL-COV-004", "coverage/SVL-COV-004", 1),
+        ("SVL-COV-005", "coverage/SVL-COV-005", 1),
+        ("SVL-COV-011", "coverage/SVL-COV-011", 1),
+        ("SVL-COV-013", "coverage/SVL-COV-013", 1),
+        ("SVL-COV-016", "coverage/SVL-COV-016", 1),
+        ("SVL-COV-017", "coverage/SVL-COV-017", 1),
+        ("SVL-CON-019", "concurrency/SVL-CON-019", 1),
+        ("SVL-CON-020", "concurrency/SVL-CON-020", 1),
+        ("SVL-CON-021", "rtl_tb_bridge/SVL-CON-021", 1),
+        ("SVL-CON-022", "concurrency/SVL-CON-022", 1),
+        ("SVL-CON-023", "concurrency/SVL-CON-023", 1),
+        ("SVL-CON-024", "rtl_tb_bridge/SVL-CON-024", 1),
+        ("SVL-CON-025", "concurrency/SVL-CON-025", 1),
+        ("SVL-CON-027", "concurrency/SVL-CON-027", 3),
+        ("SVL-COR-024", "concurrency/SVL-COR-024", 1),
+        ("SVA-PRP-001", "sva/SVA-PRP-001", 1),
+        ("SVA-PRP-002", "sva/SVA-PRP-002", 1),
+        ("SVA-PRP-003", "sva/SVA-PRP-003", 1),
+        ("SVA-PRP-005", "sva/SVA-PRP-005", 1),
+        ("SVL-CON-028", "concurrency/SVL-CON-028", 1),
+        ("SVL-CON-029", "concurrency/SVL-CON-029", 1),
+        ("SVL-CON-030", "concurrency/SVL-CON-030", 1),
+        ("SVA-PRP-008", "sva/SVA-PRP-008", 1),
+        ("SVA-PRP-009", "sva/SVA-PRP-009", 1),
+        ("SVA-PRP-010", "sva/SVA-PRP-010", 4),
+        ("SVA-PRP-011", "sva/SVA-PRP-011", 1),
     ];
     for (id, dir, want) in cases {
         let opts = svlang::syntax::Options { include_dirs: vec![root.join("common")], ..Default::default() };
@@ -521,22 +521,22 @@ fn group_e_random_and_correctness_rules() {
     let (_, found) = svlang_lint::lint_all(&d, std::slice::from_ref(&tree), |_| true);
     let count = |id: &str| found.iter().filter(|f| f.rule == id).count();
     for id in [
-        "SV-RND-019",
-        "SV-RND-025",
-        "SV-RND-026",
-        "SV-RND-006",
-        "SV-RND-017",
-        "SV-RND-023",
-        "SV-BUG-003",
-        "SV-TST-001",
-        "SV-BUG-005",
-        "SV-BUG-006",
-        "SV-BUG-002",
-        "SV-BUG-007",
+        "SVL-RND-018",
+        "SVL-RND-024",
+        "SVL-RND-025",
+        "SVL-RND-006",
+        "SVL-RND-016",
+        "SVL-RND-022",
+        "SVL-COR-010",
+        "SVL-RND-037",
+        "SVL-COR-012",
+        "SVL-COR-013",
+        "SVL-COR-009",
+        "SVL-COR-014",
     ] {
         assert_eq!(count(id), 1, "{id}: {found:?}");
     }
-    let hint = found.iter().find(|f| f.rule == "SV-BUG-003").unwrap();
+    let hint = found.iter().find(|f| f.rule == "SVL-COR-010").unwrap();
     assert!(hint.message.contains("write 'this.len = len;'"), "{}", hint.message);
 }
 
@@ -564,14 +564,14 @@ fn methodology_rules_group_a() {
     let d = svlang_model::build(std::slice::from_ref(&tree));
     let (_, found) = svlang_lint::lint_all(&d, std::slice::from_ref(&tree), |_| true);
     let at = |id: &str| found.iter().filter(|f| f.rule == id).map(|f| f.message.as_str()).collect::<Vec<_>>();
-    assert_eq!(at("SV-CNS-001"), ["`define DEPTH holds the constant '16'. As a macro it has no type, no scope and can be redefined by any later file. Declare it as a parameter or localparam in a package instead."]);
-    assert_eq!(at("SV-CNS-002").len(), 1);
-    assert_eq!(at("SV-CNS-006").len(), 1);
-    assert_eq!(at("SV-CNS-007").len(), 1);
-    assert_eq!(at("SV-CNS-004").len(), 1);
-    assert_eq!(at("SV-CPL-001").len(), 1);
-    assert_eq!(at("SV-CNS-005").len(), 1);
-    assert_eq!(at("SV-RND-027").len(), 1);
+    assert_eq!(at("SVL-MNT-002"), ["`define DEPTH holds the constant '16'. As a macro it has no type, no scope and can be redefined by any later file. Declare it as a parameter or localparam in a package instead."]);
+    assert_eq!(at("SVL-MNT-003").len(), 1);
+    assert_eq!(at("SVL-TYP-008").len(), 1);
+    assert_eq!(at("SVL-TYP-009").len(), 1);
+    assert_eq!(at("SVL-MNT-005").len(), 1);
+    assert_eq!(at("SVL-MNT-008").len(), 1);
+    assert_eq!(at("SVL-MNT-006").len(), 1);
+    assert_eq!(at("SVL-RND-026").len(), 1);
 }
 
 #[test]
@@ -592,11 +592,11 @@ fn identical_branches_and_mismatched_fields() {
     let (_, found) = svlang_lint::lint_all(&d, std::slice::from_ref(&tree), |_| true);
     let of =
         |id: &str| found.iter().filter(|f| f.rule == id).map(|f| (f.loc.line, f.message.clone())).collect::<Vec<_>>();
-    let bug1 = of("SV-BUG-001");
+    let bug1 = of("SVL-COR-008");
     assert_eq!(bug1.len(), 1, "{found:?}");
     assert_eq!(bug1[0].0, 9);
     assert!(bug1[0].1.contains("branch at line 8"), "{}", bug1[0].1);
-    let bug4 = of("SV-BUG-004");
+    let bug4 = of("SVL-COR-011");
     assert_eq!(bug4.len(), 1, "{found:?}");
     assert!(bug4[0].1.contains("field 'data' is paired with 'r.addr'"), "{}", bug4[0].1);
 }
@@ -616,7 +616,7 @@ fn virtual_class_new_only_in_named_specializations() {
     let tree = svlang::syntax::parse_source(src, "t.sv", Default::default());
     let d = svlang_model::build(std::slice::from_ref(&tree));
     let (_, found) = svlang_lint::lint_all(&d, std::slice::from_ref(&tree), |_| true);
-    let lines: Vec<u32> = found.iter().filter(|f| f.rule == "SV-OOP-013").map(|f| f.loc.line).collect();
+    let lines: Vec<u32> = found.iter().filter(|f| f.rule == "SVL-OOP-011").map(|f| f.loc.line).collect();
     // The default specialization (T = base) is not reported, as in slang.
     assert_eq!(lines, vec![9], "{found:?}");
 }
@@ -638,9 +638,9 @@ fn language_gotcha_rules() {
                initial w = {a, 5};\n\
                function void f(); a <= 1; endfunction\n\
                endmodule\n";
-    assert_eq!(rule_lines(src, "SV-LANG-001"), vec![3]);
-    assert_eq!(rule_lines(src, "SV-LANG-003"), vec![4]);
-    assert_eq!(rule_lines(src, "SV-LANG-005"), vec![5]);
+    assert_eq!(rule_lines(src, "RTL-DAT-003"), vec![3]);
+    assert_eq!(rule_lines(src, "RTL-DAT-005"), vec![4]);
+    assert_eq!(rule_lines(src, "SVL-COR-022"), vec![5]);
 }
 
 #[test]
@@ -656,7 +656,7 @@ fn literal_width_follows_bound_expressions() {
     // The overridden default (line 2) is written code and counts; member
     // access through a class with an unknown base (line 5) and a delay in a
     // function (line 6) do not bind in slang, so it never sees those.
-    assert_eq!(rule_lines(src, "SV-STY-010"), vec![2, 4, 4, 8]);
+    assert_eq!(rule_lines(src, "SVL-STY-008"), vec![2, 4, 4, 8]);
 }
 
 #[test]
@@ -666,8 +666,8 @@ fn ref_args_and_string_keys() {
                function int f(ref int q[$], int v); return q[0] + v; endfunction\n\
                function void g(ref int q[$]); q.push_back(1); endfunction\n\
                endclass\n";
-    assert_eq!(rule_lines(src, "SV-API-001"), vec![3]);
-    assert_eq!(rule_lines(src, "SV-PRF-006"), vec![2]);
+    assert_eq!(rule_lines(src, "SVL-MNT-001"), vec![3]);
+    assert_eq!(rule_lines(src, "SVL-PRF-006"), vec![2]);
 }
 
 #[test]
@@ -682,8 +682,8 @@ fn casts_reports_and_pattern_sizes() {
                endfunction\n\
                function void h(); f = '{1, 2, 3}; endfunction\n\
                endclass\n";
-    assert_eq!(rule_lines(src, "SV-OOP-002"), vec![5, 6]);
-    assert_eq!(rule_lines(src, "SV-TYP-009"), vec![9]);
+    assert_eq!(rule_lines(src, "SVL-OOP-002"), vec![5, 6]);
+    assert_eq!(rule_lines(src, "SVL-TYP-003"), vec![9]);
 }
 
 #[test]
@@ -695,9 +695,9 @@ fn out_of_bounds_selects_and_magic_numbers() {
                if (a[0] == 42) v[2] = 0;\n\
                endfunction\n\
                endclass\n";
-    assert_eq!(rule_lines(src, "SV-LANG-002"), vec![4, 4]);
+    assert_eq!(rule_lines(src, "RTL-DAT-004"), vec![4, 4]);
     // 2 on line 5 is the first use of 2 after 8 and 4 on line 4.
-    assert_eq!(rule_lines(src, "SV-RDB-002"), vec![4, 4, 4, 5, 5]);
+    assert_eq!(rule_lines(src, "SVL-MNT-043"), vec![4, 4, 4, 5, 5]);
 }
 
 #[test]
@@ -707,7 +707,7 @@ fn enum_case_with_default() {
                initial case (s) IDLE: ; default: ; endcase\n\
                initial case (s) IDLE, RUN, DONE: ; default: ; endcase\n\
                endmodule\n";
-    assert_eq!(rule_lines(src, "SV-FSM-001"), vec![3]);
+    assert_eq!(rule_lines(src, "RTL-FSM-001"), vec![3]);
 }
 
 #[test]
@@ -719,7 +719,7 @@ fn enum_case_lists_missing_variants_in_declaration_order() {
     let tree = svlang::syntax::parse_source(src, "t.sv", Default::default());
     let d = svlang_model::build(std::slice::from_ref(&tree));
     let (_, found) = svlang_lint::lint_all(&d, std::slice::from_ref(&tree), |_| true);
-    let msgs: Vec<String> = found.into_iter().filter(|f| f.rule == "SV-FSM-001").map(|f| f.message).collect();
+    let msgs: Vec<String> = found.into_iter().filter(|f| f.rule == "RTL-FSM-001").map(|f| f.message).collect();
     assert_eq!(msgs.len(), 1);
     assert!(msgs[0].contains("variant(s): 'A', 'B', 'D', 'E', 'F', 'G', 'H', 'I', 'J'."), "{}", msgs[0]);
 }
@@ -733,7 +733,7 @@ fn enum_case_through_a_package_type_and_scoped_labels() {
     let tree = svlang::syntax::parse_source(src, "t.sv", Default::default());
     let d = svlang_model::build(std::slice::from_ref(&tree));
     let (_, found) = svlang_lint::lint_all(&d, std::slice::from_ref(&tree), |_| true);
-    let msgs: Vec<String> = found.into_iter().filter(|f| f.rule == "SV-FSM-001").map(|f| f.message).collect();
+    let msgs: Vec<String> = found.into_iter().filter(|f| f.rule == "RTL-FSM-001").map(|f| f.message).collect();
     assert_eq!(msgs.len(), 1);
     assert!(msgs[0].contains("enum 'm_t' does not explicitly handle variant(s): 'OFF', 'NA4'."), "{}", msgs[0]);
 }
@@ -745,7 +745,7 @@ fn part_select_reversed() {
                logic [0:7] u;\n\
                initial begin v[0:3] = 0; u[3:0] = 0; v[3:0] = 0; u[0:3] = 0; end\n\
                endmodule\n";
-    assert_eq!(rule_lines(src, "SV-LANG-004"), vec![4, 4]);
+    assert_eq!(rule_lines(src, "RTL-DAT-006"), vec![4, 4]);
 }
 
 #[test]
@@ -766,7 +766,7 @@ fn literal_per_generate_copy() {
                  leaf #(.W(3)) u_a (.y(a));\n\
                  leaf #(.W(1)) u_b (.y(b));\n\
                endmodule\n";
-    let mut lines = rule_lines(src, "SV-STY-010");
+    let mut lines = rule_lines(src, "SVL-STY-008");
     lines.sort();
     // Line 1: the default `W = 2`, though both instances override it.
     assert_eq!(lines, vec![1, 3, 6, 12]);
@@ -785,8 +785,8 @@ fn error_reporting_rules() {
                class loud_sb extends uvm_scoreboard;\n\
                function void check(); uvm_report_error(\"X\", \"bad\"); endfunction\n\
                endclass\n";
-    assert_eq!(rule_lines(src, "UVM-REP-006"), vec![4]);
-    assert_eq!(rule_lines(src, "UVM-TST-001"), vec![6]);
+    assert_eq!(rule_lines(src, "UVM-CMP-014"), vec![4]);
+    assert_eq!(rule_lines(src, "UVM-TLM-012"), vec![6]);
 }
 
 #[test]
@@ -800,7 +800,7 @@ fn failure_not_reported() {
                if (!$cast(o, this)) begin end\n\
                endfunction\n\
                endclass\n";
-    assert_eq!(rule_lines(src, "SV-ERR-001"), vec![5, 7]);
+    assert_eq!(rule_lines(src, "SVL-COR-019"), vec![5, 7]);
 }
 
 #[test]
@@ -817,7 +817,7 @@ fn use_after_failed_null_check() {
                if (a.randomize()) x = a.d;\n\
                endfunction\n\
                endclass\n";
-    assert_eq!(rule_lines(src, "SV-ERR-002"), vec![6, 10]);
+    assert_eq!(rule_lines(src, "SVL-COR-020"), vec![6, 10]);
 }
 
 #[test]
@@ -830,7 +830,7 @@ fn assoc_mutating_read() {
                if (s.exists(k)) ;\n\
                endfunction\n\
                endclass\n";
-    assert_eq!(rule_lines(src, "SV-ASC-001"), vec![4]);
+    assert_eq!(rule_lines(src, "SVL-PRF-014"), vec![4]);
 }
 
 #[test]
@@ -841,7 +841,7 @@ fn clocking_output_read() {
                class c; virtual bi vif; int x;\n\
                task t(); x = vif.cb.i; x = vif.cb.d + 1; endtask\n\
                endclass\n";
-    assert_eq!(rule_lines(src, "SV-CB-001"), vec![5, 5]);
+    assert_eq!(rule_lines(src, "SVL-CON-015"), vec![5, 5]);
 }
 
 #[test]
@@ -850,8 +850,8 @@ fn compiler_errors() {
                int a;\n\
                initial b = 1;\n\
                endmodule\n";
-    assert_eq!(rule_lines(src, "SV-CMP-001"), vec![3]);
-    assert!(rule_lines("module m; endmodule\n", "SV-CMP-001").is_empty());
+    assert_eq!(rule_lines(src, "CMP-ERR-001"), vec![3]);
+    assert!(rule_lines("module m; endmodule\n", "CMP-ERR-001").is_empty());
 }
 
 #[test]
@@ -867,7 +867,7 @@ fn unused_variable() {
                endfunction\n\
                endclass\n";
     // `a` is read only by an initializer, `k` is shadowed by the loop.
-    assert_eq!(rule_lines(src, "SV-DED-001"), vec![4, 5, 6]);
+    assert_eq!(rule_lines(src, "SVL-DED-001"), vec![4, 5, 6]);
 }
 
 #[test]
@@ -879,9 +879,9 @@ fn unreferenced_parameter() {
                class user; box#(byte, 4) b; endclass\n";
     // A dimension is a reference (`items[N]`), as `return M` is; `int N`
     // after `type T` is a value parameter.
-    assert_eq!(rule_lines(src, "SV-DED-012"), Vec::<u32>::new());
+    assert_eq!(rule_lines(src, "SVL-DED-012"), Vec::<u32>::new());
     let unused = "class box #(int N = 2, int M = 3); int items[N]; endclass\n";
-    assert_eq!(rule_lines(unused, "SV-DED-012"), vec![1], "M is never used");
+    assert_eq!(rule_lines(unused, "SVL-DED-012"), vec![1], "M is never used");
 }
 
 #[test]
@@ -902,7 +902,7 @@ fn unused_routine_argument() {
                virtual function void v(int unused_ok, int w); $display(1); endfunction\n\
                endclass\n";
     // Names in a randomize-with block resolve into the object first.
-    assert_eq!(rule_lines(src, "SV-DED-013"), vec![3, 6]);
+    assert_eq!(rule_lines(src, "SVL-DED-013"), vec![3, 6]);
 }
 
 #[test]
@@ -912,7 +912,7 @@ fn unused_local_method() {
                local function void dead(); $display(2); endfunction\n\
                function void run(); used(); endfunction\n\
                endclass\n";
-    assert_eq!(rule_lines(src, "SV-DED-014"), vec![3]);
+    assert_eq!(rule_lines(src, "SVL-DED-014"), vec![3]);
 }
 
 #[test]
@@ -927,10 +927,10 @@ fn style_engine() {
          interface i; endinterface\n\
          // {long}\n"
     );
-    assert_eq!(rule_lines(&src, "SV-STY-101"), vec![2]);
-    assert_eq!(rule_lines(&src, "SV-STY-102"), vec![2]);
-    assert_eq!(rule_lines(&src, "SV-STY-103"), vec![7]);
-    assert_eq!(rule_lines(&src, "SV-STY-104"), vec![3, 5, 6]);
+    assert_eq!(rule_lines(&src, "SVL-STY-101"), vec![2]);
+    assert_eq!(rule_lines(&src, "SVL-STY-102"), vec![2]);
+    assert_eq!(rule_lines(&src, "SVL-STY-103"), vec![7]);
+    assert_eq!(rule_lines(&src, "SVL-STY-104"), vec![3, 5, 6]);
 }
 
 #[test]
@@ -951,15 +951,15 @@ fn naming_engine() {
                typedef enum {A} st;\n\
                typedef int w_t;\n\
                endclass\n";
-    assert_eq!(rule_lines(src, "SV-NAM-101"), vec![1]);
-    assert_eq!(rule_lines(src, "SV-NAM-102"), vec![3]);
-    assert_eq!(rule_lines(src, "SV-NAM-109"), vec![5]);
-    assert_eq!(rule_lines(src, "SV-NAM-112"), vec![7]);
-    assert_eq!(rule_lines(src, "SV-NAM-105"), vec![9]);
-    assert_eq!(rule_lines(src, "SV-NAM-106"), vec![10]);
-    assert_eq!(rule_lines(src, "SV-NAM-107"), vec![12]);
-    assert_eq!(rule_lines(src, "SV-NAM-110"), vec![14]);
-    assert!(rule_lines(src, "SV-NAM-111").is_empty());
+    assert_eq!(rule_lines(src, "SVL-NAM-101"), vec![1]);
+    assert_eq!(rule_lines(src, "SVL-NAM-102"), vec![3]);
+    assert_eq!(rule_lines(src, "SVL-NAM-109"), vec![5]);
+    assert_eq!(rule_lines(src, "SVL-NAM-112"), vec![7]);
+    assert_eq!(rule_lines(src, "SVL-NAM-105"), vec![9]);
+    assert_eq!(rule_lines(src, "SVL-NAM-106"), vec![10]);
+    assert_eq!(rule_lines(src, "SVL-NAM-107"), vec![12]);
+    assert_eq!(rule_lines(src, "SVL-NAM-110"), vec![14]);
+    assert!(rule_lines(src, "SVL-NAM-111").is_empty());
 }
 
 #[test]
@@ -976,7 +976,7 @@ fn queue_concat_append() {
                endclass\n\
                class u; c#(byte) b; endclass\n";
     // Once, though both the default specialization and c#(byte) hold it.
-    assert_eq!(rule_lines(src, "SV-PRF-007"), vec![5, 6]);
+    assert_eq!(rule_lines(src, "SVL-PRF-007"), vec![5, 6]);
 }
 
 fn rule_count(src: &str, rule: &str) -> usize {
@@ -1001,7 +1001,7 @@ fn bodies_that_fail_in_the_default_specialization_are_not_walked() {
                class N #(type T=int); T x; task f(); int y; y = 19; begin if (x == null) y = 1; end endtask\n\
                function void g(); int z; z = 20; endfunction endclass\n\
                endpackage\n";
-    assert_eq!(rule_lines(src, "SV-STY-010"), vec![3, 9]);
+    assert_eq!(rule_lines(src, "SVL-STY-008"), vec![3, 9]);
 }
 
 #[test]
@@ -1014,7 +1014,7 @@ fn coverpoint_on_a_member_of_a_sample_argument() {
                endgroup\n\
                function new(); cg = new(); endfunction\n\
                endclass\n";
-    assert_eq!(rule_count(src, "SV-COV-017"), 1);
+    assert_eq!(rule_count(src, "SVL-COV-017"), 1);
 }
 
 #[test]
@@ -1044,7 +1044,7 @@ fn redundant_cast_in_a_body_that_fails_in_the_default_specialization() {
                function void f(); x = null; $cast(a, b); endfunction\n\
                function void g(); $cast(a, b); endfunction\n\
                endclass\n";
-    assert_eq!(rule_lines(src, "SV-TYP-008"), vec![4]);
+    assert_eq!(rule_lines(src, "SVL-TYP-002"), vec![4]);
 }
 
 #[test]
@@ -1105,7 +1105,7 @@ fn widths_per_instance() {
                leaf #(.Cfg(cfg_pkg::build(8))) u1 (.p_i(p), .o(o1));\n\
                leaf #(.Cfg(cfg_pkg::build(8))) u2 (.p_i(p), .o(o2));\n\
                leaf #(.Cfg(cfg_pkg::build(16))) u3 (.p_i(q), .o(o3));\nendmodule\n";
-    let m = messages(src, "SV-TYP-001");
+    let m = messages(src, "SVL-TYP-001");
     let want = |t: &str| format!("Comparison between signed type 'integer' and unsigned type '{t}'");
     // u1 and u2 give the same finding, reported once; u3 differs.
     assert_eq!(m, vec![want("logic[2:0]"), want("logic[3:0]")]);
@@ -1121,7 +1121,7 @@ fn enum_case_through_type_parameters() {
                alu #(.fu_data_t(fu_data_t)) u (.fu_data_i(f), .r(r));\nendmodule\n\
                module top;\n  localparam type fu_t = struct packed { p::op_t operation; logic [3:0] a; };\n\
                fu_t f; logic [3:0] r; mid #(.fu_data_t(fu_t)) u (.f(f), .r(r));\nendmodule\n";
-    let m = messages(src, "SV-FSM-001");
+    let m = messages(src, "RTL-FSM-001");
     assert_eq!(m.len(), 1);
     assert!(m[0].contains("enum 'op_t'") && m[0].contains("'SUB', 'MUL'"), "{m:?}");
 }
@@ -1144,21 +1144,21 @@ fn component_new_through_the_class_own_this_type() {
 #[test]
 fn hardcoded_bounds_in_base_class_fixtures() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let dir = root.join("testdata/rules/random/SV-RND-040");
+    let dir = root.join("testdata/rules/random/SVL-RND-030");
     let json = std::fs::read_to_string(dir.join("expect.json")).unwrap();
-    let want: Vec<u32> = expected(&json).into_iter().filter(|(r, _)| r == "SV-RND-040").map(|(_, l)| l).collect();
+    let want: Vec<u32> = expected(&json).into_iter().filter(|(r, _)| r == "SVL-RND-030").map(|(_, l)| l).collect();
 
     let bad_args =
         [format!("+incdir+{}", root.join("testdata/common").display()), dir.join("bad.sv").display().to_string()];
     let (d_bad, trees_bad) = svlang_model::load_with_trees(&bad_args).unwrap();
-    let (files_bad, found_bad) = svlang_lint::lint_all(&d_bad, &trees_bad, |r| r == "SV-RND-040");
+    let (files_bad, found_bad) = svlang_lint::lint_all(&d_bad, &trees_bad, |r| r == "SVL-RND-030");
     let got_bad: Vec<u32> = found_bad.iter().map(|f| f.position_in(&files_bad).1).collect();
     assert_eq!(got_bad, want);
 
     let good_args =
         [format!("+incdir+{}", root.join("testdata/common").display()), dir.join("good.sv").display().to_string()];
     let (d_good, trees_good) = svlang_model::load_with_trees(&good_args).unwrap();
-    let (_, found_good) = svlang_lint::lint_all(&d_good, &trees_good, |r| r == "SV-RND-040");
+    let (_, found_good) = svlang_lint::lint_all(&d_good, &trees_good, |r| r == "SVL-RND-030");
     assert!(found_good.is_empty(), "{found_good:?}");
 }
 
@@ -1206,10 +1206,11 @@ fn all_native_rule_fixtures_pass() {
 #[test]
 fn formal_ready_preset_and_guideline_selector_work() {
     let keep = svlang_lint::rule_selection(Some("formal-ready"), false).unwrap();
-    for id in ["SV-FPV-001", "SV-FPV-002", "SV-FPV-003", "SV-FPV-004", "SV-FPV-005", "SV-SVA-007", "SV-CDC-001"] {
+    for id in ["SVA-FPV-001", "SVA-FPV-002", "SVA-FPV-003", "SVA-FPV-004", "SVA-FPV-005", "SVA-PRP-007", "RTL-CDC-001"]
+    {
         assert!(keep(id), "expected {id} in formal-ready preset");
     }
-    assert!(!keep("SV-STY-001"));
+    assert!(!keep("UVM-NAM-003"));
     let parsed = svlang_lint::catalog::parse_guideline_selectors(&["formal-ready".to_string()]).unwrap();
     assert_eq!(parsed, vec!["formal-ready"]);
 }

@@ -1,4 +1,4 @@
-//! SV-BUG-003 (SelfAssignment): Flags 'x = x' assignments, typically a
+//! SVL-COR-010 (SelfAssignment): Flags 'x = x' assignments, typically a
 //! constructor or setter whose argument shadows the property it was meant to
 //! set (clang-tidy bugprone-self-assignment, Sonar S1656).
 
@@ -53,7 +53,7 @@ pub(crate) fn self_assignment(c: &Cst, s: &mut Sink) {
         }
         let Some(at) = c.first_tok(n) else { continue };
         s.add(
-            "SV-BUG-003",
+            "SVL-COR-010",
             "SelfAssignment",
             Severity::Warning,
             format!("'{name}' is assigned to itself, so the statement has no effect.{hint}"),

@@ -1,4 +1,4 @@
-//! SV-DED-001 (UnusedVariable): Local variables declared in tasks or functions
+//! SVL-DED-001 (UnusedVariable): Local variables declared in tasks or functions
 //! should be referenced.
 
 use crate::support::handles::body_refs_if_good;
@@ -56,7 +56,7 @@ pub(crate) fn unused_variable(c: &Cst, out: &mut Sink) {
                 }
                 let Some(loc) = c.first_tok(nm).map(|t| c.loc(t)) else { continue };
                 out.add(
-                    "SV-DED-001",
+                    "SVL-DED-001",
                     "UnusedVariable",
                     Severity::Info,
                     format!("Local variable '{name}' in method '{mname}' is declared but never referenced."),

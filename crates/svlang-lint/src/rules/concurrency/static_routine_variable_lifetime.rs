@@ -1,4 +1,4 @@
-//! SV-THR-002 (StaticRoutineVariableLifetime): a task outside a class has
+//! SVL-CON-029 (StaticRoutineVariableLifetime): a task outside a class has
 //! static lifetime by default, so its locals are shared by every call that
 //! is running. Two calls that overlap in time overwrite each other's values.
 //!
@@ -55,7 +55,7 @@ pub(crate) fn static_routine_variable(c: &Cst, s: &mut Sink) {
                     add_n(
                         s,
                         n,
-                        "SV-THR-002",
+                        "SVL-CON-029",
                         "StaticRoutineVariableLifetime",
                         Severity::Warning,
                         format!(

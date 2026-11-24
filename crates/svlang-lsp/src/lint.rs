@@ -292,7 +292,7 @@ fn check(project: &mut Project, state: &Mutex<State>, out: &Out, manual: bool) {
     }
 
     // When automatic linting is `Off` (Mode 1) and not invoked via `Lint Now`:
-    // if `syntax_diagnostics` is enabled, run fast compiler-only (`SV-CMP-001`) checks; otherwise do nothing.
+    // if `syntax_diagnostics` is enabled, run fast compiler-only (`CMP-ERR-001`) checks; otherwise do nothing.
     let mut compiler_only = !manual && cur_trig == LintTrigger::Off;
     if compiler_only && !syntax_diags {
         return;
@@ -400,7 +400,7 @@ fn check(project: &mut Project, state: &Mutex<State>, out: &Out, manual: bool) {
             svlang_lint::Severity::Info => 3,
             _ => 2,
         };
-        let diag_source = if f.rule == "SV-CMP-001" { "svlang" } else { "svlang-lint" };
+        let diag_source = if f.rule == "CMP-ERR-001" { "svlang" } else { "svlang-lint" };
         let mut fields = vec![
             ("range", range_json(range)),
             ("severity", severity.into()),
@@ -430,7 +430,7 @@ fn check(project: &mut Project, state: &Mutex<State>, out: &Out, manual: bool) {
         let mut fixes: Vec<Edit> = fixes;
         // Any finding but a compile error or a broken waiver can be waived
         // on its line: a comment on the line above, indented like it.
-        if !matches!(f.rule, "SV-CMP-001" | "UVM-WV-001") {
+        if !matches!(f.rule, "CMP-ERR-001" | "SVL-WVR-002") {
             let indent = texts.indent(file, range[0]);
             fixes.push(Edit {
                 title: format!("Waive {} on this line", f.rule),

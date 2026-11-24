@@ -1,4 +1,4 @@
-//! SV-RDB-009 (RedundantComment): Flags a one-line // comment directly above a
+//! SVL-MNT-050 (RedundantComment): Flags a one-line // comment directly above a
 //! statement when every word of the comment (2 to 6 words, ignoring a, the, to,
 //! ...) is already a word of the statement's names, e.g. '// set cfg' above
 //! set_cfg().
@@ -75,7 +75,7 @@ pub(crate) fn redundant_comment(c: &Cst, s: &mut Sink) {
             continue;
         }
         s.add(
-            "SV-RDB-009",
+            "SVL-MNT-050",
             "RedundantComment",
             Severity::Info,
             "The comment only repeats the code below it. Say why the line is there (the protocol \

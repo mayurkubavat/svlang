@@ -1,4 +1,4 @@
-//! SV-CON-005 (SemaphoreZeroKey): Flags semaphore method calls (sem.get(0),
+//! SVL-CON-002 (SemaphoreZeroKey): Flags semaphore method calls (sem.get(0),
 //! sem.put(0), sem.try_get(0)) passing non-positive key counts (<= 0).
 
 use crate::syntax::Cst;
@@ -31,7 +31,7 @@ pub(crate) fn semaphore_zero_key(c: &Cst, s: &mut Sink) {
         if matches!(arg.as_str(), "0" | "32'd0" | "1'b0") || arg.starts_with('-') {
             let Some(first) = c.first_tok(expr) else { continue };
             s.add(
-                "SV-CON-005",
+                "SVL-CON-002",
                 "SemaphoreZeroKey",
                 Severity::Error,
                 format!(

@@ -1,4 +1,4 @@
-//! UVM-REP-007 (CheckFailureAsWarning): Flags a failed compare() or an
+//! UVM-CMP-015 (CheckFailureAsWarning): Flags a failed compare() or an
 //! expected-versus-actual mismatch reported only with `uvm_warning or
 //! `uvm_info.
 
@@ -18,7 +18,7 @@ pub(crate) fn check_failure_as_warning(d: &Design, csts: &[Cst], out: &mut Sink)
                 continue;
             }
             out.add(
-                "UVM-REP-007",
+                "UVM-CMP-015",
                 "CheckFailureAsWarning",
                 Severity::Warning,
                 format!(

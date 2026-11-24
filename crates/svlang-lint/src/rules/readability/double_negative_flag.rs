@@ -1,4 +1,4 @@
-//! SV-RDB-006 (DoubleNegativeFlag): Flags '!' (or '~' on one bit) applied to a
+//! SVL-MNT-047 (DoubleNegativeFlag): Flags '!' (or '~' on one bit) applied to a
 //! variable whose name is negative (disable_*, no_*, not_*, skip_*, inhibit_*,
 //! ...).
 
@@ -104,7 +104,7 @@ pub(crate) fn double_negative_flag(c: &Cst, out: &mut Sink) {
             crate::support::type_text::expr_text(c, with_parens(c, e))
         );
         for _ in 0..times {
-            out.add("SV-RDB-006", "DoubleNegativeFlag", Severity::Info, msg.clone(), c.loc(t));
+            out.add("SVL-MNT-047", "DoubleNegativeFlag", Severity::Info, msg.clone(), c.loc(t));
         }
     }
 }

@@ -1,4 +1,4 @@
-//! SV-OOP-011 (DowncastWithoutDynamicCast): Flags static casting syntax (e.g.
+//! SVL-OOP-009 (DowncastWithoutDynamicCast): Flags static casting syntax (e.g.
 //! `ExtendedClass'(base_handle)`) used on class handles instead of `$cast()`.
 
 use crate::support::ast::unparen;
@@ -92,7 +92,7 @@ pub(crate) fn downcast(d: &Design, csts: &[Cst], s: &mut Sink) {
             }
         }
         s.add(
-            "SV-OOP-011",
+            "SVL-OOP-009",
             "DowncastWithoutDynamicCast",
             Severity::Error,
             format!(

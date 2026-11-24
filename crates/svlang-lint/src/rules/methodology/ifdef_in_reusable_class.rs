@@ -1,4 +1,4 @@
-//! SV-CNS-003 (IfdefInReusableClass): Flags `ifdef, `ifndef and `elsif inside
+//! SVL-MNT-004 (IfdefInReusableClass): Flags `ifdef, `ifndef and `elsif inside
 //! class bodies, apart from simulator and UVM version shims.
 
 use crate::support::defines_packages::{origin_loc, user_tok, Files, Lexed};
@@ -100,7 +100,7 @@ pub(crate) fn ifdef_in_reusable_class(_: &Design, csts: &[Cst], out: &mut Sink) 
                 }
                 let what = if names.len() == 1 { format!("`{}", names[0]) } else { "macros".to_string() };
                 out.add(
-                    "SV-CNS-003",
+                    "SVL-MNT-004",
                     "IfdefInReusableClass",
                     Severity::Warning,
                     format!(

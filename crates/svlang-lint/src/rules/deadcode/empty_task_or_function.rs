@@ -1,4 +1,4 @@
-//! SV-DED-011 (EmptyTaskOrFunction): Flags concrete, non-virtual, non-extern
+//! SVL-DED-011 (EmptyTaskOrFunction): Flags concrete, non-virtual, non-extern
 //! tasks and functions with empty bodies (zero statements).
 
 use crate::syntax::Cst;
@@ -27,7 +27,7 @@ pub(crate) fn empty_routine(c: &Cst, s: &mut Sink) {
         }
         let Some(at) = c.first_tok(name) else { continue };
         s.add(
-            "SV-DED-011",
+            "SVL-DED-011",
             "EmptyTaskOrFunction",
             Severity::Warning,
             format!(

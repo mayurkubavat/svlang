@@ -1,4 +1,4 @@
-//! SV-SML-002 (MagicDelayInSequence): Disallow hardcoded physical delays
+//! SVL-MNT-053 (MagicDelayInSequence): Disallow hardcoded physical delays
 //! (#delay) inside uvm_sequence.
 
 use crate::support::class_index::Classes;
@@ -34,7 +34,7 @@ pub(crate) fn magic_delay_in_sequence(c: &Cst, s: &mut Sink) {
         report(
             s,
             units.times(c, n),
-            "SV-SML-002",
+            "SVL-MNT-053",
             "MagicDelayInSequence",
             Severity::Warning,
             format!(

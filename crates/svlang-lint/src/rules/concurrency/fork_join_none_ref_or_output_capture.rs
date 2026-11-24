@@ -1,4 +1,4 @@
-//! SV-CON-018 (ForkJoinNoneRefOrOutputCapture): Flags `fork ... join_none`
+//! SVL-CON-014 (ForkJoinNoneRefOrOutputCapture): Flags `fork ... join_none`
 //! background threads spawned inside tasks or functions that reference `ref`,
 //! `const ref`, `output`, or `inout` formal arguments of the enclosing routine.
 //! Because `join_none` detaches immediately, the parent routine may return
@@ -108,7 +108,7 @@ pub(crate) fn fork_join_none_ref_or_output_capture(c: &Cst, out: &mut Sink) {
             for (aname, dir) in &args {
                 if used_in_threads.contains(aname) {
                     out.add(
-                        "SV-CON-018",
+                        "SVL-CON-014",
                         "ForkJoinNoneRefOrOutputCapture",
                         Severity::Warning,
                         format!(

@@ -1,4 +1,4 @@
-//! SV-LANG-001 (EqualityWithXz): Detects equality ('==', '!=') checks against
+//! RTL-DAT-003 (EqualityWithXz): Detects equality ('==', '!=') checks against
 //! 4-state unknown literals ('x, 'z).
 
 use crate::support::class_fields::declared_type;
@@ -95,7 +95,7 @@ pub(crate) fn equality_with_xz(c: &Cst, s: &mut Sink) {
         );
         for _ in 0..times {
             s.add(
-                "SV-LANG-001",
+                "RTL-DAT-003",
                 "EqualityWithXz",
                 Severity::Error,
                 format!(

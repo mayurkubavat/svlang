@@ -1,4 +1,4 @@
-//! UVM-PRF-001 (ConfigDbGetInRunPhaseLoop): Flags `uvm_config_db#(...)::get(...)`
+//! UVM-CFG-013 (ConfigDbGetInRunPhaseLoop): Flags `uvm_config_db#(...)::get(...)`
 //! calls inside loops in runtime task phases (`run_phase`, `main_phase`, etc.)
 //! or sequence `body()` tasks, where repeated regex/glob table lookups degrade
 //! simulation throughput.
@@ -37,7 +37,7 @@ pub(crate) fn config_db_get_in_run_phase_loop(c: &Cst, out: &mut Sink) {
         let bare = rname.rsplit("::").next().unwrap_or(&rname);
         if is_task_phase(bare) || bare == "body" || bare == "pre_body" || bare == "run_test" {
             out.add(
-                "UVM-PRF-001",
+                "UVM-CFG-013",
                 "ConfigDbGetInRunPhaseLoop",
                 Severity::Warning,
                 format!(

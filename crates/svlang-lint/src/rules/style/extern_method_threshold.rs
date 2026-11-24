@@ -1,4 +1,4 @@
-//! SV-STY-009 (ExternMethodThreshold): Enforces 'extern' declaration for class
+//! SVL-STY-007 (ExternMethodThreshold): Enforces 'extern' declaration for class
 //! methods exceeding N lines of code (default: 5 lines).
 
 use crate::support::source_layout::{routine_name, routines, Buffers};
@@ -21,7 +21,7 @@ pub(crate) fn extern_method_threshold(c: &Cst, s: &mut Sink) {
         let count = if b >= a { b - a + 1 } else { 1 };
         if count > THRESHOLD {
             s.add(
-                "SV-STY-009",
+                "SVL-STY-007",
                 "ExternMethodThreshold",
                 Severity::Warning,
                 format!(

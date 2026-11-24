@@ -1,4 +1,4 @@
-//! SV-DED-017 (UnreferencedMacro): Uses the Preprocessor Event Table
+//! SVL-DED-017 (UnreferencedMacro): Uses the Preprocessor Event Table
 //! ([`svlang::syntax::Tree::macro_defs`] and [`svlang::syntax::Tree::cond_events`])
 //! to flag file-local `` `define `` macros declared in `.sv` implementation
 //! files (excluding `.svh`/`.vh` headers, include guards, and feature flags
@@ -131,7 +131,7 @@ pub(crate) fn unreferenced_macro(c: &Cst, out: &mut Sink) {
         }
         if !used_macros.contains(name) {
             out.add(
-                "SV-DED-017",
+                "SVL-DED-017",
                 "UnreferencedMacro",
                 Severity::Info,
                 format!(

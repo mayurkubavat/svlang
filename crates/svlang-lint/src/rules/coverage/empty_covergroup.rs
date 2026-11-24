@@ -1,4 +1,4 @@
-//! SV-COV-007 (EmptyCovergroup): Flags covergroups declared with zero
+//! SVL-COV-007 (EmptyCovergroup): Flags covergroups declared with zero
 //! coverpoints and zero crosses.
 
 use crate::support::names::name_tok;
@@ -15,7 +15,7 @@ pub(crate) fn empty_covergroup(c: &Cst, s: &mut Sink) {
         let cg = name.map(|t| c.text_of(t)).filter(|t| !t.is_empty()).unwrap_or("unnamed_covergroup");
         let Some(at) = name.or_else(|| c.first_tok(n)) else { continue };
         s.add(
-            "SV-COV-007",
+            "SVL-COV-007",
             "EmptyCovergroup",
             Severity::Warning,
             format!(

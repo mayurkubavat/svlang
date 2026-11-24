@@ -1,4 +1,4 @@
-//! SV-DLY-004 (ZeroTimeForeverLoop): Flags forever loops whose body has no
+//! SVL-CON-020 (ZeroTimeForeverLoop): Flags forever loops whose body has no
 //! timing control, no task call and no exit, so the loop spins in zero
 //! simulation time and hangs the simulator.
 
@@ -35,7 +35,7 @@ pub(crate) fn zero_time_forever(c: &Cst, s: &mut Sink) {
             add_n(
                 s,
                 times(c, l),
-                "SV-DLY-004",
+                "SVL-CON-020",
                 "ZeroTimeForeverLoop",
                 Severity::Error,
                 "forever loop with no timing control (#, @, wait), no task call and no way out (break, \

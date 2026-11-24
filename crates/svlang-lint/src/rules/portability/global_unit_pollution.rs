@@ -1,4 +1,4 @@
-//! SV-MOD-001 (GlobalUnitPollution): Disallow variables, nets, typedefs, tasks,
+//! SVL-PRT-003 (GlobalUnitPollution): Disallow variables, nets, typedefs, tasks,
 //! and functions declared directly in the $unit compilation unit scope.
 
 use crate::support::ast::{kids, last_tok};
@@ -61,7 +61,7 @@ pub(crate) fn unit_pollution(c: &Cst, s: &mut Sink) {
                 continue;
             }
             s.add(
-                "SV-MOD-001",
+                "SVL-PRT-003",
                 "GlobalUnitPollution",
                 Severity::Error,
                 format!(

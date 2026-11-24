@@ -1,4 +1,4 @@
-//! SV-DSN-002 (GodClass): Flags classes that are very complex (WMC >= 47), use
+//! SVL-MNT-009 (GodClass): Flags classes that are very complex (WMC >= 47), use
 //! many other classes' data (ATFD > 5) and have low cohesion (TCC < 1/3): PMD's
 //! GodClass detection strategy.
 
@@ -9,9 +9,9 @@ use crate::{Severity, Sink};
 
 pub(crate) fn god_class(c: &Cst, s: &mut Sink) {
     let (wmc_limit, atfd_limit, tcc_percent) = (
-        crate::options::get("SV-DSN-002", "wmc", 47) as _,
-        crate::options::get("SV-DSN-002", "atfd", 5) as _,
-        crate::options::get("SV-DSN-002", "tcc_percent", 33) as f64,
+        crate::options::get("SVL-MNT-009", "wmc", 47) as _,
+        crate::options::get("SVL-MNT-009", "atfd", 5) as _,
+        crate::options::get("SVL-MNT-009", "tcc_percent", 33) as f64,
     );
     each_class(c, |classes, cm| {
         let role = classes.role(cm.cls);
@@ -23,7 +23,7 @@ pub(crate) fn god_class(c: &Cst, s: &mut Sink) {
         }
         let cls = &classes.list[cm.cls];
         s.add(
-            "SV-DSN-002",
+            "SVL-MNT-009",
             "GodClass",
             Severity::Warning,
             format!(

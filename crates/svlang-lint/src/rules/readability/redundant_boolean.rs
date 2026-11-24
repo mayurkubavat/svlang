@@ -1,4 +1,4 @@
-//! SV-RDB-005 (RedundantBoolean): Flags 1-bit values compared with 1'b1/1'b0
+//! SVL-MNT-046 (RedundantBoolean): Flags 1-bit values compared with 1'b1/1'b0
 //! and 'if (c) return 1; else return 0;' (Sonar S1125, clang-tidy
 //! readability-simplify-boolean-expr).
 
@@ -109,7 +109,7 @@ pub(crate) fn redundant_boolean(c: &Cst, out: &mut Sink) {
         }
         let Some(t) = c.first_tok(n) else { continue };
         for _ in 0..times {
-            let f = out.add("SV-RDB-005", "RedundantBoolean", Severity::Info, msg.clone(), c.loc(t));
+            let f = out.add("SVL-MNT-046", "RedundantBoolean", Severity::Info, msg.clone(), c.loc(t));
             f.fixes.extend(fix.clone());
         }
     }

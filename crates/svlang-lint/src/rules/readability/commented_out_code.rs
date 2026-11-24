@@ -1,4 +1,4 @@
-//! SV-RDB-003 (CommentedOutCode): Flags blocks of // comments that parse as
+//! SVL-MNT-044 (CommentedOutCode): Flags blocks of // comments that parse as
 //! SystemVerilog statements or declarations (Sonar S125).
 
 use crate::support::trivia::{library_file, split_trivia, Triv};
@@ -64,9 +64,9 @@ fn trim_comment(s: &str) -> &str {
 }
 
 pub(crate) fn commented_out_code(c: &Cst, s: &mut Sink) {
-    // Option `min_lines` (rules.SV-RDB-003.options).
+    // Option `min_lines` (rules.SVL-MNT-044.options).
     fn min_lines() -> usize {
-        crate::options::get("SV-RDB-003", "min_lines", 2) as usize
+        crate::options::get("SVL-MNT-044", "min_lines", 2) as usize
     }
     let t = c.tree;
     for (tok, f, triv) in token_trivia(c) {
@@ -87,7 +87,7 @@ pub(crate) fn commented_out_code(c: &Cst, s: &mut Sink) {
                 }
                 if parses_cleanly(&text) {
                     s.add(
-                        "SV-RDB-003",
+                        "SVL-MNT-044",
                         "CommentedOutCode",
                         Severity::Info,
                         format!(

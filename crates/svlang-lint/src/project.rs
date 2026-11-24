@@ -206,7 +206,7 @@ pub(crate) struct Waiver {
     pub(crate) message: String,
     pub(crate) message_re: Option<crate::pattern::Pattern>,
     pub(crate) severity: Option<Severity>,
-    /// What a re-graded finding's message names (`waiver #1 (SV-STY-002)`).
+    /// What a re-graded finding's message names (`waiver #1 (SVL-STY-001)`).
     pub(crate) label: String,
     /// Who owns it (`owner`), for the waiver report.
     pub(crate) owner: String,
@@ -217,7 +217,7 @@ pub(crate) struct Waiver {
 
 impl Waiver {
     pub(crate) fn matches(&self, rule: &str, path: &str, raw_path: &str, line: u32, message: &str) -> bool {
-        (self.rule == "*" || self.rule == rule)
+        crate::rule_selector_matches(&self.rule, rule, "")
             && (self.line == 0 || self.line == line)
             && self.path.as_ref().is_none_or(|p| p.matches(path))
             && self.contains.as_ref().is_none_or(|s| s.is_empty() || raw_path.contains(s.as_str()))
@@ -499,9 +499,11 @@ impl Config {
         let all = crate::rules();
         for (key, _) in &c.rules {
             let known = all.iter().any(|r| {
-                r.id == key
-                    || r.name == key
-                    || crate::sub_rules(r.id).iter().any(|s| s.id == key || s.name == key || s.finding_name == key)
+                crate::rule_selector_matches(key, r.id, r.name)
+                    || crate::sub_rules(r.id).iter().any(|s| {
+                        crate::rule_selector_matches(key, s.id, s.name)
+                            || crate::rule_selector_matches(key, s.id, s.finding_name)
+                    })
             });
             if !known {
                 c.warnings.push(format!("rules: '{key}' does not match any rule ID or name"));
@@ -642,21 +644,29 @@ impl Config {
     }
 
     fn rule(&self, id: &str, name: &str) -> Option<&RuleSettings> {
-        self.rules.iter().find(|(k, _)| k == id || (!name.is_empty() && k == name)).map(|(_, r)| r)
+        self.rules
+            .iter()
+            .find(|(k, _)| k == id || (!name.is_empty() && k == name))
+            .or_else(|| self.rules.iter().find(|(k, _)| crate::rule_selector_matches(k, id, name)))
+            .map(|(_, r)| r)
     }
 
     /// The config asks for this rule: it gives it settings without turning
-    /// it off, or has the block its engine reads (`style` for SV-STY-100,
-    /// `naming` for SV-NAM-100). Such a rule runs even when the default
+    /// it off, or has the block its engine reads (`style` for SVL-STY-100,
+    /// `naming` for SVL-NAM-100). Such a rule runs even when the default
     /// preset leaves its profile out; nobody configures a rule they do not
     /// want.
     pub fn selects(&self, id: &str, name: &str) -> bool {
-        let on = |key: &str| self.rules.iter().any(|(k, r)| k == key && r.enabled != Some(false));
-        on(id)
-            || (!name.is_empty() && on(name))
-            || crate::sub_rules(id).iter().any(|s| on(s.id) || on(s.name) || on(s.finding_name))
-            || (id == "SV-STY-100" && !self.style.is_empty())
-            || (id == "SV-NAM-100" && !self.naming.is_empty())
+        if self.rule(id, name).and_then(|r| r.enabled) == Some(false) {
+            return false;
+        }
+        let on = |rid: &str, rname: &str| {
+            self.rules.iter().any(|(k, r)| crate::rule_selector_matches(k, rid, rname) && r.enabled != Some(false))
+        };
+        on(id, name)
+            || crate::sub_rules(id).iter().any(|s| on(s.id, s.name) || on(s.id, s.finding_name))
+            || (id == "SVL-STY-100" && !self.style.is_empty())
+            || (id == "SVL-NAM-100" && !self.naming.is_empty())
     }
 
     /// The rule runs under this config (`enabled` not false).
@@ -669,7 +679,7 @@ impl Config {
     /// come after, in [`crate::suppress`]).
     pub fn apply(&self, found: &mut Vec<Finding>, files: &[String]) {
         // Config keys and waivers name a rule by ID or by a rule's name, as
-        // svlang-lint resolves them: a sub-rule (SV-STY-102 ...) by its ID only.
+        // svlang-lint resolves them: a sub-rule (SVL-STY-102 ...) by its ID only.
         let all = crate::rules();
         let names: std::collections::HashMap<&str, &str> = all.iter().map(|r| (r.id, r.name)).collect();
         let mut cache: std::collections::HashMap<u32, String> = Default::default();

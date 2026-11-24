@@ -1,4 +1,4 @@
-//! SV-STY-010 (ExplicitLiteralWidth): Disallow unsized integer and numeric
+//! SVL-STY-008 (ExplicitLiteralWidth): Disallow unsized integer and numeric
 //! literals without explicit bit-width declarations.
 
 use crate::support::literals::{integer_literal, written_times};
@@ -77,7 +77,7 @@ pub(crate) fn explicit_literal_width(c: &Cst, s: &mut Sink) {
                 let (a, b) = (c.first_tok(outer)?, c.tree.token_range(outer).last().copied()?);
                 c.token_fix(a, b, format!("{w}{text}"), &format!("Write the width: {w}{text}"))
             });
-        let f = s.add("SV-STY-010", "ExplicitLiteralWidth", sev, msg, c.loc(at));
+        let f = s.add("SVL-STY-008", "ExplicitLiteralWidth", sev, msg, c.loc(at));
         f.fixes.extend(fix);
     }
 }

@@ -1,4 +1,4 @@
-//! SV-OOP-015 (VirtualMethodSignatureMismatch): Virtual method overrides in
+//! SVL-OOP-013 (VirtualMethodSignatureMismatch): Virtual method overrides in
 //! derived classes must match the parameter count and signature of the base
 //! virtual method.
 
@@ -25,7 +25,7 @@ pub(crate) fn virtual_method_signature_mismatch(d: &Design, out: &mut Sink) {
             let (da, ba) = (sub.arguments.len(), bs.arguments.len());
             if da != ba {
                 out.add(
-                    "SV-OOP-015",
+                    "SVL-OOP-013",
                     "VirtualMethodSignatureMismatch",
                     Severity::Warning,
                     format!(

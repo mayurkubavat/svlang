@@ -1,4 +1,4 @@
-//! SV-COV-003 (CrossSameCoverpoint): Detects coverage cross constructs crossing
+//! SVL-COV-003 (CrossSameCoverpoint): Detects coverage cross constructs crossing
 //! a coverpoint with itself (cross cp_a, cp_a).
 
 use crate::support::names::cross_parts;
@@ -18,7 +18,7 @@ pub(crate) fn cross_same_coverpoint(c: &Cst, s: &mut Sink) {
             let Some(first) = c.first_tok(item) else { continue };
             let cross = label.clone().unwrap_or_else(|| "unnamed".into());
             s.add(
-                "SV-COV-003",
+                "SVL-COV-003",
                 "CrossSameCoverpoint",
                 Severity::Error,
                 format!(

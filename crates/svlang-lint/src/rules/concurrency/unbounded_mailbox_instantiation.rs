@@ -1,4 +1,4 @@
-//! SV-CON-007 (UnboundedMailboxInstantiation): Disallows instantiating
+//! SVL-CON-003 (UnboundedMailboxInstantiation): Disallows instantiating
 //! unbounded mailboxes without a capacity limit to prevent memory bloat and
 //! missed producer-consumer synchronization.
 
@@ -46,7 +46,7 @@ fn check_mailbox_new(c: &Cst, s: &mut Sink, e: NodeId, var: &str) {
     };
     if unbounded {
         s.add(
-            "SV-CON-007",
+            "SVL-CON-003",
             "UnboundedMailboxInstantiation",
             Severity::Warning,
             format!(

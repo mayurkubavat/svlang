@@ -1,11 +1,7 @@
 // How often svlang-lint's shared AST walk visits the body of each generic class:
-// once per specialization, after the engine's DefaultSpecializer (copied
-// from cpp/src/engine/RuleEngine.cpp) has made every default specialization.
-// Prints `<count> <name>@<file>:<line>`. The reference for tools/gates/spec_gate.py.
-//
-//   B=build/_deps; c++ -std=c++20 -O1 -I$B/slang-src/include -I$B/slang-build/source \
-//     -I$B/fmt-src/include -I$B/slang-src/external tools/oracles/specdump.cpp \
-//     $B/slang-build/lib/libsvlang.a $B/slang-build/lib/libmimalloc.a -lpthread -o build/specdump
+// once per specialization, after DefaultSpecializer has made every default
+// specialization. Prints `<count> <name>@<file>:<line>`. Reference oracle for
+// tools/gates/spec_gate.py (built via `cmake --preset oracles && cmake --build build --target svlang_specdump`).
 #include <slang/ast/ASTVisitor.h>
 #include <slang/ast/Compilation.h>
 #include <slang/ast/types/AllTypes.h>

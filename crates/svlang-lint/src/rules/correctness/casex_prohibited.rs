@@ -1,4 +1,4 @@
-//! SV-COR-009 (CasexProhibited): Disallows use of 'casex' statements. 'casex'
+//! RTL-DAT-002 (CasexProhibited): Disallows use of 'casex' statements. 'casex'
 //! treats unknown simulation 'x' values as wildcards, masking uninitialized
 //! logic bugs and timing errors.
 
@@ -9,7 +9,7 @@ pub(crate) fn casex_prohibited(c: &Cst, s: &mut Sink) {
     for (_, kw) in case_statements(c) {
         if c.text_of(kw) == "casex" {
             s.add(
-                "SV-COR-009",
+                "RTL-DAT-002",
                 "CasexProhibited",
                 Severity::Error,
                 "Use of 'casex' statement is prohibited in verification environments. \

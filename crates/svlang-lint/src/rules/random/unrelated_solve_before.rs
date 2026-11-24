@@ -1,4 +1,4 @@
-//! SV-RND-026 (UnrelatedSolveBefore): Flags 'solve a before b' when no
+//! SVL-RND-025 (UnrelatedSolveBefore): Flags 'solve a before b' when no
 //! constraint of the class (or its base classes) ties a to b, directly or
 //! through other variables.
 
@@ -183,7 +183,7 @@ pub(crate) fn unrelated_solve_before(c: &Cst, s: &mut Sink) {
                             continue;
                         }
                         s.add(
-                            "SV-RND-026",
+                            "SVL-RND-025",
                             "UnrelatedSolveBefore",
                             Severity::Warning,
                             format!(

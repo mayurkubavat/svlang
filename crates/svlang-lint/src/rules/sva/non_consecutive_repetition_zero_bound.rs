@@ -1,4 +1,4 @@
-//! SV-SVA-004 (NonConsecutiveRepetitionZeroBound): Non-consecutive repetition
+//! SVA-PRP-004 (NonConsecutiveRepetitionZeroBound): Non-consecutive repetition
 //! operators ([= ...] and [-> ...]) must specify a minimum bound >= 1.
 
 use crate::support::spans::span;
@@ -22,7 +22,7 @@ pub(crate) fn zero_repetition(c: &Cst, s: &mut Sink) {
         let zero = sel == "0" || sel == "1'b0" || sel == "32'd0" || sel.starts_with("0:") || sel.starts_with("1'b0:");
         if zero {
             s.add(
-                "SV-SVA-004",
+                "SVA-PRP-004",
                 "NonConsecutiveRepetitionZeroBound",
                 Severity::Error,
                 format!(

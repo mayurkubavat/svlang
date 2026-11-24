@@ -10,13 +10,13 @@ fn a_workspace_applies_the_project_and_reads_editor_text() {
     let dir = std::env::temp_dir().join(format!("svlang-lint-workspace-{}", std::process::id()));
     std::fs::create_dir_all(dir.join(".svlang-lint")).unwrap();
     std::fs::create_dir_all(dir.join("tb")).unwrap();
-    // SV-STY-003 (a TODO comment, reported at the token after it) is a style
+    // SVL-STY-002 (a TODO comment, reported at the token after it) is a style
     // rule: off by default, on when the config configures it. The waiver
     // takes out the one reported on line 4.
     std::fs::write(
         dir.join(".svlang-lint/config.json"),
-        r#"{"sources": ["tb/top.sv"], "rules": {"SV-STY-003": {"severity": "ERROR"}},
-            "waivers": [{"rule": "SV-STY-003", "path": "tb/top.sv", "line": 4, "reason": "known"}]}"#,
+        r#"{"sources": ["tb/top.sv"], "rules": {"SVL-STY-002": {"severity": "ERROR"}},
+            "waivers": [{"rule": "SVL-STY-002", "path": "tb/top.sv", "line": 4, "reason": "known"}]}"#,
     )
     .unwrap();
     let top = dir.join("tb/top.sv");
@@ -27,7 +27,7 @@ fn a_workspace_applies_the_project_and_reads_editor_text() {
     let ws = svlang_lint::Workspace::open(&dir).expect("the project opens");
     assert!(ws.config_file().is_some_and(|f| f.ends_with(".svlang-lint/config.json")));
     let checked = ws.check(&[]).expect("the project checks");
-    assert_eq!(rules(&checked), vec![("SV-STY-003", 2)]);
+    assert_eq!(rules(&checked), vec![("SVL-STY-002", 2)]);
     assert_eq!(checked.findings[0].severity, svlang_lint::Severity::Error);
     assert_eq!(checked.waived, 1);
 
@@ -40,8 +40,8 @@ fn a_workspace_applies_the_project_and_reads_editor_text() {
     svlang::syntax::overlay::set(&top, "module top;\n// TODO moved\nlogic a; // TODO new\nendmodule\n");
     let checked = ws.check(&[]).unwrap();
     svlang::syntax::overlay::clear(&top);
-    assert_eq!(rules(&checked), vec![("SV-STY-003", 3)], "line 4 is waived");
-    assert_eq!(rules(&ws.check(&[]).unwrap()), vec![("SV-STY-003", 2)]);
+    assert_eq!(rules(&checked), vec![("SVL-STY-002", 3)], "line 4 is waived");
+    assert_eq!(rules(&ws.check(&[]).unwrap()), vec![("SVL-STY-002", 2)]);
 
     let _ = std::fs::remove_dir_all(&dir);
 }

@@ -1,4 +1,4 @@
-//! DPI-TYP-001 (DpiTypeWidthAlignment): Disallow 4-state types (integer, reg)
+//! SVL-DPI-002 (DpiTypeWidthAlignment): Disallow 4-state types (integer, reg)
 //! in DPI-C declarations. 4-state types require complex svLogicVecVal structs
 //! in C; use 2-state portable types (int, longint, byte) for C99 ABI
 //! compatibility.
@@ -34,7 +34,7 @@ pub(crate) fn dpi_type_width(c: &Cst, s: &mut Sink) {
         }
         let Some(at) = c.first_tok(name) else { continue };
         s.add(
-            "DPI-TYP-001",
+            "SVL-DPI-002",
             "DpiTypeWidthAlignment",
             Severity::Warning,
             format!(

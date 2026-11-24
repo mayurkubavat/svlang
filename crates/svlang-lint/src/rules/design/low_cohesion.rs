@@ -1,4 +1,4 @@
-//! SV-DSN-003 (LowCohesion): Flags classes whose methods split into two or more
+//! SVL-MNT-010 (LowCohesion): Flags classes whose methods split into two or more
 //! groups that share no fields and do not call each other (LCOM4 > 1): the
 //! class is really several classes.
 
@@ -9,8 +9,8 @@ use crate::{Severity, Sink};
 
 pub(crate) fn low_cohesion(c: &Cst, s: &mut Sink) {
     let (min_groups, min_size) = (
-        crate::options::get("SV-DSN-003", "groups", 2) as _,
-        crate::options::get("SV-DSN-003", "min_group_size", 2) as _,
+        crate::options::get("SVL-MNT-010", "groups", 2) as _,
+        crate::options::get("SVL-MNT-010", "min_group_size", 2) as _,
     );
     each_class(c, |classes, cm| {
         let role = classes.role(cm.cls);
@@ -24,7 +24,7 @@ pub(crate) fn low_cohesion(c: &Cst, s: &mut Sink) {
         let desc = groups.iter().map(|g| format!("{{{}}}", g.join(", "))).collect::<Vec<_>>().join("; ");
         let cls = &classes.list[cm.cls];
         s.add(
-            "SV-DSN-003",
+            "SVL-MNT-010",
             "LowCohesion",
             Severity::Info,
             format!(

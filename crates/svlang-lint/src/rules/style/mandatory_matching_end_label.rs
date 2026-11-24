@@ -1,4 +1,4 @@
-//! SV-STY-005 (MandatoryMatchingEndLabel): Enforces explicit and matching end
+//! SVL-STY-003 (MandatoryMatchingEndLabel): Enforces explicit and matching end
 //! labels on functions, tasks, and classes (e.g., endfunction : name).
 
 use crate::support::source_layout::{classes, end_and_label, end_label_fix, end_loc, routine_name, routines};
@@ -12,7 +12,7 @@ pub(crate) fn missing_end_label(c: &Cst, s: &mut Sink) {
         // An out-of-block method (cls::name) is labelled with its own name.
         let fix = end_label_fix(c, end, name.rsplit("::").next().unwrap_or(&name));
         s.add(
-            "SV-STY-005",
+            "SVL-STY-003",
             "MandatoryMatchingEndLabel",
             Severity::Info,
             format!(
@@ -27,7 +27,7 @@ pub(crate) fn missing_end_label(c: &Cst, s: &mut Sink) {
         let Some((end, None)) = end_and_label(c, n, &["endclass"]) else { continue };
         let fix = end_label_fix(c, end, &name);
         s.add(
-            "SV-STY-005",
+            "SVL-STY-003",
             "MandatoryMatchingEndLabel",
             Severity::Info,
             format!(

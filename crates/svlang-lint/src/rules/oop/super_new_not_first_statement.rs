@@ -1,4 +1,4 @@
-//! SV-OOP-014 (SuperNewNotFirstStatement): Derived class constructors calling
+//! SVL-OOP-012 (SuperNewNotFirstStatement): Derived class constructors calling
 //! super.new(...) must invoke it as the very first procedural statement.
 
 use crate::{find_method, Severity, Sink};
@@ -22,7 +22,7 @@ pub(crate) fn super_new_not_first_statement(d: &Design, out: &mut Sink) {
             continue;
         }
         out.add(
-            "SV-OOP-014",
+            "SVL-OOP-012",
             "SuperNewNotFirstStatement",
             Severity::Warning,
             format!(

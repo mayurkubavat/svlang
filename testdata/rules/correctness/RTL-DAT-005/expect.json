@@ -1,0 +1,12 @@
+{
+  "bad.sv": [
+    {
+      "rule": "RTL-DAT-005",
+      "line": 10
+    },
+    {
+      "rule": "RTL-DAT-005",
+      "line": 10
+    }
+  ]
+}

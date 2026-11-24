@@ -1,4 +1,4 @@
-//! SV-DSN-011 (FeatureEnvy): Flags a method that uses one other object's fields
+//! SVL-MNT-018 (FeatureEnvy): Flags a method that uses one other object's fields
 //! at least 6 times (option min_foreign) and more than twice as often as its
 //! own class's fields.
 
@@ -83,9 +83,9 @@ fn field_uses<'d>(ctx: &Ctx<'d, '_>, c: &Cst, n: NodeId, u: &mut FieldUse<'d>) {
 }
 
 pub(crate) fn feature_envy(d: &Design, csts: &[Cst], out: &mut Sink) {
-    // Option `min_foreign` (rules.SV-DSN-011.options).
+    // Option `min_foreign` (rules.SVL-MNT-018.options).
     fn min_foreign() -> usize {
-        crate::options::get("SV-DSN-011", "min_foreign", 6) as usize
+        crate::options::get("SVL-MNT-018", "min_foreign", 6) as usize
     }
     const EXEMPT: &[&str] = &[
         "new",
@@ -121,7 +121,7 @@ pub(crate) fn feature_envy(d: &Design, csts: &[Cst], out: &mut Sink) {
             continue;
         }
         out.add(
-            "SV-DSN-011",
+            "SVL-MNT-018",
             "FeatureEnvy",
             Severity::Info,
             format!(

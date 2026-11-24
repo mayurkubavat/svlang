@@ -1,4 +1,4 @@
-//! UVM-TST-001 (CheckerCannotFail): Flags scoreboard and checker classes with
+//! UVM-TLM-012 (CheckerCannotFail): Flags scoreboard and checker classes with
 //! no way to report a failure: no `uvm_error or `uvm_fatal, no assertion and no
 //! comparator, in the class, its bases or the helpers it calls (Sonar S2699,
 //! tests without assertions).
@@ -175,7 +175,7 @@ pub(crate) fn checker_cannot_fail(d: &Design, csts: &[Cst], out: &mut Sink) {
             continue;
         }
         out.add(
-            "UVM-TST-001",
+            "UVM-TLM-012",
             "CheckerCannotFail",
             Severity::Error,
             format!(

@@ -3,7 +3,7 @@
 
 `include "uvm_mock.svh"
 
-// --- TEST CASE 3: UVM-FAC-001, UVM-PHS-001, UVM-PHS-002, SV-OOP-002, UVM-CFG-002 ---
+// --- TEST CASE 3: UVM-FAC-001, UVM-PHS-001, UVM-PHS-002, SVL-OOP-002, UVM-CFG-002 ---
 class MyMonitor extends uvm_component;
     function new(string name, uvm_component parent);
         super.new(name, parent);
@@ -34,7 +34,7 @@ class MyEnv extends uvm_component;
         // Compliant inline waiver test: This violation is waived!
         monitor = new("monitor", this); // svlang-lint:waive UVM-FAC-001 [legacy VIP monitor]
 
-        // VIOLATION SV-OOP-002: Unchecked $cast wrapped in void'
+        // VIOLATION SVL-OOP-002: Unchecked $cast wrapped in void'
         void'($cast(driver, base_drv));
 
         // Compliant cast checking

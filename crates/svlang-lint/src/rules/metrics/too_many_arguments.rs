@@ -1,4 +1,4 @@
-//! SV-MET-003 (TooManyArguments): Flags tasks and functions with more formal
+//! SVL-MNT-031 (TooManyArguments): Flags tasks and functions with more formal
 //! arguments than the threshold (default 7; Pylint R0913, Sonar S107).
 
 use crate::support::routine_metrics::each_routine;
@@ -7,7 +7,7 @@ use crate::syntax::Cst;
 use crate::{Severity, Sink};
 
 pub(crate) fn too_many_arguments(c: &Cst, s: &mut Sink) {
-    let limit = crate::options::get("SV-MET-003", "max_args", 7) as _;
+    let limit = crate::options::get("SVL-MNT-031", "max_args", 7) as _;
     each_routine(c, |classes, r| {
         if r.name == "new" && r.class.is_some() {
             return;
@@ -23,7 +23,7 @@ pub(crate) fn too_many_arguments(c: &Cst, s: &mut Sink) {
         report(
             s,
             r.times,
-            "SV-MET-003",
+            "SVL-MNT-031",
             "TooManyArguments",
             Severity::Warning,
             format!(

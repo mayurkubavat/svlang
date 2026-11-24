@@ -1,4 +1,4 @@
-//! DPI-PRT-001 (ConflictingDpiPrototypes): Flags a C function imported more
+//! SVL-DPI-001 (ConflictingDpiPrototypes): Flags a C function imported more
 //! than once with different prototypes (`import "DPI-C" function int f(int)`
 //! here, `... function void f(longint)` there). The C side has one
 //! signature, so at least one import calls it with the wrong arguments or
@@ -75,7 +75,7 @@ pub(crate) fn conflicting_dpi_prototypes(_: &Design, csts: &[Cst], out: &mut Sin
         let Some((first, _, at)) = sigs.first() else { continue };
         for (sig, loc, _) in sigs.iter().skip(1) {
             out.add(
-                "DPI-PRT-001",
+                "SVL-DPI-001",
                 "ConflictingDpiPrototypes",
                 Severity::Error,
                 format!(

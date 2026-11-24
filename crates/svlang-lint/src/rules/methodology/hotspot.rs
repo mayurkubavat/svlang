@@ -1,4 +1,4 @@
-//! SV-EVO-001 (Hotspot): With --history: reports the files that are both
+//! SVL-MNT-027 (Hotspot): With --history: reports the files that are both
 //! complex (summed cyclomatic complexity of their routines) and often changed
 //! in git, the top five by complexity times commits.
 
@@ -7,15 +7,15 @@ use crate::syntax::Cst;
 use crate::{Severity, Sink};
 use std::collections::BTreeMap;
 
-/// SV-EVO-001: the five files with the largest complexity times churn.
+/// SVL-MNT-027: the five files with the largest complexity times churn.
 pub(crate) fn hotspot(_: &svlang_model::Design, csts: &[Cst], out: &mut Sink) {
     if !enabled() {
         return;
     }
     let (top_files, min_commits, min_complexity) = (
-        crate::options::get("SV-EVO-001", "top_files", 5) as usize,
-        crate::options::get("SV-EVO-001", "min_commits", 3) as usize,
-        crate::options::get("SV-EVO-001", "min_complexity", 15),
+        crate::options::get("SVL-MNT-027", "top_files", 5) as usize,
+        crate::options::get("SVL-MNT-027", "min_commits", 3) as usize,
+        crate::options::get("SVL-MNT-027", "min_complexity", 15),
     );
     struct Stats {
         complexity: i64,
@@ -45,7 +45,7 @@ pub(crate) fn hotspot(_: &svlang_model::Design, csts: &[Cst], out: &mut Sink) {
     }
     let mut ranked: Vec<(i64, String)> = Vec::new();
     for (file, f) in files.iter_mut() {
-        let Some(log) = log_for(file, max_commits("SV-EVO-001")) else { continue };
+        let Some(log) = log_for(file, max_commits("SVL-MNT-027")) else { continue };
         f.churn = log.files.get(file).map_or(0, Vec::len);
         f.log_size = log.sizes.len();
         if f.churn < min_commits || f.complexity < min_complexity {
@@ -58,7 +58,7 @@ pub(crate) fn hotspot(_: &svlang_model::Design, csts: &[Cst], out: &mut Sink) {
         let f = &files[file];
         let Some((k, tok, name)) = &f.at else { continue };
         out.add(
-            "SV-EVO-001",
+            "SVL-MNT-027",
             "Hotspot",
             Severity::Info,
             format!(

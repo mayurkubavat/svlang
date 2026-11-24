@@ -20,7 +20,7 @@ fn modules_only_instantiated_in_untaken_branches_are_not_walked() {
     let tree = svlang::syntax::parse_source(src, "t.sv", Default::default());
     let d = svlang_model::build(std::slice::from_ref(&tree));
     let (_, found) = svlang_lint::lint_all(&d, std::slice::from_ref(&tree), |_| true);
-    let mut lines: Vec<u32> = found.iter().filter(|f| f.rule == "SV-BUG-001").map(|f| f.loc.line).collect();
+    let mut lines: Vec<u32> = found.iter().filter(|f| f.rule == "SVL-COR-008").map(|f| f.loc.line).collect();
     lines.sort();
     assert_eq!(lines, vec![2, 5]);
 }

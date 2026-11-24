@@ -1,4 +1,4 @@
-//! SV-RND-043 (DanglingDisableSoft): `disable soft x;` when neither the class
+//! SVL-RND-033 (DanglingDisableSoft): `disable soft x;` when neither the class
 //! nor its base classes declare a `soft` constraint on `x`.
 
 use crate::support::constraint_ir;
@@ -8,7 +8,7 @@ use crate::{Severity, Sink};
 pub(crate) fn dangling_disable_soft(c: &Cst, out: &mut Sink) {
     for hit in &constraint_ir::facts(c).dangling_disable_soft {
         out.add(
-            "SV-RND-043",
+            "SVL-RND-033",
             "DanglingDisableSoft",
             Severity::Warning,
             format!(

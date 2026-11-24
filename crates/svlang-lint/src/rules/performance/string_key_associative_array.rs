@@ -1,4 +1,4 @@
-//! SV-PRF-006 (StringKeyAssociativeArray): Detects associative arrays indexed
+//! SVL-PRF-006 (StringKeyAssociativeArray): Detects associative arrays indexed
 //! by 'string'.
 
 use crate::syntax::Cst;
@@ -60,7 +60,7 @@ pub(crate) fn string_key_assoc(c: &Cst, s: &mut Sink) {
             let name = c.tree.bare_text(nm);
             for _ in 0..symbol_times(c, dd) {
                 s.add(
-                    "SV-PRF-006",
+                    "SVL-PRF-006",
                     "StringKeyAssociativeArray",
                     Severity::Warning,
                     format!(

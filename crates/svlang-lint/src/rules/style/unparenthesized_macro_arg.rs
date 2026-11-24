@@ -1,4 +1,4 @@
-//! SV-STY-022 (UnparenthesizedMacroArg): Uses the Preprocessor Event Table
+//! SVL-STY-016 (UnparenthesizedMacroArg): Uses the Preprocessor Event Table
 //! ([`svlang::syntax::Tree::macro_defs`]) to flag function-like expression
 //! macros whose formal parameters appear adjacent to binary or unary operators
 //! in the replacement body without protective `(param)` parentheses, offering a
@@ -96,7 +96,7 @@ pub(crate) fn unparenthesized_macro_arg(c: &Cst, out: &mut Sink) {
                 let off = orig.offset as usize;
                 let end = off + txt.len();
                 out.add(
-                    "SV-STY-022",
+                    "SVL-STY-016",
                     "UnparenthesizedMacroArg",
                     Severity::Warning,
                     format!(

@@ -1,4 +1,4 @@
-//! SV-COR-011 (ModifyingLoopIndexInsideFor): Flags modifications to the loop
+//! SVL-COR-005 (ModifyingLoopIndexInsideFor): Flags modifications to the loop
 //! control variable inside a 'for' loop body.
 
 use crate::support::for_loops::{for_parts, for_vars, is_ident_name, keyword_is, kids, op_text};
@@ -24,7 +24,7 @@ pub(crate) fn loop_index_modified(c: &Cst, s: &mut Sink) {
                 let name = c.tree.bare_text(e);
                 if vars.contains(&name) {
                     s.add(
-                        "SV-COR-011",
+                        "SVL-COR-005",
                         "ModifyingLoopIndexInsideFor",
                         Severity::Warning,
                         format!(

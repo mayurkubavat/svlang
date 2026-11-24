@@ -1,4 +1,4 @@
-//! SV-DAT-003 (UnwrittenOutputArgument): Concrete subroutine declares an
+//! SVL-COR-017 (UnwrittenOutputArgument): Concrete subroutine declares an
 //! `output` argument that is never written in the subroutine body.
 
 use crate::support::cfg_dataflow;
@@ -8,7 +8,7 @@ use crate::{Severity, Sink};
 pub(crate) fn unwritten_output_argument(c: &Cst, out: &mut Sink) {
     for hit in &cfg_dataflow::facts(c).unwritten_outputs {
         out.add(
-            "SV-DAT-003",
+            "SVL-COR-017",
             "UnwrittenOutputArgument",
             Severity::Warning,
             format!(

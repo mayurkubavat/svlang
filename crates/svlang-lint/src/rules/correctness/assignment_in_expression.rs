@@ -1,4 +1,4 @@
-//! SV-COR-007 (AssignmentInExpression): Disallows assignment expressions ('='
+//! SVL-COR-003 (AssignmentInExpression): Disallows assignment expressions ('='
 //! or compound assignments) inside conditional predicates or loop conditions.
 
 use crate::support::for_loops::{for_parts, keyword_is, kids, op_text, predicates, subtree};
@@ -35,7 +35,7 @@ pub(crate) fn assignment_in_condition(c: &Cst, s: &mut Sink) {
     for n in found {
         let Some(t) = c.toks(n).next() else { continue };
         s.add(
-            "SV-COR-007",
+            "SVL-COR-003",
             "AssignmentInExpression",
             Severity::Warning,
             format!(

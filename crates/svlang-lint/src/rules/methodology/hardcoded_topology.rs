@@ -1,4 +1,4 @@
-//! UVM-RUS-003 (HardcodedTopology): Flags envs that create components in a loop
+//! UVM-CMP-026 (HardcodedTopology): Flags envs that create components in a loop
 //! with a literal count instead of a count from their config object
 //! (open/closed principle, MG-4.2).
 
@@ -72,7 +72,7 @@ pub(crate) fn hardcoded_topology(d: &Design, csts: &[Cst], out: &mut Sink) {
                 creations(&ctx, &calls, c, lbody).into_iter().find(|cr| is_component_role(role(d, cr.class)))
             {
                 out.add(
-                    "UVM-RUS-003",
+                    "UVM-CMP-026",
                     "HardcodedTopology",
                     Severity::Warning,
                     format!(

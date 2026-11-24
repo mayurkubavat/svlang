@@ -1,4 +1,4 @@
-//! SV-EVO-002 (ChangeCoupling): With --history: reports two files in different
+//! SVL-MNT-028 (ChangeCoupling): With --history: reports two files in different
 //! packages that change together in at least three commits and in at least half
 //! of the commits touching either.
 
@@ -9,15 +9,15 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 use svlang::syntax::SyntaxKind::*;
 
-/// SV-EVO-002: two files in different packages that keep changing together.
+/// SVL-MNT-028: two files in different packages that keep changing together.
 pub(crate) fn change_coupling(_: &svlang_model::Design, csts: &[Cst], out: &mut Sink) {
     if !enabled() {
         return;
     }
     let (min_shared, min_degree, max_files) = (
-        crate::options::get("SV-EVO-002", "min_shared_commits", 3) as usize,
-        crate::options::get("SV-EVO-002", "min_degree", 50) as usize,
-        crate::options::get("SV-EVO-002", "max_commit_files", 30) as usize,
+        crate::options::get("SVL-MNT-028", "min_shared_commits", 3) as usize,
+        crate::options::get("SVL-MNT-028", "min_degree", 50) as usize,
+        crate::options::get("SVL-MNT-028", "max_commit_files", 30) as usize,
     );
     struct Info {
         packages: BTreeSet<String>,
@@ -42,7 +42,7 @@ pub(crate) fn change_coupling(_: &svlang_model::Design, csts: &[Cst], out: &mut 
     // licence headers) that touch many files at once.
     let mut revs: Vec<(&String, Arc<Log>, Vec<u32>)> = Vec::new();
     for file in files.keys() {
-        let Some(log) = log_for(file, max_commits("SV-EVO-002")) else { continue };
+        let Some(log) = log_for(file, max_commits("SVL-MNT-028")) else { continue };
         let Some(cs) = log.files.get(file) else { continue };
         let kept: Vec<u32> = cs.iter().copied().filter(|&c| log.sizes[c as usize] <= max_files).collect();
         if kept.len() >= min_shared {
@@ -68,7 +68,7 @@ pub(crate) fn change_coupling(_: &svlang_model::Design, csts: &[Cst], out: &mut 
             }
             let (k, tok) = files[*fb].first;
             out.add(
-                "SV-EVO-002",
+                "SVL-MNT-028",
                 "ChangeCoupling",
                 Severity::Info,
                 format!(

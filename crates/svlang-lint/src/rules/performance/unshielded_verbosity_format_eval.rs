@@ -1,4 +1,4 @@
-//! SV-PRF-005 (UnshieldedVerbosityFormatEval): Calling $sformatf inside
+//! SVL-PRF-005 (UnshieldedVerbosityFormatEval): Calling $sformatf inside
 //! uvm_info/warning without checking uvm_report_enabled formats strings even
 //! when messages are discarded by verbosity.
 
@@ -69,7 +69,7 @@ fn unshielded_format(c: &Cst, a: &Ast, s: &mut Sink) {
         }
         let Some(at) = c.first_tok(msg) else { return false };
         s.add(
-            "SV-PRF-005",
+            "SVL-PRF-005",
             "UnshieldedVerbosityFormatEval",
             Severity::Warning,
             "Calling $sformatf inside uvm_info/warning with high verbosity without checking 'uvm_report_enabled'. \

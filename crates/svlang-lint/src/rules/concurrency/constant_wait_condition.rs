@@ -1,4 +1,4 @@
-//! SV-CON-004 (ConstantWaitCondition): Flags 'wait()' statements with
+//! SVL-CON-001 (ConstantWaitCondition): Flags 'wait()' statements with
 //! compile-time constant conditions (e.g., 'wait(0);', 'wait(1);'). 'wait(0);'
 //! deadlocks the simulation thread permanently, while 'wait(1);' executes
 //! instantaneously.
@@ -44,7 +44,7 @@ pub(crate) fn constant_wait(c: &Cst, s: &mut Sink) {
         }
         let Some(first) = c.first_tok(e) else { continue };
         s.add(
-            "SV-CON-004",
+            "SVL-CON-001",
             "ConstantWaitCondition",
             Severity::Error,
             format!(

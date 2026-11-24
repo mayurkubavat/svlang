@@ -1,4 +1,4 @@
-//! UVM-RUS-004 (AbsoluteConfigDbPath): Flags uvm_config_db calls in classes
+//! UVM-CFG-015 (AbsoluteConfigDbPath): Flags uvm_config_db calls in classes
 //! whose path starts at uvm_test_top.
 
 use crate::support::class_roles::{role, role_name, Index, Role};
@@ -44,7 +44,7 @@ context's full name, so it can never match. Pass null as the context, or make th
                     path
                 )
             };
-            out.add("UVM-RUS-004", "AbsoluteConfigDbPath", Severity::Warning, msg, c.loc_of(call));
+            out.add("UVM-CFG-015", "AbsoluteConfigDbPath", Severity::Warning, msg, c.loc_of(call));
         }
     }
 }

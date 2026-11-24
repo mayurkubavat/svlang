@@ -1,4 +1,4 @@
-//! SV-MET-008 (RandFieldBudget): Flags a sequence item that declares more than
+//! SVL-MNT-036 (RandFieldBudget): Flags a sequence item that declares more than
 //! the rand-field budget (default 8, option max_rand), counting rand and randc
 //! properties of the class itself.
 
@@ -10,7 +10,7 @@ use SyntaxKind::*;
 
 pub(crate) fn rand_field_budget(c: &Cst, s: &mut Sink) {
     let classes = Classes::new(c);
-    let limit = crate::options::get("SV-MET-008", "max_rand", 8) as _;
+    let limit = crate::options::get("SVL-MNT-036", "max_rand", 8) as _;
     for i in classes.user() {
         if classes.role(i) != Role::Item {
             continue;
@@ -33,7 +33,7 @@ pub(crate) fn rand_field_budget(c: &Cst, s: &mut Sink) {
             continue;
         }
         s.add(
-            "SV-MET-008",
+            "SVL-MNT-036",
             "RandFieldBudget",
             Severity::Warning,
             format!(

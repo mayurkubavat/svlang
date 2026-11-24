@@ -1,4 +1,4 @@
-//! UVM-ARC-004 (StringHierarchyLookup): Flags uvm_root/uvm_component find(),
+//! UVM-CMP-004 (StringHierarchyLookup): Flags uvm_root/uvm_component find(),
 //! find_all() and lookup() calls outside tests and end_of_elaboration_phase.
 
 use crate::support::class_index::{calls, normalized, Classes, Role};
@@ -30,7 +30,7 @@ pub(crate) fn string_hierarchy_lookup(c: &Cst, s: &mut Sink) {
                     continue;
                 }
                 s.add(
-                    "UVM-ARC-004",
+                    "UVM-CMP-004",
                     "StringHierarchyLookup",
                     Severity::Warning,
                     format!(

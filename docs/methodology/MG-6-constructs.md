@@ -10,7 +10,7 @@ SystemVerilog has several ways to do most things. The guide prefers the typed, c
 
 Macros are untyped and invisible to the debugger. `uvm_field_* and `uvm_do hide large amounts of generated code and are slow.
 
-A `define that only holds a number or a string is a constant without a type or scope (SV-CNS-001); a package parameter does the same job. A code macro that uses nothing only the preprocessor can do (token pasting, stringification, `__FILE__, type arguments, declarations) is a routine without type checking (SV-CNS-002). `ifdef inside a class turns one class into several that must each be built and tested, and cannot be chosen per instance (SV-CNS-003). Defaults wrapped in `ifndef NAME, which the build overrides with +define+, and simulator or UVM version shims are left alone.
+A `define that only holds a number or a string is a constant without a type or scope (SVL-MNT-002); a package parameter does the same job. A code macro that uses nothing only the preprocessor can do (token pasting, stringification, `__FILE__, type arguments, declarations) is a routine without type checking (SVL-MNT-003). `ifdef inside a class turns one class into several that must each be built and tested, and cannot be chosen per instance (SVL-MNT-004). Defaults wrapped in `ifndef NAME, which the build overrides with +define+, and simulator or UVM version shims are left alone.
 
 Instead of:
 
@@ -35,13 +35,13 @@ class bus_monitor extends uvm_monitor;
 endclass
 ```
 
-Enforced by: `SV-CNS-001`, `SV-CNS-002`, `SV-CNS-003`, `UVM-BAN-001`, `UVM-BAN-002`
+Enforced by: `SVL-MNT-002`, `SVL-MNT-003`, `SVL-MNT-004`, `UVM-DEP-006`, `UVM-DEP-007`
 
 ## MG-6.2 (Should)
 
 **Model domain values with types: enums instead of strings, packed structs instead of hand slicing.**
 
-A string compared against a list of literals is an enum the compiler cannot check (SV-CNS-004); hand-written bit slices are fields that have no names (SV-CNS-005). Strings that come from a UVM API, such as register access policies from get_access(), are left alone.
+A string compared against a list of literals is an enum the compiler cannot check (SVL-MNT-005); hand-written bit slices are fields that have no names (SVL-MNT-006). Strings that come from a UVM API, such as register access policies from get_access(), are left alone.
 
 Instead of:
 
@@ -61,7 +61,7 @@ typedef struct packed { logic [7:0] flags; logic [7:0] kind; logic [15:0] len; }
 len = hdr.len;
 ```
 
-Enforced by: `SV-CNS-004`, `SV-CNS-005`
+Enforced by: `SVL-MNT-005`, `SVL-MNT-006`
 
 ## MG-6.3 (Shall)
 
@@ -69,6 +69,6 @@ Enforced by: `SV-CNS-004`, `SV-CNS-005`
 
 Deprecated constructs (program blocks, defparam, $random, set_config_*) are removed or discouraged by IEEE 1800 and 1800.2 and behave differently between tools.
 
-Three Advisory rules ask for explicit types: an enum without a base type is a 32-bit int (SV-CNS-006), the Verilog-1995 integer type is 4-state and signed (SV-CNS-007), and a void function that hands back results through output arguments hides its data flow (SV-CNS-008).
+Three Advisory rules ask for explicit types: an enum without a base type is a 32-bit int (SVL-TYP-008), the Verilog-1995 integer type is 4-state and signed (SVL-TYP-009), and a void function that hands back results through output arguments hides its data flow (SVL-MNT-007).
 
-Enforced by: `SV-BAN-001`, `SV-CNS-006`, `SV-CNS-007`, `SV-CNS-008`, `SV-COR-009`, `SV-DEP-001`, `SV-DEP-002`, `SV-DEP-003`, `SV-DEP-004`, `SV-DEP-005`, `SV-DEP-006`, `UVM-DEP-001`, `UVM-DEP-002`, `UVM-DEP-003`, `UVM-DEP-004`
+Enforced by: `RTL-DAT-002`, `SVL-DEP-001`, `SVL-DEP-002`, `SVL-DEP-003`, `SVL-DEP-004`, `SVL-DEP-005`, `SVL-DEP-006`, `SVL-DEP-007`, `SVL-MNT-007`, `SVL-TYP-008`, `SVL-TYP-009`, `UVM-DEP-001`, `UVM-DEP-002`, `UVM-DEP-003`, `UVM-DEP-004`

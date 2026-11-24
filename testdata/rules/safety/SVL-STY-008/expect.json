@@ -1,0 +1,20 @@
+{
+  "bad.sv": [
+    {
+      "rule": "SVL-STY-008",
+      "line": 13
+    },
+    {
+      "rule": "SVL-STY-008",
+      "line": 15
+    },
+    {
+      "rule": "SVL-STY-008",
+      "line": 23
+    },
+    {
+      "rule": "SVL-STY-008",
+      "line": 37
+    }
+  ]
+}

@@ -1,4 +1,4 @@
-//! SV-FSM-001 (NonExhaustiveEnumCase): Case statement switching over an enum
+//! RTL-FSM-001 (NonExhaustiveEnumCase): Case statement switching over an enum
 //! type does not explicitly handle all declared enum variants while using a
 //! default: arm.
 
@@ -148,7 +148,7 @@ pub(crate) fn non_exhaustive_enum_case(c: &Cst, s: &mut Sink) {
         }
         for _ in 0..ast_times(c, cs) {
             s.add(
-                "SV-FSM-001",
+                "RTL-FSM-001",
                 "NonExhaustiveEnumCase",
                 Severity::Warning,
                 format!(

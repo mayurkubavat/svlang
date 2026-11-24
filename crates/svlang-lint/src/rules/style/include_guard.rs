@@ -1,4 +1,4 @@
-//! SV-STY-013 (IncludeGuard): Every included header file (.svh) must be wrapped
+//! SVL-STY-011 (IncludeGuard): Every included header file (.svh) must be wrapped
 //! in standard macro include guards (`ifndef / `define / `endif) to prevent
 //! circular definitions and compiler redefinition errors.
 
@@ -34,7 +34,7 @@ pub(crate) fn include_guard(c: &Cst, s: &mut Sink) {
         return;
     }
     s.add(
-        "SV-STY-013",
+        "SVL-STY-011",
         "IncludeGuard",
         Severity::Error,
         format!(

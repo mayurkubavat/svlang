@@ -1,4 +1,4 @@
-//! SV-OOP-001 (NonVirtualMethodOverride): Overriding a non-virtual method in a
+//! SVL-OOP-001 (NonVirtualMethodOverride): Overriding a non-virtual method in a
 //! derived class breaks polymorphism when accessed via a base class handle.
 
 use crate::{ancestors, find_method, Severity, Sink};
@@ -24,7 +24,7 @@ pub(crate) fn non_virtual_method_override(d: &Design, out: &mut Sink) {
                 }
                 if !bm.is_virtual {
                     let f = out.add(
-                        "SV-OOP-001",
+                        "SVL-OOP-001",
                         "NonVirtualMethodOverride",
                         Severity::Warning,
                         format!(

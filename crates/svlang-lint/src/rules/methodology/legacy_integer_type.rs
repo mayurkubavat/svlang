@@ -1,4 +1,4 @@
-//! SV-CNS-007 (LegacyIntegerType): Flags the Verilog-1995 type 'integer' in
+//! SVL-TYP-009 (LegacyIntegerType): Flags the Verilog-1995 type 'integer' in
 //! class code.
 
 use crate::support::defines_packages::{container_of, user_types, Container, Files};
@@ -14,7 +14,7 @@ pub(crate) fn legacy_integer_type(_: &Design, csts: &[Cst], out: &mut Sink) {
                 continue;
             }
             out.add(
-                "SV-CNS-007",
+                "SVL-TYP-009",
                 "LegacyIntegerType",
                 Severity::Info,
                 "'integer' in class code is a 4-state, signed 32-bit legacy type. Use int for counters and indices, or logic [N-1:0] \

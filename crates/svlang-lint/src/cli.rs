@@ -109,7 +109,7 @@ impl Extra {
     /// After the waivers and baseline: `--changed-since` keeps findings on
     /// changed lines; the hygiene options report waivers and comments that
     /// matched nothing (`--report-unused-waivers` and `--strict-waivers` as
-    /// UVM-WV-001 warnings). `user_files` are the files whose waiver
+    /// SVL-WVR-002 warnings). `user_files` are the files whose waiver
     /// comments count, `active` the rules that ran. Err for a git failure.
     #[allow(clippy::too_many_arguments)]
     pub fn after_suppress(
@@ -167,7 +167,7 @@ impl Extra {
                     }
                 };
                 found.push(Finding {
-                    rule: "UVM-WV-001",
+                    rule: "SVL-WVR-002",
                     name: "UnusedWaiver",
                     severity: Severity::Warning,
                     message,

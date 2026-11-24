@@ -1,4 +1,4 @@
-//! SV-THR-003 (UnboundedThreadSpawn): Flags fork ... join_none inside forever
+//! SVL-CON-030 (UnboundedThreadSpawn): Flags fork ... join_none inside forever
 //! or while loops with no wait fork, disable fork or semaphore get in the loop
 //! to bound outstanding threads (thread-leak checks).
 
@@ -47,7 +47,7 @@ pub(crate) fn unbounded_spawn(c: &Cst, s: &mut Sink) {
             add_n(
                 s,
                 n,
-                "SV-THR-003",
+                "SVL-CON-030",
                 "UnboundedThreadSpawn",
                 Severity::Warning,
                 format!(

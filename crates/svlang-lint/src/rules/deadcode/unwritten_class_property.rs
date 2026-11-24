@@ -1,4 +1,4 @@
-//! SV-DED-006 (UnwrittenClassProperty): Flags non-rand class properties that
+//! SVL-DED-006 (UnwrittenClassProperty): Flags non-rand class properties that
 //! lack an initializer, are read in methods, but never written or assigned.
 
 use crate::support::ast::class_properties;
@@ -15,7 +15,7 @@ pub(crate) fn unwritten_property(c: &Cst, s: &mut Sink) {
         for (p, t, init) in props {
             if !init && u.read.contains(&p) && !u.written.contains(&p) {
                 s.add(
-                    "SV-DED-006",
+                    "SVL-DED-006",
                     "UnwrittenClassProperty",
                     Severity::Warning,
                     format!(

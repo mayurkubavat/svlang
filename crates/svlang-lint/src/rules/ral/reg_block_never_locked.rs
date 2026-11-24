@@ -1,4 +1,4 @@
-//! RAL-BLK-001 (RegBlockNeverLocked): Flags a top-level register block (held by
+//! UVM-RAL-004 (RegBlockNeverLocked): Flags a top-level register block (held by
 //! an env or test, not by another block) on which lock_model() is never called.
 
 use crate::support::uvm_classes::{derived, receiver, At, Ix};
@@ -55,7 +55,7 @@ pub(crate) fn reg_block_never_locked(d: &Design, csts: &[Cst], s: &mut Sink) {
         }
         let cls = d.class(b);
         s.add(
-            "RAL-BLK-001",
+            "UVM-RAL-004",
             "RegBlockNeverLocked",
             Severity::Error,
             format!(

@@ -1,0 +1,5 @@
+{
+  "bad.sv": [
+    {"rule": "SVL-DED-017", "line": 2}
+  ]
+}

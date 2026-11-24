@@ -1,4 +1,4 @@
-//! SV-OOP-006 (ClassShallowCopyAliasing): Using shallow copy (new other_obj) on
+//! SVL-OOP-006 (ClassShallowCopyAliasing): Using shallow copy (new other_obj) on
 //! classes containing nested object handles creates shared references across
 //! independent transactions.
 
@@ -128,7 +128,7 @@ pub(crate) fn shallow_copy(c: &Cst, s: &mut Sink) {
         let Some(at) = c.first_tok(n) else { continue };
         let cname = decl_name(c, cls).map(|x| x.0).unwrap_or_default();
         s.add(
-            "SV-OOP-006",
+            "SVL-OOP-006",
             "ClassShallowCopyAliasing",
             Severity::Error,
             format!(

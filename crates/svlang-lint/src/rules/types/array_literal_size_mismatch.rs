@@ -1,4 +1,4 @@
-//! SV-TYP-009 (ArrayLiteralSizeMismatch): Flags positional array assignment
+//! SVL-TYP-003 (ArrayLiteralSizeMismatch): Flags positional array assignment
 //! patterns '{...} where the number of elements does not match the target fixed
 //! array dimension.
 
@@ -14,7 +14,7 @@ pub(crate) fn array_literal_size(c: &Cst, s: &mut Sink) {
             continue;
         }
         s.add(
-            "SV-TYP-009",
+            "SVL-TYP-003",
             "ArrayLiteralSizeMismatch",
             Severity::Warning,
             "Array literal assignment pattern element count does not match target array dimension. In IEEE 1800 \u{a7} 10.9 array assignment semantics, positional assignment patterns must provide an element count matching the target array dimension."

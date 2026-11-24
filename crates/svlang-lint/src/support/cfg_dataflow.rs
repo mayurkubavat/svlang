@@ -1,5 +1,5 @@
 //! Intra-procedural control-flow and definite-assignment dataflow over CST
-//! subroutine bodies (`SV-DAT-001`, `SV-DAT-002`, `SV-DAT-003`).
+//! subroutine bodies (`SVL-COR-015`, `SVL-COR-016`, `SVL-COR-017`).
 
 use std::collections::HashSet;
 
@@ -86,7 +86,7 @@ fn check_missing_return(c: &Cst, decl: NodeId, body: NodeId, fname: &str, out: &
     if rt_trim.is_empty() || rt_trim == "void" {
         return;
     }
-    // Skip empty stub functions (already covered by SV-DED-011 / virtual stubs).
+    // Skip empty stub functions (already covered by SVL-DED-011 / virtual stubs).
     let stmts = items(c, body);
     if stmts.is_empty() {
         return;

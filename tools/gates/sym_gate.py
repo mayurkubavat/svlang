@@ -24,12 +24,6 @@ SPECS = '--specs' in sys.argv
 
 
 def _default_symdump():
-    order = (('build-dev', 'svlang_sym_dump'), ('build', 'svlang_sym_dump')) if SPECS else (
-        ('build', 'svlang_sym_dump'), ('build-dev', 'svlang_sym_dump'))
-    for rel in order:
-        p = os.path.join(REPO, *rel)
-        if os.path.isfile(p) and os.access(p, os.X_OK):
-            return p
     return os.path.join(REPO, 'build', 'svlang_sym_dump')
 
 

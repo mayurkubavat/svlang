@@ -1,4 +1,4 @@
-//! SV-DSN-013 (FatalStubOverride): Flags an override of a user base-class
+//! SVL-MNT-020 (FatalStubOverride): Flags an override of a user base-class
 //! method whose whole body is an error or fatal report ("not supported here").
 
 use crate::support::class_index::{
@@ -30,7 +30,7 @@ pub(crate) fn fatal_stub_override(c: &Cst, s: &mut Sink) {
                 continue;
             }
             s.add(
-                "SV-DSN-013",
+                "SVL-MNT-020",
                 "FatalStubOverride",
                 Severity::Warning,
                 format!(

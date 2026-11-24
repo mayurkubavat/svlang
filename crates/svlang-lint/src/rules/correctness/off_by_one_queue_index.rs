@@ -1,4 +1,4 @@
-//! SV-ARR-001 (OffByOneQueueIndex): Detects out-of-bounds off-by-one queue and
+//! SVL-COR-007 (OffByOneQueueIndex): Detects out-of-bounds off-by-one queue and
 //! dynamic array indexing (e.g. 'q[q.size()]').
 
 use crate::support::spans::span;
@@ -19,7 +19,7 @@ pub(crate) fn off_by_one_index(c: &Cst, s: &mut Sink) {
                     let text = text.trim_matches([' ', '\t', '\r', '\n']);
                     if text.contains(".size") && !text.contains('-') && !text.contains('+') {
                         s.add(
-                            "SV-ARR-001",
+                            "SVL-COR-007",
                             "OffByOneQueueIndex",
                             Severity::Error,
                             format!(

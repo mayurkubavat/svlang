@@ -1,4 +1,4 @@
-//! SV-DEP-005 (ProceduralContinuousAssign): Disallow procedural 'assign' and
+//! SVL-DEP-005 (ProceduralContinuousAssign): Disallow procedural 'assign' and
 //! 'deassign' statements.
 
 use crate::syntax::Cst;
@@ -13,7 +13,7 @@ pub(crate) fn procedural_assign(c: &Cst, s: &mut Sink) {
             continue;
         };
         s.add(
-            "SV-DEP-005",
+            "SVL-DEP-005",
             "ProceduralContinuousAssign",
             Severity::Error,
             format!(

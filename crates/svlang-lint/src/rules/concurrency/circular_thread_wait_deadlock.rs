@@ -1,4 +1,4 @@
-//! SV-CNC-002 (CircularThreadWaitDeadlock): Detects circular lock acquisition
+//! SVL-CON-016 (CircularThreadWaitDeadlock): Detects circular lock acquisition
 //! orders and wait-for dependency cycles across concurrent threads in
 //! fork..join blocks, which cause guaranteed or probabilistic simulation
 //! deadlocks.
@@ -56,7 +56,7 @@ pub(crate) fn circular_wait(c: &Cst, s: &mut Sink) {
                             add_n(
                                 s,
                                 n,
-                                "SV-CNC-002",
+                                "SVL-CON-016",
                                 "CircularThreadWaitDeadlock",
                                 Severity::Error,
                                 format!(

@@ -1,4 +1,4 @@
-//! SV-PRF-004 (ProceduralZeroDelay): Procedural delay #0 reschedules execution
+//! SVL-PRF-004 (ProceduralZeroDelay): Procedural delay #0 reschedules execution
 //! into the Inactive region.
 
 use crate::support::ast::{int_value, kids, source_text, unparen, Ast};
@@ -20,7 +20,7 @@ fn zero_delay(c: &Cst, a: &Ast, s: &mut Sink) {
         }
         let at = c.first_tok(n).unwrap_or(hash);
         s.add(
-            "SV-PRF-004",
+            "SVL-PRF-004",
             "ProceduralZeroDelay",
             Severity::Warning,
             "Procedural delay '#0' reschedules the process into the Inactive simulation region. \

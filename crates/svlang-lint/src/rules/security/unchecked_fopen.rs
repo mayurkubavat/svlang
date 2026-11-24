@@ -1,4 +1,4 @@
-//! SV-SYS-001 (UncheckedFopen): Flags unchecked $fopen return descriptors and
+//! SVL-SEC-002 (UncheckedFopen): Flags unchecked $fopen return descriptors and
 //! discarded $fopen calls.
 
 use crate::support::ast::{kids, subtree};
@@ -17,7 +17,7 @@ pub(crate) fn unchecked_fopen(c: &Cst, s: &mut Sink) {
         let Some(p) = c.parent(n) else { continue };
         if c.kind(p) == ExprStmt {
             s.add(
-                "SV-SYS-001",
+                "SVL-SEC-002",
                 "UncheckedFopen",
                 Severity::Warning,
                 "Return descriptor of '$fopen' is discarded. In SystemVerilog (IEEE 1800 § 21.3.1), '$fopen' returns a 32-bit descriptor; \
@@ -51,7 +51,7 @@ pub(crate) fn unchecked_fopen(c: &Cst, s: &mut Sink) {
             continue;
         }
         s.add(
-            "SV-SYS-001",
+            "SVL-SEC-002",
             "UncheckedFopen",
             Severity::Warning,
             format!(

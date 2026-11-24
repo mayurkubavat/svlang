@@ -1,0 +1,5 @@
+{
+  "bad.sv": [
+    {"rule": "SVA-PRP-016", "line": 2}
+  ]
+}

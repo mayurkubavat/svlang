@@ -1,4 +1,4 @@
-//! SV-CON-011 (WaitModifiedInLoop): Flags wait(...) statements inside loops
+//! SVL-CON-007 (WaitModifiedInLoop): Flags wait(...) statements inside loops
 //! where condition variables are never modified or assigned inside the loop
 //! body.
 
@@ -85,7 +85,7 @@ pub(crate) fn wait_in_loop(c: &Cst, s: &mut Sink) {
             let list = order.iter().map(|i| format!("'{i}'")).collect::<Vec<_>>().join(", ");
             let Some(kw) = c.tok(w, "wait") else { continue };
             s.add(
-                "SV-CON-011",
+                "SVL-CON-007",
                 "WaitModifiedInLoop",
                 Severity::Warning,
                 format!(

@@ -1,0 +1,6 @@
+{
+  "bad.sv": [
+    {"rule": "UVM-TLM-009", "line": 16},
+    {"rule": "UVM-TLM-009", "line": 36}
+  ]
+}

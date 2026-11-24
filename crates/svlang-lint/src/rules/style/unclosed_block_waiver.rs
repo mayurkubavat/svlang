@@ -1,4 +1,4 @@
-//! SV-WVR-001 (UnclosedBlockWaiver): Scoped block waiver (`svlang-lint:off`,
+//! SVL-WVR-001 (UnclosedBlockWaiver): Scoped block waiver (`svlang-lint:off`,
 //! `verissimo_lint: waive_start`, `lint:waive-start`) never closed before EOF.
 
 use svlang_model::Loc;
@@ -29,7 +29,7 @@ pub(crate) fn unclosed_block_waiver(c: &Cst, out: &mut Sink) {
         let base_loc = c.loc(tok_idx as u32);
         for (line, rules) in unclosed {
             out.add(
-                "SV-WVR-001",
+                "SVL-WVR-001",
                 "UnclosedBlockWaiver",
                 Severity::Warning,
                 format!(
