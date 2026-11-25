@@ -151,6 +151,22 @@ python3 python/tests/test_python_rules.py          # Python rule SDK tests
 
 If you use this project in research or industrial publications, please cite:
 
+> M. Kubavat, "svlang and svlang-lint: A Pure-Rust IEEE 1800-2023 SystemVerilog Compiler Front End and Semantic Static Analyzer for Hardware Design and Verification," preprint (Version 1), Research Square, Nov. 2026. doi: [10.21203/rs.3.rs-11813840/v1](https://doi.org/10.21203/rs.3.rs-11813840/v1)
+
+```bibtex
+@misc{kubavat2026svlang,
+  author       = {Kubavat, Mayur},
+  title        = {{svlang} and {svlang-lint}: A Pure-Rust {IEEE} 1800-2023 {SystemVerilog} Compiler Front End and Semantic Static Analyzer for Hardware Design and Verification},
+  howpublished = {Preprint (Version 1), Research Square},
+  year         = {2026},
+  month        = nov,
+  doi          = {10.21203/rs.3.rs-11813840/v1},
+  url          = {https://www.researchsquare.com/article/rs-11813840/v1}
+}
+```
+
+svlang is also the front end of InFormal, described in:
+
 > M. Kubavat, "InFormal: An Open-Source Formal Property Verifier for SystemVerilog with Checked Verdicts," technical report, Zenodo, Nov. 2026. doi: [10.5281/zenodo.24261270](https://doi.org/10.5281/zenodo.24261270)
 
 ```bibtex

@@ -1,5 +1,5 @@
 cff-version: 1.2.0
-message: "If you use svlang, please cite the technical report below."
+message: "If you use svlang, please cite the preprint below."
 title: "svlang"
 type: software
 authors:
@@ -9,15 +9,27 @@ authors:
 repository-code: "https://github.com/mayurkubavat/svlang"
 license: Apache-2.0
 preferred-citation:
-  type: report
-  title: "InFormal: An Open-Source Formal Property Verifier for SystemVerilog with Checked Verdicts"
+  type: article
+  title: "svlang and svlang-lint: A Pure-Rust IEEE 1800-2023 SystemVerilog Compiler Front End and Semantic Static Analyzer for Hardware Design and Verification"
   authors:
     - family-names: Kubavat
       given-names: Mayur
       affiliation: Independent Researcher
   year: 2026
   month: 11
-  institution:
-    name: Zenodo
-  doi: 10.5281/zenodo.24261270
-  url: "https://doi.org/10.5281/zenodo.24261270"
+  journal: "Research Square (preprint, Version 1)"
+  doi: 10.21203/rs.3.rs-11813840/v1
+  url: "https://www.researchsquare.com/article/rs-11813840/v1"
+references:
+  - type: report
+    title: "InFormal: An Open-Source Formal Property Verifier for SystemVerilog with Checked Verdicts"
+    authors:
+      - family-names: Kubavat
+        given-names: Mayur
+        affiliation: Independent Researcher
+    year: 2026
+    month: 11
+    institution:
+      name: Zenodo
+    doi: 10.5281/zenodo.24261270
+    url: "https://doi.org/10.5281/zenodo.24261270"
