@@ -13,7 +13,7 @@ default-members = [
 ]
 
 [workspace.package]
-version = "0.6.0"
+version = "0.6.1"
 edition = "2021"
 license = "Apache-2.0"
 rust-version = "1.82"
@@ -26,26 +26,26 @@ categories = ["compilers", "parser-implementations", "development-tools"]
 # `workspace.package.version`) and `path` (what the workspace builds), so
 # `cargo publish` in tools/release/publish_crates.sh keeps working.
 [workspace.dependencies]
-sv-source = { version = "0.6.0", path = "crates/sv-source" }
-sv-bigint = { version = "0.6.0", path = "crates/sv-bigint" }
-sv-fxhash = { version = "0.6.0", path = "crates/sv-fxhash" }
-sv-lexer = { version = "0.6.0", path = "crates/sv-lexer" }
-sv-preprocessor = { version = "0.6.0", path = "crates/sv-preprocessor" }
-sv-syntax = { version = "0.6.0", path = "crates/sv-syntax" }
-sv-scopes = { version = "0.6.0", path = "crates/sv-scopes" }
-sv-checks = { version = "0.6.0", path = "crates/sv-checks" }
-sv-ir = { version = "0.6.0", path = "crates/sv-ir" }
-sv-expr = { version = "0.6.0", path = "crates/sv-expr" }
-sv-sva = { version = "0.6.0", path = "crates/sv-sva" }
-sv-semantic = { version = "0.6.0", path = "crates/sv-semantic" }
-sv-netlist = { version = "0.6.0", path = "crates/sv-netlist" }
-sv-btor2 = { version = "0.6.0", path = "crates/sv-btor2" }
-sv-aiger = { version = "0.6.0", path = "crates/sv-aiger" }
-sv-yosys = { version = "0.6.0", path = "crates/sv-yosys" }
-svlang = { version = "0.6.0", path = "crates/svlang" }
-svlang-model = { version = "0.6.0", path = "crates/svlang-model" }
-svlang-lint = { version = "0.6.0", path = "crates/svlang-lint" }
-svlang-lsp = { version = "0.6.0", path = "crates/svlang-lsp" }
+sv-source = { version = "0.6.1", path = "crates/sv-source" }
+sv-bigint = { version = "0.6.1", path = "crates/sv-bigint" }
+sv-fxhash = { version = "0.6.1", path = "crates/sv-fxhash" }
+sv-lexer = { version = "0.6.1", path = "crates/sv-lexer" }
+sv-preprocessor = { version = "0.6.1", path = "crates/sv-preprocessor" }
+sv-syntax = { version = "0.6.1", path = "crates/sv-syntax" }
+sv-scopes = { version = "0.6.1", path = "crates/sv-scopes" }
+sv-checks = { version = "0.6.1", path = "crates/sv-checks" }
+sv-ir = { version = "0.6.1", path = "crates/sv-ir" }
+sv-expr = { version = "0.6.1", path = "crates/sv-expr" }
+sv-sva = { version = "0.6.1", path = "crates/sv-sva" }
+sv-semantic = { version = "0.6.1", path = "crates/sv-semantic" }
+sv-netlist = { version = "0.6.1", path = "crates/sv-netlist" }
+sv-btor2 = { version = "0.6.1", path = "crates/sv-btor2" }
+sv-aiger = { version = "0.6.1", path = "crates/sv-aiger" }
+sv-yosys = { version = "0.6.1", path = "crates/sv-yosys" }
+svlang = { version = "0.6.1", path = "crates/svlang" }
+svlang-model = { version = "0.6.1", path = "crates/svlang-model" }
+svlang-lint = { version = "0.6.1", path = "crates/svlang-lint" }
+svlang-lsp = { version = "0.6.1", path = "crates/svlang-lsp" }
 
 [profile.release]
 debug = 1

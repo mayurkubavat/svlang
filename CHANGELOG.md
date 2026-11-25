@@ -4,6 +4,19 @@ What changed in each release of the svlang crates (`svlang`, `sv-*`,
 `svlang-model`, `svlang-lint`, `svlang-lsp`, `svlang-cli`), `pysvlang`, and the
 `svlang.svlang` VS Code / Open VSX extension. They share one version number.
 
+## 0.6.1 (2026-11-24)
+
+### Language Server & VS Code / Open VSX Extension Hotfix (`svlang-lsp`, `svlang.svlang`)
+
+- **Eliminated Multi-Repo Cursor / VS Code Freeze Loop**:
+  - Refactored `svlang/rtlHierarchy` (`crates/svlang-lsp/src/rtl_trace.rs`, `editors/vscode/src/extension.ts`) to lazy 1-level-at-a-time loading (`TreeItemCollapsibleState.Collapsed`, fetched only when the `RTL Hierarchy` TreeView is visible, and scoped to the active file's git/project root), reducing multi-repo payloads from `72.6 MB` to `< 1 KB`.
+  - Made `svlang-lsp` workspace indexing non-blocking (`Arc<RwLock<Workspace>>`) with smart multi-repo parent detection (on-demand subproject warming on file open/navigation) and expanded `SKIP_DIRS` (`references`, `corpus`, `third_party`, `vendor`, `venv`, `build`, `build-*`, `cmake-build-*`, `obj_dir`, `csrc`, `simv.daidir`, `xcelium.d`, `work`, `informal_work`).
+  - Optimized `textDocument/semanticTokens/full` from `O(tokens × visible_symbols)` (`~335 ms`) to `O(tokens)` (`< 1 ms` on `uvm_driver.svh`) via precomputed per-scope lookup tables, and preserved indexed file/symbol counts across lint status updates.
+- **Fixed `class A extends B` & Package `` `include `` Navigation (`crates/svlang-lsp/src/{index.rs, workspace.rs}`)**:
+  - Indexed `type` parameters (`#(type B = base_c)` and `parameter type B = ...`) and `ParamList`-qualified base types (`C #(P)::T`).
+  - Linked `` `include "b.svh" `` directives inside `package` scopes to their included header files so `extends pkg::B`, `import pkg::*;`, and `pkg::` completion resolve classes/typedefs declared in `.svh` package headers.
+  - Added `extends`/`implements` type-clause filtering (preventing non-type members or same-named wrapper classes `class B extends pkg::B` from shadowing base types) and 5-tier path/git-repo proximity ranking (with `~/.cache/svlang/uvm-core-*/src` fallback when GUI editors lack shell `$UVM_HOME`).
+
 ## 0.6.0 (2026-11-23)
 
 ### Breaking: Strict 2-Tier `DOM-GRP-NNN` (`3-3-3`) Lint Rule Taxonomy (`svlang-lint`)

@@ -1,6 +1,7 @@
 //! Semantic token classification (`textDocument/semanticTokens/full`) and
 //! inactive preprocessor conditional regions (`svlang/inactiveRanges`).
 
+use std::cmp::Reverse;
 use std::collections::HashMap;
 
 use svlang::syntax::{CondKind, Options, TokenKind};
@@ -8,7 +9,7 @@ use svlang::syntax::{CondKind, Options, TokenKind};
 use crate::index::{SymKind, Symbol};
 use crate::json::{obj, Json};
 use crate::text::uri_to_path;
-use crate::workspace::Workspace;
+use crate::workspace::{chain_sep, Sep, SymRef, Workspace};
 
 // Token type indices in `TOKEN_TYPES` (must stay in sync with `legend()`).
 const TT_NAMESPACE: u32 = 0; // module, program, package, checker
@@ -89,6 +90,13 @@ fn classify_symbol(s: &Symbol, in_class: bool, is_decl: bool) -> (u32, u32) {
     (ty, mods)
 }
 
+fn classify_ref(ws: &Workspace, r: SymRef, is_decl: bool) -> (u32, u32) {
+    let s = ws.sym(r);
+    let tf = ws.file(r.0);
+    let in_class = s.parent.is_some_and(|p| tf.symbols[p as usize].kind == SymKind::Class) || s.scope_class.is_some();
+    classify_symbol(s, in_class, is_decl)
+}
+
 #[derive(Clone, Copy)]
 struct RawTok {
     line: u32,
@@ -98,72 +106,90 @@ struct RawTok {
     mods: u32,
 }
 
-fn ensure_file(ws: &mut Workspace, uri: &str) -> Option<usize> {
+/// Computes `textDocument/semanticTokens/full` for `uri` using precomputed per-scope
+/// lookup tables (`O(tokens)` instead of `O(tokens × symbols)`).
+pub fn semantic_tokens_full(ws: &Workspace, uri: &str) -> Json {
     let path = uri_to_path(uri);
-    match ws.file_id(&path) {
-        Some(f) => Some(f),
-        None => {
-            let t = std::fs::read_to_string(&path).ok()?;
-            Some(ws.update(&path, t))
-        }
-    }
-}
-
-/// Computes `textDocument/semanticTokens/full` for `uri`.
-pub fn semantic_tokens_full(ws: &mut Workspace, uri: &str) -> Json {
-    let Some(f) = ensure_file(ws, uri) else {
+    let Some(f) = ws.file_id(&path) else {
         return obj(vec![("data", Json::Arr(Vec::new()))]);
     };
-    let (path_str, text) = {
-        let file = ws.file(f);
-        (file.path.to_string_lossy().into_owned(), file.text.clone())
-    };
-    let mut raw: Vec<RawTok> = Vec::new();
-    let mut decl_offsets: HashMap<u32, (u32, u32)> = HashMap::new();
+    let file = ws.file(f);
+    let path_str = file.path.to_string_lossy().into_owned();
+    let text = &file.text;
 
-    {
-        let file = ws.file(f);
-        for s in &file.symbols {
-            if s.sel_end <= s.sel_start {
-                continue;
-            }
-            let in_class =
-                s.parent.is_some_and(|p| file.symbols[p as usize].kind == SymKind::Class) || s.scope_class.is_some();
-            let (ty, mods) = classify_symbol(s, in_class, true);
-            let (l0, c0) = file.position(s.sel_start);
-            let (l1, c1) = file.position(s.sel_end);
-            if l0 == l1 && c1 > c0 {
-                decl_offsets.insert(s.sel_start, (ty, mods));
-                raw.push(RawTok { line: l0, col: c0, len: c1 - c0, ty, mods });
+    let mut raw: Vec<RawTok> = Vec::new();
+    let mut seen_offsets: HashMap<u32, ()> = HashMap::with_capacity(file.symbols.len() * 2);
+
+    for s in &file.symbols {
+        if s.sel_end <= s.sel_start {
+            continue;
+        }
+        let in_class =
+            s.parent.is_some_and(|p| file.symbols[p as usize].kind == SymKind::Class) || s.scope_class.is_some();
+        let (ty, mods) = classify_symbol(s, in_class, true);
+        let (l0, c0) = file.position(s.sel_start);
+        let (l1, c1) = file.position(s.sel_end);
+        if l0 == l1 && c1 > c0 {
+            seen_offsets.insert(s.sel_start, ());
+            raw.push(RawTok { line: l0, col: c0, len: c1 - c0, ty, mods });
+        }
+    }
+
+    // Precompute file-level + imported-package scope table once per file.
+    let mut base_scope: HashMap<String, (u32, u32)> = HashMap::new();
+    for (i, s) in file.children(None) {
+        base_scope.entry(s.name.clone()).or_insert_with(|| classify_ref(ws, (f, i), false));
+        if s.kind == SymKind::Typedef {
+            for (j, e) in file.children(Some(i)) {
+                base_scope.entry(e.name.clone()).or_insert_with(|| classify_ref(ws, (f, j), false));
             }
         }
     }
+    for pkg in &file.imports {
+        for p in ws.scopes_named_near(f, pkg, &[SymKind::Package]).into_iter().take(1) {
+            for r in ws.members(p) {
+                let s = ws.sym(r);
+                base_scope.entry(s.name.clone()).or_insert_with(|| classify_ref(ws, r, false));
+            }
+        }
+    }
+
+    // Compact list of scope spans in this file (typically < 30 entries).
+    let mut scope_spans: Vec<(u32, u32, u32)> = file
+        .symbols
+        .iter()
+        .enumerate()
+        .filter(|(_, s)| {
+            s.kind.is_scope()
+                || matches!(s.kind, SymKind::Function | SymKind::Task | SymKind::Covergroup | SymKind::Clocking)
+        })
+        .map(|(i, s)| (s.start, s.end, i as u32))
+        .collect();
+    scope_spans.sort_by_key(|&(s0, s1, _)| (s0, Reverse(s1)));
+
+    let mut chain_cache: HashMap<Vec<u32>, HashMap<String, (u32, u32)>> = HashMap::new();
+    let mut global_cache: HashMap<String, Option<(u32, u32)>> = HashMap::new();
 
     // Parse single file without expanding external includes so byte offsets stay in this file.
-    let tree = svlang::syntax::parse_source(&text, &path_str, Options { max_include_depth: 1, ..Default::default() });
-    let mut seen_offsets: HashMap<u32, ()> = decl_offsets.keys().map(|&k| (k, ())).collect();
+    let tree = svlang::syntax::parse_source(text, &path_str, Options { max_include_depth: 1, ..Default::default() });
 
     // Macro invocations (`uvm_info, `MY_MACRO, etc.) in this file.
-    {
-        let file = ws.file(f);
-        for m in &tree.macro_uses {
-            if m.origin.file != 0 {
-                continue;
-            }
-            let start = m.origin.offset;
-            let end = (start as usize + 1 + m.name.len()).min(text.len()) as u32;
-            if seen_offsets.insert(start, ()).is_some() {
-                continue;
-            }
-            let (l0, c0) = file.position(start);
-            let (l1, c1) = file.position(end);
-            if l0 == l1 && c1 > c0 {
-                raw.push(RawTok { line: l0, col: c0, len: c1 - c0, ty: TT_MACRO, mods: 0 });
-            }
+    for m in &tree.macro_uses {
+        if m.origin.file != 0 {
+            continue;
+        }
+        let start = m.origin.offset;
+        let end = (start as usize + 1 + m.name.len()).min(text.len()) as u32;
+        if seen_offsets.insert(start, ()).is_some() {
+            continue;
+        }
+        let (l0, c0) = file.position(start);
+        let (l1, c1) = file.position(end);
+        if l0 == l1 && c1 > c0 {
+            raw.push(RawTok { line: l0, col: c0, len: c1 - c0, ty: TT_MACRO, mods: 0 });
         }
     }
 
-    // Classify identifier & system-task tokens via Workspace resolution.
     for tok in &tree.tokens {
         if tok.from_macro || tok.origin.file != 0 {
             continue;
@@ -174,7 +200,6 @@ pub fn semantic_tokens_full(ws: &mut Workspace, uri: &str) -> Json {
         }
         match tok.kind {
             TokenKind::SystemIdentifier => {
-                let file = ws.file(f);
                 let end = start + tok.text.len() as u32;
                 let (l0, c0) = file.position(start);
                 let (l1, c1) = file.position(end);
@@ -184,27 +209,71 @@ pub fn semantic_tokens_full(ws: &mut Workspace, uri: &str) -> Json {
                 }
             }
             TokenKind::Identifier | TokenKind::EscapedIdentifier => {
-                let defs = ws.definitions(f, start);
-                let (ty, mods) = if let Some(&r) = defs.first() {
-                    let s = ws.sym(r);
-                    let target_file = ws.file(r.0);
-                    let in_class = s.parent.is_some_and(|p| target_file.symbols[p as usize].kind == SymKind::Class)
-                        || s.scope_class.is_some();
-                    classify_symbol(s, in_class, false)
-                } else if tok.text.starts_with("uvm_")
-                    && (tok.text.ends_with("_t") || tok.text.ends_with("_e") || tok.text.ends_with("_enum"))
+                let name = tok.text.as_ref();
+                let resolved = if chain_sep(text, start as usize) != Sep::None {
+                    ws.definitions(f, start).first().copied().map(|r| classify_ref(ws, r, false))
+                } else {
+                    let enc: Vec<u32> = scope_spans
+                        .iter()
+                        .filter(|&&(s0, s1, _)| s0 <= start && start <= s1)
+                        .map(|&(_, _, i)| i)
+                        .collect();
+                    let local_hit = if enc.is_empty() {
+                        None
+                    } else {
+                        let local_map = chain_cache.entry(enc.clone()).or_insert_with(|| {
+                            let mut m = HashMap::new();
+                            for &i in enc.iter().rev() {
+                                let r = (f, i);
+                                let sk = ws.sym(r).kind;
+                                if matches!(
+                                    sk,
+                                    SymKind::Function | SymKind::Task | SymKind::Covergroup | SymKind::Clocking
+                                ) {
+                                    for (ci, _) in file.children(Some(i)) {
+                                        let cr = (f, ci);
+                                        m.entry(ws.sym(cr).name.clone()).or_insert_with(|| classify_ref(ws, cr, false));
+                                    }
+                                } else {
+                                    for mr in ws.members(r) {
+                                        m.entry(ws.sym(mr).name.clone()).or_insert_with(|| classify_ref(ws, mr, false));
+                                    }
+                                }
+                                if let Some(c_name) = &ws.sym(r).scope_class {
+                                    if let Some(&cls_r) = ws.scopes_named_near(f, c_name, &[SymKind::Class]).first() {
+                                        for mr in ws.members(cls_r) {
+                                            m.entry(ws.sym(mr).name.clone())
+                                                .or_insert_with(|| classify_ref(ws, mr, false));
+                                        }
+                                    }
+                                }
+                            }
+                            m
+                        });
+                        local_map.get(name).copied()
+                    };
+                    local_hit.or_else(|| base_scope.get(name).copied()).or_else(|| {
+                        *global_cache
+                            .entry(name.to_string())
+                            .or_insert_with(|| ws.best_global_near(f, name).map(|r| classify_ref(ws, r, false)))
+                    })
+                };
+
+                let (ty, mods) = if let Some(pair) = resolved {
+                    pair
+                } else if name.starts_with("uvm_")
+                    && (name.ends_with("_t") || name.ends_with("_e") || name.ends_with("_enum"))
                 {
                     (TT_TYPE, 0)
-                } else if tok.text.as_ref() == "uvm_pkg" {
+                } else if name == "uvm_pkg" {
                     (TT_NAMESPACE, 0)
-                } else if tok.text.starts_with("uvm_") {
+                } else if name.starts_with("uvm_") {
                     (TT_CLASS, 0)
-                } else if tok.text.starts_with("UVM_") {
+                } else if name.starts_with("UVM_") {
                     (TT_ENUM_MEMBER, MOD_READONLY)
                 } else {
                     continue;
                 };
-                let file = ws.file(f);
                 let end = start + tok.text.len() as u32;
                 let (l0, c0) = file.position(start);
                 let (l1, c1) = file.position(end);
@@ -246,16 +315,17 @@ pub fn semantic_tokens_full(ws: &mut Workspace, uri: &str) -> Json {
 /// Computes untaken preprocessor conditional regions (`#ifdef` / `` `ifdef ``,
 /// `` `ifndef ``, `` `elsif ``, `` `else ``) in `uri` for editor dimming,
 /// honoring active preprocessor `defines`.
-pub fn inactive_ranges(ws: &mut Workspace, uri: &str, defines: &[String]) -> Json {
-    let Some(f) = ensure_file(ws, uri) else {
+pub fn inactive_ranges(ws: &Workspace, uri: &str, defines: &[String]) -> Json {
+    let path = uri_to_path(uri);
+    let Some(f) = ws.file_id(&path) else {
         return Json::Arr(Vec::new());
     };
-    let (path_str, text, lines) = {
-        let file = ws.file(f);
-        (file.path.to_string_lossy().into_owned(), file.text.clone(), file.lines.clone())
-    };
+    let file = ws.file(f);
+    let path_str = file.path.to_string_lossy().into_owned();
+    let text = &file.text;
+    let lines = &file.lines;
     let tree = svlang::syntax::parse_source(
-        &text,
+        text,
         &path_str,
         Options { max_include_depth: 1, defines: defines.to_vec(), ..Default::default() },
     );
@@ -308,8 +378,8 @@ pub fn inactive_ranges(ws: &mut Workspace, uri: &str, defines: &[String]) -> Jso
     let ranges: Vec<Json> = spans
         .into_iter()
         .filter_map(|(a, b)| {
-            let (l0, c0) = lines.position(&text, a);
-            let (l1, c1) = lines.position(&text, b);
+            let (l0, c0) = lines.position(text, a);
+            let (l1, c1) = lines.position(text, b);
             if (l1, c1) <= (l0, c0) {
                 return None;
             }

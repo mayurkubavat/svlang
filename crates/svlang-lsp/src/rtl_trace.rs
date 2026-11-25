@@ -32,36 +32,132 @@ fn is_library_path(path: &Path, libraries: &[PathBuf]) -> bool {
 
 // ---- RTL Module / Interface Instantiation Hierarchy ----
 
-pub fn rtl_hierarchy(ws: &Workspace, libraries: &[PathBuf]) -> Json {
+const MAX_ROOT_MODULES: usize = 250;
+
+fn module_has_instances(ws: &Workspace, mod_ref: SymRef) -> bool {
+    ws.file(mod_ref.0)
+        .symbols
+        .iter()
+        .any(|s| s.kind == SymKind::Instance && s.parent == Some(mod_ref.1) && s.type_name.is_some())
+}
+
+/// Lazy 1-level-at-a-time RTL hierarchy:
+/// - Without `moduleName`: returns root modules (with `hasChildren: bool`, no recursive children),
+///   scoped to `activeUri`'s enclosing git/project root when inside a multi-repo workspace.
+/// - With `moduleName`: returns direct child instances of `moduleName` (`{"children": [...]}`).
+pub fn rtl_hierarchy(ws: &Workspace, libraries: &[PathBuf], p: &Json) -> Json {
+    let active_path = p.get("activeUri").as_str().filter(|s| !s.is_empty()).map(uri_to_path);
+    let ancestors: HashSet<String> =
+        p.get("ancestors").as_arr().iter().filter_map(|v| v.as_str().map(String::from)).collect();
+
+    if let Some(target_mod) = p.get("moduleName").as_str().filter(|s| !s.is_empty()) {
+        let anchor_f = active_path.as_deref().and_then(|ap| ws.file_id(ap));
+        let mod_ref = anchor_f
+            .and_then(|f| {
+                ws.file(f)
+                    .symbols
+                    .iter()
+                    .enumerate()
+                    .find(|(_, s)| {
+                        matches!(s.kind, SymKind::Module | SymKind::Interface | SymKind::Program)
+                            && s.name == target_mod
+                    })
+                    .map(|(si, _)| (f, si as u32))
+                    .or_else(|| {
+                        ws.scopes_named_near(f, target_mod, &[SymKind::Module, SymKind::Interface, SymKind::Program])
+                            .into_iter()
+                            .next()
+                    })
+            })
+            .or_else(|| {
+                ws.scopes_named(target_mod, &[SymKind::Module, SymKind::Interface, SymKind::Program])
+                    .into_iter()
+                    .find(|&r| !is_library_path(&ws.file(r.0).path, libraries))
+            });
+
+        let Some(mod_ref) = mod_ref else {
+            return obj(vec![("children", Json::Arr(Vec::new()))]);
+        };
+
+        let mod_file = ws.file(mod_ref.0);
+        let inst_uri = path_to_uri(&mod_file.path);
+        let mut kids_json = Vec::new();
+        for (si, sym) in mod_file.symbols.iter().enumerate() {
+            if sym.kind != SymKind::Instance || sym.parent != Some(mod_ref.1) {
+                continue;
+            }
+            let child_mod = sym.type_name.as_deref().map(bare_module_name).unwrap_or("");
+            if child_mod.is_empty() {
+                continue;
+            }
+            let site_range = range_json(ws, mod_ref.0, sym.sel_start, sym.sel_end);
+            let target_def = ws
+                .scopes_named_near(mod_ref.0, child_mod, &[SymKind::Module, SymKind::Interface, SymKind::Program])
+                .into_iter()
+                .find(|&r| !is_library_path(&ws.file(r.0).path, libraries));
+            let def_uri = target_def.map(|r| path_to_uri(&ws.file(r.0).path)).unwrap_or_else(|| inst_uri.clone());
+            let def_range = target_def
+                .map(|r| {
+                    let ds = ws.sym(r);
+                    range_json(ws, r.0, ds.sel_start, ds.sel_end)
+                })
+                .unwrap_or_else(|| site_range.clone());
+            let kind_label = target_def.map(|r| ws.sym(r).kind.label()).unwrap_or("module");
+            let has_children = !ancestors.contains(child_mod)
+                && child_mod != target_mod
+                && target_def.is_some_and(|td| module_has_instances(ws, td));
+            let _ = si;
+            kids_json.push(obj(vec![
+                ("instanceName", sym.name.clone().into()),
+                ("moduleName", child_mod.into()),
+                ("kind", kind_label.into()),
+                ("uri", inst_uri.clone().into()),
+                ("range", site_range),
+                ("definitionUri", def_uri.into()),
+                ("definitionRange", def_range),
+                ("hasChildren", has_children.into()),
+            ]));
+        }
+        return obj(vec![("children", Json::Arr(kids_json))]);
+    }
+
+    // Root query: scope to `activeUri`'s enclosing git/project root when that root holds RTL modules.
+    let active_proj = active_path.as_deref().and_then(|ap| ws.project_root_for_path(ap));
+    let use_proj_scope = active_proj.as_ref().is_some_and(|proj| {
+        ws.files.iter().flatten().any(|fx| {
+            !is_library_path(&fx.path, libraries)
+                && fx.path.starts_with(proj)
+                && fx.symbols.iter().any(|s| matches!(s.kind, SymKind::Module | SymKind::Interface | SymKind::Program))
+        })
+    });
+
+    let in_scope = |path: &Path| -> bool {
+        if is_library_path(path, libraries) {
+            return false;
+        }
+        if use_proj_scope {
+            if let Some(proj) = &active_proj {
+                return path.starts_with(proj);
+            }
+        }
+        true
+    };
+
     let mut modules: HashMap<String, SymRef> = HashMap::new();
-    let mut children_of: HashMap<SymRef, Vec<(String, String, SymRef)>> = HashMap::new();
     let mut instantiated: HashSet<String> = HashSet::new();
 
     for (fi, fx) in ws.files.iter().enumerate() {
         let Some(fx) = fx else { continue };
-        if is_library_path(&fx.path, libraries) {
+        if !in_scope(&fx.path) {
             continue;
         }
         for (si, sym) in fx.symbols.iter().enumerate() {
             if matches!(sym.kind, SymKind::Module | SymKind::Interface | SymKind::Program) {
                 modules.entry(sym.name.clone()).or_insert((fi, si as u32));
-            }
-        }
-    }
-
-    for (fi, fx) in ws.files.iter().enumerate() {
-        let Some(fx) = fx else { continue };
-        if is_library_path(&fx.path, libraries) {
-            continue;
-        }
-        for (si, sym) in fx.symbols.iter().enumerate() {
-            if sym.kind == SymKind::Instance {
-                let Some(parent_idx) = sym.parent else { continue };
-                let parent_ref = (fi, parent_idx);
-                let target_mod = sym.type_name.as_deref().map(bare_module_name).unwrap_or("").to_string();
+            } else if sym.kind == SymKind::Instance {
+                let target_mod = sym.type_name.as_deref().map(bare_module_name).unwrap_or("");
                 if !target_mod.is_empty() {
-                    instantiated.insert(target_mod.clone());
-                    children_of.entry(parent_ref).or_default().push((sym.name.clone(), target_mod, (fi, si as u32)));
+                    instantiated.insert(target_mod.to_string());
                 }
             }
         }
@@ -76,76 +172,34 @@ pub fn rtl_hierarchy(ws: &Workspace, libraries: &[PathBuf]) -> Json {
         roots = modules.values().copied().collect();
     }
     roots.sort_by(|&a, &b| ws.sym(a).name.cmp(&ws.sym(b).name));
+    let total_roots = roots.len();
+    roots.truncate(MAX_ROOT_MODULES);
 
-    #[allow(clippy::too_many_arguments)]
-    fn build_node(
-        ws: &Workspace,
-        inst_name: Option<&str>,
-        mod_name: &str,
-        site: SymRef,
-        modules: &HashMap<String, SymRef>,
-        children_of: &HashMap<SymRef, Vec<(String, String, SymRef)>>,
-        ancestors: &mut HashSet<String>,
-        depth: usize,
-    ) -> Json {
-        let sym = ws.sym(site);
-        let file = ws.file(site.0);
-        let uri = path_to_uri(&file.path);
-        let range = range_json(ws, site.0, sym.sel_start, sym.sel_end);
-        let mut kids_json = Vec::new();
-        if depth < 16 && ancestors.insert(mod_name.to_string()) {
-            if let Some(&mod_ref) = modules.get(mod_name) {
-                let mod_file = ws.file(mod_ref.0);
-                // Also include Ports summary count on the module node for quick context.
-                if let Some(insts) = children_of.get(&mod_ref) {
-                    for (child_inst, child_mod, child_site) in insts {
-                        kids_json.push(build_node(
-                            ws,
-                            Some(child_inst),
-                            child_mod,
-                            *child_site,
-                            modules,
-                            children_of,
-                            ancestors,
-                            depth + 1,
-                        ));
-                    }
-                }
-                let _ = mod_file;
-            }
-            ancestors.remove(mod_name);
-        }
-        let target_def = modules.get(mod_name).copied();
-        let def_uri = target_def.map(|r| path_to_uri(&ws.file(r.0).path)).unwrap_or_else(|| uri.clone());
-        let def_range = target_def
-            .map(|r| {
-                let ds = ws.sym(r);
-                range_json(ws, r.0, ds.sel_start, ds.sel_end)
-            })
-            .unwrap_or_else(|| range.clone());
-        let kind_label = target_def.map(|r| ws.sym(r).kind.label()).unwrap_or("module");
-        obj(vec![
-            ("instanceName", inst_name.unwrap_or(mod_name).into()),
-            ("moduleName", mod_name.into()),
-            ("kind", kind_label.into()),
-            ("uri", uri.into()),
-            ("range", range),
-            ("definitionUri", def_uri.into()),
-            ("definitionRange", def_range),
-            ("children", Json::Arr(kids_json)),
-        ])
-    }
-
-    let mut ancestors = HashSet::new();
     let root_nodes: Vec<Json> = roots
         .into_iter()
         .map(|r| {
-            let name = ws.sym(r).name.clone();
-            build_node(ws, None, &name, r, &modules, &children_of, &mut ancestors, 0)
+            let sym = ws.sym(r);
+            let uri = path_to_uri(&ws.file(r.0).path);
+            let range = range_json(ws, r.0, sym.sel_start, sym.sel_end);
+            let has_children = module_has_instances(ws, r);
+            obj(vec![
+                ("instanceName", sym.name.clone().into()),
+                ("moduleName", sym.name.clone().into()),
+                ("kind", sym.kind.label().into()),
+                ("uri", uri.clone().into()),
+                ("range", range.clone()),
+                ("definitionUri", uri.into()),
+                ("definitionRange", range),
+                ("hasChildren", has_children.into()),
+            ])
         })
         .collect();
 
-    obj(vec![("roots", Json::Arr(root_nodes)), ("moduleCount", (modules.len() as u32).into())])
+    obj(vec![
+        ("roots", Json::Arr(root_nodes)),
+        ("totalRoots", (total_roots as u32).into()),
+        ("moduleCount", (modules.len() as u32).into()),
+    ])
 }
 
 // ---- Signal / Variable Driver & Load Tracing ----
@@ -157,17 +211,13 @@ enum Role {
     Load,
 }
 
-pub fn trace_signal(ws: &mut Workspace, p: &Json) -> Json {
+pub fn trace_signal(ws: &Workspace, p: &Json) -> Json {
     let Some(uri) = p.at(&["textDocument", "uri"]).as_str() else {
         return Json::Null;
     };
     let path = uri_to_path(uri);
-    let f = match ws.file_id(&path) {
-        Some(f) => f,
-        None => match std::fs::read_to_string(&path) {
-            Ok(t) => ws.update(&path, t),
-            Err(_) => return Json::Null,
-        },
+    let Some(f) = ws.file_id(&path) else {
+        return Json::Null;
     };
     let line = p.at(&["position", "line"]).as_u32().unwrap_or(0);
     let col = p.at(&["position", "character"]).as_u32().unwrap_or(0);

@@ -77,15 +77,9 @@ fn resolve_item(ws: &Workspace, item: &Json) -> Option<SymRef> {
     file.symbols.iter().enumerate().find(|(_, s)| s.name == name).map(|(i, _)| (f, i as u32))
 }
 
-fn at_cursor(ws: &mut Workspace, p: &Json) -> Option<(usize, u32)> {
+fn at_cursor(ws: &Workspace, p: &Json) -> Option<(usize, u32)> {
     let path = uri_to_path(p.at(&["textDocument", "uri"]).as_str()?);
-    let f = match ws.file_id(&path) {
-        Some(f) => f,
-        None => {
-            let t = std::fs::read_to_string(&path).ok()?;
-            ws.update(&path, t)
-        }
-    };
+    let f = ws.file_id(&path)?;
     let line = p.at(&["position", "line"]).as_u32()?;
     let col = p.at(&["position", "character"]).as_u32()?;
     Some((f, ws.file(f).offset(line, col)))
@@ -93,7 +87,7 @@ fn at_cursor(ws: &mut Workspace, p: &Json) -> Option<(usize, u32)> {
 
 // ---- Type Hierarchy ----
 
-pub fn prepare_type_hierarchy(ws: &mut Workspace, p: &Json) -> Json {
+pub fn prepare_type_hierarchy(ws: &Workspace, p: &Json) -> Json {
     let Some((f, off)) = at_cursor(ws, p) else {
         return Json::Null;
     };
@@ -102,10 +96,10 @@ pub fn prepare_type_hierarchy(ws: &mut Workspace, p: &Json) -> Json {
         let s = ws.sym(r);
         match s.kind {
             SymKind::Class | SymKind::Interface | SymKind::Module => targets.push(r),
-            SymKind::Typedef | SymKind::Variable | SymKind::Port | SymKind::Instance => {
+            SymKind::Typedef | SymKind::Variable | SymKind::Port | SymKind::Instance | SymKind::Parameter => {
                 if let Some(tn) = s.type_name.clone() {
                     let b = bare_type(&tn);
-                    targets.extend(ws.scopes_named(b, &[SymKind::Class, SymKind::Interface, SymKind::Module]));
+                    targets.extend(ws.scopes_named_near(f, b, &[SymKind::Class, SymKind::Interface, SymKind::Module]));
                 }
             }
             _ => {}
@@ -133,11 +127,18 @@ pub fn supertypes(ws: &Workspace, p: &Json) -> Json {
         return Json::Arr(Vec::new());
     };
     let s = ws.sym(r);
-    let Some(base) = s.type_name.as_deref().map(bare_type).filter(|b| !b.is_empty()) else {
+    let Some(mut base) = s.type_name.as_deref().map(bare_type).filter(|b| !b.is_empty()).map(String::from) else {
         return Json::Arr(Vec::new());
     };
-    let supers = ws.scopes_named(base, &[SymKind::Class, SymKind::Interface]);
-    Json::Arr(supers.into_iter().map(|sr| hierarchy_item(ws, sr)).collect())
+    if let Some((_, param_sym)) =
+        ws.file(r.0).children(Some(r.1)).find(|(_, ps)| ps.kind == SymKind::Parameter && ps.name == base)
+    {
+        if let Some(def_ty) = param_sym.type_name.as_deref().map(bare_type).filter(|b| !b.is_empty()) {
+            base = def_ty.to_string();
+        }
+    }
+    let supers = ws.scopes_named_near(r.0, &base, &[SymKind::Class, SymKind::Interface]);
+    Json::Arr(supers.into_iter().take(8).map(|sr| hierarchy_item(ws, sr)).collect())
 }
 
 pub fn subtypes(ws: &Workspace, p: &Json) -> Json {
@@ -165,7 +166,7 @@ pub fn subtypes(ws: &Workspace, p: &Json) -> Json {
 
 // ---- Call Hierarchy ----
 
-pub fn prepare_call_hierarchy(ws: &mut Workspace, p: &Json) -> Json {
+pub fn prepare_call_hierarchy(ws: &Workspace, p: &Json) -> Json {
     let Some((f, off)) = at_cursor(ws, p) else {
         return Json::Null;
     };

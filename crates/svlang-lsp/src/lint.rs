@@ -87,7 +87,7 @@ pub struct LintStatus {
 }
 
 impl LintStatus {
-    pub fn to_json(&self, files: usize, symbols: usize) -> Json {
+    pub fn to_json(&self, counts: Option<(usize, usize)>) -> Json {
         let mut fields = vec![
             ("state", (if self.state.is_empty() { "ready" } else { &self.state }).into()),
             ("hasConfig", self.has_config.into()),
@@ -95,13 +95,24 @@ impl LintStatus {
             ("trigger", (if self.trigger.is_empty() { "onType" } else { &self.trigger }).into()),
             ("errors", self.errors.into()),
             ("warnings", self.warnings.into()),
-            ("files", (files as u32).into()),
-            ("symbols", (symbols as u32).into()),
         ];
+        if let Some((files, symbols)) = counts {
+            fields.push(("files", (files as u32).into()));
+            fields.push(("symbols", (symbols as u32).into()));
+        }
         if let Some(cfg) = &self.config_path {
             fields.push(("configPath", cfg.as_str().into()));
         }
         obj(fields)
+    }
+}
+
+#[derive(Clone)]
+pub struct StatusHandle(Arc<Mutex<State>>);
+
+impl StatusHandle {
+    pub fn snapshot(&self) -> LintStatus {
+        self.0.lock().unwrap_or_else(|e| e.into_inner()).status.clone()
     }
 }
 
@@ -252,7 +263,7 @@ impl Project {
 fn emit_status(out: &Out, status: &LintStatus) {
     send(
         out,
-        &obj(vec![("jsonrpc", "2.0".into()), ("method", "svlang/status".into()), ("params", status.to_json(0, 0))]),
+        &obj(vec![("jsonrpc", "2.0".into()), ("method", "svlang/status".into()), ("params", status.to_json(None))]),
     );
 }
 
@@ -633,6 +644,10 @@ impl Linter {
 
     pub fn status(&self) -> LintStatus {
         self.state.lock().unwrap_or_else(|e| e.into_inner()).status.clone()
+    }
+
+    pub fn status_handle(&self) -> StatusHandle {
+        StatusHandle(self.state.clone())
     }
 
     /// The editor opened `path`.

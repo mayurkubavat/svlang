@@ -125,6 +125,8 @@ pub struct FileIndex {
     pub idents: HashMap<String, Vec<u32>>,
     /// Names of packages imported with `import p::*` or `import p::x`.
     pub imports: Vec<String>,
+    /// `` `include "file.svh" `` directives with innermost enclosing scope index.
+    pub includes: Vec<(Option<u32>, String)>,
 }
 
 impl FileIndex {
@@ -149,8 +151,17 @@ impl FileIndex {
             }
         }
         let Builder { mut syms, imports, .. } = b;
+        let includes = include_directives(&text, &syms);
         macro_defs(&text, &mut syms, &mut idents);
-        FileIndex { path: path.to_path_buf(), lines: LineIndex::new(&text), text, symbols: syms, idents, imports }
+        FileIndex {
+            path: path.to_path_buf(),
+            lines: LineIndex::new(&text),
+            text,
+            symbols: syms,
+            idents,
+            imports,
+            includes,
+        }
     }
 
     pub fn position(&self, offset: u32) -> (u32, u32) {
@@ -276,6 +287,9 @@ impl Builder<'_> {
                     }
                 }
                 Child::Node(k) => {
+                    if tree.kind(k) == K::ParamList {
+                        continue;
+                    }
                     if out.is_some() {
                         return out;
                     }
@@ -451,10 +465,20 @@ impl Builder<'_> {
     fn declarators(&mut self, n: NodeId, kind: SymKind, parent: Option<u32>, local: bool, ty: Option<String>) {
         let decls: Vec<NodeId> = self.tree.children(n).filter(|&c| self.tree.kind(c) == K::Declarator).collect();
         let detail = self.detail(n, true);
+        if decls.is_empty() && kind == SymKind::Parameter {
+            // `#(type B = base_c)` in a parameter port list has Name & DataType directly under ParamDecl.
+            if let Some(i) = self.decl(n, kind, parent, local, None) {
+                let s = &mut self.syms[i as usize];
+                s.type_name = ty;
+                s.detail = detail;
+            }
+            return;
+        }
         for d in decls {
             if let Some(i) = self.decl(d, kind, parent, local, None) {
+                let item_ty = ty.clone().or_else(|| self.tree.child(d, K::DataType).and_then(|dt| self.type_name(dt)));
                 let s = &mut self.syms[i as usize];
-                s.type_name = ty.clone();
+                s.type_name = item_ty;
                 s.detail = detail.clone();
                 // The doc sits above the whole declaration.
                 if let Some((a, b)) = self.range(n) {
@@ -667,6 +691,50 @@ fn clean_comment(l: &str) -> String {
     l.to_string()
 }
 
+/// `` `include "file.svh" `` lines, paired with innermost enclosing scope index.
+fn include_directives(text: &str, syms: &[Symbol]) -> Vec<(Option<u32>, String)> {
+    let mut out = Vec::new();
+    let mut off = 0usize;
+    let mut in_block = false;
+    for line in text.split_inclusive('\n') {
+        let line_off = off as u32;
+        off += line.len();
+        let mut t = line.trim();
+        if in_block {
+            if let Some(end_idx) = t.find("*/") {
+                in_block = false;
+                t = t[end_idx + 2..].trim();
+            } else {
+                continue;
+            }
+        }
+        if t.starts_with("/*") && !t.contains("*/") {
+            in_block = true;
+            continue;
+        }
+        if let Some(rest) = t.strip_prefix("`include") {
+            let rest = rest.trim_start();
+            let path = if let Some(r) = rest.strip_prefix('"') {
+                r.split('"').next()
+            } else if let Some(r) = rest.strip_prefix('<') {
+                r.split('>').next()
+            } else {
+                None
+            };
+            if let Some(inc) = path.map(str::trim).filter(|s| !s.is_empty()) {
+                let enc = syms
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, s)| s.kind.is_scope() && s.start <= line_off && line_off <= s.end)
+                    .min_by_key(|(_, s)| s.end.saturating_sub(s.start))
+                    .map(|(i, _)| i as u32);
+                out.push((enc, inc.to_string()));
+            }
+        }
+    }
+    out
+}
+
 /// `` `define NAME `` lines: macro symbols (the preprocessor consumes them).
 fn macro_defs(text: &str, syms: &mut Vec<Symbol>, idents: &mut HashMap<String, Vec<u32>>) {
     let mut off = 0usize;
@@ -772,5 +840,23 @@ mod tests {
         assert_eq!(get("clk").kind, SymKind::Port);
         assert_eq!(get("u_sub").type_name.as_deref(), Some("sub"));
         assert_eq!(f.idents["`MAX"].len(), 2);
+    }
+
+    #[test]
+    fn type_params_and_package_includes() {
+        let f = idx(
+            "package env_pkg;\n  `include \"my_item.svh\"\n  class drv #(type BASE = uvm_driver, parameter type REQ = my_item) extends BASE;\n    parameter type LOCAL_T = int;\n  endclass\nendpackage\n",
+        );
+        let pkg_idx = f.symbols.iter().position(|s| s.name == "env_pkg").unwrap() as u32;
+        assert_eq!(f.includes, vec![(Some(pkg_idx), "my_item.svh".to_string())]);
+        let base_p = f.symbols.iter().find(|s| s.name == "BASE").expect("type param BASE");
+        assert_eq!(base_p.kind, SymKind::Parameter);
+        assert_eq!(base_p.type_name.as_deref(), Some("uvm_driver"));
+        let req_p = f.symbols.iter().find(|s| s.name == "REQ").expect("parameter type REQ");
+        assert_eq!(req_p.kind, SymKind::Parameter);
+        assert_eq!(req_p.type_name.as_deref(), Some("my_item"));
+        let local_t = f.symbols.iter().find(|s| s.name == "LOCAL_T").expect("body parameter type LOCAL_T");
+        assert_eq!(local_t.kind, SymKind::Parameter);
+        assert_eq!(local_t.type_name.as_deref(), Some("int"));
     }
 }

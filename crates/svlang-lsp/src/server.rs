@@ -3,21 +3,25 @@
 
 use std::collections::{HashMap, HashSet};
 use std::io::{BufRead, Write};
-use std::path::PathBuf;
-use std::time::Instant;
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, RwLock};
+use std::time::{Duration, Instant};
 
-use crate::index::{SymKind, Symbol};
+use crate::index::{FileIndex, SymKind, Symbol};
 use crate::json::{self, obj, Json};
 use crate::text::{path_to_uri, uri_to_path, word_at};
 use crate::workspace::{chain_before, chain_sep, Sep, SymRef, Workspace};
 
 pub struct Server {
-    pub ws: Workspace,
+    pub ws: Arc<RwLock<Workspace>>,
     roots: Vec<PathBuf>,
     libraries: Vec<PathBuf>,
     exclude: Vec<String>,
     open: HashSet<PathBuf>,
     shutdown: bool,
+    indexing: Arc<AtomicBool>,
+    cancel_index: Arc<AtomicBool>,
     out: crate::lint::Out,
     /// Diagnostics and quick fixes; None when the editor turned them off.
     linter: Option<crate::lint::Linter>,
@@ -50,13 +54,15 @@ pub fn read_message(r: &mut impl BufRead) -> Option<String> {
 impl Server {
     pub fn new(out: Box<dyn Write + Send>) -> Self {
         Server {
-            ws: Workspace::default(),
+            ws: Arc::new(RwLock::new(Workspace::default())),
             roots: Vec::new(),
             libraries: Vec::new(),
             exclude: Vec::new(),
             open: HashSet::new(),
             shutdown: false,
-            out: std::sync::Arc::new(std::sync::Mutex::new(out)),
+            indexing: Arc::new(AtomicBool::new(false)),
+            cancel_index: Arc::new(AtomicBool::new(false)),
+            out: Arc::new(std::sync::Mutex::new(out)),
             linter: None,
         }
     }
@@ -131,6 +137,7 @@ impl Server {
             }
             "shutdown" => {
                 self.shutdown = true;
+                self.cancel_index.store(true, Ordering::SeqCst);
                 Some(Json::Null)
             }
             "textDocument/didOpen" => {
@@ -141,7 +148,9 @@ impl Server {
                 if let Some(l) = &self.linter {
                     l.opened(&path, uri, &text);
                 }
-                self.ws.update(&path, text);
+                let built = FileIndex::build(&path, text);
+                self.ws.write().unwrap_or_else(|e| e.into_inner()).insert(built);
+                self.warm_subproject_async(&path);
                 None
             }
             "textDocument/didChange" => {
@@ -152,7 +161,9 @@ impl Server {
                 if let Some(l) = &self.linter {
                     l.changed(&path, uri, &text);
                 }
-                self.ws.update(&path, text);
+                let built = FileIndex::build(&path, text);
+                self.ws.write().unwrap_or_else(|e| e.into_inner()).insert(built);
+                self.warm_subproject_async(&path);
                 None
             }
             "textDocument/didClose" => {
@@ -164,9 +175,10 @@ impl Server {
                 }
                 match std::fs::read_to_string(&path) {
                     Ok(t) if self.in_scope(&path) => {
-                        self.ws.update(&path, t);
+                        let built = FileIndex::build(&path, t);
+                        self.ws.write().unwrap_or_else(|e| e.into_inner()).insert(built);
                     }
-                    _ => self.ws.remove(&path),
+                    _ => self.ws.write().unwrap_or_else(|e| e.into_inner()).remove(&path),
                 }
                 None
             }
@@ -193,6 +205,8 @@ impl Server {
                 if let Some(l) = &self.linter {
                     l.request();
                 }
+                let mut updates: Vec<FileIndex> = Vec::new();
+                let mut removals: Vec<PathBuf> = Vec::new();
                 for ch in p.get("changes").as_arr() {
                     let Some(uri) = ch.get("uri").as_str() else {
                         continue;
@@ -202,13 +216,20 @@ impl Server {
                         continue;
                     }
                     match ch.get("type").as_u32() {
-                        Some(3) => self.ws.remove(&path),
+                        Some(3) => removals.push(path),
                         _ => {
                             if let Ok(t) = std::fs::read_to_string(&path) {
-                                self.ws.update(&path, t);
+                                updates.push(FileIndex::build(&path, t));
                             }
                         }
                     }
+                }
+                if !updates.is_empty() || !removals.is_empty() {
+                    let mut ws = self.ws.write().unwrap_or_else(|e| e.into_inner());
+                    for path in removals {
+                        ws.remove(&path);
+                    }
+                    ws.insert_batch(updates);
                 }
                 None
             }
@@ -222,21 +243,65 @@ impl Server {
             "textDocument/completion" => Some(self.completion(p)),
             "textDocument/semanticTokens/full" => {
                 let uri = p.at(&["textDocument", "uri"]).as_str().unwrap_or("");
-                Some(crate::semantic_tokens::semantic_tokens_full(&mut self.ws, uri))
+                if !uri.is_empty() {
+                    let _ = self.ensure_file(&uri_to_path(uri));
+                }
+                let ws = self.ws.read().unwrap_or_else(|e| e.into_inner());
+                Some(crate::semantic_tokens::semantic_tokens_full(&ws, uri))
             }
-            "textDocument/prepareTypeHierarchy" => Some(crate::hierarchy::prepare_type_hierarchy(&mut self.ws, p)),
-            "typeHierarchy/supertypes" => Some(crate::hierarchy::supertypes(&self.ws, p)),
-            "typeHierarchy/subtypes" => Some(crate::hierarchy::subtypes(&self.ws, p)),
-            "textDocument/prepareCallHierarchy" => Some(crate::hierarchy::prepare_call_hierarchy(&mut self.ws, p)),
-            "callHierarchy/incomingCalls" => Some(crate::hierarchy::incoming_calls(&self.ws, p)),
-            "callHierarchy/outgoingCalls" => Some(crate::hierarchy::outgoing_calls(&self.ws, p)),
+            "textDocument/prepareTypeHierarchy" => {
+                if let Some(uri) = p.at(&["textDocument", "uri"]).as_str() {
+                    let _ = self.ensure_file(&uri_to_path(uri));
+                }
+                let ws = self.ws.read().unwrap_or_else(|e| e.into_inner());
+                Some(crate::hierarchy::prepare_type_hierarchy(&ws, p))
+            }
+            "typeHierarchy/supertypes" => {
+                let ws = self.ws.read().unwrap_or_else(|e| e.into_inner());
+                Some(crate::hierarchy::supertypes(&ws, p))
+            }
+            "typeHierarchy/subtypes" => {
+                let ws = self.ws.read().unwrap_or_else(|e| e.into_inner());
+                Some(crate::hierarchy::subtypes(&ws, p))
+            }
+            "textDocument/prepareCallHierarchy" => {
+                if let Some(uri) = p.at(&["textDocument", "uri"]).as_str() {
+                    let _ = self.ensure_file(&uri_to_path(uri));
+                }
+                let ws = self.ws.read().unwrap_or_else(|e| e.into_inner());
+                Some(crate::hierarchy::prepare_call_hierarchy(&ws, p))
+            }
+            "callHierarchy/incomingCalls" => {
+                let ws = self.ws.read().unwrap_or_else(|e| e.into_inner());
+                Some(crate::hierarchy::incoming_calls(&ws, p))
+            }
+            "callHierarchy/outgoingCalls" => {
+                let ws = self.ws.read().unwrap_or_else(|e| e.into_inner());
+                Some(crate::hierarchy::outgoing_calls(&ws, p))
+            }
             "svlang/inactiveRanges" => {
                 let uri = p.at(&["textDocument", "uri"]).as_str().unwrap_or("");
+                if !uri.is_empty() {
+                    let _ = self.ensure_file(&uri_to_path(uri));
+                }
                 let defs = self.active_defines();
-                Some(crate::semantic_tokens::inactive_ranges(&mut self.ws, uri, &defs))
+                let ws = self.ws.read().unwrap_or_else(|e| e.into_inner());
+                Some(crate::semantic_tokens::inactive_ranges(&ws, uri, &defs))
             }
-            "svlang/rtlHierarchy" => Some(crate::rtl_trace::rtl_hierarchy(&self.ws, &self.libraries)),
-            "svlang/traceSignal" => Some(crate::rtl_trace::trace_signal(&mut self.ws, p)),
+            "svlang/rtlHierarchy" => {
+                if let Some(uri) = p.get("activeUri").as_str().filter(|s| !s.is_empty()) {
+                    let _ = self.ensure_file(&uri_to_path(uri));
+                }
+                let ws = self.ws.read().unwrap_or_else(|e| e.into_inner());
+                Some(crate::rtl_trace::rtl_hierarchy(&ws, &self.libraries, p))
+            }
+            "svlang/traceSignal" => {
+                if let Some(uri) = p.at(&["textDocument", "uri"]).as_str() {
+                    let _ = self.ensure_file(&uri_to_path(uri));
+                }
+                let ws = self.ws.read().unwrap_or_else(|e| e.into_inner());
+                Some(crate::rtl_trace::trace_signal(&ws, p))
+            }
             "svlang/lintNow" => {
                 if let Some(l) = &self.linter {
                     l.lint_now();
@@ -280,15 +345,16 @@ impl Server {
                 self.libraries.push(PathBuf::from(expand_env(s)));
             }
         }
-        // $UVM_HOME/src gives UVM's own classes (uvm_component, ...).
+        // $UVM_HOME/src gives UVM's own classes (uvm_component, ...); fall back to
+        // ~/.cache/svlang/uvm-core-*/src when GUI editors don't inherit shell UVM_HOME.
         if opts.get("useUvmHome").as_bool() != Some(false) {
-            if let Some(h) = std::env::var_os("UVM_HOME") {
-                let src = PathBuf::from(h).join("src");
-                if src.is_dir() && !self.libraries.contains(&src) {
+            if let Some(src) = discover_uvm_src() {
+                if !self.libraries.contains(&src) {
                     self.libraries.push(src);
                 }
             }
         }
+        self.ws.write().unwrap_or_else(|e| e.into_inner()).libraries = self.libraries.clone();
         for e in opts.get("exclude").as_arr() {
             if let Some(s) = e.as_str() {
                 self.exclude.push(s.trim_matches('/').trim_start_matches("**/").trim_end_matches("/**").to_string());
@@ -363,82 +429,327 @@ impl Server {
     }
 
     fn current_status(&self) -> Json {
-        let files = self.ws.files.iter().flatten().count();
-        let symbols: usize = self.ws.files.iter().flatten().map(|f| f.symbols.len()).sum();
-        match &self.linter {
-            Some(l) => l.status().to_json(files, symbols),
-            None => crate::lint::LintStatus::default().to_json(files, symbols),
+        let (files, symbols) = {
+            let ws = self.ws.read().unwrap_or_else(|e| e.into_inner());
+            let files = ws.files.iter().flatten().count();
+            let symbols: usize = ws.files.iter().flatten().map(|f| f.symbols.len()).sum();
+            (files, symbols)
+        };
+        let mut st = match &self.linter {
+            Some(l) => l.status(),
+            None => crate::lint::LintStatus::default(),
+        };
+        if self.indexing.load(Ordering::Relaxed) {
+            st.state = "indexing".into();
         }
+        st.to_json(Some((files, symbols)))
     }
 
     fn index_workspace(&mut self) {
-        self.notify("svlang/status", obj(vec![("state", "indexing".into())]));
         let t0 = Instant::now();
-        let mut roots = self.roots.clone();
-        roots.extend(self.libraries.iter().cloned());
-        let n = self.ws.scan(&roots, &self.exclude);
-        let syms: usize = self.ws.globals.values().map(|v| v.len()).sum();
-        let msg = format!("svlang: indexed {} files ({} symbols) in {} ms", n, syms, t0.elapsed().as_millis());
-        eprintln!("[{}]", msg);
-        self.log(&msg);
-        let status = self.current_status();
-        self.notify("svlang/status", status);
+        let exclude = self.exclude.clone();
+
+        // Partition roots: real project roots (having `.git` / `.svlang-lint` / `svlang_lint_config.py`)
+        // vs umbrella parent folders (e.g. `~/Silicon` holding many independent git clones).
+        let mut eager_roots: Vec<PathBuf> = self.libraries.clone();
+        let mut umbrella_roots: Vec<PathBuf> = Vec::new();
+        for r in &self.roots {
+            if is_explicit_project_root(r) {
+                eager_roots.push(r.clone());
+            } else {
+                umbrella_roots.push(r.clone());
+            }
+        }
+
+        // For non-git workspace folders: if total SV files <= 1,500, treat as a normal single project
+        // and index eagerly; if > 1,500 (multi-repo parent directory), index subprojects on demand as
+        // files are opened or navigated so unrelated clones don't burn CPU/RAM or pollute symbols.
+        for u in umbrella_roots {
+            let (probe, over_cap) = Workspace::collect_paths_lockfree(
+                std::slice::from_ref(&u),
+                &exclude,
+                1_500,
+                Some(Instant::now() + Duration::from_millis(40)),
+            );
+            if !over_cap {
+                eager_roots.push(u);
+            } else {
+                let _ = probe;
+                let msg = format!(
+                    "svlang: multi-repo parent workspace detected at {}; indexing subprojects on demand",
+                    u.display()
+                );
+                eprintln!("[{}]", msg);
+                self.log(&msg);
+            }
+        }
+
+        if eager_roots.is_empty() {
+            let status = self.current_status();
+            self.notify("svlang/status", status);
+            return;
+        }
+
+        // Fast bounded scan (<= 300 files, <= 30 ms): finishes small/medium single-IP repos
+        // deterministically in a single step while never blocking large workspaces.
+        let (initial_paths, truncated) = Workspace::collect_paths_lockfree(
+            &eager_roots,
+            &exclude,
+            300,
+            Some(Instant::now() + Duration::from_millis(30)),
+        );
+
+        if !truncated {
+            let to_build: Vec<PathBuf> = {
+                let ws = self.ws.read().unwrap_or_else(|e| e.into_inner());
+                initial_paths.into_iter().filter(|p| !ws.by_path.contains_key(p)).collect()
+            };
+            let built = Workspace::build_batch(&to_build);
+            let (n, syms) = {
+                let mut ws = self.ws.write().unwrap_or_else(|e| e.into_inner());
+                for r in &eager_roots {
+                    ws.mark_warmed(r.clone());
+                }
+                let n = ws.insert_batch(built);
+                let syms: usize = ws.globals.values().map(|v| v.len()).sum();
+                (n, syms)
+            };
+            let msg = format!("svlang: indexed {} files ({} symbols) in {} ms", n, syms, t0.elapsed().as_millis());
+            eprintln!("[{}]", msg);
+            self.log(&msg);
+            let status = self.current_status();
+            self.notify("svlang/status", status);
+            return;
+        }
+
+        self.spawn_background_index(eager_roots, exclude, t0);
+    }
+
+    fn spawn_background_index(&mut self, roots: Vec<PathBuf>, exclude: Vec<String>, t0: Instant) {
+        self.indexing.store(true, Ordering::SeqCst);
+        self.notify("svlang/status", obj(vec![("state", "indexing".into())]));
+
+        let ws_arc = self.ws.clone();
+        let indexing_flag = self.indexing.clone();
+        let cancel_flag = self.cancel_index.clone();
+        let out_arc = self.out.clone();
+        let status_handle = self.linter.as_ref().map(|l| l.status_handle());
+
+        let _ = std::thread::Builder::new().name("svlang-index".into()).spawn(move || {
+            let (all_paths, _) = Workspace::collect_paths_lockfree(&roots, &exclude, 50_000, None);
+            let mut inserted_total = 0usize;
+            for chunk in all_paths.chunks(250) {
+                if cancel_flag.load(Ordering::Relaxed) {
+                    break;
+                }
+                let missing: Vec<PathBuf> = {
+                    let ws = ws_arc.read().unwrap_or_else(|e| e.into_inner());
+                    chunk.iter().filter(|p| !ws.by_path.contains_key(*p)).cloned().collect()
+                };
+                if missing.is_empty() {
+                    continue;
+                }
+                let built = Workspace::build_batch(&missing);
+                if cancel_flag.load(Ordering::Relaxed) {
+                    break;
+                }
+                let mut ws = ws_arc.write().unwrap_or_else(|e| e.into_inner());
+                inserted_total += ws.insert_batch(built);
+            }
+            {
+                let mut ws = ws_arc.write().unwrap_or_else(|e| e.into_inner());
+                for r in roots {
+                    ws.mark_warmed(r);
+                }
+            }
+            indexing_flag.store(false, Ordering::SeqCst);
+            if cancel_flag.load(Ordering::Relaxed) {
+                return;
+            }
+            let (files, symbols, global_syms) = {
+                let ws = ws_arc.read().unwrap_or_else(|e| e.into_inner());
+                let files = ws.files.iter().flatten().count();
+                let symbols: usize = ws.files.iter().flatten().map(|f| f.symbols.len()).sum();
+                let global_syms: usize = ws.globals.values().map(|v| v.len()).sum();
+                (files, symbols, global_syms)
+            };
+            let msg = format!(
+                "svlang: indexed {} files ({} symbols) in {} ms",
+                inserted_total,
+                global_syms,
+                t0.elapsed().as_millis()
+            );
+            eprintln!("[{}]", msg);
+            crate::lint::send(
+                &out_arc,
+                &obj(vec![
+                    ("jsonrpc", "2.0".into()),
+                    ("method", "window/logMessage".into()),
+                    ("params", obj(vec![("type", 4u32.into()), ("message", msg.into())])),
+                ]),
+            );
+            let st = status_handle.map(|h| h.snapshot()).unwrap_or_default();
+            crate::lint::send(
+                &out_arc,
+                &obj(vec![
+                    ("jsonrpc", "2.0".into()),
+                    ("method", "svlang/status".into()),
+                    ("params", st.to_json(Some((files, symbols)))),
+                ]),
+            );
+        });
+    }
+
+    /// Returns an unwarmed subproject root to index on demand for `path`, or `None` if
+    /// `path` already sits inside an indexed workspace/subproject tree.
+    fn unwarmed_subproject_for(&self, path: &Path) -> Option<PathBuf> {
+        let ws = self.ws.read().unwrap_or_else(|e| e.into_inner());
+        let enclosing_wr = self.roots.iter().find(|wr| path.starts_with(wr));
+
+        let in_skipped_under = |base: &Path| -> bool {
+            path.strip_prefix(base).ok().is_some_and(|rel| {
+                rel.parent()
+                    .into_iter()
+                    .flat_map(|p| p.components())
+                    .any(|c| c.as_os_str().to_str().is_some_and(crate::workspace::is_skipped_dir_name))
+            })
+        };
+
+        if let Some(wr) = enclosing_wr {
+            if ws.is_warmed(wr) && !in_skipped_under(wr) {
+                return None;
+            }
+        }
+
+        let cand = if let Some(proj) = ws.project_root_for_path(path) {
+            let within_ws = enclosing_wr.is_none_or(|wr| proj.starts_with(wr));
+            if within_ws && !in_skipped_under(&proj) {
+                Some(proj)
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+        .or_else(|| {
+            let p1 = path.parent()?;
+            if let Some(p2) = p1.parent() {
+                if enclosing_wr.is_none_or(|wr| p2 != wr && p2.starts_with(wr)) {
+                    return Some(p2.to_path_buf());
+                }
+            }
+            if enclosing_wr.is_none_or(|wr| p1 != wr && p1.starts_with(wr)) {
+                return Some(p1.to_path_buf());
+            }
+            None
+        })?;
+
+        (!ws.is_warmed(&cand)).then_some(cand)
+    }
+
+    /// Indexes the enclosing subproject of `path` when opened inside an unindexed
+    /// multi-repo parent workspace.
+    fn warm_subproject_async(&mut self, path: &Path) {
+        let Some(sub_root) = self.unwarmed_subproject_for(path) else {
+            return;
+        };
+        let exclude = self.exclude.clone();
+        let (quick, truncated) = Workspace::collect_paths_lockfree(
+            std::slice::from_ref(&sub_root),
+            &exclude,
+            200,
+            Some(Instant::now() + Duration::from_millis(20)),
+        );
+        if !truncated {
+            let missing: Vec<PathBuf> = {
+                let ws = self.ws.read().unwrap_or_else(|e| e.into_inner());
+                quick.into_iter().filter(|p| !ws.by_path.contains_key(p)).collect()
+            };
+            let built = Workspace::build_batch(&missing);
+            {
+                let mut ws = self.ws.write().unwrap_or_else(|e| e.into_inner());
+                ws.mark_warmed(sub_root);
+                ws.insert_batch(built);
+            }
+            let status = self.current_status();
+            self.notify("svlang/status", status);
+        } else {
+            self.ws.write().unwrap_or_else(|e| e.into_inner()).mark_warmed(sub_root.clone());
+            self.spawn_background_index(vec![sub_root], exclude, Instant::now());
+        }
+    }
+
+    /// Ensures `path` is indexed, and warms up to 200 sibling/subproject files on demand
+    /// when `path`'s enclosing subproject hasn't been indexed yet.
+    fn ensure_file(&self, path: &Path) -> Option<usize> {
+        let warm_root = self.unwarmed_subproject_for(path);
+        if warm_root.is_none() {
+            let ws = self.ws.read().unwrap_or_else(|e| e.into_inner());
+            if let Some(f) = ws.file_id(path) {
+                return Some(f);
+            }
+        }
+
+        let mut to_insert: Vec<FileIndex> = Vec::new();
+        let need_main = {
+            let ws = self.ws.read().unwrap_or_else(|e| e.into_inner());
+            ws.file_id(path).is_none()
+        };
+        if need_main {
+            let t = std::fs::read_to_string(path).ok()?;
+            to_insert.push(FileIndex::build(path, t));
+        }
+
+        if let Some(ref wroot) = warm_root {
+            let (cand, _) = Workspace::collect_paths_lockfree(
+                std::slice::from_ref(wroot),
+                &self.exclude,
+                200,
+                Some(Instant::now() + Duration::from_millis(25)),
+            );
+            let missing: Vec<PathBuf> = {
+                let ws = self.ws.read().unwrap_or_else(|e| e.into_inner());
+                cand.into_iter().filter(|p| p != path && !ws.by_path.contains_key(p)).collect()
+            };
+            to_insert.extend(Workspace::build_batch(&missing));
+        }
+
+        let mut ws = self.ws.write().unwrap_or_else(|e| e.into_inner());
+        if let Some(wroot) = warm_root {
+            ws.mark_warmed(wroot);
+        }
+        ws.insert_batch(to_insert);
+        ws.file_id(path)
     }
 
     /// The file and byte offset of a TextDocumentPositionParams.
-    fn at(&mut self, p: &Json) -> Option<(usize, u32)> {
+    fn at(&self, p: &Json) -> Option<(usize, u32)> {
         let path = uri_to_path(p.at(&["textDocument", "uri"]).as_str()?);
-        let f = match self.ws.file_id(&path) {
-            Some(f) => f,
-            None => {
-                let t = std::fs::read_to_string(&path).ok()?;
-                self.ws.update(&path, t)
-            }
-        };
+        let f = self.ensure_file(&path)?;
         let line = p.at(&["position", "line"]).as_u32()?;
         let col = p.at(&["position", "character"]).as_u32()?;
-        Some((f, self.ws.file(f).offset(line, col)))
+        let ws = self.ws.read().unwrap_or_else(|e| e.into_inner());
+        Some((f, ws.file(f).offset(line, col)))
     }
 
-    fn range(&self, f: usize, a: u32, b: u32) -> Json {
-        let file = self.ws.file(f);
-        let (l0, c0) = file.position(a);
-        let (l1, c1) = file.position(b);
-        obj(vec![
-            ("start", obj(vec![("line", l0.into()), ("character", c0.into())])),
-            ("end", obj(vec![("line", l1.into()), ("character", c1.into())])),
-        ])
-    }
-
-    fn location(&self, r: SymRef) -> Json {
-        let s = self.ws.sym(r);
-        obj(vec![
-            ("uri", path_to_uri(&self.ws.file(r.0).path).into()),
-            ("range", self.range(r.0, s.sel_start, s.sel_end)),
-        ])
-    }
-
-    fn document_symbols(&mut self, p: &Json) -> Json {
+    fn document_symbols(&self, p: &Json) -> Json {
         let Some(uri) = p.at(&["textDocument", "uri"]).as_str() else {
             return Json::Arr(vec![]);
         };
         let path = uri_to_path(uri);
-        let f = match self.ws.file_id(&path) {
-            Some(f) => f,
-            None => match std::fs::read_to_string(&path) {
-                Ok(t) => self.ws.update(&path, t),
-                Err(_) => return Json::Arr(vec![]),
-            },
+        let Some(f) = self.ensure_file(&path) else {
+            return Json::Arr(vec![]);
         };
-        let file = self.ws.file(f);
+        let ws = self.ws.read().unwrap_or_else(|e| e.into_inner());
+        let file = ws.file(f);
         let mut kids: HashMap<Option<u32>, Vec<u32>> = HashMap::new();
         for (i, s) in file.symbols.iter().enumerate() {
             if !s.local || s.kind == SymKind::EnumMember && s.parent.is_some_and(|p| !file.symbols[p as usize].local) {
                 kids.entry(s.parent).or_default().push(i as u32);
             }
         }
-        fn build(sv: &Server, f: usize, kids: &HashMap<Option<u32>, Vec<u32>>, parent: Option<u32>) -> Vec<Json> {
-            let file = sv.ws.file(f);
+        fn build(ws: &Workspace, f: usize, kids: &HashMap<Option<u32>, Vec<u32>>, parent: Option<u32>) -> Vec<Json> {
+            let file = ws.file(f);
             let mut out = Vec::new();
             for &i in kids.get(&parent).map(|v| v.as_slice()).unwrap_or(&[]) {
                 let s = &file.symbols[i as usize];
@@ -459,37 +770,38 @@ impl Server {
                     ("name", name.into()),
                     ("detail", detail.into()),
                     ("kind", symbol_kind(s, in_class).into()),
-                    ("range", sv.range(f, s.start, s.end.max(s.sel_end))),
-                    ("selectionRange", sv.range(f, s.sel_start, s.sel_end)),
-                    ("children", Json::Arr(build(sv, f, kids, Some(i)))),
+                    ("range", range_in(ws, f, s.start, s.end.max(s.sel_end))),
+                    ("selectionRange", range_in(ws, f, s.sel_start, s.sel_end)),
+                    ("children", Json::Arr(build(ws, f, kids, Some(i)))),
                 ]));
             }
             out
         }
-        Json::Arr(build(self, f, &kids, None))
+        Json::Arr(build(&ws, f, &kids, None))
     }
 
-    fn workspace_symbols(&mut self, p: &Json) -> Json {
+    fn workspace_symbols(&self, p: &Json) -> Json {
         let q = p.get("query").as_str().unwrap_or("").to_lowercase();
+        let ws = self.ws.read().unwrap_or_else(|e| e.into_inner());
         let mut hits: Vec<(u32, SymRef)> = Vec::new();
-        for (name, refs) in &self.ws.globals {
+        for (name, refs) in &ws.globals {
             let Some(score) = fuzzy(&q, name) else {
                 continue;
             };
             for &r in refs {
-                if self.ws.sym(r).kind == SymKind::EnumMember && q.is_empty() {
+                if ws.sym(r).kind == SymKind::EnumMember && q.is_empty() {
                     continue;
                 }
                 hits.push((score, r));
             }
         }
-        hits.sort_by_key(|&(s, r)| (s, !self.ws.sym(r).kind.is_type(), self.ws.sym(r).name.len()));
+        hits.sort_by_key(|&(s, r)| (s, !ws.sym(r).kind.is_type(), ws.sym(r).name.len()));
         hits.truncate(500);
         Json::Arr(
             hits.into_iter()
                 .map(|(_, r)| {
-                    let s = self.ws.sym(r);
-                    let file = self.ws.file(r.0);
+                    let s = ws.sym(r);
+                    let file = ws.file(r.0);
                     let container =
                         s.parent.map(|p| file.symbols[p as usize].name.clone()).or_else(|| s.scope_class.clone());
                     let in_class = s.parent.is_some_and(|p| file.symbols[p as usize].kind == SymKind::Class)
@@ -497,7 +809,7 @@ impl Server {
                     let mut kv = vec![
                         ("name", s.name.clone().into()),
                         ("kind", symbol_kind(s, in_class).into()),
-                        ("location", self.location(r)),
+                        ("location", location_in(&ws, r)),
                     ];
                     if let Some(c) = container {
                         kv.push(("containerName", c.into()));
@@ -508,32 +820,35 @@ impl Server {
         )
     }
 
-    fn definition(&mut self, p: &Json) -> Json {
+    fn definition(&self, p: &Json) -> Json {
         let Some((f, off)) = self.at(p) else {
             return Json::Null;
         };
-        let defs = self.ws.definitions(f, off);
-        Json::Arr(defs.into_iter().take(50).map(|r| self.location(r)).collect())
+        let ws = self.ws.read().unwrap_or_else(|e| e.into_inner());
+        let defs = ws.definitions(f, off);
+        Json::Arr(defs.into_iter().take(50).map(|r| location_in(&ws, r)).collect())
     }
 
-    fn type_definition(&mut self, p: &Json) -> Json {
+    fn type_definition(&self, p: &Json) -> Json {
         let Some((f, off)) = self.at(p) else {
             return Json::Null;
         };
-        let defs = self.ws.definitions(f, off);
+        let ws = self.ws.read().unwrap_or_else(|e| e.into_inner());
+        let defs = ws.definitions(f, off);
         let mut out = Vec::new();
         for r in defs {
-            let s = self.ws.sym(r);
+            let s = ws.sym(r);
             let t = match s.kind {
                 SymKind::Class | SymKind::Typedef | SymKind::Module | SymKind::Interface => Some(s.name.clone()),
                 _ => s.type_name.clone(),
             };
             if let Some(t) = t {
-                for c in self.ws.scopes_named(
+                for c in ws.scopes_named_near(
+                    f,
                     &t,
                     &[SymKind::Class, SymKind::Module, SymKind::Interface, SymKind::Program, SymKind::Typedef],
                 ) {
-                    out.push(self.location(c));
+                    out.push(location_in(&ws, c));
                 }
             }
             if !out.is_empty() {
@@ -546,22 +861,26 @@ impl Server {
     /// Every use of the name under the cursor, in all indexed files.
     /// Textual: names are matched, not resolved, so a common name like
     /// `data` finds every `data`.
-    fn references(&mut self, p: &Json) -> Json {
+    fn references(&self, p: &Json) -> Json {
         let Some((f, off)) = self.at(p) else {
             return Json::Null;
         };
-        let file = self.ws.file(f);
+        let ws = self.ws.read().unwrap_or_else(|e| e.into_inner());
+        let file = ws.file(f);
         let Some((s, e)) = word_at(&file.text, off) else {
             return Json::Arr(vec![]);
         };
         let word = file.text[s..e].to_string();
         let len = word.len() as u32;
         let mut out = Vec::new();
-        for (fi, fx) in self.ws.files.iter().enumerate() {
+        for (fi, fx) in ws.files.iter().enumerate() {
             let Some(fx) = fx else { continue };
             if let Some(offs) = fx.idents.get(&word) {
                 for &o in offs {
-                    out.push(obj(vec![("uri", path_to_uri(&fx.path).into()), ("range", self.range(fi, o, o + len))]));
+                    out.push(obj(vec![
+                        ("uri", path_to_uri(&fx.path).into()),
+                        ("range", range_in(&ws, fi, o, o + len)),
+                    ]));
                     if out.len() >= 5000 {
                         return Json::Arr(out);
                     }
@@ -571,30 +890,32 @@ impl Server {
         Json::Arr(out)
     }
 
-    fn highlights(&mut self, p: &Json) -> Json {
+    fn highlights(&self, p: &Json) -> Json {
         let Some((f, off)) = self.at(p) else {
             return Json::Null;
         };
-        let file = self.ws.file(f);
+        let ws = self.ws.read().unwrap_or_else(|e| e.into_inner());
+        let file = ws.file(f);
         let Some((s, e)) = word_at(&file.text, off) else {
             return Json::Arr(vec![]);
         };
         let word = &file.text[s..e];
         let len = word.len() as u32;
         let offs = file.idents.get(word).cloned().unwrap_or_default();
-        Json::Arr(offs.into_iter().map(|o| obj(vec![("range", self.range(f, o, o + len))])).collect())
+        Json::Arr(offs.into_iter().map(|o| obj(vec![("range", range_in(&ws, f, o, o + len))])).collect())
     }
 
-    fn hover(&mut self, p: &Json) -> Json {
+    fn hover(&self, p: &Json) -> Json {
         let Some((f, off)) = self.at(p) else {
             return Json::Null;
         };
-        let defs = self.ws.definitions(f, off);
+        let ws = self.ws.read().unwrap_or_else(|e| e.into_inner());
+        let defs = ws.definitions(f, off);
         let Some(&r) = defs.first() else {
             return Json::Null;
         };
-        let s = self.ws.sym(r);
-        let file = self.ws.file(r.0);
+        let s = ws.sym(r);
+        let file = ws.file(r.0);
         let mut md = format!("```systemverilog\n{}\n```\n", s.detail);
         let container = s
             .parent
@@ -617,19 +938,20 @@ impl Server {
         if defs.len() > 1 {
             md.push_str(&format!("\n\n*{} more definitions*", defs.len() - 1));
         }
-        let file_here = self.ws.file(f);
-        let ws = word_at(&file_here.text, off).unwrap_or((off as usize, off as usize));
+        let file_here = ws.file(f);
+        let word_span = word_at(&file_here.text, off).unwrap_or((off as usize, off as usize));
         obj(vec![
             ("contents", obj(vec![("kind", "markdown".into()), ("value", md.into())])),
-            ("range", self.range(f, ws.0 as u32, ws.1 as u32)),
+            ("range", range_in(&ws, f, word_span.0 as u32, word_span.1 as u32)),
         ])
     }
 
-    fn completion(&mut self, p: &Json) -> Json {
+    fn completion(&self, p: &Json) -> Json {
         let Some((f, off)) = self.at(p) else {
             return Json::Null;
         };
-        let text = &self.ws.file(f).text;
+        let ws = self.ws.read().unwrap_or_else(|e| e.into_inner());
+        let text = &ws.file(f).text;
         // The word typed so far, up to the cursor.
         let b = text.as_bytes();
         let mut s = (off as usize).min(b.len());
@@ -655,17 +977,11 @@ impl Server {
             items.push(obj(kv));
         };
         if before == b'`' {
-            let mut macros: Vec<SymRef> = self
-                .ws
-                .globals
-                .values()
-                .flatten()
-                .copied()
-                .filter(|&r| self.ws.sym(r).kind == SymKind::Macro)
-                .collect();
-            macros.sort_by_key(|&r| r.0 != f);
+            let mut macros: Vec<SymRef> =
+                ws.globals.values().flatten().copied().filter(|&r| ws.sym(r).kind == SymKind::Macro).collect();
+            macros.sort_by_key(|&r| ws.proximity(f, r.0));
             for r in macros {
-                let sy = self.ws.sym(r);
+                let sy = ws.sym(r);
                 add(&mut items, &sy.name, 15, sy.detail.lines().next().unwrap_or(""), &sy.doc, "1");
             }
             for &(m, d) in UVM_MACROS {
@@ -691,10 +1007,10 @@ impl Server {
                 }
                 return obj(vec![("isIncomplete", false.into()), ("items", Json::Arr(items))]);
             }
-            if let Some(scope) = self.ws.resolve_chain(f, off, &chain, sep) {
-                let is_class = self.ws.sym(scope).kind == SymKind::Class;
-                for (depth, r) in self.ws.members(scope).into_iter().enumerate() {
-                    let sy = self.ws.sym(r);
+            if let Some(scope) = ws.resolve_chain(f, off, &chain, sep) {
+                let is_class = ws.sym(scope).kind == SymKind::Class;
+                for (depth, r) in ws.members(scope).into_iter().enumerate() {
+                    let sy = ws.sym(r);
                     if sy.kind == SymKind::Macro {
                         continue;
                     }
@@ -718,35 +1034,34 @@ impl Server {
         // Plain names: scope first, then workspace types, then keywords.
         let low = prefix.to_lowercase();
         let matches = |n: &str| low.is_empty() || fuzzy(&low, n).is_some();
-        let vis = self.ws.visible(f, off);
+        let vis = ws.visible(f, off);
         for r in vis {
-            let sy = self.ws.sym(r);
+            let sy = ws.sym(r);
             if sy.kind == SymKind::Macro || !matches(&sy.name) {
                 continue;
             }
-            let in_class = sy.parent.is_some_and(|p| self.ws.file(r.0).symbols[p as usize].kind == SymKind::Class);
+            let in_class = sy.parent.is_some_and(|p| ws.file(r.0).symbols[p as usize].kind == SymKind::Class);
             add(&mut items, &sy.name, completion_kind(sy, in_class), &sy.detail, &sy.doc, "1");
         }
         let mut capped = false;
         if !low.is_empty() {
-            let mut types: Vec<SymRef> = self
-                .ws
+            let mut types: Vec<SymRef> = ws
                 .globals
                 .iter()
                 .filter(|(n, _)| matches(n))
                 .flat_map(|(_, v)| v.iter().copied())
                 .filter(|&r| {
-                    let sy = self.ws.sym(r);
+                    let sy = ws.sym(r);
                     sy.parent.is_none() && sy.kind != SymKind::Macro
                 })
                 .collect();
-            types.sort_by_key(|&r| (!self.ws.sym(r).kind.is_type(), self.ws.sym(r).name.len()));
+            types.sort_by_key(|&r| (!ws.sym(r).kind.is_type(), ws.proximity(f, r.0), ws.sym(r).name.len()));
             if types.len() > 400 {
                 types.truncate(400);
                 capped = true;
             }
             for r in types {
-                let sy = self.ws.sym(r);
+                let sy = ws.sym(r);
                 add(&mut items, &sy.name, completion_kind(sy, false), &sy.detail, &sy.doc, "2");
             }
         }
@@ -757,6 +1072,62 @@ impl Server {
         }
         obj(vec![("isIncomplete", capped.into()), ("items", Json::Arr(items))])
     }
+}
+
+fn range_in(ws: &Workspace, f: usize, a: u32, b: u32) -> Json {
+    let file = ws.file(f);
+    let (l0, c0) = file.position(a);
+    let (l1, c1) = file.position(b);
+    obj(vec![
+        ("start", obj(vec![("line", l0.into()), ("character", c0.into())])),
+        ("end", obj(vec![("line", l1.into()), ("character", c1.into())])),
+    ])
+}
+
+fn location_in(ws: &Workspace, r: SymRef) -> Json {
+    let s = ws.sym(r);
+    obj(vec![("uri", path_to_uri(&ws.file(r.0).path).into()), ("range", range_in(ws, r.0, s.sel_start, s.sel_end))])
+}
+
+fn is_explicit_project_root(dir: &Path) -> bool {
+    dir.join(".git").exists()
+        || dir.join(".svlang-lint").exists()
+        || dir.join("svlang_lint_config.py").exists()
+        || dir.join(".svlang-lint.py").exists()
+        || dir.join(".svlang-lint.json").exists()
+        || dir.join("svlang-lint.json").exists()
+}
+
+fn discover_uvm_src() -> Option<PathBuf> {
+    if let Some(h) = std::env::var_os("UVM_HOME") {
+        let p = PathBuf::from(&h);
+        let src = p.join("src");
+        if src.is_dir() {
+            return Some(src);
+        }
+        if p.join("uvm_pkg.sv").is_file() {
+            return Some(p);
+        }
+    }
+    let cache_base = std::env::var_os("XDG_CACHE_HOME")
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".cache")))?;
+    let svlang_cache = cache_base.join("svlang");
+    let rd = std::fs::read_dir(&svlang_cache).ok()?;
+    let mut dirs: Vec<PathBuf> = rd
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.file_name().and_then(|n| n.to_str()).is_some_and(|n| n.starts_with("uvm-core")))
+        .collect();
+    dirs.sort();
+    dirs.reverse();
+    for d in dirs {
+        let src = d.join("src");
+        if src.join("uvm_pkg.sv").is_file() {
+            return Some(src);
+        }
+    }
+    None
 }
 
 /// Subsequence match of a lowercase query; lower scores are better.

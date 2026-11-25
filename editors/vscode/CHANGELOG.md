@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.6.1
+
+- **Eliminated Multi-Repo Extension-Host Freeze Loop (`svlang/rtlHierarchy` & Async Indexing)**:
+  - Refactored **Explorer → RTL Hierarchy** to lazy 1-level-at-a-time expansion (`Collapsed` by default, fetched only when the RTL Hierarchy view is visible and scoped to the active editor's subproject), cutting multi-repo payload size from `72+ MB` to `< 1 KB`.
+  - Made large-workspace LSP indexing non-blocking with automatic subproject on-demand warming, expanded build/vendor/corpus directory exclusions (`references`, `corpus`, `third_party`, `vendor`, `build*`, `obj_dir`, `csrc`, `simv.daidir`, `xcelium.d`, `work`, `informal_work`), and sped up `textDocument/semanticTokens/full` by `> 100x` via precomputed scope symbol tables.
+- **Fixed `Go to Definition` on `class A extends B` & Package Headers**:
+  - Added git/project-root and directory proximity ranking so multi-repo symbol collisions always resolve to the active project or `$UVM_HOME/src` first (with `~/.cache/svlang/uvm-core-*/src` fallback when GUI editors lack shell `$UVM_HOME`).
+  - Indexed `` `include "file.svh" `` headers inside `package` scopes (`extends pkg::B` and `import pkg::*;`), `type` parameters (`class A #(type B = base_c) extends B`), and `extends`/`implements` type-clause filtering so class variables or same-named wrapper classes (`class B extends pkg::B`) never shadow base types.
+
 ## 0.6.0
 
 - **Strict 2-Tier `DOM-GRP-NNN` (`3-3-3`) Rule Taxonomy**: Standardized all 475 diagnostics across 5 domains (`CMP-*`, `RTL-*`, `SVL-*`, `SVA-*`, `UVM-*`) and 34 prefixes (`CMP-ERR-001` for live compiler errors, `RTL-FSM-*`, `SVL-CON-*`, `SVA-FPV-*`, `UVM-RAL-*`, etc.).

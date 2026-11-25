@@ -490,11 +490,16 @@ endpackage
         c.request("svlang/inactiveRanges", &format!(r#"{{"textDocument":{{"uri":"file://{}"}}}}"#, rtl_file.display()));
     assert!(inact2.contains(r#""line":16"#), "{inact2}");
 
-    // 3. RTL module hierarchy (`top_soc` -> `u_alu : child_alu`)
+    // 3. Lazy RTL module hierarchy: root query returns `top_soc` with `hasChildren: true`
+    //    (without eagerly expanding children), and `moduleName` fetches 1-level children.
     let hier = c.request("svlang/rtlHierarchy", "{}");
     assert!(hier.contains(r#""moduleName":"top_soc""#), "{hier}");
-    assert!(hier.contains(r#""instanceName":"u_alu""#), "{hier}");
-    assert!(hier.contains(r#""moduleName":"child_alu""#), "{hier}");
+    assert!(hier.contains(r#""hasChildren":true"#), "{hier}");
+    assert!(!hier.contains(r#""instanceName":"u_alu""#), "root query must be lazy: {hier}");
+    let hier_kids = c.request("svlang/rtlHierarchy", r#"{"moduleName":"top_soc"}"#);
+    assert!(hier_kids.contains(r#""instanceName":"u_alu""#), "{hier_kids}");
+    assert!(hier_kids.contains(r#""moduleName":"child_alu""#), "{hier_kids}");
+    assert!(hier_kids.contains(r#""hasChildren":false"#), "{hier_kids}");
 
     // 4. Signal driver/load trace on `pipe_sig`:
     //    - `.y_o(pipe_sig)` is a DRIVER (output port of `child_alu`) and `assign pipe_sig = ...` is a DRIVER
@@ -634,6 +639,121 @@ fn mode1_syntax_diagnostics_keep_compiler_checks_with_lint_off() {
     let d_manual = c.diagnostics(&file);
     assert!(d_manual.contains(r#""code":"SVL-DEP-007""#), "Manual Lint Now must still run lint rules: {d_manual}");
     assert!(d_manual.contains(r#""source":"svlang-lint""#), "{d_manual}");
+
+    let _ = c.request("shutdown", "null");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn extends_navigation_package_includes_type_params_and_proximity() {
+    let dir = std::env::temp_dir().join(format!("svlang-lsp-extends-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(dir.join("references/corpus")).unwrap();
+    std::fs::create_dir_all(dir.join("repo_a/.git")).unwrap();
+    std::fs::create_dir_all(dir.join("repo_a/env")).unwrap();
+    std::fs::create_dir_all(dir.join("repo_a/rtl")).unwrap();
+    std::fs::create_dir_all(dir.join("repo_b/.git")).unwrap();
+    std::fs::create_dir_all(dir.join("repo_b/env")).unwrap();
+    std::fs::create_dir_all(dir.join("repo_b/testdata")).unwrap();
+    std::fs::create_dir_all(dir.join("repo_b/pkg")).unwrap();
+    std::fs::create_dir_all(dir.join("repo_b/agents")).unwrap();
+    std::fs::create_dir_all(dir.join("repo_b/rtl")).unwrap();
+    let dir = dir.canonicalize().unwrap();
+
+    // `references/` must be skipped by workspace indexing.
+    std::fs::write(dir.join("references/corpus/corpus_only.sv"), "class corpus_ghost; endclass\n").unwrap();
+
+    // Competing definitions of `my_base_agent` across repos and testdata.
+    std::fs::write(dir.join("repo_a/env/my_base_agent.sv"), "class my_base_agent;\n  int from_repo_a;\nendclass\n")
+        .unwrap();
+    std::fs::write(dir.join("repo_b/testdata/mock_agent.sv"), "class my_base_agent;\n  int from_testdata;\nendclass\n")
+        .unwrap();
+    let repo_b_base = dir.join("repo_b/env/my_base_agent.sv");
+    std::fs::write(&repo_b_base, "class my_base_agent;\n  int from_repo_b;\nendclass\n").unwrap();
+
+    // Package with `` `include "b_item.svh" `` where `b_item` is defined in the header.
+    let b_item_hdr = dir.join("repo_b/pkg/b_item.svh");
+    std::fs::write(&b_item_hdr, "class b_item;\n  rand bit [7:0] payload;\nendclass\n").unwrap();
+    std::fs::write(dir.join("repo_b/pkg/env_pkg.sv"), "package env_pkg;\n  `include \"b_item.svh\"\nendpackage\n")
+        .unwrap();
+
+    // RTL modules in separate sub-repos to verify `activeUri` scoping.
+    std::fs::write(dir.join("repo_a/rtl/top_a.sv"), "module top_a; endmodule\n").unwrap();
+    let top_b_file = dir.join("repo_b/rtl/top_b.sv");
+    std::fs::write(&top_b_file, "module leaf_b; endmodule\nmodule top_b;\n  leaf_b u_leaf();\nendmodule\n").unwrap();
+
+    let agents_src = r#"class my_agent extends my_base_agent;
+  int my_base_agent;
+endclass
+
+class sub_item extends env_pkg::b_item;
+endclass
+
+class b_item extends env_pkg::b_item;
+endclass
+
+class param_drv #(type BASE = my_base_agent) extends BASE;
+  function void check();
+    from_repo_b = 1;
+  endfunction
+endclass
+"#;
+    let agents_file = dir.join("repo_b/agents/my_agent.sv");
+    std::fs::write(&agents_file, agents_src).unwrap();
+
+    let mut c = Client::start_with_opts(&dir, r#"{"lintTrigger":"off"}"#);
+
+    // 0. `references/` was skipped completely.
+    let ghost = c.request("workspace/symbol", r#"{"query":"corpus_ghost"}"#);
+    assert!(ghost.contains(r#""result":[]"#), "references/ must be skipped: {ghost}");
+
+    // 1. `class my_agent extends my_base_agent` resolves #1 to `repo_b/env/my_base_agent.sv`
+    //    (not `int my_base_agent` member, not `repo_a`, and not `repo_b/testdata`).
+    let (l1, c1) = pos(agents_src, "extends my_base_agent", 0, 10);
+    let def1 = c.at("textDocument/definition", &agents_file, l1, c1);
+    let first_uri_pos =
+        def1.find("repo_b/env/my_base_agent.sv").unwrap_or_else(|| panic!("missing repo_b base: {def1}"));
+    if let Some(other_pos) = def1.find("repo_a/env/my_base_agent.sv") {
+        assert!(first_uri_pos < other_pos, "repo_b definition must rank ahead of repo_a: {def1}");
+    }
+    if let Some(td_pos) = def1.find("testdata/mock_agent.sv") {
+        assert!(first_uri_pos < td_pos, "non-testdata definition must rank ahead of testdata: {def1}");
+    }
+    assert!(!def1.contains("repo_b/agents/my_agent.sv"), "member int my_base_agent must not shadow extends: {def1}");
+
+    // 2. `class sub_item extends env_pkg::b_item` & `class b_item extends env_pkg::b_item`
+    //    resolve through `package env_pkg; `include "b_item.svh"` to `b_item.svh`!
+    let (l2, c2) = pos(agents_src, "env_pkg::b_item", 0, 11);
+    let def2 = c.at("textDocument/definition", &agents_file, l2, c2);
+    assert!(def2.contains("repo_b/pkg/b_item.svh"), "pkg::b_item should resolve to included header: {def2}");
+
+    let (l2b, c2b) = pos(agents_src, "env_pkg::b_item", 1, 11);
+    let def2b = c.at("textDocument/definition", &agents_file, l2b, c2b);
+    assert!(
+        def2b.contains("repo_b/pkg/b_item.svh"),
+        "same-named class extending pkg::b_item must not self-match: {def2b}"
+    );
+
+    // 3. `class param_drv #(type BASE = my_base_agent) extends BASE` resolves `BASE` to the type parameter
+    //    (and inherited `from_repo_b` from default `my_base_agent` resolves to `repo_b/env/my_base_agent.sv`!).
+    let (l3, c3) = pos(agents_src, "extends BASE", 0, 9);
+    let def3 = c.at("textDocument/definition", &agents_file, l3, c3);
+    assert!(def3.contains("repo_b/agents/my_agent.sv"), "extends BASE should jump to type BASE parameter: {def3}");
+    assert!(def3.contains("repo_b/env/my_base_agent.sv"), "extends BASE should also surface default base type: {def3}");
+
+    let (l3m, c3m) = pos(agents_src, "from_repo_b", 0, 3);
+    let def3m = c.at("textDocument/definition", &agents_file, l3m, c3m);
+    assert!(def3m.contains("repo_b/env/my_base_agent.sv"), "inherited member via type parameter default: {def3m}");
+
+    // 4. `svlang/rtlHierarchy` with `activeUri` inside `repo_b` scopes roots to `repo_b` (`top_b`, excluding `top_a`).
+    let hier_b = c.request("svlang/rtlHierarchy", &format!(r#"{{"activeUri":"file://{}"}}"#, agents_file.display()));
+    assert!(hier_b.contains(r#""moduleName":"top_b""#), "{hier_b}");
+    assert!(!hier_b.contains(r#""moduleName":"top_a""#), "activeUri should scope RTL roots to repo_b: {hier_b}");
+    let kids_b = c.request(
+        "svlang/rtlHierarchy",
+        &format!(r#"{{"moduleName":"top_b","activeUri":"file://{}"}}"#, top_b_file.display()),
+    );
+    assert!(kids_b.contains(r#""instanceName":"u_leaf""#) && kids_b.contains(r#""moduleName":"leaf_b""#), "{kids_b}");
 
     let _ = c.request("shutdown", "null");
     let _ = std::fs::remove_dir_all(&dir);

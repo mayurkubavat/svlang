@@ -2,7 +2,7 @@
   "name": "svlang",
   "displayName": "svlang — SystemVerilog & UVM",
   "description": "IEEE 1800-2023 SystemVerilog and UVM language server, semantic highlighting, RTL/signal tracing, and static linter (475 rules, quick fixes).",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "publisher": "svlang",
   "license": "Apache-2.0",
   "engines": {

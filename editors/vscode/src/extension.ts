@@ -42,7 +42,8 @@ interface RtlNode {
     range: LspRange;
     definitionUri: string;
     definitionRange: LspRange;
-    children: RtlNode[];
+    hasChildren?: boolean;
+    children?: RtlNode[];
 }
 
 interface TraceHit {
@@ -80,7 +81,9 @@ const watchers: vscode.Disposable[] = [];
 const warned = new Set<string>();
 
 let rtlProvider: RtlHierarchyProvider | undefined;
+let rtlTreeView: vscode.TreeView<vscode.TreeItem> | undefined;
 let traceProvider: SignalTraceProvider | undefined;
+let lastActiveSvUri: string | undefined;
 
 const SV_LANGUAGES = new Set(['systemverilog', 'verilog', 'sv-filelist']);
 
@@ -112,9 +115,21 @@ export async function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(statusBar);
 
     rtlProvider = new RtlHierarchyProvider();
+    rtlTreeView = vscode.window.createTreeView('svlang.rtlHierarchy', {
+        treeDataProvider: rtlProvider,
+        showCollapseAll: true
+    });
     traceProvider = new SignalTraceProvider();
+    if (vscode.window.activeTextEditor && isSvSourceDocument(vscode.window.activeTextEditor.document)) {
+        lastActiveSvUri = vscode.window.activeTextEditor.document.uri.toString();
+    }
     context.subscriptions.push(
-        vscode.window.registerTreeDataProvider('svlang.rtlHierarchy', rtlProvider),
+        rtlTreeView,
+        rtlTreeView.onDidChangeVisibility(e => {
+            if (e.visible) {
+                rtlProvider?.refresh();
+            }
+        }),
         vscode.window.registerTreeDataProvider('svlang.signalTrace', traceProvider),
         vscode.languages.registerCodeActionsProvider(
             documentSelector,
@@ -129,6 +144,15 @@ export async function activate(context: vscode.ExtensionContext) {
         vscode.window.onDidChangeActiveTextEditor(ed => {
             updateStatusBarVisibility();
             if (ed) {
+                if (isSvSourceDocument(ed.document)) {
+                    const nextUri = ed.document.uri.toString();
+                    const prevDir = lastActiveSvUri ? path.dirname(vscode.Uri.parse(lastActiveSvUri).fsPath) : '';
+                    const nextDir = path.dirname(ed.document.uri.fsPath);
+                    lastActiveSvUri = nextUri;
+                    if (prevDir !== nextDir && rtlTreeView?.visible) {
+                        rtlProvider?.refresh();
+                    }
+                }
                 void refreshInactiveRegions(ed);
             }
         }),
@@ -139,7 +163,7 @@ export async function activate(context: vscode.ExtensionContext) {
             }
         }),
         vscode.workspace.onDidSaveTextDocument(doc => {
-            if (isSvDocument(doc)) {
+            if (isSvDocument(doc) && rtlTreeView?.visible) {
                 rtlProvider?.refresh();
             }
         }),
@@ -397,8 +421,12 @@ async function startServer(context: vscode.ExtensionContext) {
 
     client = new LanguageClient('svlang', 'svlang', serverOptions, clientOptions);
     client.onNotification('svlang/status', (st: ServerStatus) => {
+        const wasIndexing = latestStatus.state === 'indexing';
         latestStatus = { ...latestStatus, ...st };
         updateStatusBar();
+        if (wasIndexing && st.state !== 'indexing' && rtlTreeView?.visible) {
+            rtlProvider?.refresh();
+        }
     });
 
     try {
@@ -408,7 +436,9 @@ async function startServer(context: vscode.ExtensionContext) {
             latestStatus = { ...latestStatus, ...snap };
         }
         updateStatusBar();
-        rtlProvider?.refresh();
+        if (rtlTreeView?.visible) {
+            rtlProvider?.refresh();
+        }
         await refreshAllVisibleInactiveRegions();
     } catch (err) {
         vscode.window.showErrorMessage(`svlang: could not start ${exe}: ${err}`);
@@ -531,6 +561,10 @@ async function syncExtraExtensions() {
 }
 
 // ---- Status Bar ----
+
+function isSvSourceDocument(doc: vscode.TextDocument | undefined): boolean {
+    return Boolean(doc && (doc.languageId === 'systemverilog' || doc.languageId === 'verilog'));
+}
 
 function isSvDocument(doc: vscode.TextDocument | undefined): boolean {
     if (!doc) {
@@ -809,13 +843,17 @@ async function runInitConfig(context: vscode.ExtensionContext) {
 // ---- Explorer Sidebar Views: RTL Hierarchy & Signal Trace ----
 
 class RtlTreeItem extends vscode.TreeItem {
-    constructor(public readonly node: RtlNode) {
-        const isRoot = node.instanceName === node.moduleName;
+    constructor(
+        public readonly node: RtlNode,
+        public readonly ancestors: string[]
+    ) {
+        const isRoot = ancestors.length <= 1 && node.instanceName === node.moduleName;
         const label = isRoot ? node.moduleName : `${node.instanceName} : ${node.moduleName}`;
+        const expandable = Boolean(node.hasChildren ?? node.children?.length);
         super(
             label,
-            node.children.length
-                ? vscode.TreeItemCollapsibleState.Expanded
+            expandable
+                ? vscode.TreeItemCollapsibleState.Collapsed
                 : vscode.TreeItemCollapsibleState.None
         );
         this.description = isRoot ? node.kind : undefined;
@@ -847,21 +885,47 @@ class RtlHierarchyProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
     }
 
     async getChildren(element?: vscode.TreeItem): Promise<vscode.TreeItem[]> {
-        if (element instanceof RtlTreeItem) {
-            return element.node.children.map(c => new RtlTreeItem(c));
-        }
         if (!client) {
             return [];
         }
+        if (element instanceof RtlTreeItem) {
+            if (element.node.children?.length) {
+                return element.node.children.map(c => new RtlTreeItem(c, [...element.ancestors, c.moduleName]));
+            }
+            if (!element.node.hasChildren) {
+                return [];
+            }
+            try {
+                const res = await client.sendRequest<{ children: RtlNode[] }>('svlang/rtlHierarchy', {
+                    moduleName: element.node.moduleName,
+                    activeUri: element.node.definitionUri,
+                    ancestors: element.ancestors
+                });
+                return (res?.children ?? []).map(c => new RtlTreeItem(c, [...element.ancestors, c.moduleName]));
+            } catch {
+                return [];
+            }
+        }
         try {
-            const res = await client.sendRequest<{ roots: RtlNode[] }>('svlang/rtlHierarchy', {});
+            const activeEd = vscode.window.activeTextEditor;
+            const activeUri =
+                activeEd && isSvSourceDocument(activeEd.document)
+                    ? activeEd.document.uri.toString()
+                    : lastActiveSvUri;
+            const res = await client.sendRequest<{ roots: RtlNode[] }>('svlang/rtlHierarchy', {
+                activeUri: activeUri ?? ''
+            });
             const roots = res?.roots ?? [];
             if (!roots.length) {
-                const empty = new vscode.TreeItem('No RTL modules indexed in workspace');
-                empty.iconPath = new vscode.ThemeIcon('info');
+                const empty = new vscode.TreeItem(
+                    latestStatus.state === 'indexing'
+                        ? 'Indexing workspace RTL modules...'
+                        : 'No RTL modules indexed in workspace'
+                );
+                empty.iconPath = new vscode.ThemeIcon(latestStatus.state === 'indexing' ? 'sync~spin' : 'info');
                 return [empty];
             }
-            return roots.map(r => new RtlTreeItem(r));
+            return roots.map(r => new RtlTreeItem(r, [r.moduleName]));
         } catch {
             return [];
         }
