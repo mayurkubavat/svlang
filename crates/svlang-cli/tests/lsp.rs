@@ -169,7 +169,9 @@ fn line_of(resp: &str) -> Vec<u32> {
 fn navigation_and_completion() {
     let dir = workspace();
     let pkg = dir.join("pkg.sv");
-    let mut c = Client::start(&dir);
+    // The stub UVM library under lib/ is the one under test: a real UVM found in
+    // $UVM_HOME or ~/.cache/svlang (the pre-push gate fetches one there) would answer first.
+    let mut c = Client::start_with_opts(&dir, r#"{"useUvmHome":false}"#);
 
     // item.show() -> show's declaration
     let (l, k) = pos(PKG, "item.show", 0, 6);

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.2
+
+- Bundles svlang 0.6.2 (netlist and Btor2 fixes; no extension changes).
+
 ## 0.6.1
 
 - **Eliminated Multi-Repo Extension-Host Freeze Loop (`svlang/rtlHierarchy` & Async Indexing)**:

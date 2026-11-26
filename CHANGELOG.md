@@ -4,6 +4,35 @@ What changed in each release of the svlang crates (`svlang`, `sv-*`,
 `svlang-model`, `svlang-lint`, `svlang-lsp`, `svlang-cli`), `pysvlang`, and the
 `svlang.svlang` VS Code / Open VSX extension. They share one version number.
 
+## 0.6.2 (2026-11-26)
+
+### Netlist: bit-level combinational-loop check (`sv-netlist`)
+
+Found by proving ChiBench designs equal to their Manticore-vectorized versions with
+InFormal miters: 23 vectorized files were refused with "combinational loop detected"
+although no bit depends on itself.
+
+- A read of some bits of an `&`, `|`, `^`, `~^` or `~` now depends only on those bits of
+  each operand. Vectorized code ORs shifted copies of a vector into one wider value
+  (`{g, 1'b0} | {1'b0, g0}`), which no longer looks like a loop.
+- A vector built from its own lower bits through an alias (`T = {A[63:0], n}` with
+  `A = T`, as in Quartus `lpm_divide`) is followed bit by bit to what drives it. A bit
+  that leads back to itself is still a loop.
+
+### Btor2: zero start state option (`sv-btor2`)
+
+- `Options::zero_init`: registers and latches with no known initial value start at 0,
+  as Verilator's `--x-initial 0` does, so two designs compared without a reset start
+  from the same state. Off by default; `SVLANG_BTOR2_ZERO_INIT=1` turns it on for tools
+  that use `Options::default()`.
+
+### Tests
+
+- The LSP test `navigation_and_completion` turns off UVM discovery (`useUvmHome: false`):
+  with a UVM copy in `$UVM_HOME` or `~/.cache/svlang` (the pre-push gate fetches one
+  there) the real `uvm_sequence_item` answered before the test's stub library, so the
+  test failed on any machine that had run the gate once.
+
 ## 0.6.1 (2026-11-24)
 
 ### Language Server & VS Code / Open VSX Extension Hotfix (`svlang-lsp`, `svlang.svlang`)
