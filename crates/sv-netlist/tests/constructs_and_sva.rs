@@ -1687,7 +1687,7 @@ fn long_shift_chain_through_alias_is_not_a_loop() {
     let nl = expect_lowered(lower_src(a));
     let mut sim = NetlistSim::new(&nl);
     sim.set_u("n", 0xa5);
-    assert_eq!(sim.out_i("y"), 0xa5a5_a5a5_a5a5_a5a5_a5);
+    assert_eq!(sim.out_i("y"), 0x00a5_a5a5_a5a5_a5a5_a5a5);
     // A bit that names itself is still a loop.
     let real = "module m (input logic [7:0] n, output logic [15:0] y);\n  wire [15:0] A, T;\n  assign A = T, T = {A[15:8], n};\n  assign y = A;\nendmodule\n";
     assert!(matches!(lower_src(real), LowerOutcome::Error(_)), "bits 15:8 of T are themselves");

@@ -530,13 +530,15 @@ impl NetBuilder {
                 break;
             }
             let before = self.nodes.len();
-            let kinds_before: Vec<String> = cycles.iter().flatten().map(|&i| format!("{:?}", self.nodes[i].kind)).collect();
+            let kinds_before: Vec<String> =
+                cycles.iter().flatten().map(|&i| format!("{:?}", self.nodes[i].kind)).collect();
             for &i in cycles.iter().flatten() {
                 self.forward_slice(i, true);
             }
             // A split may rewrite a node in place without adding any (a slice that only
             // copies bits of existing values): that is progress too.
-            let rewritten = cycles.iter().flatten().zip(&kinds_before).any(|(&i, k)| format!("{:?}", self.nodes[i].kind) != *k);
+            let rewritten =
+                cycles.iter().flatten().zip(&kinds_before).any(|(&i, k)| format!("{:?}", self.nodes[i].kind) != *k);
             if self.nodes.len() == before && !rewritten {
                 break;
             }
