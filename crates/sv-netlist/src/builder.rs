@@ -523,15 +523,21 @@ impl NetBuilder {
         // to split.
         self.forward_slices();
         let mut cycles = self.combinational_cycles();
-        for _ in 0..8 {
+        // Each round splits one more level; a shift chain through a vector that feeds itself
+        // eight bits at a time (a divider's stage registers) needs one round per stage.
+        for _ in 0..32 {
             if cycles.is_empty() {
                 break;
             }
             let before = self.nodes.len();
+            let kinds_before: Vec<String> = cycles.iter().flatten().map(|&i| format!("{:?}", self.nodes[i].kind)).collect();
             for &i in cycles.iter().flatten() {
                 self.forward_slice(i, true);
             }
-            if self.nodes.len() == before {
+            // A split may rewrite a node in place without adding any (a slice that only
+            // copies bits of existing values): that is progress too.
+            let rewritten = cycles.iter().flatten().zip(&kinds_before).any(|(&i, k)| format!("{:?}", self.nodes[i].kind) != *k);
+            if self.nodes.len() == before && !rewritten {
                 break;
             }
             // What a split leaves behind is split in turn, down to single drivers.
@@ -824,6 +830,64 @@ impl NetBuilder {
                 self.nodes[i].kind = BuildKind::Op { op: NetOp::Mux, args: vec![sel, sa, sb] };
                 return;
             }
+            // Bits of a bitwise operation are that operation on the same bits of its
+            // operands. Vectorized code ORs or ANDs shifted copies of a vector into one
+            // wider value (`{a, 1'b0} | {1'b0, b}`); a read of one bit of the result must
+            // depend only on that bit of each operand, not on the whole operation.
+            let bitwise = match &self.nodes[src.0 as usize].kind {
+                BuildKind::Op { op: op @ (NetOp::And | NetOp::Or | NetOp::Xor | NetOp::Xnor | NetOp::Not), args }
+                    // Only a strict part of the value: a slice of all its bits is the value
+                    // itself, and splitting it again would only add copies.
+                    if split
+                        && hi - lo + 1 < self.nodes[src.0 as usize].width
+                        && args.iter().all(|a| {
+                            self.nodes[a.0 as usize].width == self.nodes[src.0 as usize].width && a.0 as usize != i
+                        }) =>
+                {
+                    Some((op.clone(), args.clone()))
+                }
+                _ => None,
+            };
+            if let Some((op, args)) = bitwise {
+                let (four, loc) = (self.nodes[i].four_state, self.nodes[i].loc);
+                let parts: Vec<ValueId> = args.into_iter().map(|a| self.split_slice(a, hi, lo, four, loc)).collect();
+                self.nodes[i].kind = BuildKind::Op { op, args: parts };
+                return;
+            }
+            // A slice that reads other bits of itself through the concatenation it is part
+            // of (`T = {A[15:0], n}` with `A = T`: bits 23:16 of T are bits 15:8 of A, which
+            // are bits 15:8 of T again, and so on down to `n`). Each bit is followed to the
+            // value that really drives it; only a bit that comes back to itself is a loop.
+            if split && pieces.len() > 1 && pieces.iter().any(|(part, _, _)| part.0 as usize == i) {
+                if let Some(bits) = self.resolve_self_bits(i, src, hi, lo) {
+                    let (four, loc) = (self.nodes[i].four_state, self.nodes[i].loc);
+                    // Runs of consecutive bits of one value become one slice, most significant first.
+                    let mut runs: Vec<(ValueId, u32, u32)> = Vec::new();
+                    for (v, b) in bits {
+                        match runs.last_mut() {
+                            Some((rv, rhi, _)) if *rv == v && *rhi + 1 == b => *rhi = b,
+                            _ => runs.push((v, b, b)),
+                        }
+                    }
+                    let mut parts: Vec<ValueId> = runs
+                        .into_iter()
+                        .map(|(v, h, l)| {
+                            if l == 0 && h + 1 == self.nodes[v.0 as usize].width {
+                                v
+                            } else {
+                                self.split_slice(v, h, l, four, loc)
+                            }
+                        })
+                        .collect();
+                    parts.reverse();
+                    self.nodes[i].kind = if parts.len() == 1 {
+                        BuildKind::Alias(parts[0])
+                    } else {
+                        BuildKind::Op { op: NetOp::Concat, args: parts }
+                    };
+                    return;
+                }
+            }
             if split && pieces.len() > 1 && pieces.iter().all(|(part, _, _)| part.0 as usize != i) {
                 let (four, loc) = (self.nodes[i].four_state, self.nodes[i].loc);
                 let mut parts: Vec<ValueId> =
@@ -834,6 +898,69 @@ impl NetBuilder {
                 self.nodes[i].kind = BuildKind::Op { op: NetOp::Slice { hi, lo }, args: vec![src] };
             }
         }
+    }
+
+    /// One step back from bit `b` of `v` to the value bit it is a copy of, if any.
+    fn bit_origin(&self, v: ValueId, b: u32) -> Option<(ValueId, u32)> {
+        let node = &self.nodes[v.0 as usize];
+        match &node.kind {
+            BuildKind::Alias(t) if self.nodes[t.0 as usize].width == node.width => Some((*t, b)),
+            BuildKind::Op { op: NetOp::Slice { lo, .. }, args } => Some((args[0], b + lo)),
+            BuildKind::Op { op: NetOp::ZeroExt { .. } | NetOp::SignExt { .. }, args }
+                if b < self.nodes[args[0].0 as usize].width =>
+            {
+                Some((args[0], b))
+            }
+            BuildKind::Op { op: NetOp::Concat, args } => {
+                let mut base = 0u32;
+                for part in args.iter().rev() {
+                    let w = self.nodes[part.0 as usize].width;
+                    if b < base + w {
+                        return Some((*part, b - base));
+                    }
+                    base += w;
+                }
+                None
+            }
+            _ => None,
+        }
+    }
+
+    /// Where each bit of slice node `i` (bits `hi:lo` of `src`) really comes from, from bit
+    /// `lo` up, following copies through `src` and, when they lead back to `i` itself, on
+    /// through the bits of `i` they name. `None` when a bit leads back to itself (a real
+    /// loop) or the chain is too long.
+    fn resolve_self_bits(&self, i: usize, src: ValueId, hi: u32, lo: u32) -> Option<Vec<(ValueId, u32)>> {
+        let width = hi - lo + 1;
+        if width > 4096 {
+            return None;
+        }
+        let mut out = Vec::with_capacity(width as usize);
+        for k in 0..width {
+            let (mut v, mut b) = (src, lo + k);
+            let mut seen_self: Vec<u32> = vec![k];
+            let mut steps = 0u32;
+            loop {
+                steps += 1;
+                if steps > 100_000 {
+                    return None;
+                }
+                match self.bit_origin(v, b) {
+                    Some((nv, nb)) if nv.0 as usize == i => {
+                        // Bit `nb` of the slice itself: continue from where that bit comes from.
+                        if seen_self.contains(&nb) {
+                            return None;
+                        }
+                        seen_self.push(nb);
+                        (v, b) = (src, lo + nb);
+                    }
+                    Some((nv, nb)) => (v, b) = (nv, nb),
+                    None => break,
+                }
+            }
+            out.push((v, b));
+        }
+        Some(out)
     }
 
     /// Bits `hi:lo` of `src`, as one shared node.

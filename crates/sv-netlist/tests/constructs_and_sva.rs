@@ -1627,3 +1627,68 @@ endmodule
     );
     assert!(matches!(ext_res.as_slice(), [Ok(sv_netlist::Compiled::Check(_))]), "{ext_res:?}");
 }
+
+#[test]
+fn bitwise_op_of_shifted_vectors_is_not_a_loop() {
+    // Vectorized code (CIRCT's output for a leading-zero counter): `g0` feeds only bit 0 of
+    // `v` and reads only bit 1 of it, which holds `g`. No bit depends on itself.
+    let src = r#"
+module lzc (input logic [2:0] in_i, output logic [1:0] cnt_o, output logic empty_o);
+  wire g; wire g0;
+  wire [1:0] v = {g, 1'h0} | {1'h0, g0};
+  assign g0 = v[1] | in_i[2];
+  assign g = in_i[0] | in_i[1];
+  assign cnt_o = {~v[1], v[1] & ~in_i[0]};
+  assign empty_o = ~v[0];
+endmodule
+"#;
+    let nl = expect_lowered(lower_src(src));
+    let mut sim = NetlistSim::new(&nl);
+    for x in 0i128..8 {
+        sim.set_u("in_i", x);
+        let g = (x & 1) | ((x >> 1) & 1);
+        let g0 = g | ((x >> 2) & 1);
+        assert_eq!(sim.out_i("empty_o"), 1 - g0, "in_i={x}");
+        assert_eq!(sim.out_i("cnt_o"), ((1 - g) << 1) | (g & (1 - (x & 1))), "in_i={x}");
+    }
+}
+
+#[test]
+fn bitwise_op_real_loop_is_still_a_loop() {
+    // A real loop through a bitwise operation is still one.
+    let real = "module m (input logic a, output logic [1:0] y); assign y = {y[0], a} | {1'b0, y[1]}; endmodule";
+    assert!(matches!(lower_src(real), LowerOutcome::Error(_)), "y[0] <- y[1] <- y[0] is a loop");
+}
+
+#[test]
+fn shift_chain_through_alias_is_not_a_loop() {
+    // Quartus lpm_divide: a vector built from its own lower bits through an alias.
+    let a = "module m (input logic [7:0] d, output logic [15:0] y);\n  wire [15:0] D, Dt;\n  assign D = Dt, Dt = {D[7:0], d};\n  assign y = D;\nendmodule\n";
+    let nl = expect_lowered(lower_src(a));
+    let mut sim = NetlistSim::new(&nl);
+    sim.set_u("d", 0x5a);
+    assert_eq!(sim.out_i("y"), 0x5a5a);
+}
+
+#[test]
+fn or_chain_inside_one_vector_is_not_a_loop() {
+    // Each bit ORs the bit below it: a prefix OR kept in one vector.
+    let a = "module m (input logic [3:0] d, output logic [3:0] y);\n  wire [3:0] s;\n  assign s = {(s[2] | d[3]), (s[1] | d[2]), (s[0] | d[1]), d[0]};\n  assign y = s;\nendmodule\n";
+    let nl = expect_lowered(lower_src(a));
+    let mut sim = NetlistSim::new(&nl);
+    sim.set_u("d", 2);
+    assert_eq!(sim.out_i("y"), 0xe);
+}
+
+#[test]
+fn long_shift_chain_through_alias_is_not_a_loop() {
+    // Nine stages of eight bits, as in a Quartus lpm_divide: bit k+8 is bit k, down to `n`.
+    let a = "module m (input logic [7:0] n, output logic [71:0] y);\n  wire [71:0] A, T;\n  assign A = T, T = {A[63:0], n};\n  assign y = A;\nendmodule\n";
+    let nl = expect_lowered(lower_src(a));
+    let mut sim = NetlistSim::new(&nl);
+    sim.set_u("n", 0xa5);
+    assert_eq!(sim.out_i("y"), 0xa5a5_a5a5_a5a5_a5a5_a5);
+    // A bit that names itself is still a loop.
+    let real = "module m (input logic [7:0] n, output logic [15:0] y);\n  wire [15:0] A, T;\n  assign A = T, T = {A[15:8], n};\n  assign y = A;\nendmodule\n";
+    assert!(matches!(lower_src(real), LowerOutcome::Error(_)), "bits 15:8 of T are themselves");
+}

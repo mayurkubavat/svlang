@@ -138,6 +138,11 @@ pub struct Options {
     /// A reset condition the model holds true for its first steps and false ever after
     /// ([`Reset`]). `None` by default: the design's reset is an input like any other.
     pub reset: Option<Reset>,
+    /// Give every register and latch without a known initial value the value 0 in the first
+    /// step, as a simulator that zeroes its state at time 0 does (Verilator's `--x-initial 0`).
+    /// Two designs compared this way start from the same state even when they have no reset.
+    /// Off by default (such a register starts free); `SVLANG_BTOR2_ZERO_INIT=1` turns it on.
+    pub zero_init: bool,
 }
 
 /// A reset that the model applies: `value` is true in each of the first `steps` model steps
@@ -180,6 +185,7 @@ impl Default for Options {
             both_edges: false,
             clocks: Vec::new(),
             reset: None,
+            zero_init: std::env::var("SVLANG_BTOR2_ZERO_INIT").is_ok_and(|v| v == "1"),
         }
     }
 }
@@ -604,8 +610,8 @@ impl<'n> Writer<'n> {
         }
         let n = self.computed_regs.len();
         let before = self.state(w, &format!("{}_reg_{n}", self.opts.name_prefix));
-        if let Some(init) = st.init.as_ref().filter(|c| c.known()) {
-            let c = self.konst(bits(init, w));
+        if let Some(init) = self.init_bits(st) {
+            let c = self.konst(init);
             let srt = self.sort(w);
             self.line(format!("init {srt} {before} {c}"));
         }
@@ -1094,8 +1100,8 @@ impl<'n> Writer<'n> {
         }
         let held = self.state(w, &format!("{}_latch_{}", self.opts.name_prefix, self.latches));
         self.latches += 1;
-        if let Some(init) = st.init.as_ref().filter(|c| c.known()) {
-            let c = self.konst(bits(init, w));
+        if let Some(init) = self.init_bits(st) {
+            let c = self.konst(init);
             let srt = self.sort(w);
             self.line(format!("init {srt} {held} {c}"));
         }
@@ -1309,6 +1315,16 @@ impl<'n> Writer<'n> {
         self.line(body);
     }
 
+    /// The bits of a register's initial value: its own when known, else 0 with
+    /// [`Options::zero_init`], else none (it starts free).
+    fn init_bits(&self, st: &sv_netlist::State) -> Option<String> {
+        match st.init.as_ref().filter(|c| c.known()) {
+            Some(init) => Some(bits(init, st.width)),
+            None if self.opts.zero_init => Some("0".repeat(st.width as usize)),
+            None => None,
+        }
+    }
+
     /// A `constraint` line, named when it has a name: an assumption's label, or
     /// `<prefix>_reset` / `<prefix>_clock` for the ones the model adds, so a tool can
     /// tell which assumption a conflict comes from.
@@ -1328,8 +1344,8 @@ impl<'n> Writer<'n> {
         // (the reference parser refuses the other order), and a register can be
         // reached from logic long before its own turn below. So the constants go first.
         for st in &nl.states {
-            if let Some(init) = st.init.as_ref().filter(|c| c.known()) {
-                self.konst(bits(init, st.width));
+            if let Some(init) = self.init_bits(st) {
+                self.konst(init);
             }
         }
         self.clock_waves();
@@ -1377,8 +1393,8 @@ impl<'n> Writer<'n> {
             }
             let s = self.value(st.out)?;
             // An initial value with X or Z bits: no init (any value).
-            if let Some(init) = st.init.as_ref().filter(|c| c.known()) {
-                let c = self.konst(bits(init, st.width));
+            if let Some(init) = self.init_bits(st) {
+                let c = self.konst(init);
                 let srt = self.sort(st.width);
                 self.line(format!("init {srt} {s} {c}"));
             }
