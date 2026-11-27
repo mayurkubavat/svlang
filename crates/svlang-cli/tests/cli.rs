@@ -132,6 +132,11 @@ fn stages_says_how_far_a_design_gets() {
 
     let (_, f) = source("stages-inout", "pad.sv", "module pad (inout wire io, input logic a);\nendmodule\n");
     let o = svlang(&["stages", f.to_str().unwrap()]);
+    assert_eq!(o.status.code(), Some(0), "{}", stderr(&o));
+    assert!(stdout(&o).contains("\"blocked_at\": null"), "{}", stdout(&o));
+
+    let (_, f) = source("stages-unsup", "wand_net.sv", "module wand_net (input logic a); wand w; endmodule\n");
+    let o = svlang(&["stages", f.to_str().unwrap()]);
     assert_eq!(o.status.code(), Some(1));
     let out = stdout(&o);
     assert!(out.contains("\"blocked_at\": \"lower\""), "{out}");
@@ -283,4 +288,30 @@ fn filelist_map_and_oracle_check_subcommands_work() {
     let o = svlang(&["lsp", "--version"]);
     assert_eq!(o.status.code(), Some(0), "{}", stderr(&o));
     assert!(stdout(&o).starts_with("svlang lsp "), "{}", stdout(&o));
+}
+
+#[test]
+fn inout_port_net_type_validation() {
+    for (tag, src) in [
+        ("inout-var", "module bad(inout var logic [3:0] p); endmodule\n"),
+        ("inout-reg", "module bad(inout reg [3:0] p); endmodule\n"),
+        ("inout-bit", "module bad(inout bit [3:0] p); endmodule\n"),
+        ("inout-nonansi-reg", "module bad(p); inout p; reg [3:0] p; endmodule\n"),
+    ] {
+        let (_, f) = source(tag, "bad.sv", src);
+        let o = svlang(&["check", f.to_str().unwrap()]);
+        assert_eq!(o.status.code(), Some(1), "{tag}: stdout={} stderr={}", stdout(&o), stderr(&o));
+        let combined = stdout(&o) + &stderr(&o);
+        assert!(combined.contains("inout port") && combined.contains("must be a net type"), "{tag}: {combined}");
+    }
+
+    for (tag, src) in [
+        ("inout-wire", "module ok(inout wire [3:0] p); endmodule\n"),
+        ("inout-struct", "typedef struct packed { logic a; logic b; } s_t;\nmodule ok(inout s_t p); endmodule\n"),
+        ("inout-nonansi-logic", "module ok(p); inout [3:0] p; logic [3:0] p; endmodule\n"),
+    ] {
+        let (_, f) = source(tag, "ok.sv", src);
+        let o = svlang(&["check", f.to_str().unwrap()]);
+        assert_eq!(o.status.code(), Some(0), "{tag}: stdout={} stderr={}", stdout(&o), stderr(&o));
+    }
 }

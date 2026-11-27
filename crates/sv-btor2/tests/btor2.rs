@@ -542,3 +542,42 @@ fn a_reset_is_held_for_the_first_steps() {
     assert_eq!(lines(&m.btor2, "constraint").len(), 1);
     assert!(!lines(&m.btor2, "state").iter().any(|l| l.ends_with(" svlang_step")));
 }
+
+#[test]
+fn inout_ports_and_tristate_buses_emit_well_formed_btor2() {
+    let mut nl = netlist(
+        "module io_xcvr(\n\
+           input  logic       clk,\n\
+           inout  wire  [3:0] pad,\n\
+           input  logic       oe,\n\
+           input  logic [3:0] tx,\n\
+           output logic [3:0] rx,\n\
+           input  logic       oe_a,\n\
+           input  logic       oe_b,\n\
+           input  logic [3:0] da,\n\
+           input  logic [3:0] db,\n\
+           output logic [3:0] ibus_y\n\
+         );\n\
+           assign pad = oe ? tx : 4'bz;\n\
+           always_ff @(posedge clk) rx <= pad;\n\
+           wire [3:0] ibus;\n\
+           assign ibus = oe_a ? da : 4'bz;\n\
+           assign ibus = oe_b ? db : 4'bz;\n\
+           assign ibus_y = ibus;\n\
+         endmodule\n",
+    );
+    nl.add_tristate_checks(true, true, 1);
+    let mut opts = Options::default();
+    opts.trace_outputs = true;
+    let m = write(&nl, &opts).unwrap();
+    well_formed(&m.btor2);
+    let in_syms: Vec<&str> = lines(&m.btor2, "input").into_iter().filter_map(|l| l.split_whitespace().nth(3)).collect();
+    assert!(in_syms.contains(&"io_xcvr.pad$in"), "{in_syms:?}");
+    let out_syms: Vec<&str> =
+        lines(&m.btor2, "output").into_iter().filter_map(|l| l.split_whitespace().nth(3)).collect();
+    assert!(out_syms.contains(&"io_xcvr.pad$oe"), "{out_syms:?}");
+    assert!(out_syms.contains(&"io_xcvr.pad$out"), "{out_syms:?}");
+    let bad_syms: Vec<&str> = lines(&m.btor2, "bad").into_iter().filter_map(|l| l.split_whitespace().nth(3)).collect();
+    assert!(bad_syms.contains(&"io_xcvr.ibus._tri_contention"), "{bad_syms:?}");
+    assert!(bad_syms.contains(&"io_xcvr.ibus._tri_floating"), "{bad_syms:?}");
+}

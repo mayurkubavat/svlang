@@ -11,7 +11,7 @@ use sv_semantic::{
 use sv_syntax::{Child, NodeId, SyntaxKind, Tree};
 
 use crate::builder::{BuildKind, NetBuilder};
-use crate::drivers::{resolve_all_signals, DriverKind, SignalSlot};
+use crate::drivers::{resolve_all_signals, DriverKind, NetEquiv, SignalSlot, TopInoutSplit, TriEnable};
 use crate::expr_lower::{
     addr_bits, compute_packed_slice_offset, compute_unpacked_index_bounds, extract_lsb_bit0,
     prepare_streaming_unpack_rhs, ExprLowerer, FuncInliner, ObjSlot, ObjVal,
@@ -22,13 +22,10 @@ use crate::ir::{
 };
 
 #[derive(Clone, Debug)]
-pub(crate) struct PendingAlias {
-    pub sidx_a: usize,
-    pub lo_a: u32,
-    pub sidx_b: usize,
-    pub lo_b: u32,
-    pub width: u32,
-    pub loc: Loc,
+enum TriObjVal {
+    Packed { en: TriEnable, data: ValueId },
+    Struct(Vec<(String, TriObjVal)>),
+    Elems { left: i128, right: i128, elems: Vec<TriObjVal> },
 }
 
 pub(crate) type ProcRootInfo = (usize, NodeId, InstanceId, String, Vec<(String, CVal)>);
@@ -58,7 +55,7 @@ pub(crate) struct DesignLowerer<'a> {
     pub slot_placeholders: std::rc::Rc<Vec<ValueId>>,
     pub sym_slots: std::rc::Rc<FxMap<SymbolId, ObjSlot>>,
     pub eligible_memories: FxSet<SymbolId>,
-    pub pending_aliases: Vec<PendingAlias>,
+    pub net_equivs: Vec<NetEquiv>,
     pub next_local_id: u32,
     pub call_stack: Vec<(usize, NodeId)>,
     /// Declarators under `(* anyseq *)` / `(* anyconst *)`, by (tree, node); built on first use.
@@ -113,7 +110,7 @@ pub fn lower_design(trees: &[Tree], design: &ElaboratedDesign, config: &LowerCon
         slot_placeholders: Default::default(),
         sym_slots: Default::default(),
         eligible_memories,
-        pending_aliases: Vec::new(),
+        net_equivs: Vec::new(),
         next_local_id: 0,
         call_stack: Vec::new(),
         free_attrs: None,
@@ -147,7 +144,6 @@ pub fn lower_design(trees: &[Tree], design: &ElaboratedDesign, config: &LowerCon
 
     // Pass 3: lower port connections, continuous assigns, gates, net aliases, and procedural blocks.
     lowerer.lower_instance_recursive(top_id);
-    lowerer.resolve_pending_aliases();
     lowerer.stitch_sourceless_blackbox_stubs(top_id);
     if !lowerer.builder.diags.is_empty() {
         return classify_diags(lowerer.builder.diags);
@@ -221,7 +217,7 @@ pub fn lower_design(trees: &[Tree], design: &ElaboratedDesign, config: &LowerCon
         .collect();
     let mut read_by_properties = prop_expr_values.clone();
     read_by_properties.extend(property_enables.iter().copied());
-    resolve_all_signals(&lowerer.slots, &mut lowerer.builder, &read_by_properties);
+    resolve_all_signals(&lowerer.slots, &lowerer.net_equivs, &mut lowerer.builder, &read_by_properties);
     if !lowerer.builder.diags.is_empty() {
         return classify_diags(lowerer.builder.diags);
     }
@@ -247,6 +243,9 @@ pub fn lower_design(trees: &[Tree], design: &ElaboratedDesign, config: &LowerCon
     match lowerer.builder.finalize(sva_arena, properties, prop_expr_values, property_enables, symbol_values) {
         Ok(mut netlist) => {
             netlist.property_names = property_names;
+            if config.tristate_contention_checks || config.tristate_floating_checks {
+                netlist.add_tristate_checks(config.tristate_contention_checks, config.tristate_floating_checks, 0);
+            }
             if let Some(min_words) = config.bbox_array_words {
                 netlist.black_box_memories(min_words);
             }
@@ -335,6 +334,7 @@ impl<'a> DesignLowerer<'a> {
             drivers: Vec::new(),
             free: if cut.is_some() { FreeKind::Cut } else { FreeKind::Undriven },
             pull: None,
+            top_inout: None,
         });
         std::rc::Rc::make_mut(&mut self.slot_placeholders).push(placeholder);
         self.builder.traces.push(TraceSignal { name, width, signed, four_state, value: placeholder, loc });
@@ -380,7 +380,8 @@ impl<'a> DesignLowerer<'a> {
         Ok(())
     }
 
-    /// A black box: its ports only. Each output is a free value (a cut point).
+    /// A black box: its ports only. Each output is a free value (a cut point), and each `inout`
+    /// contributes unconstrained `(bb$oe, bb$out)` tri-state cut-points to its connected net.
     fn alloc_black_box(&mut self, inst_id: InstanceId) {
         if self.design.instance(inst_id).is_blackbox_stub {
             return;
@@ -390,15 +391,59 @@ impl<'a> DesignLowerer<'a> {
             let sym = self.design.symbol(sid);
             let first_slot = self.slots.len();
             self.alloc_symbol(sid, false);
-            if !matches!(sym.kind, SymbolKind::Port { dir: PortDir::Output, .. }) {
+            let SymbolKind::Port { dir: dir @ (PortDir::Output | PortDir::Inout), .. } = sym.kind else {
                 continue;
-            }
+            };
             if self.slots.len() == first_slot && self.builder.diags.is_empty() {
-                self.builder
-                    .unsup(sym.loc, format!("output port '{}' of a black box is not a packed value", sym.full_path));
+                self.builder.unsup(
+                    sym.loc,
+                    format!("{} port '{}' of a black box is not a packed value", dir.as_str(), sym.full_path),
+                );
             }
-            for slot in &mut self.slots[first_slot..] {
-                slot.free = FreeKind::Cut;
+            if dir == PortDir::Output {
+                for slot in &mut self.slots[first_slot..] {
+                    slot.free = FreeKind::Cut;
+                }
+            } else {
+                let end_slot = self.slots.len();
+                for sidx in first_slot..end_slot {
+                    let w = self.slots[sidx].width;
+                    let four = self.slots[sidx].four_state;
+                    let loc = self.slots[sidx].loc;
+                    let base_name = self.slots[sidx].name.clone();
+                    let oe_sig = format!("{base_name}$oe");
+                    let out_sig = format!("{base_name}$out");
+                    let oe_uid = self.builder.undriven.len();
+                    let oe_val =
+                        self.builder.alloc_raw(w, false, false, BuildKind::Undriven(oe_uid), Some(oe_sig.clone()), loc);
+                    self.builder.undriven.push(UndrivenSlice {
+                        signal: oe_sig,
+                        hi: w - 1,
+                        lo: 0,
+                        value: oe_val,
+                        loc,
+                        free: FreeKind::Cut,
+                    });
+                    let out_uid = self.builder.undriven.len();
+                    let out_val = self.builder.alloc_raw(
+                        w,
+                        false,
+                        four,
+                        BuildKind::Undriven(out_uid),
+                        Some(out_sig.clone()),
+                        loc,
+                    );
+                    self.builder.undriven.push(UndrivenSlice {
+                        signal: out_sig,
+                        hi: w - 1,
+                        lo: 0,
+                        value: out_val,
+                        loc,
+                        free: FreeKind::Cut,
+                    });
+                    let en = if w == 1 { TriEnable::Bit(oe_val) } else { TriEnable::Mask(oe_val) };
+                    self.slots[sidx].add_tristate_driver(0, w - 1, out_val, en, DriverKind::BlackBoxInout, loc);
+                }
             }
         }
     }
@@ -562,15 +607,31 @@ impl<'a> DesignLowerer<'a> {
                     std::rc::Rc::make_mut(&mut self.sym_slots).insert(sid, ObjSlot::Const(cv, sym.ty.is_four_state()));
                 }
                 SymbolKind::Port { dir, is_net } => {
-                    if matches!(dir, PortDir::Inout | PortDir::Ref) {
+                    if *dir == PortDir::Ref {
                         self.builder.unsup(
                             sym.loc,
                             format!("{} port '{}' is not supported in RTL netlist", dir.as_str(), sym.full_path),
                         );
                         return;
                     }
+                    if *dir == PortDir::Inout && !*is_net {
+                        self.builder
+                            .err(sym.loc, format!("inout port '{}' must be a net type, not a variable", sym.full_path));
+                        return;
+                    }
+                    let port_net_kw = self.design.port_net_types.get(&sid).cloned();
+                    if let Some(ref kw) = port_net_kw {
+                        if matches!(kw.as_str(), "trireg" | "wand" | "wor" | "triand" | "trior") {
+                            self.builder.unsup(
+                                sym.loc,
+                                format!("multi-resolution net type '{kw}' on '{}' is not supported", sym.full_path),
+                            );
+                            return;
+                        }
+                    }
                     let port_is_net = if is_top && *dir == PortDir::Input { false } else { *is_net };
                     let top_dir = is_top.then_some(*dir);
+                    let first_slot = self.slots.len();
                     if let Some(obj_slot) = self.alloc_type_slot(
                         Some(sid),
                         &sym.full_path,
@@ -580,6 +641,12 @@ impl<'a> DesignLowerer<'a> {
                         top_dir,
                         sym.loc,
                     ) {
+                        if matches!(port_net_kw.as_deref(), Some("tri0" | "tri1")) {
+                            let pull_hi = port_net_kw.as_deref() == Some("tri1");
+                            for slot in &mut self.slots[first_slot..] {
+                                slot.pull = Some(pull_hi);
+                            }
+                        }
                         std::rc::Rc::make_mut(&mut self.sym_slots).insert(sid, obj_slot);
                     }
                 }
@@ -591,16 +658,24 @@ impl<'a> DesignLowerer<'a> {
                     }
                 }
                 SymbolKind::Net { net_type } => {
-                    if matches!(net_type.as_str(), "tri0" | "tri1" | "trireg" | "wand" | "wor" | "triand" | "trior") {
+                    if matches!(net_type.as_str(), "trireg" | "wand" | "wor" | "triand" | "trior") {
                         self.builder.unsup(
                             sym.loc,
                             format!("multi-resolution net type '{net_type}' on '{}' is not supported", sym.full_path),
                         );
                         return;
                     }
+                    let net_kw = net_type.clone();
+                    let first_slot = self.slots.len();
                     if let Some(obj_slot) =
                         self.alloc_type_slot(Some(sid), &sym.full_path, &sym.name, &sym.ty, true, None, sym.loc)
                     {
+                        if matches!(net_kw.as_str(), "tri0" | "tri1") {
+                            let pull_hi = net_kw == "tri1";
+                            for slot in &mut self.slots[first_slot..] {
+                                slot.pull = Some(pull_hi);
+                            }
+                        }
                         std::rc::Rc::make_mut(&mut self.sym_slots).insert(sid, obj_slot);
                     }
                 }
@@ -656,6 +731,22 @@ impl<'a> DesignLowerer<'a> {
                             value: out_val,
                             loc,
                         });
+                    }
+                    PortDir::Inout => {
+                        let in_name = format!("{port_rel_name}$in");
+                        let pidx = self.builder.inputs.len();
+                        let in_val =
+                            self.builder.alloc_raw(w, s, four, BuildKind::Input(pidx), Some(in_name.clone()), loc);
+                        self.builder.inputs.push(PortInput {
+                            name: in_name,
+                            width: w,
+                            signed: s,
+                            four_state: four,
+                            value: in_val,
+                            loc,
+                        });
+                        self.slots[sidx].top_inout =
+                            Some(TopInoutSplit { port_rel_name: port_rel_name.to_string(), in_val });
                     }
                     _ => {}
                 }
@@ -752,14 +843,17 @@ impl<'a> DesignLowerer<'a> {
             if matches!(sym.kind, SymbolKind::Param { .. } | SymbolKind::Genvar) {
                 continue;
             }
-            if let SymbolKind::Net { net_type } = &sym.kind {
-                if net_type == "supply0" || net_type == "supply1" {
-                    if let Some(ObjSlot::Packed(sidx)) = self.sym_slots.get(&sid).cloned() {
-                        let w = self.slots[sidx].width;
-                        let cv = CVal::new(w, false, if net_type == "supply1" { -1 } else { 0 });
-                        let v = self.builder.alloc_const(cv, true, sym.loc);
-                        self.slots[sidx].add_driver(0, w - 1, v, DriverKind::ContinuousAssign, sym.loc);
-                    }
+            let net_kw_opt = match &sym.kind {
+                SymbolKind::Net { net_type } => Some(net_type.as_str()),
+                SymbolKind::Port { .. } => self.design.port_net_types.get(&sid).map(|s| s.as_str()),
+                _ => None,
+            };
+            if let Some(net_type @ ("supply0" | "supply1")) = net_kw_opt {
+                if let Some(ObjSlot::Packed(sidx)) = self.sym_slots.get(&sid).cloned() {
+                    let w = self.slots[sidx].width;
+                    let cv = CVal::new(w, false, if net_type == "supply1" { -1 } else { 0 });
+                    let v = self.builder.alloc_const(cv, true, sym.loc);
+                    self.slots[sidx].add_driver(0, w - 1, v, DriverKind::ContinuousAssign, sym.loc);
                 }
             }
             let Some((init_tree, init_node)) = sym.init_node else { continue };
@@ -926,7 +1020,9 @@ impl<'a> DesignLowerer<'a> {
             return;
         };
         self.flush_expr_diags(binder.diags);
-        if self.reject_tristate_z(&arena, eid) {
+        if expr_may_contain_z(&arena, eid) {
+            let Some(tri_val) = self.eval_tristate_rhs(&arena, eid) else { return };
+            self.drive_obj_slot_tristate(slot, tri_val, DriverKind::ContinuousAssign, loc);
             return;
         }
         let Some(rhs_val) = self.eval_comb_expr(&arena, eid) else { return };
@@ -1103,6 +1199,48 @@ impl<'a> DesignLowerer<'a> {
                         }
                     }
                 }
+                PortDir::Inout => {
+                    match conn_opt {
+                        Some(conn) if conn.implicit_named || conn.wildcard => {
+                            let parent_inst = self.design.instance(parent_id);
+                            if let Some(psid) = parent_inst.resolve_lexical(&conn.scope_prefix, &port_name) {
+                                if let Some(pslot) = self.sym_slots.get(&psid).cloned() {
+                                    let p_is_net = is_net_symbol(self.design, psid);
+                                    self.equate_inout_slots(&child_slot, &pslot, p_is_net, conn.loc);
+                                }
+                            } else if !conn.wildcard {
+                                self.builder.err(
+                                    conn.loc,
+                                    format!("undeclared identifier '{port_name}' in implicit port connection"),
+                                );
+                            }
+                        }
+                        Some(conn) if conn.expr.is_some() => {
+                            let (tr, nd) = conn.expr.expect("checked Some");
+                            self.check_modport_lhs_legality(parent_id, tr, nd, &conn.scope_prefix, conn.loc);
+                            let mut arena = ExprArena::new();
+                            let eid_opt = {
+                                let mut binder = ExprBinder::new(
+                                    self.trees,
+                                    self.design,
+                                    parent_id,
+                                    &conn.scope_prefix,
+                                    &conn.gen_consts,
+                                    &mut arena,
+                                );
+                                let out = binder.bind_self(tr, nd);
+                                self.flush_expr_diags(binder.diags);
+                                out
+                            };
+                            if let Some(eid) = eid_opt {
+                                self.equate_inout_bound_expr(&arena, eid, &child_slot, conn.loc);
+                            }
+                        }
+                        _ => {
+                            // Explicitly unconnected `.io()` leaves the child `inout` net floating locally.
+                        }
+                    }
+                }
                 _ => {}
             }
         }
@@ -1175,7 +1313,65 @@ impl<'a> DesignLowerer<'a> {
                     continue;
                 };
                 self.flush_expr_diags(binder.diags);
-                if self.reject_tristate_z(&arena, rhs_eid) {
+                if expr_may_contain_z(&arena, rhs_eid) {
+                    let Some(TriObjVal::Packed { en: rhs_en, data: rhs_d }) = self.eval_tristate_rhs(&arena, rhs_eid)
+                    else {
+                        self.builder.unsup(loc, "unsupported aggregate tri-state streaming assignment");
+                        continue;
+                    };
+                    let Some(rv) =
+                        prepare_streaming_unpack_rhs(&mut self.builder, &ObjVal::Packed(rhs_d), &stream_lhs, loc)
+                    else {
+                        continue;
+                    };
+                    let unpacked_mask = match rhs_en {
+                        TriEnable::Mask(m) => {
+                            prepare_streaming_unpack_rhs(&mut self.builder, &ObjVal::Packed(m), &stream_lhs, loc)
+                        }
+                        _ => None,
+                    };
+                    let (total_w, _, four) = self.builder.node_shape(rv);
+                    let mut hi_cursor = total_w;
+                    for &part_eid in &stream_lhs.parts {
+                        let pw = arena.get(part_eid).ty.bit_width().unwrap_or(1);
+                        if hi_cursor < pw {
+                            break;
+                        }
+                        let lo = hi_cursor - pw;
+                        let slice = self.builder.alloc_op(
+                            NetOp::Slice { hi: hi_cursor - 1, lo },
+                            vec![rv],
+                            pw,
+                            false,
+                            four,
+                            loc,
+                        );
+                        let part_en = if let Some(um) = unpacked_mask {
+                            let ms = self.builder.alloc_op(
+                                NetOp::Slice { hi: hi_cursor - 1, lo },
+                                vec![um],
+                                pw,
+                                false,
+                                false,
+                                loc,
+                            );
+                            if pw == 1 {
+                                TriEnable::Bit(ms)
+                            } else {
+                                TriEnable::Mask(ms)
+                            }
+                        } else {
+                            rhs_en
+                        };
+                        self.drive_bound_lhs_tristate(
+                            &arena,
+                            part_eid,
+                            TriObjVal::Packed { en: part_en, data: slice },
+                            DriverKind::ContinuousAssign,
+                            loc,
+                        );
+                        hi_cursor = lo;
+                    }
                     continue;
                 }
                 let Some(rhs_val) = self.eval_comb_expr(&arena, rhs_eid) else { continue };
@@ -1213,7 +1409,9 @@ impl<'a> DesignLowerer<'a> {
                 continue;
             };
             self.flush_expr_diags(binder.diags);
-            if self.reject_tristate_z(&arena, rhs_eid) {
+            if expr_may_contain_z(&arena, rhs_eid) {
+                let Some(tri_val) = self.eval_tristate_rhs(&arena, rhs_eid) else { continue };
+                self.drive_bound_lhs_tristate(&arena, lhs_eid, tri_val, DriverKind::ContinuousAssign, loc);
                 continue;
             }
             let Some(rhs_val) = self.eval_comb_expr(&arena, rhs_eid) else { continue };
@@ -1342,7 +1540,9 @@ impl<'a> DesignLowerer<'a> {
                         b.alloc_op(NetOp::Slice { hi: bit, lo: bit }, vec![v], 1, false, f4, loc)
                     }
                 };
-                let mut bits_msb_first = Vec::with_capacity(arr_len as usize);
+                let mut data_msb_first = Vec::with_capacity(arr_len as usize);
+                let mut cond_msb_first = Vec::with_capacity(arr_len as usize);
+                let en_is_scalar = self.builder.node_shape(en_v).0 == 1;
                 for k in (0..arr_len).rev() {
                     let ib = slice_bit(&mut self.builder, in_v, k);
                     let eb = slice_bit(&mut self.builder, en_v, k);
@@ -1356,19 +1556,24 @@ impl<'a> DesignLowerer<'a> {
                     } else {
                         eb
                     };
-                    let z1 = self.builder.alloc_const(CVal::all_z(1, false), true, loc);
-                    let tri = self.builder.alloc_op(NetOp::Mux, vec![cond_b, data_b, z1], 1, false, true, loc);
-                    bits_msb_first.push(tri);
+                    data_msb_first.push(data_b);
+                    cond_msb_first.push(cond_b);
                 }
-                let out_val = if arr_len == 1 {
-                    bits_msb_first[0]
+                let out_data = if arr_len == 1 {
+                    data_msb_first[0]
                 } else {
-                    self.builder.alloc_op(NetOp::Concat, bits_msb_first, arr_len, false, true, loc)
+                    self.builder.alloc_op(NetOp::Concat, data_msb_first, arr_len, false, true, loc)
                 };
-                self.drive_bound_lhs_continuous(
+                let out_en = if arr_len == 1 || en_is_scalar {
+                    TriEnable::Bit(cond_msb_first[0])
+                } else {
+                    let en_mask = self.builder.alloc_op(NetOp::Concat, cond_msb_first, arr_len, false, true, loc);
+                    TriEnable::Mask(en_mask)
+                };
+                self.drive_bound_lhs_tristate(
                     &arena,
                     out_e,
-                    ObjVal::Packed(out_val),
+                    TriObjVal::Packed { en: out_en, data: out_data },
                     DriverKind::ContinuousAssign,
                     loc,
                 );
@@ -1777,96 +1982,59 @@ impl<'a> DesignLowerer<'a> {
             self.builder.err(item.loc, "malformed 'alias' statement");
             return;
         }
-        if terms.len() > 2 {
-            self.builder.unsup(item.loc, "'alias' statement with more than 2 nets is not supported");
+        let mut arena = ExprArena::new();
+        let mut eids = Vec::with_capacity(terms.len());
+        {
+            let mut binder =
+                ExprBinder::new(self.trees, self.design, inst_id, &item.scope_prefix, &item.gen_consts, &mut arena);
+            for &term in &terms {
+                if let Some(eid) = binder.bind_self(item.tree, term) {
+                    eids.push(eid);
+                }
+            }
+            self.flush_expr_diags(binder.diags);
+        }
+        if eids.len() != terms.len() {
             return;
         }
-        let mut arena = ExprArena::new();
-        let mut binder =
-            ExprBinder::new(self.trees, self.design, inst_id, &item.scope_prefix, &item.gen_consts, &mut arena);
-        let a_opt = binder.bind_self(item.tree, terms[0]);
-        let b_opt = binder.bind_self(item.tree, terms[1]);
-        self.flush_expr_diags(binder.diags);
-        let (Some(a_eid), Some(b_eid)) = (a_opt, b_opt) else {
-            return;
-        };
-        let (Some(wa), Some(wb)) = (arena.get(a_eid).ty.bit_width(), arena.get(b_eid).ty.bit_width()) else {
+        let Some(w0) = arena.get(eids[0]).ty.bit_width() else {
             self.builder.unsup(item.loc, "'alias' target does not resolve to a packed net");
             return;
         };
-        if wa != wb || wa == 0 {
-            self.builder.err(item.loc, format!("'alias' nets must have equal non-zero width (got {wa} and {wb})"));
+        if w0 == 0 {
+            self.builder.err(item.loc, "'alias' nets must have non-zero width");
             return;
         }
-        let res_a = self.resolve_const_lhs_slice(&arena, a_eid, item.loc);
-        let res_b = self.resolve_const_lhs_slice(&arena, b_eid, item.loc);
-        let (Some((ObjSlot::Packed(sidx_a), lo_a, bit_wa)), Some((ObjSlot::Packed(sidx_b), lo_b, bit_wb))) =
-            (res_a, res_b)
-        else {
-            self.builder.unsup(item.loc, "'alias' expression cannot be resolved to a constant net slice");
-            return;
-        };
-        if bit_wa != wa || bit_wb != wb || !self.slots[sidx_a].is_net || !self.slots[sidx_b].is_net {
-            self.builder.unsup(item.loc, "'alias' requires net operands with constant slice bounds");
-            return;
+        let mut resolved = Vec::with_capacity(eids.len());
+        for &eid in &eids {
+            let Some(wi) = arena.get(eid).ty.bit_width() else {
+                self.builder.unsup(item.loc, "'alias' target does not resolve to a packed net");
+                return;
+            };
+            if wi != w0 {
+                self.builder.err(item.loc, format!("'alias' nets must have equal non-zero width (got {w0} and {wi})"));
+                return;
+            }
+            let Some((ObjSlot::Packed(sidx), lo, bit_w)) = self.resolve_const_lhs_slice(&arena, eid, item.loc) else {
+                self.builder.unsup(item.loc, "'alias' expression cannot be resolved to a constant net slice");
+                return;
+            };
+            if bit_w != w0 || !self.slots[sidx].is_net {
+                self.builder.unsup(item.loc, "'alias' requires net operands with constant slice bounds");
+                return;
+            }
+            resolved.push((sidx, lo));
         }
-        self.pending_aliases.push(PendingAlias { sidx_a, lo_a, sidx_b, lo_b, width: wa, loc: item.loc });
-    }
-
-    fn resolve_pending_aliases(&mut self) {
-        let pending = std::mem::take(&mut self.pending_aliases);
-        for pa in pending {
-            let hi_a = pa.lo_a + pa.width - 1;
-            let hi_b = pa.lo_b + pa.width - 1;
-            if pa.sidx_a == pa.sidx_b && pa.lo_a <= hi_b && pa.lo_b <= hi_a {
-                if pa.lo_a == pa.lo_b {
-                    continue;
-                }
-                self.builder.unsup(pa.loc, "self-overlapping 'alias' on the same net is not supported");
-                continue;
-            }
-            let a_driven = self.slots[pa.sidx_a].drivers.iter().any(|d| d.lo <= hi_a && pa.lo_a <= d.hi);
-            let b_driven = self.slots[pa.sidx_b].drivers.iter().any(|d| d.lo <= hi_b && pa.lo_b <= d.hi);
-            match (a_driven, b_driven) {
-                (true, false) => {
-                    let src_ph = self.slot_placeholders[pa.sidx_a];
-                    let src_val = if pa.lo_a == 0 && pa.width == self.slots[pa.sidx_a].width {
-                        src_ph
-                    } else {
-                        self.builder.alloc_op(
-                            NetOp::Slice { hi: hi_a, lo: pa.lo_a },
-                            vec![src_ph],
-                            pa.width,
-                            false,
-                            self.slots[pa.sidx_a].four_state,
-                            pa.loc,
-                        )
-                    };
-                    self.slots[pa.sidx_b].add_driver(pa.lo_b, hi_b, src_val, DriverKind::ContinuousAssign, pa.loc);
-                }
-                (false, true) => {
-                    let src_ph = self.slot_placeholders[pa.sidx_b];
-                    let src_val = if pa.lo_b == 0 && pa.width == self.slots[pa.sidx_b].width {
-                        src_ph
-                    } else {
-                        self.builder.alloc_op(
-                            NetOp::Slice { hi: hi_b, lo: pa.lo_b },
-                            vec![src_ph],
-                            pa.width,
-                            false,
-                            self.slots[pa.sidx_b].four_state,
-                            pa.loc,
-                        )
-                    };
-                    self.slots[pa.sidx_a].add_driver(pa.lo_a, hi_a, src_val, DriverKind::ContinuousAssign, pa.loc);
-                }
-                _ => {
-                    self.builder.unsup(
-                        pa.loc,
-                        "bidirectional or undriven 'alias' net statement is not supported in directional RTL netlist",
-                    );
-                }
-            }
+        let (sidx_0, lo_0) = resolved[0];
+        for &(sidx_k, lo_k) in &resolved[1..] {
+            self.net_equivs.push(NetEquiv {
+                sidx_a: sidx_0,
+                lo_a: lo_0,
+                sidx_b: sidx_k,
+                lo_b: lo_k,
+                width: w0,
+                loc: item.loc,
+            });
         }
     }
 
@@ -2010,6 +2178,35 @@ impl<'a> DesignLowerer<'a> {
         let sig = if whole { slot.name.clone() } else { format!("{}[{hi}:{lo}]", slot.name) };
         let signed = whole && slot.signed;
         let four = slot.four_state;
+        if slot.top_inout.is_some() {
+            let oe_sig = format!("{sig}$stub_oe");
+            let out_sig = format!("{sig}$stub_out");
+            let oe_uid = self.builder.undriven.len();
+            let oe_val =
+                self.builder.alloc_raw(w, false, false, BuildKind::Undriven(oe_uid), Some(oe_sig.clone()), loc);
+            self.builder.undriven.push(UndrivenSlice {
+                signal: oe_sig,
+                hi: w - 1,
+                lo: 0,
+                value: oe_val,
+                loc,
+                free: FreeKind::Cut,
+            });
+            let out_uid = self.builder.undriven.len();
+            let out_val =
+                self.builder.alloc_raw(w, signed, four, BuildKind::Undriven(out_uid), Some(out_sig.clone()), loc);
+            self.builder.undriven.push(UndrivenSlice {
+                signal: out_sig,
+                hi: w - 1,
+                lo: 0,
+                value: out_val,
+                loc,
+                free: FreeKind::Cut,
+            });
+            let en = if w == 1 { TriEnable::Bit(oe_val) } else { TriEnable::Mask(oe_val) };
+            self.slots[sidx].add_tristate_driver(lo, hi, out_val, en, DriverKind::BlackBoxInout, loc);
+            return;
+        }
         let uid = self.builder.undriven.len();
         let uval = self.builder.alloc_raw(w, signed, four, BuildKind::Undriven(uid), Some(sig.clone()), loc);
         self.builder.undriven.push(UndrivenSlice {
@@ -2097,6 +2294,689 @@ impl<'a> DesignLowerer<'a> {
                 } else {
                     self.builder.err(loc, "continuous assignment LHS must have constant bit/element bounds");
                 }
+            }
+        }
+    }
+
+    fn equate_inout_slots(&mut self, child_slot: &ObjSlot, parent_slot: &ObjSlot, parent_is_net: bool, loc: Loc) {
+        match (child_slot, parent_slot) {
+            (ObjSlot::Packed(cs), ObjSlot::Packed(ps)) => {
+                if !self.slots[*ps].is_net && !parent_is_net {
+                    self.builder.err(
+                        loc,
+                        format!("inout port connection '{}' must be a net, not a variable", self.slots[*ps].name),
+                    );
+                    return;
+                }
+                let common_w = self.slots[*cs].width.min(self.slots[*ps].width);
+                if common_w > 0 {
+                    self.net_equivs.push(NetEquiv { sidx_a: *cs, lo_a: 0, sidx_b: *ps, lo_b: 0, width: common_w, loc });
+                }
+            }
+            (ObjSlot::Struct(cf), ObjSlot::Struct(pf)) => {
+                for (fname, csub) in cf {
+                    if let Some((_, psub)) = pf.iter().find(|(n, _)| n == fname) {
+                        self.equate_inout_slots(csub, psub, parent_is_net, loc);
+                    }
+                }
+            }
+            (ObjSlot::Elems { elems: ce, .. }, ObjSlot::Elems { elems: pe, .. }) => {
+                for (csub, psub) in ce.iter().zip(pe) {
+                    self.equate_inout_slots(csub, psub, parent_is_net, loc);
+                }
+            }
+            _ => {
+                self.builder.err(loc, "incompatible aggregate inout port connection");
+            }
+        }
+    }
+
+    fn equate_inout_bound_expr(&mut self, arena: &ExprArena, eid: ExprId, child_slot: &ObjSlot, loc: Loc) {
+        match child_slot {
+            ObjSlot::Packed(cs) => {
+                let cw = self.slots[*cs].width;
+                if cw > 0 {
+                    self.equate_inout_bound_slice(arena, eid, *cs, 0, 0, cw, loc);
+                }
+            }
+            ObjSlot::Struct(_) | ObjSlot::Elems { .. } => {
+                let root_is_net = expr_root_symbol(arena, eid).is_some_and(|sid| is_net_symbol(self.design, sid));
+                if let Some((pslot, 0, _)) = self.resolve_const_lhs_slice(arena, eid, loc) {
+                    self.equate_inout_slots(child_slot, &pslot, root_is_net, loc);
+                } else {
+                    self.builder.err(loc, "aggregate inout port connection must resolve to a net");
+                }
+            }
+            _ => {}
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn equate_inout_bound_slice(
+        &mut self,
+        arena: &ExprArena,
+        eid: ExprId,
+        child_sidx: usize,
+        child_lo: u32,
+        parent_sub_lo: u32,
+        req_w: u32,
+        loc: Loc,
+    ) {
+        if req_w == 0 {
+            return;
+        }
+        if let ExprKind::Concat(parts) = &arena.get(eid).kind {
+            let parts = parts.clone();
+            let mut non_empty = Vec::with_capacity(parts.len());
+            let mut total_pw = 0u32;
+            for p in parts {
+                if matches!(arena.get(p).kind, ExprKind::Replicate { count: 0, .. }) {
+                    continue;
+                }
+                let Some(pw) = arena.get(p).ty.bit_width() else {
+                    self.builder.err(loc, "inout concatenation element must be a packed net");
+                    return;
+                };
+                total_pw = total_pw.saturating_add(pw);
+                non_empty.push((p, pw));
+            }
+            let mut part_hi_end = total_pw;
+            for (part_eid, pw) in non_empty {
+                let part_lo_in_concat = part_hi_end - pw;
+                part_hi_end = part_lo_in_concat;
+                let ov_lo = part_lo_in_concat.max(parent_sub_lo);
+                let ov_end = (part_lo_in_concat + pw).min(parent_sub_lo + req_w);
+                if ov_lo < ov_end {
+                    let sub_w = ov_end - ov_lo;
+                    let c_off = ov_lo - parent_sub_lo;
+                    let p_off = ov_lo - part_lo_in_concat;
+                    self.equate_inout_bound_slice(arena, part_eid, child_sidx, child_lo + c_off, p_off, sub_w, loc);
+                }
+            }
+            return;
+        }
+
+        let root_is_net = expr_root_symbol(arena, eid).is_some_and(|sid| is_net_symbol(self.design, sid));
+        let Some((ObjSlot::Packed(ps), p_lo, p_w)) = self.resolve_const_lhs_slice(arena, eid, loc) else {
+            self.builder.err(loc, "inout port connection must be a net, constant net slice, or net concatenation");
+            return;
+        };
+        if !self.slots[ps].is_net && !root_is_net {
+            self.builder
+                .err(loc, format!("inout port connection '{}' must be a net, not a variable", self.slots[ps].name));
+            return;
+        }
+        if parent_sub_lo >= p_w {
+            return;
+        }
+        let common_w = req_w.min(p_w - parent_sub_lo);
+        if common_w > 0 {
+            self.net_equivs.push(NetEquiv {
+                sidx_a: child_sidx,
+                lo_a: child_lo,
+                sidx_b: ps,
+                lo_b: p_lo + parent_sub_lo,
+                width: common_w,
+                loc,
+            });
+        }
+    }
+
+    fn eval_tristate_rhs(&mut self, arena: &ExprArena, eid: ExprId) -> Option<TriObjVal> {
+        if !expr_may_contain_z(arena, eid) {
+            let val = self.eval_comb_expr(arena, eid)?;
+            return Some(lift_always_tri_val(val));
+        }
+        let expr = arena.get(eid);
+        let loc = expr.loc;
+        if let Some(cv) = &expr.cval {
+            if expr.ty.is_packed() {
+                return Some(self.const_to_tri_val(cv, expr.ty.is_four_state(), loc));
+            }
+        }
+        match &expr.kind {
+            ExprKind::Const(cv) => Some(self.const_to_tri_val(cv, expr.ty.is_four_state(), loc)),
+            ExprKind::UnbasedUnsized(bs) => {
+                let (w, s, four) = expr.ty.integral_shape().unwrap_or((1, false, true));
+                let cv = match bs {
+                    sv_semantic::BitState::Zero => CVal::new(w, s, 0),
+                    sv_semantic::BitState::One => CVal::new(w, s, -1),
+                    sv_semantic::BitState::X => CVal::all_x(w, s),
+                    sv_semantic::BitState::Z => CVal::all_z(w, s),
+                };
+                Some(self.const_to_tri_val(&cv, four, loc))
+            }
+            ExprKind::Cond { cond, then_val, else_val } => {
+                let raw_c = self.eval_comb_expr(arena, *cond)?.as_packed()?;
+                let cv = self.builder.alloc_bool(raw_c, loc);
+                let tv = self.eval_tristate_rhs(arena, *then_val)?;
+                let ev = self.eval_tristate_rhs(arena, *else_val)?;
+                self.mux_tri_obj_val(cv, tv, ev, &expr.ty, loc)
+            }
+            ExprKind::Concat(parts) => {
+                let (w, s, four) = expr.ty.integral_shape()?;
+                let mut items = Vec::with_capacity(parts.len());
+                for &p in parts {
+                    if matches!(arena.get(p).kind, ExprKind::Replicate { count: 0, .. }) {
+                        continue;
+                    }
+                    let pw = arena.get(p).ty.bit_width()?;
+                    let TriObjVal::Packed { en, data } = self.eval_tristate_rhs(arena, p)? else { return None };
+                    let du = self.builder.resize_val(data, pw, false, false, loc);
+                    items.push((pw, en, du));
+                }
+                if items.is_empty() {
+                    self.builder.unsup(loc, "zero-width concatenation is not supported");
+                    return None;
+                }
+                let datas: Vec<ValueId> = items.iter().map(|&(_, _, d)| d).collect();
+                let data_cat = self.builder.alloc_op(NetOp::Concat, datas, w, s, four, loc);
+                let en = if items.iter().all(|&(_, e, _)| e == TriEnable::Never) {
+                    TriEnable::Never
+                } else if items.iter().all(|&(_, e, _)| e == TriEnable::Always) {
+                    TriEnable::Always
+                } else if let TriEnable::Bit(b0) = items[0].1 {
+                    if items.iter().all(|&(_, e, _)| e == TriEnable::Bit(b0)) {
+                        TriEnable::Bit(b0)
+                    } else {
+                        let masks: Vec<ValueId> =
+                            items.iter().map(|&(pw, e, _)| self.tri_enable_to_mask(e, pw, loc)).collect();
+                        let mcat = self.builder.alloc_op(NetOp::Concat, masks, w, false, false, loc);
+                        if w == 1 {
+                            TriEnable::Bit(mcat)
+                        } else {
+                            TriEnable::Mask(mcat)
+                        }
+                    }
+                } else {
+                    let masks: Vec<ValueId> =
+                        items.iter().map(|&(pw, e, _)| self.tri_enable_to_mask(e, pw, loc)).collect();
+                    let mcat = self.builder.alloc_op(NetOp::Concat, masks, w, false, false, loc);
+                    if w == 1 {
+                        TriEnable::Bit(mcat)
+                    } else {
+                        TriEnable::Mask(mcat)
+                    }
+                };
+                Some(TriObjVal::Packed { en, data: data_cat })
+            }
+            ExprKind::Replicate { count, expr: inner } => {
+                let (w, s, four) = expr.ty.integral_shape()?;
+                if *count == 0 {
+                    let z = self.builder.alloc_const(CVal::new(1, false, 0), false, loc);
+                    return Some(TriObjVal::Packed { en: TriEnable::Always, data: z });
+                }
+                let iw = arena.get(*inner).ty.bit_width()?;
+                let TriObjVal::Packed { en: ien, data: idata } = self.eval_tristate_rhs(arena, *inner)? else {
+                    return None;
+                };
+                let idu = self.builder.resize_val(idata, iw, false, false, loc);
+                let data = self.builder.alloc_op(NetOp::Concat, vec![idu; *count as usize], w, s, four, loc);
+                let en = match ien {
+                    TriEnable::Always => TriEnable::Always,
+                    TriEnable::Never => TriEnable::Never,
+                    TriEnable::Bit(b) => TriEnable::Bit(b),
+                    TriEnable::Mask(m) => {
+                        let mu = self.builder.resize_val(m, iw, false, false, loc);
+                        let mcat =
+                            self.builder.alloc_op(NetOp::Concat, vec![mu; *count as usize], w, false, false, loc);
+                        if w == 1 {
+                            TriEnable::Bit(mcat)
+                        } else {
+                            TriEnable::Mask(mcat)
+                        }
+                    }
+                };
+                Some(TriObjVal::Packed { en, data })
+            }
+            ExprKind::Resize { arg, width, signed: ext_signed } => {
+                let aw = arena.get(*arg).ty.bit_width()?;
+                let TriObjVal::Packed { en: aen, data: adata } = self.eval_tristate_rhs(arena, *arg)? else {
+                    return None;
+                };
+                let out_s = expr.ty.is_signed();
+                let data = self.builder.resize_val(adata, *width, *ext_signed, out_s, loc);
+                let en = if *width <= aw {
+                    self.slice_tri_rhs_en(aen, 0, *width, loc)
+                } else {
+                    let pad_w = *width - aw;
+                    match aen {
+                        TriEnable::Always => TriEnable::Always,
+                        TriEnable::Never if *ext_signed => TriEnable::Never,
+                        TriEnable::Bit(b) if *ext_signed => TriEnable::Bit(b),
+                        _ => {
+                            let lo_m = self.tri_enable_to_mask(aen, aw, loc);
+                            let hi_m = if *ext_signed {
+                                let msb = self.builder.alloc_op(
+                                    NetOp::Slice { hi: aw - 1, lo: aw - 1 },
+                                    vec![lo_m],
+                                    1,
+                                    false,
+                                    false,
+                                    loc,
+                                );
+                                if pad_w == 1 {
+                                    msb
+                                } else {
+                                    self.builder.alloc_op(
+                                        NetOp::Concat,
+                                        vec![msb; pad_w as usize],
+                                        pad_w,
+                                        false,
+                                        false,
+                                        loc,
+                                    )
+                                }
+                            } else {
+                                self.builder.alloc_const(CVal::new(pad_w, false, -1), false, loc)
+                            };
+                            let cat = self.builder.alloc_op(NetOp::Concat, vec![hi_m, lo_m], *width, false, false, loc);
+                            TriEnable::Mask(cat)
+                        }
+                    }
+                };
+                Some(TriObjVal::Packed { en, data })
+            }
+            ExprKind::CastSign { arg, signed: target_s } => {
+                let TriObjVal::Packed { en, data: av } = self.eval_tristate_rhs(arena, *arg)? else { return None };
+                let (w, cur_s, four) = self.builder.node_shape(av);
+                let data = if cur_s == *target_s {
+                    av
+                } else {
+                    self.builder.alloc_op(NetOp::Slice { hi: w - 1, lo: 0 }, vec![av], w, *target_s, four, loc)
+                };
+                Some(TriObjVal::Packed { en, data })
+            }
+            ExprKind::CastFourState { arg, four_state } => {
+                if !*four_state {
+                    let val = self.eval_comb_expr(arena, eid)?;
+                    return Some(lift_always_tri_val(val));
+                }
+                let TriObjVal::Packed { en, data: av } = self.eval_tristate_rhs(arena, *arg)? else { return None };
+                let (w, s, cur_four) = self.builder.node_shape(av);
+                let data = if cur_four == *four_state {
+                    av
+                } else {
+                    self.builder.alloc_op(
+                        NetOp::CastFourState { four_state: *four_state },
+                        vec![av],
+                        w,
+                        s,
+                        *four_state,
+                        loc,
+                    )
+                };
+                Some(TriObjVal::Packed { en, data })
+            }
+            ExprKind::Member { base, field, packed_slice } => {
+                let bv = self.eval_tristate_rhs(arena, *base)?;
+                if let Some((lo, slice_w)) = *packed_slice {
+                    let TriObjVal::Packed { en, data } = bv else { return None };
+                    let (_, s, four) = expr.ty.integral_shape()?;
+                    let sd = self.builder.alloc_op(
+                        NetOp::Slice { hi: lo + slice_w - 1, lo },
+                        vec![data],
+                        slice_w,
+                        s,
+                        four,
+                        loc,
+                    );
+                    let sen = self.slice_tri_rhs_en(en, lo, slice_w, loc);
+                    return Some(TriObjVal::Packed { en: sen, data: sd });
+                }
+                match bv {
+                    TriObjVal::Struct(fields) => fields.into_iter().find(|(n, _)| n == field).map(|(_, v)| v),
+                    _ => None,
+                }
+            }
+            ExprKind::BitSelect { base, index, bounds, elem_width } => {
+                if let Some(icv) = arena.get(*index).cval.clone() {
+                    if icv.known() {
+                        let TriObjVal::Packed { en, data } = self.eval_tristate_rhs(arena, *base)? else { return None };
+                        let (total_w, _, _) = self.builder.node_shape(data);
+                        let (out_w, out_s, out_four) = expr.ty.integral_shape()?;
+                        if let Some(bit_lo) = sv_semantic::expr::map_bit_offset(icv.i(), *bounds, *elem_width, total_w)
+                        {
+                            let sd = self.builder.alloc_op(
+                                NetOp::Slice { hi: bit_lo + *elem_width - 1, lo: bit_lo },
+                                vec![data],
+                                out_w,
+                                out_s,
+                                out_four,
+                                loc,
+                            );
+                            let sen = self.slice_tri_rhs_en(en, bit_lo, out_w, loc);
+                            return Some(TriObjVal::Packed { en: sen, data: sd });
+                        }
+                    }
+                }
+                let val = self.eval_comb_expr(arena, eid)?;
+                Some(lift_always_tri_val(val))
+            }
+            ExprKind::PartSelect { base, msb, lsb, bounds, elem_width } => {
+                let TriObjVal::Packed { en, data } = self.eval_tristate_rhs(arena, *base)? else { return None };
+                let (total_w, _, _) = self.builder.node_shape(data);
+                let (out_w, out_s, out_four) = expr.ty.integral_shape()?;
+                let count = ((*msb - *lsb).unsigned_abs() as usize) + 1;
+                let step = if bounds.0 >= bounds.1 { 1i128 } else { -1i128 };
+                let low_idx = if bounds.0 >= bounds.1 { (*msb).min(*lsb) } else { (*msb).max(*lsb) };
+                let first_off = sv_semantic::expr::map_bit_offset(low_idx, *bounds, *elem_width, total_w);
+                let last_idx = low_idx + ((count.saturating_sub(1)) as i128) * step;
+                let last_off = sv_semantic::expr::map_bit_offset(last_idx, *bounds, *elem_width, total_w);
+                if let (Some(lo_bit), Some(hi_elem_bit)) = (first_off, last_off) {
+                    if lo_bit <= hi_elem_bit && (hi_elem_bit + *elem_width - lo_bit) == out_w {
+                        let sd = self.builder.alloc_op(
+                            NetOp::Slice { hi: lo_bit + out_w - 1, lo: lo_bit },
+                            vec![data],
+                            out_w,
+                            out_s,
+                            out_four,
+                            loc,
+                        );
+                        let sen = self.slice_tri_rhs_en(en, lo_bit, out_w, loc);
+                        return Some(TriObjVal::Packed { en: sen, data: sd });
+                    }
+                }
+                let val = self.eval_comb_expr(arena, eid)?;
+                Some(lift_always_tri_val(val))
+            }
+            ExprKind::AssignPattern(entries) => match &expr.ty {
+                RtlType::UnpackedStruct { fields, .. } => {
+                    let mut out = Vec::with_capacity(fields.len());
+                    for (idx, (fname, _)) in fields.iter().enumerate() {
+                        let e_id = entries
+                            .iter()
+                            .find(|(k, _)| k.as_deref() == Some(fname.as_str()))
+                            .or_else(|| entries.get(idx))
+                            .map(|(_, e)| *e)?;
+                        out.push((fname.clone(), self.eval_tristate_rhs(arena, e_id)?));
+                    }
+                    Some(TriObjVal::Struct(out))
+                }
+                RtlType::UnpackedArray { dims, .. } if !dims.is_empty() => {
+                    let (left, right) = dims[0];
+                    let mut elems = Vec::with_capacity(entries.len());
+                    for (_, e_id) in entries {
+                        elems.push(self.eval_tristate_rhs(arena, *e_id)?);
+                    }
+                    if left > right {
+                        elems.reverse();
+                    }
+                    Some(TriObjVal::Elems { left, right, elems })
+                }
+                _ => {
+                    let val = self.eval_comb_expr(arena, eid)?;
+                    Some(lift_always_tri_val(val))
+                }
+            },
+            // Per IEEE 1800 §11.4, arithmetic, bitwise, relational, and reduction operators convert
+            // any 'z' input bits to 'x' and never produce high-impedance 'z' outputs.
+            _ => {
+                let val = self.eval_comb_expr(arena, eid)?;
+                Some(lift_always_tri_val(val))
+            }
+        }
+    }
+
+    fn const_to_tri_val(&mut self, cv: &CVal, four_state: bool, loc: Loc) -> TriObjVal {
+        let w = cv.w.max(1);
+        let cu = cv.cast(w, false);
+        let z_mask = cu.u.and(&cu.v);
+        if z_mask.is_zero() {
+            let data = self.builder.alloc_const(cv.clone(), four_state, loc);
+            return TriObjVal::Packed { en: TriEnable::Always, data };
+        }
+        let non_z = z_mask.not().trunc(w, false);
+        if non_z.is_zero() {
+            let data = self.builder.alloc_const(CVal::new(w, cv.s, 0), false, loc);
+            return TriObjVal::Packed { en: TriEnable::Never, data };
+        }
+        let en_cv = CVal::new(w, false, non_z.clone());
+        let en_val = self.builder.alloc_const(en_cv, false, loc);
+        let data_u = CVal { w, s: false, v: cu.v.and(&non_z), u: cu.u.and(&non_z) };
+        let data_cv = data_u.cast(w, cv.s);
+        let has_x = !data_cv.u.is_zero();
+        let data = self.builder.alloc_const(data_cv, four_state && has_x, loc);
+        let en = if w == 1 { TriEnable::Bit(en_val) } else { TriEnable::Mask(en_val) };
+        TriObjVal::Packed { en, data }
+    }
+
+    fn tri_enable_to_mask(&mut self, en: TriEnable, width: u32, loc: Loc) -> ValueId {
+        match en {
+            TriEnable::Always => self.builder.alloc_const(CVal::new(width, false, -1), false, loc),
+            TriEnable::Never => self.builder.alloc_const(CVal::new(width, false, 0), false, loc),
+            TriEnable::Bit(b) => {
+                let b1 = self.builder.alloc_bool(b, loc);
+                if width == 1 {
+                    b1
+                } else {
+                    let (_, _, f4) = self.builder.node_shape(b1);
+                    self.builder.alloc_op(NetOp::Concat, vec![b1; width as usize], width, false, f4, loc)
+                }
+            }
+            TriEnable::Mask(m) => self.builder.resize_val(m, width, false, false, loc),
+        }
+    }
+
+    fn slice_tri_rhs_en(&mut self, en: TriEnable, lo: u32, width: u32, loc: Loc) -> TriEnable {
+        match en {
+            TriEnable::Always => TriEnable::Always,
+            TriEnable::Never => TriEnable::Never,
+            TriEnable::Bit(b) => TriEnable::Bit(b),
+            TriEnable::Mask(m) => {
+                let (mw, _, f4) = self.builder.node_shape(m);
+                let s = if lo == 0 && width == mw {
+                    m
+                } else {
+                    self.builder.alloc_op(NetOp::Slice { hi: lo + width - 1, lo }, vec![m], width, false, f4, loc)
+                };
+                if width == 1 {
+                    TriEnable::Bit(s)
+                } else {
+                    TriEnable::Mask(s)
+                }
+            }
+        }
+    }
+
+    fn mux_tri_obj_val(
+        &mut self,
+        cond_1b: ValueId,
+        tv: TriObjVal,
+        ev: TriObjVal,
+        ty: &RtlType,
+        loc: Loc,
+    ) -> Option<TriObjVal> {
+        match (tv, ev) {
+            (TriObjVal::Packed { en: t_en, data: t_d }, TriObjVal::Packed { en: e_en, data: e_d }) => {
+                let (w, s, four) = ty.integral_shape()?;
+                let td = self.builder.resize_val(t_d, w, false, s, loc);
+                let ed = self.builder.resize_val(e_d, w, false, s, loc);
+                let (_, _, cf) = self.builder.node_shape(cond_1b);
+                let data = match (t_en, e_en) {
+                    (TriEnable::Never, _) => ed,
+                    (_, TriEnable::Never) => td,
+                    _ => {
+                        let f4 = four || cf || self.builder.node_shape(td).2 || self.builder.node_shape(ed).2;
+                        self.builder.alloc_op(NetOp::Mux, vec![cond_1b, td, ed], w, s, f4, loc)
+                    }
+                };
+                let en = match (t_en, e_en) {
+                    (TriEnable::Never, TriEnable::Never) => TriEnable::Never,
+                    (TriEnable::Always, TriEnable::Always) => TriEnable::Always,
+                    (TriEnable::Always, TriEnable::Never) => TriEnable::Bit(cond_1b),
+                    (TriEnable::Never, TriEnable::Always) => TriEnable::Bit(self.builder.alloc_not1(cond_1b, loc)),
+                    (TriEnable::Bit(tb), TriEnable::Never) => TriEnable::Bit(self.builder.alloc_and1(cond_1b, tb, loc)),
+                    (TriEnable::Never, TriEnable::Bit(eb)) => {
+                        let nc = self.builder.alloc_not1(cond_1b, loc);
+                        TriEnable::Bit(self.builder.alloc_and1(nc, eb, loc))
+                    }
+                    (TriEnable::Always, TriEnable::Bit(eb)) => TriEnable::Bit(self.builder.alloc_or1(cond_1b, eb, loc)),
+                    (TriEnable::Bit(tb), TriEnable::Always) => {
+                        let nc = self.builder.alloc_not1(cond_1b, loc);
+                        TriEnable::Bit(self.builder.alloc_or1(nc, tb, loc))
+                    }
+                    (TriEnable::Bit(tb), TriEnable::Bit(eb)) => {
+                        if tb == eb {
+                            TriEnable::Bit(tb)
+                        } else {
+                            let f4 = cf || self.builder.node_shape(tb).2 || self.builder.node_shape(eb).2;
+                            let m = self.builder.alloc_op(NetOp::Mux, vec![cond_1b, tb, eb], 1, false, f4, loc);
+                            TriEnable::Bit(m)
+                        }
+                    }
+                    _ => {
+                        let tm = self.tri_enable_to_mask(t_en, w, loc);
+                        let em = self.tri_enable_to_mask(e_en, w, loc);
+                        let f4 = cf || self.builder.node_shape(tm).2 || self.builder.node_shape(em).2;
+                        let m = self.builder.alloc_op(NetOp::Mux, vec![cond_1b, tm, em], w, false, f4, loc);
+                        if w == 1 {
+                            TriEnable::Bit(m)
+                        } else {
+                            TriEnable::Mask(m)
+                        }
+                    }
+                };
+                Some(TriObjVal::Packed { en, data })
+            }
+            (TriObjVal::Struct(tf), TriObjVal::Struct(ef)) => {
+                let ty_fields = match ty {
+                    RtlType::UnpackedStruct { fields, .. } => fields.as_slice(),
+                    _ => &[],
+                };
+                let mut out = Vec::with_capacity(tf.len());
+                for ((fname, tsub), (_, esub)) in tf.into_iter().zip(ef) {
+                    let fty = ty_fields.iter().find(|(n, _)| n == &fname).map(|(_, t)| t)?;
+                    out.push((fname, self.mux_tri_obj_val(cond_1b, tsub, esub, fty, loc)?));
+                }
+                Some(TriObjVal::Struct(out))
+            }
+            (TriObjVal::Elems { left, right, elems: te }, TriObjVal::Elems { elems: ee, .. }) => {
+                let elem_ty = match ty {
+                    RtlType::UnpackedArray { elem, dims } if dims.len() > 1 => {
+                        RtlType::UnpackedArray { elem: elem.clone(), dims: dims[1..].to_vec() }
+                    }
+                    RtlType::UnpackedArray { elem, .. } => (**elem).clone(),
+                    _ => return None,
+                };
+                let mut out = Vec::with_capacity(te.len());
+                for (tsub, esub) in te.into_iter().zip(ee) {
+                    out.push(self.mux_tri_obj_val(cond_1b, tsub, esub, &elem_ty, loc)?);
+                }
+                Some(TriObjVal::Elems { left, right, elems: out })
+            }
+            _ => None,
+        }
+    }
+
+    fn drive_bound_lhs_tristate(
+        &mut self,
+        arena: &ExprArena,
+        lhs_eid: ExprId,
+        rhs_val: TriObjVal,
+        kind: DriverKind,
+        loc: Loc,
+    ) {
+        let lhs_expr = arena.get(lhs_eid);
+        match &lhs_expr.kind {
+            ExprKind::Symbol(sid) => {
+                if let Some(slot) = self.sym_slots.get(sid).cloned() {
+                    self.drive_obj_slot_tristate(&slot, rhs_val, kind, loc);
+                }
+            }
+            ExprKind::Concat(parts) => {
+                let TriObjVal::Packed { en, data: rv } = rhs_val else {
+                    self.builder.err(loc, "concatenation LHS requires packed RHS value");
+                    return;
+                };
+                let (total_w, _, four) = self.builder.node_shape(rv);
+                let mut hi_cursor = total_w;
+                for &part_eid in parts {
+                    let pw = arena.get(part_eid).ty.bit_width().unwrap_or(1);
+                    if hi_cursor < pw {
+                        break;
+                    }
+                    let lo = hi_cursor - pw;
+                    let slice =
+                        self.builder.alloc_op(NetOp::Slice { hi: hi_cursor - 1, lo }, vec![rv], pw, false, four, loc);
+                    let part_en = self.slice_tri_rhs_en(en, lo, pw, loc);
+                    self.drive_bound_lhs_tristate(
+                        arena,
+                        part_eid,
+                        TriObjVal::Packed { en: part_en, data: slice },
+                        kind,
+                        loc,
+                    );
+                    hi_cursor = lo;
+                }
+            }
+            _ => {
+                if let Some((slot, bit_lo, bit_w)) = self.resolve_const_lhs_slice(arena, lhs_eid, loc) {
+                    if let ObjSlot::Packed(sidx) = slot {
+                        if let TriObjVal::Packed { en, data: rv } = rhs_val {
+                            let resized = self.builder.resize_val(rv, bit_w, false, false, loc);
+                            let resized_en = match en {
+                                TriEnable::Mask(m) => {
+                                    let rm = self.builder.resize_val(m, bit_w, false, false, loc);
+                                    if bit_w == 1 {
+                                        TriEnable::Bit(rm)
+                                    } else {
+                                        TriEnable::Mask(rm)
+                                    }
+                                }
+                                other => other,
+                            };
+                            self.slots[sidx].add_tristate_driver(
+                                bit_lo,
+                                bit_lo + bit_w - 1,
+                                resized,
+                                resized_en,
+                                kind,
+                                loc,
+                            );
+                        }
+                    } else if bit_lo == 0 {
+                        self.drive_obj_slot_tristate(&slot, rhs_val, kind, loc);
+                    }
+                } else {
+                    self.builder.err(loc, "continuous assignment LHS must have constant bit/element bounds");
+                }
+            }
+        }
+    }
+
+    fn drive_obj_slot_tristate(&mut self, slot: &ObjSlot, val: TriObjVal, kind: DriverKind, loc: Loc) {
+        match (slot, val) {
+            (ObjSlot::Packed(sidx), TriObjVal::Packed { en, data }) => {
+                let w = self.slots[*sidx].width;
+                let resized = self.builder.resize_val(data, w, false, self.slots[*sidx].signed, loc);
+                let resized_en = match en {
+                    TriEnable::Mask(m) => {
+                        let rm = self.builder.resize_val(m, w, false, false, loc);
+                        if w == 1 {
+                            TriEnable::Bit(rm)
+                        } else {
+                            TriEnable::Mask(rm)
+                        }
+                    }
+                    other => other,
+                };
+                self.slots[*sidx].add_tristate_driver(0, w - 1, resized, resized_en, kind, loc);
+            }
+            (ObjSlot::Struct(sfields), TriObjVal::Struct(vfields)) => {
+                for (fname, fslot) in sfields {
+                    if let Some((_, fv)) = vfields.iter().find(|(n, _)| n == fname) {
+                        self.drive_obj_slot_tristate(fslot, fv.clone(), kind, loc);
+                    }
+                }
+            }
+            (ObjSlot::Elems { elems: selems, .. }, TriObjVal::Elems { elems: velems, .. }) => {
+                for (es, ev) in selems.iter().zip(velems) {
+                    self.drive_obj_slot_tristate(es, ev, kind, loc);
+                }
+            }
+            _ => {
+                self.builder.err(loc, "incompatible aggregate port/continuous connection");
             }
         }
     }
@@ -2831,6 +3711,7 @@ pub(crate) fn lower_external_property_on_netlist(
                     drivers: Vec::new(),
                     free: FreeKind::Undriven,
                     pull: None,
+                    top_inout: None,
                 }
             })
             .collect();
@@ -2845,7 +3726,7 @@ pub(crate) fn lower_external_property_on_netlist(
             slot_placeholders: std::rc::Rc::clone(&ph_rc),
             sym_slots: std::rc::Rc::clone(&sym_rc),
             eligible_memories: FxSet::default(),
-            pending_aliases: Vec::new(),
+            net_equivs: Vec::new(),
             next_local_id: 0,
             call_stack: Vec::new(),
             free_attrs: None,
@@ -4072,8 +4953,76 @@ trait SymbolNetInitExt {
 
 impl SymbolNetInitExt for sv_semantic::Symbol {
     fn is_net_with_init(&self) -> bool {
-        matches!(&self.kind, SymbolKind::Net { .. } | SymbolKind::Port { is_net: true, dir: PortDir::Output, .. })
+        matches!(
+            &self.kind,
+            SymbolKind::Net { .. } | SymbolKind::Port { is_net: true, dir: PortDir::Output | PortDir::Inout, .. }
+        )
     }
+}
+
+fn is_net_symbol(design: &ElaboratedDesign, sid: SymbolId) -> bool {
+    matches!(design.symbol(sid).kind, SymbolKind::Net { .. } | SymbolKind::Port { is_net: true, .. })
+}
+
+fn expr_root_symbol(arena: &ExprArena, mut eid: ExprId) -> Option<SymbolId> {
+    loop {
+        match &arena.get(eid).kind {
+            ExprKind::Symbol(sid) => return Some(*sid),
+            ExprKind::Member { base, .. }
+            | ExprKind::BitSelect { base, .. }
+            | ExprKind::PartSelect { base, .. }
+            | ExprKind::IndexedPartSelect { base, .. }
+            | ExprKind::ArrayIndex { base, .. } => eid = *base,
+            _ => return None,
+        }
+    }
+}
+
+fn lift_always_tri_val(val: ObjVal) -> TriObjVal {
+    match val {
+        ObjVal::Packed(data) => TriObjVal::Packed { en: TriEnable::Always, data },
+        ObjVal::Struct(fields) => {
+            TriObjVal::Struct(fields.into_iter().map(|(n, v)| (n, lift_always_tri_val(v))).collect())
+        }
+        ObjVal::Elems { left, right, elems } => {
+            TriObjVal::Elems { left, right, elems: elems.into_iter().map(lift_always_tri_val).collect() }
+        }
+        ObjVal::Memory(_) => unreachable!("memory cannot appear as packed/aggregate value RHS"),
+    }
+}
+
+fn cval_has_z(cv: &CVal) -> bool {
+    let cu = cv.cast(cv.w.max(1), false);
+    !cu.u.and(&cu.v).is_zero()
+}
+
+fn expr_may_contain_z(arena: &ExprArena, root: ExprId) -> bool {
+    let mut stack = vec![root];
+    while let Some(id) = stack.pop() {
+        let e = arena.get(id);
+        if e.cval.as_ref().is_some_and(cval_has_z) {
+            return true;
+        }
+        match &e.kind {
+            ExprKind::Const(cv) if cval_has_z(cv) => return true,
+            ExprKind::UnbasedUnsized(sv_semantic::BitState::Z) => return true,
+            ExprKind::Cond { then_val, else_val, .. } => {
+                stack.push(*then_val);
+                stack.push(*else_val);
+            }
+            ExprKind::Concat(parts) => stack.extend(parts.iter().copied()),
+            ExprKind::Replicate { expr: inner, .. }
+            | ExprKind::Resize { arg: inner, .. }
+            | ExprKind::CastSign { arg: inner, .. } => stack.push(*inner),
+            ExprKind::CastFourState { arg: inner, four_state: true } => stack.push(*inner),
+            ExprKind::Member { base, .. } | ExprKind::BitSelect { base, .. } | ExprKind::PartSelect { base, .. } => {
+                stack.push(*base)
+            }
+            ExprKind::AssignPattern(entries) => stack.extend(entries.iter().map(|(_, ie)| *ie)),
+            _ => {}
+        }
+    }
+    false
 }
 
 pub(crate) fn resolve_call_target_in_scope(

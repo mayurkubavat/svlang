@@ -45,6 +45,7 @@ pub fn run_oracle(raw_args: &[String]) -> ExitCode {
     let mut allow_four_state_ops = false;
     let mut skip_initial_checks = false;
     let mut isunknown_is_false = false;
+    let mut tristate_checks = false;
     let mut single_unit = false;
     let mut separate_units = false;
     let mut args = Vec::new();
@@ -60,6 +61,7 @@ pub fn run_oracle(raw_args: &[String]) -> ExitCode {
             "--allow-four-state-ops" | "--four-state" => allow_four_state_ops = true,
             "--skip-initial-checks" => skip_initial_checks = true,
             "--isunknown-is-false" => isunknown_is_false = true,
+            "--tristate-checks" => tristate_checks = true,
             "--single-unit" => single_unit = true,
             "--separate-units" => separate_units = true,
             "--blast-memories" => {
@@ -201,6 +203,8 @@ pub fn run_oracle(raw_args: &[String]) -> ExitCode {
             allow_four_state_ops,
             skip_initial_checks,
             isunknown_is_false,
+            tristate_contention_checks: tristate_checks,
+            tristate_floating_checks: tristate_checks,
             ..svlang::LowerConfig::default()
         };
         match comp.lower_netlist(&cfg) {

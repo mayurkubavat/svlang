@@ -153,6 +153,7 @@ struct NonAnsiPortEntry {
     decl_dt: Option<NodeRef>,
     decl_item: Option<NodeRef>,
     has_net_kw: bool,
+    net_kw: Option<String>,
     has_var_kw: bool,
     init_node: Option<NodeRef>,
 }
@@ -165,6 +166,7 @@ impl Default for NonAnsiPortEntry {
             decl_dt: None,
             decl_item: None,
             has_net_kw: false,
+            net_kw: None,
             has_var_kw: false,
             init_node: None,
         }
@@ -1691,6 +1693,7 @@ impl<'b, 't> Elab<'b, 't> {
         let mut dir = PortDir::Inout;
         let mut cur_dt: Option<NodeRef> = None;
         let mut explicit_net = false;
+        let mut cur_net_kw: Option<&str> = None;
         let mut explicit_var = false;
         for p in ports {
             self.record_enums_in(p, scope, vals, None);
@@ -1761,7 +1764,8 @@ impl<'b, 't> Elab<'b, 't> {
                 }
             }
             let new_dir = own.iter().find_map(|&t| parse_port_dir(t));
-            let has_net = own.iter().any(|t| NET_KEYWORDS.contains(t));
+            let port_net_kw = own.iter().find(|t| NET_KEYWORDS.contains(t)).copied();
+            let has_net = port_net_kw.is_some();
             let has_var = own.contains(&"var");
             if new_dir.is_some() || dt.is_some() || has_net || has_var {
                 if let Some(nd) = new_dir {
@@ -1769,6 +1773,7 @@ impl<'b, 't> Elab<'b, 't> {
                 }
                 cur_dt = dt;
                 explicit_net = has_net;
+                cur_net_kw = port_net_kw;
                 explicit_var = has_var;
             }
             *b.inst.borrow_mut() = vals.clone();
@@ -1786,12 +1791,19 @@ impl<'b, 't> Elab<'b, 't> {
                     || dir == PortDir::Ref
                     || !ty.is_packed()
                     || !ty.is_four_state()
-                    || matches!(ty, RtlType::PackedStruct { .. } | RtlType::PackedUnion { .. } | RtlType::Enum { .. })
+                    || (dir != PortDir::Inout
+                        && matches!(
+                            ty,
+                            RtlType::PackedStruct { .. } | RtlType::PackedUnion { .. } | RtlType::Enum { .. }
+                        ))
                     || (dir == PortDir::Output && explicit_dt));
             let init = b.children(d).into_iter().find(|c| !matches!(b.kind(*c), Name | Dim));
             let cval = init.and_then(|iv| self.eval_init(iv, cur_dt, &ty, scope, vals));
             if let Some(sid) = self.add_symbol(&pname, "", SymbolKind::Port { dir, is_net }, ty, pbounds, d, init, cval)
             {
+                if let Some(nk) = cur_net_kw {
+                    self.design.port_net_types.insert(sid, nk.to_string());
+                }
                 if let Some(&inst_id) = self.design_stack.last() {
                     self.design.instances[inst_id.0 as usize].ports.push(sid);
                 }
@@ -1813,6 +1825,7 @@ impl<'b, 't> Elab<'b, 't> {
             let dt = entry.and_then(|e| e.decl_dt.or(e.dir_dt));
             let decl_item = entry.and_then(|e| e.decl_item).unwrap_or(port_node);
             let has_net_kw = entry.is_some_and(|e| e.has_net_kw);
+            let net_kw = entry.and_then(|e| e.net_kw.clone());
             let has_var_kw = entry.is_some_and(|e| e.has_var_kw);
             let init = entry.and_then(|e| e.init_node);
             *b.inst.borrow_mut() = vals.clone();
@@ -1822,12 +1835,22 @@ impl<'b, 't> Elab<'b, 't> {
             let explicit_dt = dt
                 .and_then(|dn| b.toks_of(dn).first().copied())
                 .is_some_and(|f| !matches!(f, "[" | "signed" | "unsigned"));
+            let is_user_nettype =
+                dt.and_then(|dn| b.own_tokens(dn).last().copied()).is_some_and(|nm| self.nettypes.contains(nm));
             let is_net = has_net_kw
-                || !(has_var_kw || dir == PortDir::Ref || !ty.is_packed() || !ty.is_four_state() || explicit_dt);
+                || is_user_nettype
+                || !(has_var_kw
+                    || dir == PortDir::Ref
+                    || !ty.is_packed()
+                    || !ty.is_four_state()
+                    || (dir != PortDir::Inout && explicit_dt));
             let cval = init.and_then(|iv| self.eval_init(iv, dt, &ty, scope, vals));
             if let Some(sid) =
                 self.add_symbol(&pname, "", SymbolKind::Port { dir, is_net }, ty, pbounds, decl_item, init, cval)
             {
+                if let Some(nk) = net_kw {
+                    self.design.port_net_types.insert(sid, nk);
+                }
                 if let Some(&inst_id) = self.design_stack.last() {
                     self.design.instances[inst_id.0 as usize].ports.push(sid);
                 }
@@ -1845,7 +1868,8 @@ impl<'b, 't> Elab<'b, 't> {
         let dt = b.child(c, DataType);
         let gen_prefix = self.cur_gen_prefix();
         let dir_kw = own.first().copied().and_then(parse_port_dir);
-        let has_net_kw = own.iter().any(|t| NET_KEYWORDS.contains(t));
+        let decl_net_kw = own.iter().find(|t| NET_KEYWORDS.contains(t)).copied();
+        let has_net_kw = decl_net_kw.is_some();
         let has_var_kw = own.iter().any(|&t| t == "var" || t == "reg");
 
         // At module root, merge directional `input`/`output` declarations and matching non-ANSI port
@@ -1871,6 +1895,9 @@ impl<'b, 't> Elab<'b, 't> {
                         }
                         e.decl_item = Some(d);
                         e.has_net_kw |= has_net_kw;
+                        if let Some(nk) = decl_net_kw {
+                            e.net_kw = Some(nk.to_string());
+                        }
                         e.has_var_kw |= has_var_kw;
                         if let Some(iv) = b.children(d).into_iter().find(|k| !matches!(b.kind(*k), Name | Dim)) {
                             e.init_node = Some(iv);

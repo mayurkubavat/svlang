@@ -760,3 +760,55 @@ endclass
     let _ = c.request("shutdown", "null");
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn rtl_signal_trace_marks_inout_port_as_driver_and_load() {
+    let dir = std::env::temp_dir().join(format!("svlang-lsp-inout-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+
+    let rtl = r#"module pad_cell (
+  inout wire [7:0] dq,
+  input logic      oe,
+  input logic [7:0] tx
+);
+  assign dq = oe ? tx : 8'bz;
+endmodule
+
+module bus_top (
+  inout  wire  [7:0] pad_io,
+  input  logic       oe,
+  input  logic [7:0] tx,
+  output logic [7:0] rx
+);
+  pad_cell u_pad (
+    .dq (pad_io),
+    .oe (oe),
+    .tx (tx)
+  );
+  assign rx = pad_io;
+endmodule
+"#;
+    let rtl_file = dir.join("bus.sv");
+    std::fs::write(&rtl_file, rtl).unwrap();
+
+    let mut c = Client::start_with_opts(&dir, r#"{"lintTrigger":"off"}"#);
+    let (pl, pc) = pos(rtl, "pad_io", 0, 2);
+    let trace = c.at("svlang/traceSignal", &rtl_file, pl, pc);
+    assert!(trace.contains(r#""name":"pad_io""#), "{trace}");
+
+    let (drivers_part, loads_part) =
+        trace.split_once(r#""loads":["#).unwrap_or_else(|| panic!("missing loads array: {trace}"));
+    assert!(
+        drivers_part.contains(r#".dq (pad_io)"#) && drivers_part.contains(r#""kind":"inout""#),
+        "inout port connection must appear in drivers with kind=inout: {trace}"
+    );
+    assert!(
+        loads_part.contains(r#".dq (pad_io)"#) && loads_part.contains(r#""kind":"inout""#),
+        "inout port connection must appear in loads with kind=inout: {trace}"
+    );
+    assert!(loads_part.contains(r#"assign rx = pad_io;"#), "load assignment missing: {trace}");
+
+    let _ = c.request("shutdown", "null");
+    let _ = std::fs::remove_dir_all(&dir);
+}

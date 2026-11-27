@@ -679,6 +679,10 @@ pub struct ElaboratedDesign {
     /// Fast lookup from full symbol path (`"top.u0.sig"`) to [`SymbolId`].
     #[doc(hidden)]
     pub sym_by_path: FxMap<String, SymbolId>,
+    /// Explicit net type keyword (`"tri0"`, `"tri1"`, `"supply0"`, `"supply1"`, `"wand"`, ...)
+    /// declared on a port symbol, when present.
+    #[doc(hidden)]
+    pub port_net_types: FxMap<SymbolId, String>,
 }
 
 impl ElaboratedDesign {

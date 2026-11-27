@@ -209,6 +209,7 @@ enum Role {
     Declaration,
     Driver,
     Load,
+    Bidirectional,
 }
 
 pub fn trace_signal(ws: &Workspace, p: &Json) -> Json {
@@ -265,15 +266,24 @@ pub fn trace_signal(ws: &Workspace, p: &Json) -> Json {
         None
     });
 
-    // Map `(module_name, port_name) -> is_output_or_inout` so `.out_port(sig)` is classified as a Driver!
-    let mut port_drives_arg: HashMap<(String, String), bool> = HashMap::new();
+    // Map `(module_name, port_name) -> Role` so `.out_port(sig)` is a Driver and
+    // `.inout_port(sig)` is Bidirectional (both Driver and Load).
+    let mut port_arg_role: HashMap<(String, String), Role> = HashMap::new();
     for fx in ws.files.iter().flatten() {
         for sym in &fx.symbols {
             if sym.kind == SymKind::Port {
                 if let Some(p_idx) = sym.parent {
                     let parent = &fx.symbols[p_idx as usize];
-                    let is_out = sym.detail.split_whitespace().any(|w| matches!(w, "output" | "inout"));
-                    port_drives_arg.insert((parent.name.clone(), sym.name.clone()), is_out);
+                    let role = if sym.detail.split_whitespace().any(|w| w == "inout") {
+                        Some(Role::Bidirectional)
+                    } else if sym.detail.split_whitespace().any(|w| w == "output") {
+                        Some(Role::Driver)
+                    } else {
+                        None
+                    };
+                    if let Some(r) = role {
+                        port_arg_role.insert((parent.name.clone(), sym.name.clone()), r);
+                    }
                 }
             }
         }
@@ -297,7 +307,7 @@ pub fn trace_signal(ws: &Workspace, p: &Json) -> Json {
             &fx.path.to_string_lossy(),
             Options { max_include_depth: 1, ..Default::default() },
         );
-        let roles = classify_file_uses(&tree, &target_name, fx, &port_drives_arg);
+        let roles = classify_file_uses(&tree, &target_name, fx, &port_arg_role);
 
         for &o in offs {
             if let Some((_, s0, s1)) = restrict_scope {
@@ -328,16 +338,20 @@ pub fn trace_signal(ws: &Workspace, p: &Json) -> Json {
                 roles.get(&o).copied().unwrap_or(Role::Load)
             };
 
-            let detail_kind = match role {
-                Role::Declaration => "declaration",
-                Role::Driver => "driver",
-                Role::Load => "load",
-            };
-            let entry = hit_json(ws, fi, o, len, ln + 1, &line_text, &container, detail_kind);
             match role {
-                Role::Declaration => declarations.push(entry),
-                Role::Driver => drivers.push(entry),
-                Role::Load => loads.push(entry),
+                Role::Declaration => {
+                    declarations.push(hit_json(ws, fi, o, len, ln + 1, &line_text, &container, "declaration"));
+                }
+                Role::Driver => {
+                    drivers.push(hit_json(ws, fi, o, len, ln + 1, &line_text, &container, "driver"));
+                }
+                Role::Load => {
+                    loads.push(hit_json(ws, fi, o, len, ln + 1, &line_text, &container, "load"));
+                }
+                Role::Bidirectional => {
+                    drivers.push(hit_json(ws, fi, o, len, ln + 1, &line_text, &container, "inout"));
+                    loads.push(hit_json(ws, fi, o, len, ln + 1, &line_text, &container, "inout"));
+                }
             }
         }
     }
@@ -380,23 +394,23 @@ fn classify_file_uses(
     tree: &Tree,
     target_name: &str,
     fx: &crate::index::FileIndex,
-    port_drives_arg: &HashMap<(String, String), bool>,
+    port_arg_role: &HashMap<(String, String), Role>,
 ) -> HashMap<u32, Role> {
     let mut map = HashMap::new();
 
-    fn mark_lhs_ident(tree: &Tree, n: NodeId, target_name: &str, map: &mut HashMap<u32, Role>) {
+    fn mark_ident_role(tree: &Tree, n: NodeId, target_name: &str, role: Role, map: &mut HashMap<u32, Role>) {
         match tree.kind(n) {
             K::NameExpr | K::Name => {
                 for t in tree.token_range(n) {
                     let tok = &tree.tokens[t as usize];
                     if !tok.from_macro && tok.origin.file == 0 && tok.text.as_ref() == target_name {
-                        map.insert(tok.origin.offset, Role::Driver);
+                        map.insert(tok.origin.offset, role);
                     }
                 }
             }
             K::SelectExpr => {
                 if let Some(base) = tree.children(n).next() {
-                    mark_lhs_ident(tree, base, target_name, map);
+                    mark_ident_role(tree, base, target_name, role, map);
                 }
             }
             K::MemberExpr | K::ScopedExpr => {
@@ -408,18 +422,22 @@ fn classify_file_uses(
                     !tok.from_macro && tok.origin.file == 0 && tok.kind == svlang::syntax::TokenKind::Identifier
                 }) {
                     if tree.tokens[last_t as usize].text.as_ref() == target_name {
-                        map.insert(tree.tokens[last_t as usize].origin.offset, Role::Driver);
+                        map.insert(tree.tokens[last_t as usize].origin.offset, role);
                     }
                 }
             }
             K::ConcatExpr => {
                 // `{carry, sum} = a + b;` drives every element of the LHS concatenation!
                 for ch in tree.children(n) {
-                    mark_lhs_ident(tree, ch, target_name, map);
+                    mark_ident_role(tree, ch, target_name, role, map);
                 }
             }
             _ => {}
         }
+    }
+
+    fn mark_lhs_ident(tree: &Tree, n: NodeId, target_name: &str, map: &mut HashMap<u32, Role>) {
+        mark_ident_role(tree, n, target_name, Role::Driver, map);
     }
 
     for n in tree.preorder() {
@@ -495,9 +513,9 @@ fn classify_file_uses(
                         {
                             if let Some(mod_ty) = inst_sym.type_name.as_deref() {
                                 let mname = bare_module_name(mod_ty).to_string();
-                                if port_drives_arg.get(&(mname, pname)).copied() == Some(true) {
+                                if let Some(&role) = port_arg_role.get(&(mname, pname)) {
                                     for ch in tree.children(n) {
-                                        mark_lhs_ident(tree, ch, target_name, &mut map);
+                                        mark_ident_role(tree, ch, target_name, role, &mut map);
                                     }
                                 }
                             }

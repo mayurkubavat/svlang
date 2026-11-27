@@ -232,3 +232,38 @@ fn yosys_proves_the_json_equivalent_to_its_own_reading() {
         }
     }
 }
+
+#[test]
+fn tristate_bus_and_inout_emit_valid_yosys_json() {
+    let nl = netlist(
+        "module tri_top (\n\
+           inout  wire  [3:0] io,\n\
+           input  logic       oe,\n\
+           input  logic [3:0] d,\n\
+           output logic [3:0] rx,\n\
+           input  logic       en0,\n\
+           input  logic       en1,\n\
+           output logic       bus_y\n\
+         );\n\
+           assign io = oe ? d : 4'bz;\n\
+           assign rx = io;\n\
+           wire ibus;\n\
+           bufif1 g0 (ibus, d[0], en0);\n\
+           bufif0 g1 (ibus, d[1], en1);\n\
+           assign bus_y = ibus;\n\
+         endmodule\n",
+    );
+    let m = write(&nl, &Options::default()).unwrap();
+    assert!(m.json.contains("\"io$in\""), "{}", m.json);
+    assert!(m.json.contains("\"io$oe\""), "{}", m.json);
+    assert!(m.json.contains("\"io$out\""), "{}", m.json);
+    if let Some(yosys) = yosys() {
+        let dir = std::env::temp_dir().join(format!("sv-yosys-tri-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let json = dir.join("tri_top.json");
+        std::fs::write(&json, &m.json).unwrap();
+        let script = format!("read_json {}; hierarchy -top tri_top; check", json.display());
+        let out = Command::new(&yosys).args(["-q", "-p", &script]).output().unwrap();
+        assert!(out.status.success(), "yosys read_json failed: {}", String::from_utf8_lossy(&out.stderr));
+    }
+}

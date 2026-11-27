@@ -606,6 +606,30 @@ pub struct TraceSignal {
     pub loc: Loc,
 }
 
+/// Resolved tri-state bus slice metadata recorded for optional formal contention and
+/// floating-bus assertion synthesis ([`Netlist::add_tristate_checks`]).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TristateBus {
+    /// Full hierarchical net or port path (`"top.bus"`).
+    pub signal: String,
+    /// Full bit width of `signal` (`>= 1`).
+    pub full_width: u32,
+    /// Inclusive physical MSB bit offset (`0`-based).
+    pub hi: u32,
+    /// Inclusive physical LSB bit offset (`0`-based).
+    pub lo: u32,
+    /// `1`-bit (`hi == lo`) or `(hi - lo + 1)`-bit mask indicating which bits have at least one active driver.
+    pub any_enable: ValueId,
+    /// Optional contention condition (`Some(v)` when `>= 2` drivers can overlap; nonzero iff `en_i && en_j && d_i != d_j`).
+    pub conflict: Option<ValueId>,
+    /// `true` when the net has a weak pull (`tri0`, `tri1`, `pullup`, or `pulldown`).
+    pub has_pull: bool,
+    /// `true` when this slice belongs to a top-level `inout` port.
+    pub is_top_inout: bool,
+    /// Source location of the resolved net/port.
+    pub loc: Loc,
+}
+
 /// Lowered word-level RTL netlist and bound SVA properties for one elaborated top module.
 #[derive(Clone, Debug)]
 pub struct Netlist {
@@ -631,6 +655,8 @@ pub struct Netlist {
     pub undriven: Vec<UndrivenSlice>,
     /// Named hierarchical signals for trace generation.
     pub traces: Vec<TraceSignal>,
+    /// Resolved tri-state bus intervals for contention/floating formal checks.
+    pub tristate_buses: Vec<TristateBus>,
     /// Expression arena backing [`Self::properties`].
     pub sva_arena: ExprArena,
     /// Bound concurrent SVA properties (`assert property`, `assume property`, `cover property`, `restrict property`).
@@ -713,6 +739,12 @@ pub struct LowerConfig {
     /// When `Some(min_words)`, abstracts unpacked-array memories with `depth >= min_words` by
     /// replacing their [`ValueKind::MemRead`] ports with unconstrained [`FreeKind::Cut`] values (`-bbox_a`).
     pub bbox_array_words: Option<usize>,
+    /// When `true`, synthesizes immediate safety assertions (`<net>._tri_contention`) checking that
+    /// no two simultaneously enabled tri-state drivers drive opposing bit values (`!(en_i && en_j && d_i != d_j)`).
+    pub tristate_contention_checks: bool,
+    /// When `true`, synthesizes immediate safety assertions (`<net>._tri_floating`) checking that
+    /// every non-pulled internal tri-state bus slice has at least one active driver (`&any_enable`).
+    pub tristate_floating_checks: bool,
 }
 
 impl Default for LowerConfig {
@@ -729,6 +761,8 @@ impl Default for LowerConfig {
             isunknown_is_false: false,
             bbox_mul_width: None,
             bbox_array_words: None,
+            tristate_contention_checks: false,
+            tristate_floating_checks: false,
         }
     }
 }
@@ -1384,6 +1418,82 @@ impl Netlist {
         added
     }
 
+    /// Synthesizes immediate [`CheckKind::Assert`] checks over [`Self::tristate_buses`] for
+    /// multi-driver contention (`!(en_i && en_j && d_i != d_j)`, labeled `<sig>._tri_contention`)
+    /// and/or floating internal buses (`&any_enable`, labeled `<sig>._tri_floating`), gated off
+    /// for the first `skip_steps` model steps when a reset sequence is active.
+    pub fn add_tristate_checks(&mut self, contention: bool, floating: bool, skip_steps: u32) -> usize {
+        if (!contention && !floating) || self.tristate_buses.is_empty() {
+            return 0;
+        }
+        let buses = self.tristate_buses.clone();
+        let existing: std::collections::HashSet<String> = self.checks.iter().filter_map(|c| c.label.clone()).collect();
+        let enable = self.alloc_post_reset_gate(skip_steps);
+        let mut added = 0usize;
+        for tb in buses {
+            let safe: String = tb
+                .signal
+                .chars()
+                .map(|c| if c.is_ascii_alphanumeric() || c == '.' || c == '_' { c } else { '_' })
+                .collect();
+            let slice_sfx = if tb.lo == 0 && tb.hi + 1 >= tb.full_width {
+                String::new()
+            } else if tb.lo == tb.hi {
+                format!("_{}", tb.lo)
+            } else {
+                format!("_{}_{}", tb.hi, tb.lo)
+            };
+            if contention {
+                if let Some(conf) = tb.conflict {
+                    let lbl = format!("{safe}{slice_sfx}._tri_contention");
+                    if !existing.contains(&lbl) {
+                        let cw = self.value(conf).width;
+                        let cf4 = self.value(conf).four_state;
+                        let any_conf =
+                            if cw == 1 { conf } else { self.push_op(NetOp::RedOr, vec![conf], 1, false, cf4, tb.loc) };
+                        let ok = self.push_op(NetOp::LogNot, vec![any_conf], 1, false, cf4, tb.loc);
+                        self.checks.push(Check {
+                            kind: CheckKind::Assert,
+                            label: Some(lbl),
+                            immediate: true,
+                            enable,
+                            expr: ok,
+                            clock: None,
+                            loc: tb.loc,
+                        });
+                        added += 1;
+                    }
+                }
+            }
+            if floating && !tb.has_pull && !tb.is_top_inout {
+                let lbl = format!("{safe}{slice_sfx}._tri_floating");
+                if !existing.contains(&lbl) {
+                    let ew = self.value(tb.any_enable).width;
+                    let ef4 = self.value(tb.any_enable).four_state;
+                    let all_en = if ew == 1 {
+                        tb.any_enable
+                    } else {
+                        self.push_op(NetOp::RedAnd, vec![tb.any_enable], 1, false, ef4, tb.loc)
+                    };
+                    self.checks.push(Check {
+                        kind: CheckKind::Assert,
+                        label: Some(lbl),
+                        immediate: true,
+                        enable,
+                        expr: all_en,
+                        clock: None,
+                        loc: tb.loc,
+                    });
+                    added += 1;
+                }
+            }
+        }
+        if added > 0 {
+            self.toposort();
+        }
+        added
+    }
+
     fn push_const(&mut self, cval: CVal, four_state: bool, loc: Loc) -> ValueId {
         let id = ValueId(self.values.len() as u32);
         let w = cval.w.max(1);
@@ -1740,6 +1850,28 @@ impl Netlist {
                 &mut order,
             );
         }
+        for tb in &self.tristate_buses {
+            visit_root(
+                tb.any_enable.0 as usize,
+                &self.values,
+                &self.memories,
+                &self.sampled,
+                &mut state,
+                &mut stack,
+                &mut order,
+            );
+            if let Some(conf) = tb.conflict {
+                visit_root(
+                    conf.0 as usize,
+                    &self.values,
+                    &self.memories,
+                    &self.sampled,
+                    &mut state,
+                    &mut stack,
+                    &mut order,
+                );
+            }
+        }
 
         let mut remap = vec![ValueId(0); n];
         let mut new_values = Vec::with_capacity(order.len());
@@ -1825,6 +1957,12 @@ impl Netlist {
         }
         for (_, sv) in &mut self.symbol_values {
             map_v(sv);
+        }
+        for tb in &mut self.tristate_buses {
+            map_v(&mut tb.any_enable);
+            if let Some(conf) = &mut tb.conflict {
+                map_v(conf);
+            }
         }
     }
 }

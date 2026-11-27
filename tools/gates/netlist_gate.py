@@ -139,6 +139,13 @@ def main() -> int:
     else:
         passed += 1
 
+    # 6. `--tristate-checks` on `inout_bus.sv`
+    rt = run_svlang(svlang_bin, ["--tristate-checks", os.path.join(NETLIST_DIR, "inout_bus.sv")])
+    if rt.returncode != 0 or "inout_bus.pad_io._tri_contention" not in rt.stdout:
+        failures.append(f"inout_bus.sv (--tristate-checks): expected _tri_contention check, got rc={rt.returncode}:\n{rt.stdout}")
+    else:
+        passed += 1
+
     for msg in failures:
         print(f"FAIL: {msg}")
     print(f"netlist_gate: passed={passed} failed={len(failures)}")

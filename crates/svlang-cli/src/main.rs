@@ -65,6 +65,7 @@ options:
   --four-state            netlist, btor2, aiger, yosys: keep ===, !== and $isunknown
   --skip-initial-checks   leave out initial-block assertions over signals
   --isunknown-is-false    lower $isunknown as 0 (two-state only)
+  --tristate-checks       synthesize contention and floating-bus formal assertions
   --cut PATH              netlist, btor2, aiger, yosys: cut the signal at PATH (repeatable)
   --black-box MODULE      netlist, btor2, aiger, yosys: do not lower MODULE (repeatable)
   --black-box-instance PATH   the same for one instance (repeatable)
@@ -127,6 +128,10 @@ fn parse(args: &[String]) -> Result<Opts, Usage> {
             "--four-state" | "--allow-four-state-ops" => o.lower.allow_four_state_ops = true,
             "--skip-initial-checks" => o.lower.skip_initial_checks = true,
             "--isunknown-is-false" => o.lower.isunknown_is_false = true,
+            "--tristate-checks" => {
+                o.lower.tristate_contention_checks = true;
+                o.lower.tristate_floating_checks = true;
+            }
             "-o" | "--output" => o.output = Some(value(a, &mut it)?),
             "--blast-memories" => {
                 let v = value(a, &mut it)?;

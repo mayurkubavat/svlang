@@ -864,9 +864,16 @@ fn comb_loop_and_non_synthesizable_fail_closed() {
     let str_mod = "module m (input logic clk, output logic y); string s; assign y = clk; endmodule";
     assert!(!matches!(lower_src(str_mod), LowerOutcome::Lowered(_)));
 
-    // `inout` tri-state port -> fail-closed Unsupported/Error
-    let inout_mod = "module m (inout wire io, input logic en); assign io = en ? 1'b1 : 1'bz; endmodule";
-    assert!(!matches!(lower_src(inout_mod), LowerOutcome::Lowered(_)));
+    // `inout` tri-state port splits into `io$in` + `(io$oe, io$out)` and resolves `io = io$oe ? io$out : io$in`
+    let inout_mod =
+        "module m (inout wire io, input logic en, output logic rx); assign io = en ? 1'b1 : 1'bz; assign rx = io; endmodule";
+    let io_nl = expect_lowered(lower_src(inout_mod));
+    assert!(io_nl.inputs.iter().any(|i| i.name == "io$in" && i.width == 1));
+    assert!(io_nl.outputs.iter().any(|o| o.name == "io$oe" && o.width == 1));
+    assert!(io_nl.outputs.iter().any(|o| o.name == "io$out" && o.width == 1));
+    // `inout logic` (variable, not net) -> fail-closed Error per IEEE 1800 §23.3.3.2
+    let bad_inout_var = "module m (inout var logic io); endmodule";
+    assert!(matches!(lower_src(bad_inout_var), LowerOutcome::Error(_)));
 }
 
 #[test]
@@ -1691,4 +1698,282 @@ fn long_shift_chain_through_alias_is_not_a_loop() {
     // A bit that names itself is still a loop.
     let real = "module m (input logic [7:0] n, output logic [15:0] y);\n  wire [15:0] A, T;\n  assign A = T, T = {A[15:8], n};\n  assign y = A;\nendmodule\n";
     assert!(matches!(lower_src(real), LowerOutcome::Error(_)), "bits 15:8 of T are themselves");
+}
+
+#[test]
+fn tristate_bus_resolution_inout_hierarchy_gpio_and_formal_checks() {
+    // 1. Hierarchical transceiver bus + top-level bidirectional `inout` pad + `tri0`/`tri1` pulls + `bufif1`:
+    let src = r#"
+module xcvr (
+    inout  wire [7:0] bus,
+    input  logic      oe,
+    input  logic [7:0] tx,
+    output logic [7:0] rx
+);
+    assign bus = oe ? tx : 8'bz;
+    assign rx  = bus;
+endmodule
+
+module pad_cell (
+    inout  wire [7:0] pad,
+    input  logic      pad_oe,
+    input  logic [7:0] pad_tx,
+    output logic [7:0] pad_rx
+);
+    bufif1 u_drv [7:0] (pad, pad_tx, pad_oe);
+    assign pad_rx = pad;
+endmodule
+
+module top (
+    inout  wire [7:0] ext_io,
+    input  logic      ext_oe_a,
+    input  logic [7:0] ext_tx_a,
+    input  logic      ext_oe_b,
+    input  logic [7:0] ext_tx_b,
+    output logic [7:0] ext_rx_a,
+    output logic [7:0] ext_rx_b,
+    input  logic      int_oe0,
+    input  logic [3:0] int_d0,
+    input  logic      int_oe1,
+    input  logic [3:0] int_d1,
+    output logic [3:0] int_bus_y,
+    output logic [3:0] pull0_y,
+    output logic [3:0] pull1_y
+);
+    // Two child transceivers sharing top-level `ext_io` without combinational loops:
+    xcvr     u_a (.bus(ext_io), .oe(ext_oe_a), .tx(ext_tx_a), .rx(ext_rx_a));
+    pad_cell u_b (.pad(ext_io), .pad_oe(ext_oe_b), .pad_tx(ext_tx_b), .pad_rx(ext_rx_b));
+
+    // Internal multi-driver tri-state bus + `alias` net:
+    wire [3:0] ibus;
+    wire [3:0] ibus_tap;
+    alias ibus = ibus_tap;
+    assign ibus = int_oe0 ? int_d0 : 4'bz;
+    assign ibus = int_oe1 ? int_d1 : 4'bz;
+    assign int_bus_y = ibus_tap;
+
+    // `tri0` and `tri1` pulled multi-driver buses:
+    tri0 [3:0] bus_pd;
+    tri1 [3:0] bus_pu;
+    assign bus_pd = int_oe0 ? int_d0 : 4'bz;
+    assign bus_pu = int_oe1 ? int_d1 : 4'bz;
+    assign pull0_y = bus_pd;
+    assign pull1_y = bus_pu;
+endmodule
+"#;
+    let cfg =
+        LowerConfig { tristate_contention_checks: true, tristate_floating_checks: true, ..LowerConfig::default() };
+    let nl = expect_lowered(lower_src_cfg(src, &[], &cfg));
+    assert!(nl.inputs.iter().any(|i| i.name == "ext_io$in" && i.width == 8));
+    assert!(nl.outputs.iter().any(|o| o.name == "ext_io$oe" && o.width == 8));
+    assert!(nl.outputs.iter().any(|o| o.name == "ext_io$out" && o.width == 8));
+    // Contention check on `ext_io` + contention & floating checks on `ibus` (`tri0`/`tri1` have pulls, no floating check):
+    assert!(
+        nl.checks.iter().any(|c| c.label.as_deref().is_some_and(|n| n.ends_with("_tri_contention"))),
+        "{:?}",
+        nl.checks
+    );
+    assert!(
+        nl.checks
+            .iter()
+            .any(|c| c.label.as_deref().is_some_and(|n| n.contains("ibus") && n.ends_with("_tri_floating"))),
+        "{:?}",
+        nl.checks
+    );
+    assert!(
+        !nl.checks.iter().any(|c| c
+            .label
+            .as_deref()
+            .is_some_and(|n| (n.contains("bus_pd") || n.contains("bus_pu")) && n.ends_with("_tri_floating"))),
+        "pulled tri0/tri1 nets must not get floating checks: {:?}",
+        nl.checks
+    );
+
+    let mut sim = NetlistSim::new(&nl);
+    sim.set_u("ext_io$in", 0x5A);
+    sim.set_u("ext_oe_a", 0);
+    sim.set_u("ext_tx_a", 0xC3);
+    sim.set_u("ext_oe_b", 0);
+    sim.set_u("ext_tx_b", 0x3C);
+    sim.set_u("int_oe0", 0);
+    sim.set_u("int_d0", 0xA);
+    sim.set_u("int_oe1", 0);
+    sim.set_u("int_d1", 0x5);
+
+    // Both internal drivers disabled on `ext_io` -> `ext_io$oe == 0`, `ext_io$out == 0` (masked!), `rx == ext_io$in`!
+    assert_eq!(sim.out_i("ext_io$oe"), 0x00);
+    assert_eq!(sim.out_i("ext_io$out"), 0x00, "disabled datapath must be masked to 0 on io$out");
+    assert_eq!(sim.out_i("ext_rx_a"), 0x5A);
+    assert_eq!(sim.out_i("ext_rx_b"), 0x5A);
+    // Internal `ibus` floats to `'z`, while `tri0` pulls to `0` and `tri1` pulls to `4'hF`:
+    for b in 0..4 {
+        assert_eq!(sim.out_cval("int_bus_y").bit_state(b), sv_semantic::BitState::Z);
+    }
+    assert_eq!(sim.out_i("pull0_y"), 0x0);
+    assert_eq!(sim.out_i("pull1_y"), 0xF);
+
+    // Enable driver A (`ext_oe_a = 1`, `ext_tx_a = 0xC3`) -> `ext_io$oe == 0xFF`, `ext_io$out == 0xC3`, `rx == 0xC3`:
+    sim.set_u("ext_oe_a", 1);
+    assert_eq!(sim.out_i("ext_io$oe"), 0xFF);
+    assert_eq!(sim.out_i("ext_io$out"), 0xC3);
+    assert_eq!(sim.out_i("ext_rx_a"), 0xC3);
+    assert_eq!(sim.out_i("ext_rx_b"), 0xC3);
+
+    // Enable BOTH A (`0xC3 = 1100_0011`) and B (`0xCA = 1100_1010`):
+    // Agreeing bits `[7:4] = 4'b1100`, `[2] = 0`, `[1] = 1` stay known; disagreeing bits `[3,0]` contend to `'x`!
+    sim.set_u("ext_oe_b", 1);
+    sim.set_u("ext_tx_b", 0xCA);
+    let contended = sim.out_cval("ext_rx_a");
+    assert_eq!(contended.bit_state(7), sv_semantic::BitState::One);
+    assert_eq!(contended.bit_state(6), sv_semantic::BitState::One);
+    assert_eq!(contended.bit_state(5), sv_semantic::BitState::Zero);
+    assert_eq!(contended.bit_state(4), sv_semantic::BitState::Zero);
+    assert_eq!(contended.bit_state(3), sv_semantic::BitState::X);
+    assert_eq!(contended.bit_state(2), sv_semantic::BitState::Zero);
+    assert_eq!(contended.bit_state(1), sv_semantic::BitState::One);
+    assert_eq!(contended.bit_state(0), sv_semantic::BitState::X);
+
+    // 2. Per-bit GPIO `inout [3:0] gpio` + black-box `inout` cut-points:
+    let gpio_src = r#"
+module sram_macro (
+    inout wire [3:0] dq,
+    input logic      ce_n
+);
+    assign dq = !ce_n ? 4'h9 : 4'bz;
+endmodule
+
+module gpio_top (
+    inout  wire [3:0] gpio,
+    input  logic [3:0] pin_dir,
+    input  logic [3:0] pin_out,
+    output logic [3:0] pin_in,
+    input  logic       host_we,
+    input  logic [3:0] host_dq,
+    output logic [3:0] mem_rd
+);
+    genvar g;
+    for (g = 0; g < 4; g++) begin : gen_pin
+        assign gpio[g] = pin_dir[g] ? pin_out[g] : 1'bz;
+    end
+    assign pin_in = gpio;
+
+    wire [3:0] dq_bus;
+    assign dq_bus = host_we ? host_dq : 4'bz;
+    sram_macro u_sram (.dq(dq_bus), .ce_n(host_we));
+    assign mem_rd = dq_bus;
+endmodule
+"#;
+    let bb_cfg = LowerConfig { black_box_modules: vec!["sram_macro".to_string()], ..LowerConfig::default() };
+    let gpio_nl = expect_lowered(lower_src_cfg(gpio_src, &[], &bb_cfg));
+    assert!(
+        gpio_nl.undriven.iter().any(|u| u.signal == "gpio_top.u_sram.dq$oe" && u.free == sv_netlist::FreeKind::Cut),
+        "{:?}",
+        gpio_nl.undriven
+    );
+    assert!(
+        gpio_nl.undriven.iter().any(|u| u.signal == "gpio_top.u_sram.dq$out" && u.free == sv_netlist::FreeKind::Cut),
+        "{:?}",
+        gpio_nl.undriven
+    );
+    let mut gsim = NetlistSim::new(&gpio_nl);
+    gsim.set_u("gpio$in", 0b1010);
+    gsim.set_u("pin_dir", 0b0101);
+    gsim.set_u("pin_out", 0b0100);
+    // Bits [2,0] driven internally (`1`, `0`), bits [3,1] read from `gpio$in` (`1`, `1`) -> `pin_in == 0b1110`:
+    assert_eq!(gsim.out_i("gpio$oe"), 0b0101);
+    assert_eq!(gsim.out_i("gpio$out"), 0b0100);
+    assert_eq!(gsim.out_i("pin_in"), 0b1110);
+}
+
+#[test]
+fn inout_edge_cases_slices_packed_struct_non_ansi_and_comb_loop() {
+    // 1. Hierarchical `inout` connected to disjoint bit slices of a parent bus
+    let slice_src = r#"
+module leaf (
+    inout  wire [3:0] dq,
+    input  logic      oe,
+    input  logic [3:0] tx,
+    output logic [3:0] rx
+);
+    assign dq = oe ? tx : 4'bz;
+    assign rx = dq;
+endmodule
+module slice_top (
+    inout  wire [7:0] pad,
+    input  logic      oe_lo,
+    input  logic      oe_hi,
+    input  logic [7:0] tx,
+    output logic [7:0] rx
+);
+    leaf u_lo (.dq(pad[3:0]), .oe(oe_lo), .tx(tx[3:0]), .rx(rx[3:0]));
+    leaf u_hi (.dq(pad[7:4]), .oe(oe_hi), .tx(tx[7:4]), .rx(rx[7:4]));
+endmodule
+"#;
+    let slice_nl = expect_lowered(lower_src(slice_src));
+    let mut ssim = NetlistSim::new(&slice_nl);
+    ssim.set_u("pad$in", 0xA5);
+    ssim.set_u("oe_lo", 1);
+    ssim.set_u("oe_hi", 0);
+    ssim.set_u("tx", 0x3C);
+    assert_eq!(ssim.out_i("pad$oe"), 0x0F);
+    assert_eq!(ssim.out_i("pad$out"), 0x0C);
+    assert_eq!(ssim.out_i("rx"), 0xAC);
+
+    // 2. Packed-struct ANSI `inout` and non-ANSI `inout` with explicit `logic`
+    let struct_src = r#"
+typedef struct packed { logic [3:0] hi; logic [3:0] lo; } pair_t;
+module struct_io (
+    inout  pair_t p,
+    input  logic  oe,
+    input  pair_t d,
+    output pair_t q
+);
+    assign p = oe ? d : 'z;
+    assign q = p;
+endmodule
+"#;
+    let struct_nl = expect_lowered(lower_src(struct_src));
+    let mut stsim = NetlistSim::new(&struct_nl);
+    stsim.set_u("p$in", 0x5A);
+    stsim.set_u("oe", 0);
+    stsim.set_u("d", 0x99);
+    assert_eq!(stsim.out_i("q"), 0x5A);
+    stsim.set_u("oe", 1);
+    assert_eq!(stsim.out_i("q"), 0x99);
+
+    let non_ansi_src = r#"
+module non_ansi_io (p, oe, d, q);
+    inout [3:0] p;
+    logic [3:0] p;
+    input logic oe;
+    input logic [3:0] d;
+    output logic [3:0] q;
+    assign p = oe ? d : 4'bz;
+    assign q = p;
+endmodule
+"#;
+    let na_nl = expect_lowered(lower_src(non_ansi_src));
+    let mut nasim = NetlistSim::new(&na_nl);
+    nasim.set_u("p$in", 0x7);
+    nasim.set_u("oe", 0);
+    nasim.set_u("d", 0xB);
+    assert_eq!(nasim.out_i("q"), 0x7);
+    nasim.set_u("oe", 1);
+    assert_eq!(nasim.out_i("q"), 0xB);
+
+    // 3. True combinational loop through an `inout` must still fail closed
+    let loop_src = r#"
+module io_loop (
+    inout wire [3:0] dq,
+    input logic      oe
+);
+    assign dq = oe ? ~dq : 4'bz;
+endmodule
+"#;
+    match lower_src(loop_src) {
+        LowerOutcome::Error(ds) => {
+            assert!(ds.iter().any(|d| d.message.contains("combinational loop")), "{ds:#?}");
+        }
+        other => panic!("expected combinational loop error, got {other:?}"),
+    }
 }

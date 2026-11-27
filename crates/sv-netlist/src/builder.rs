@@ -6,7 +6,7 @@ use sv_semantic::{BoundProperty, CVal, ExprArena, Loc, SampledKind};
 
 use crate::ir::{
     Check, MemId, Memory, NetOp, Netlist, NetlistDiag, PortInput, PortOutput, SampledNode, State, StateId, TraceSignal,
-    UndrivenSlice, ValueId, ValueKind, ValueNode,
+    TristateBus, UndrivenSlice, ValueId, ValueKind, ValueNode,
 };
 
 #[derive(Clone, Debug)]
@@ -44,6 +44,7 @@ pub(crate) struct NetBuilder {
     pub checks: Vec<Check>,
     pub undriven: Vec<UndrivenSlice>,
     pub traces: Vec<TraceSignal>,
+    pub tristate_buses: Vec<TristateBus>,
     pub diags: Vec<NetlistDiag>,
     /// Slices made while splitting reads on a cycle, by `(source, hi, lo)`: the same
     /// bits of the same value are one node however many reads come down to them.
@@ -64,6 +65,7 @@ impl NetBuilder {
             checks: Vec::new(),
             undriven: Vec::new(),
             traces: Vec::new(),
+            tristate_buses: Vec::new(),
             diags: Vec::new(),
             split_slices: Default::default(),
         }
@@ -105,6 +107,7 @@ impl NetBuilder {
             checks: nl.checks.clone(),
             undriven: nl.undriven.clone(),
             traces: nl.traces.clone(),
+            tristate_buses: nl.tristate_buses.clone(),
             diags: Vec::new(),
             split_slices: Default::default(),
         }
@@ -663,6 +666,12 @@ impl NetBuilder {
         for (_, sv) in &mut symbol_values {
             map_r(sv);
         }
+        for tb in &mut self.tristate_buses {
+            map_r(&mut tb.any_enable);
+            if let Some(conf) = &mut tb.conflict {
+                map_r(conf);
+            }
+        }
 
         let mut netlist = Netlist {
             top: self.top,
@@ -676,6 +685,7 @@ impl NetBuilder {
             checks: self.checks,
             undriven: self.undriven,
             traces: self.traces,
+            tristate_buses: self.tristate_buses,
             sva_arena,
             property_enables,
             table_words: Vec::new(),

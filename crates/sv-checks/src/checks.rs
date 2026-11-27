@@ -834,8 +834,12 @@ impl Ctx<'_> {
             ProgramDecl => {
                 self.check_clocking_scope(t, n, &mut err);
                 self.check_program_decl(t, n, &mut err);
+                self.check_inout_ports(t, n, &mut err);
             }
-            ModuleDecl | InterfaceDecl => self.check_clocking_scope(t, n, &mut err),
+            ModuleDecl | InterfaceDecl => {
+                self.check_clocking_scope(t, n, &mut err);
+                self.check_inout_ports(t, n, &mut err);
+            }
             GateInst => self.check_gate_udnt(ix, t, n, parent, &mut err),
             Instantiation => {
                 self.check_udp_udnt(ix, t, n, parent, &mut err);
@@ -859,6 +863,122 @@ impl Ctx<'_> {
             PathDecl => self.check_specify_path(ix, t, n, parent, &mut err),
             TimingCheck => self.check_timing_check(ix, t, n, parent, &mut err),
             _ => {}
+        }
+    }
+
+    /// IEEE 1800-2023 §23.2.2.3: module, interface, and program `inout` ports must be net types,
+    /// not explicit variables (`var`/`reg`) or built-in two-state/non-net types (`bit`, `int`, ...).
+    fn check_inout_ports(&self, t: &Tree, decl: NodeId, err: &mut impl FnMut(NodeId, String)) {
+        const NON_NET_TYPES: &[&str] = &[
+            "bit",
+            "byte",
+            "shortint",
+            "int",
+            "longint",
+            "real",
+            "shortreal",
+            "realtime",
+            "string",
+            "chandle",
+            "event",
+        ];
+        let dt_is_non_net = |dt: Option<NodeId>| -> bool {
+            dt.and_then(|d| toks(t, d).first().copied()).is_some_and(|kw| NON_NET_TYPES.contains(&kw))
+        };
+        let dt_is_reg = |dt: Option<NodeId>| -> bool { dt.and_then(|d| toks(t, d).first().copied()) == Some("reg") };
+        let is_net_kw = |k: &str| {
+            matches!(
+                k,
+                "wire"
+                    | "tri"
+                    | "wand"
+                    | "wor"
+                    | "triand"
+                    | "trior"
+                    | "tri0"
+                    | "tri1"
+                    | "trireg"
+                    | "uwire"
+                    | "supply0"
+                    | "supply1"
+                    | "interconnect"
+            )
+        };
+
+        // 1. ANSI port list
+        if let Some(pl) = t.child(decl, PortList).or_else(|| t.child(decl, Header).and_then(|h| t.child(h, PortList))) {
+            let mut cur_dir: Option<&str> = None;
+            let mut cur_bad = false;
+            for p in t.children(pl).filter(|&c| t.kind(c) == Port) {
+                let own = toks(t, p);
+                let dt = t.child(p, DataType);
+                let new_dir = own.iter().copied().find(|k| matches!(*k, "input" | "output" | "inout" | "ref"));
+                let has_var = own.iter().any(|&k| k == "var" || k == "reg");
+                let has_net = own.iter().any(|&k| is_net_kw(k));
+                if new_dir.is_some() || dt.is_some() || has_var || has_net {
+                    if let Some(d) = new_dir {
+                        cur_dir = Some(d);
+                    }
+                    let is_udnt =
+                        dt.and_then(|d| toks(t, d).last().copied()).is_some_and(|nm| self.nettypes.contains(nm));
+                    cur_bad = cur_dir == Some("inout")
+                        && !is_udnt
+                        && (has_var || (!has_net && dt_is_reg(dt)) || dt_is_non_net(dt));
+                }
+                if cur_bad {
+                    err(p, "inout port must be a net type, not a variable or two-state type".into());
+                }
+            }
+        }
+
+        // 2. Non-ANSI port declarations in module/interface/program body
+        let body = t.child(decl, Body).unwrap_or(decl);
+        {
+            let mut non_ansi_inouts: crate::fx::FxSet<String> = crate::fx::FxSet::default();
+            for d in t.children(body).filter(|&c| t.kind(c) == DataDecl) {
+                let own = toks(t, d);
+                if own.first().copied() == Some("inout") {
+                    let dt = t.child(d, DataType);
+                    let has_var = own.iter().any(|&k| k == "var" || k == "reg");
+                    let has_net = own.iter().any(|&k| is_net_kw(k));
+                    let is_udnt =
+                        dt.and_then(|dn| toks(t, dn).last().copied()).is_some_and(|nm| self.nettypes.contains(nm));
+                    if !is_udnt && (has_var || (!has_net && dt_is_reg(dt)) || dt_is_non_net(dt)) {
+                        err(d, "inout port must be a net type, not a variable or two-state type".into());
+                    } else {
+                        for decl_item in t.children(d).filter(|&c| t.kind(c) == Declarator) {
+                            let nm = name_of(t, decl_item);
+                            if !nm.is_empty() {
+                                non_ansi_inouts.insert(nm);
+                            }
+                        }
+                    }
+                }
+            }
+            if !non_ansi_inouts.is_empty() {
+                for d in t.children(body).filter(|&c| t.kind(c) == DataDecl) {
+                    let own = toks(t, d);
+                    if own.first().is_some_and(|k| matches!(*k, "input" | "output" | "inout" | "ref")) {
+                        continue;
+                    }
+                    let dt = t.child(d, DataType);
+                    let has_var = own.iter().any(|&k| k == "var" || k == "reg");
+                    let has_net = own.iter().any(|&k| is_net_kw(k));
+                    let is_udnt =
+                        dt.and_then(|dn| toks(t, dn).last().copied()).is_some_and(|nm| self.nettypes.contains(nm));
+                    if !is_udnt && (has_var || (!has_net && dt_is_reg(dt)) || dt_is_non_net(dt)) {
+                        for decl_item in t.children(d).filter(|&c| t.kind(c) == Declarator) {
+                            let nm = name_of(t, decl_item);
+                            if non_ansi_inouts.contains(&nm) {
+                                err(
+                                    decl_item,
+                                    format!("inout port '{nm}' must be a net type, not a variable or two-state type"),
+                                );
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 
